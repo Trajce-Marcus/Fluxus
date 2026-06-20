@@ -1,0 +1,16 @@
+{
+  "name": "fluxus",
+  "private": true,
+  "workspaces": [
+    "packages/wql/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/wql/wql-builder",
+    "build": "npm run build --workspace=packages/wql/wql-builder",
+    "preview": "npm run preview --workspace=packages/wql/wql-builder"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
