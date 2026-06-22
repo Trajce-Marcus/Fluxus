@@ -91,4 +91,11 @@ const css = `
   }
 `;
 
-export const Map = Object.assign(MapComponent, { css });
+import type { PropSchema } from './schema';
+
+const schema: PropSchema[] = [
+  { name: 'x', kind: 'dynamic-data', type: 'number', required: true,  description: 'X coordinate (0–100)' },
+  { name: 'y', kind: 'dynamic-data', type: 'number', required: true,  description: 'Y coordinate (0–100)' },
+];
+
+export const Map = Object.assign(MapComponent, { css, schema });

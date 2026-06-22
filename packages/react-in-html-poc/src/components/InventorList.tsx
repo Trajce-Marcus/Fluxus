@@ -1,3 +1,5 @@
+import type { PropSchema } from './schema';
+
 export interface Inventor {
   name: string;
   invention: string;
@@ -6,15 +8,20 @@ export interface Inventor {
 
 interface InventorListProps {
   inventors: Inventor[];
+  onSelect?: (inventor: Inventor) => void;
 }
 
-function InventorListComponent({ inventors }: InventorListProps) {
+function InventorListComponent({ inventors = [], onSelect }: InventorListProps) {
   return (
     <div className="inventor-list">
       <h2 className="inventor-list-title">19th Century Inventors</h2>
       <div className="inventor-grid">
         {inventors.map((inventor) => (
-          <div key={inventor.name} className="inventor-card">
+          <div
+            key={inventor.name}
+            className={`inventor-card${onSelect ? ' inventor-card--selectable' : ''}`}
+            onClick={() => onSelect?.(inventor)}
+          >
             <div className="inventor-name">{inventor.name}</div>
             <div className="inventor-invention">{inventor.invention}</div>
             <div className="inventor-date">{inventor.date}</div>
@@ -51,6 +58,14 @@ const css = `
     flex-direction: column;
     gap: 0.4rem;
   }
+  .inventor-card--selectable {
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.15s;
+  }
+  .inventor-card--selectable:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateY(-1px);
+  }
   .inventor-name {
     font-weight: 700;
     font-size: 0.95rem;
@@ -67,4 +82,9 @@ const css = `
   }
 `;
 
-export const InventorList = Object.assign(InventorListComponent, { css });
+const schema: PropSchema[] = [
+  { name: 'inventors', kind: 'dynamic-data', type: 'array',    required: true,  description: 'List of inventors to display' },
+  { name: 'onSelect',  kind: 'callback',     type: 'function', required: false, description: 'Fired when a card is clicked' },
+];
+
+export const InventorList = Object.assign(InventorListComponent, { css, schema });

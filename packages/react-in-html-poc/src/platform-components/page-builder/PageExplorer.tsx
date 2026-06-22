@@ -65,7 +65,7 @@ function NewPageInput({ folder, onDone }: NewPageInputProps) {
     if (trimmed.includes('/')) { setError('Name cannot contain /'); return; }
     const path = `${folder}/${trimmed}`;
     if (pageExists(path)) { setError('A page with that name already exists'); return; }
-    savePage(path, { slots: {} });
+    savePage(path, {});
     refreshTree();
     onDone();
   }
