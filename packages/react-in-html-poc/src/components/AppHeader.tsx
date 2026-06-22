@@ -1,21 +1,25 @@
+import type { PropSchema } from './schema';
+
 interface AppHeaderProps {
   appName: string;
   username: string;
 }
 
 function AppHeaderComponent({ appName, username }: AppHeaderProps) {
-  const initials = username
+  const safeName = appName ?? '';
+  const safeUser = username ?? '';
+  const initials = safeUser
     .split(' ')
-    .map((n) => n[0])
+    .map((n) => n[0] ?? '')
     .join('')
     .toUpperCase()
-    .slice(0, 2);
+    .slice(0, 2) || '?';
 
   return (
     <header className="app-header">
-      <span className="app-header-name">{appName}</span>
+      <span className="app-header-name">{safeName}</span>
       <div className="app-header-user">
-        <span className="app-header-username">{username}</span>
+        <span className="app-header-username">{safeUser}</span>
         <div className="app-header-avatar">{initials}</div>
       </div>
     </header>
@@ -64,4 +68,9 @@ const css = `
   }
 `;
 
-export const AppHeader = Object.assign(AppHeaderComponent, { css });
+const schema: PropSchema[] = [
+  { name: 'appName',  kind: 'static-config', type: 'string', required: true,  description: 'Application name shown in the header' },
+  { name: 'username', kind: 'dynamic-data',  type: 'string', required: true,  description: 'Display name of the current user' },
+];
+
+export const AppHeader = Object.assign(AppHeaderComponent, { css, schema });

@@ -2,26 +2,87 @@ import type { LayoutDefinition } from './layout-editor/types';
 
 const KEY_PREFIX = 'fluxus:page:';
 
-export interface SlotPlacement {
-  component: string;
-  props: Record<string, unknown>;
-}
+// ── Shared entry types ────────────────────────────────────────────────────────
 
 export interface PageComponentEntry {
   name: string;
   version: string;
 }
 
-export interface PageFile {
+export type ContextKeyType = 'string' | 'number' | 'boolean' | 'object';
+export type ContextKeySource = 'platform' | 'page';
+
+export interface ContextKeyDef {
+  key: string;
+  type: ContextKeyType;
+  source: ContextKeySource;
+  defaultValue?: unknown;
+}
+
+// ── ComponentContainer config ─────────────────────────────────────────────────
+
+export interface ArgSource {
+  contextKey: string;
+}
+
+export type DynamicPropConfig =
+  | { source: 'context'; contextKey: string }
+  | { source: 'procedure'; procedureName: string; args: Record<string, ArgSource> };
+
+export type CallbackAction =
+  | { type: 'set-context'; key: string }
+  | { type: 'hide-component' }
+  | { type: 'show-overlay'; overlayId: string };
+
+export interface SlotConfig {
+  componentName: string;
+  staticConfig: Record<string, unknown>;
+  dynamicProps: Record<string, DynamicPropConfig>;
+  callbackActions: Record<string, CallbackAction>;
+}
+
+export interface OverlayConfig {
+  id: string;
+  componentName: string;
+  staticConfig: Record<string, unknown>;
+  dynamicProps: Record<string, DynamicPropConfig>;
+  callbackActions: Record<string, CallbackAction>;
+}
+
+// ── Page Definition ───────────────────────────────────────────────────────────
+
+export interface PageDef {
   template?: string;
   layout?: LayoutDefinition;
   componentDependencies?: PageComponentEntry[];
-  slots: Record<string, SlotPlacement | null>;
+  contextSchema?: ContextKeyDef[];
+  slotConfigs?: Record<string, SlotConfig | null>;
+  overlays?: OverlayConfig[];
+}
+
+// ── Persistence functions ─────────────────────────────────────────────────────
+
+export function savePage(path: string, def: PageDef): void {
+  localStorage.setItem(`${KEY_PREFIX}${path}`, JSON.stringify(def));
+}
+
+export function loadPage(path: string): PageDef | null {
+  const raw = localStorage.getItem(`${KEY_PREFIX}${path}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PageDef;
+  } catch {
+    return null;
+  }
 }
 
 export function savePageLayout(path: string, layout: LayoutDefinition): void {
-  const existing = loadPage(path) ?? { slots: {} };
+  const existing = loadPage(path) ?? {};
   savePage(path, { ...existing, layout });
+}
+
+export function loadPageLayout(path: string): LayoutDefinition | null {
+  return loadPage(path)?.layout ?? null;
 }
 
 export function loadPageComponents(path: string): PageComponentEntry[] {
@@ -29,35 +90,42 @@ export function loadPageComponents(path: string): PageComponentEntry[] {
 }
 
 export function savePageComponents(path: string, components: PageComponentEntry[]): void {
-  const existing = loadPage(path) ?? { slots: {} };
+  const existing = loadPage(path) ?? {};
   savePage(path, { ...existing, componentDependencies: components });
 }
 
-export function loadPageLayout(path: string): LayoutDefinition | null {
-  return loadPage(path)?.layout ?? null;
+export function loadContextSchema(path: string): ContextKeyDef[] {
+  return loadPage(path)?.contextSchema ?? [];
 }
 
-export function savePage(path: string, definition: PageFile): void {
-  localStorage.setItem(`${KEY_PREFIX}${path}`, JSON.stringify(definition));
+export function saveContextSchema(path: string, schema: ContextKeyDef[]): void {
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, contextSchema: schema });
 }
 
-export function loadPage(path: string): PageFile | null {
-  const raw = localStorage.getItem(`${KEY_PREFIX}${path}`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as PageFile;
-  } catch {
-    return null;
-  }
+export function loadSlotConfigs(path: string): Record<string, SlotConfig | null> {
+  return loadPage(path)?.slotConfigs ?? {};
+}
+
+export function saveSlotConfigs(path: string, slotConfigs: Record<string, SlotConfig | null>): void {
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, slotConfigs });
+}
+
+export function loadOverlays(path: string): OverlayConfig[] {
+  return loadPage(path)?.overlays ?? [];
+}
+
+export function saveOverlays(path: string, overlays: OverlayConfig[]): void {
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, overlays });
 }
 
 export function listPagePaths(): string[] {
   const paths: string[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key?.startsWith(KEY_PREFIX)) {
-      paths.push(key.slice(KEY_PREFIX.length));
-    }
+    if (key?.startsWith(KEY_PREFIX)) paths.push(key.slice(KEY_PREFIX.length));
   }
   return paths.sort();
 }

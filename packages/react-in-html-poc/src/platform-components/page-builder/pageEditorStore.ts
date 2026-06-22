@@ -2,23 +2,27 @@ import { createContextStore } from '../../store/contextStore';
 import {
   loadPageComponents,
   savePageComponents,
+  loadContextSchema,
+  saveContextSchema,
+  loadSlotConfigs,
+  saveSlotConfigs,
   type PageComponentEntry,
+  type ContextKeyDef,
+  type SlotConfig,
+  type DynamicPropConfig,
+  type CallbackAction,
 } from './persistence';
 
-export type { PageComponentEntry };
-
-export interface SlotAssignment {
-  componentName: string;
-  props: Record<string, unknown>;
-}
+export type { PageComponentEntry, ContextKeyDef, SlotConfig, DynamicPropConfig, CallbackAction };
 
 export interface PageEditorState {
   mode: 'builder' | 'layout';
   pageComponents: PageComponentEntry[];
+  contextSchema: ContextKeyDef[];
   selectedComponentName: string | null;
   selectedSlotId: string | null;
   col1Collapsed: boolean;
-  assignments: Record<string, SlotAssignment | null>;
+  slotConfigs: Record<string, SlotConfig | null>;
 }
 
 const stores = new Map<string, ReturnType<typeof createContextStore<PageEditorState>>>();
@@ -28,14 +32,17 @@ function getStore(pagePath: string) {
     stores.set(pagePath, createContextStore<PageEditorState>({
       mode: 'builder',
       pageComponents: loadPageComponents(pagePath),
+      contextSchema: loadContextSchema(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
       col1Collapsed: false,
-      assignments: {},
+      slotConfigs: loadSlotConfigs(pagePath),
     }));
   }
   return stores.get(pagePath)!;
 }
+
+// ── Page components ──────────────────────────────────────────────────────────
 
 export function addPageComponent(pagePath: string, entry: PageComponentEntry): void {
   getStore(pagePath).set((prev) => {
@@ -50,19 +57,100 @@ export function removePageComponent(pagePath: string, name: string): void {
   getStore(pagePath).set((prev) => {
     const pageComponents = prev.pageComponents.filter((c) => c.name !== name);
     savePageComponents(pagePath, pageComponents);
-    // Clear selection and any slot assignments using this component
-    const assignments = { ...prev.assignments };
-    for (const slotId of Object.keys(assignments)) {
-      if (assignments[slotId]?.componentName === name) assignments[slotId] = null;
+    const slotConfigs = { ...prev.slotConfigs };
+    for (const slotId of Object.keys(slotConfigs)) {
+      if (slotConfigs[slotId]?.componentName === name) slotConfigs[slotId] = null;
     }
+    saveSlotConfigs(pagePath, slotConfigs);
     return {
       ...prev,
       pageComponents,
-      assignments,
+      slotConfigs,
       selectedComponentName: prev.selectedComponentName === name ? null : prev.selectedComponentName,
     };
   });
 }
+
+// ── Context schema ───────────────────────────────────────────────────────────
+
+export function addContextKey(pagePath: string, def: ContextKeyDef): void {
+  getStore(pagePath).set((prev) => {
+    if (prev.contextSchema.some((k) => k.key === def.key)) return prev;
+    const contextSchema = [...prev.contextSchema, def];
+    saveContextSchema(pagePath, contextSchema);
+    return { ...prev, contextSchema };
+  });
+}
+
+export function removeContextKey(pagePath: string, key: string): void {
+  getStore(pagePath).set((prev) => {
+    const contextSchema = prev.contextSchema.filter((k) => k.key !== key);
+    saveContextSchema(pagePath, contextSchema);
+    return { ...prev, contextSchema };
+  });
+}
+
+// ── Slot configs ─────────────────────────────────────────────────────────────
+
+export function assignComponent(pagePath: string, slotId: string, componentName: string): void {
+  getStore(pagePath).set((prev) => {
+    const slotConfigs = {
+      ...prev.slotConfigs,
+      [slotId]: { componentName, staticConfig: {}, dynamicProps: {}, callbackActions: {} },
+    };
+    saveSlotConfigs(pagePath, slotConfigs);
+    return { ...prev, slotConfigs, selectedSlotId: slotId, selectedComponentName: null };
+  });
+}
+
+export function unassignSlot(pagePath: string, slotId: string): void {
+  getStore(pagePath).set((prev) => {
+    const slotConfigs = { ...prev.slotConfigs, [slotId]: null };
+    saveSlotConfigs(pagePath, slotConfigs);
+    return { ...prev, slotConfigs };
+  });
+}
+
+export function setStaticConfig(pagePath: string, slotId: string, propName: string, value: unknown): void {
+  getStore(pagePath).set((prev) => {
+    const slot = prev.slotConfigs[slotId];
+    if (!slot) return prev;
+    const slotConfigs = {
+      ...prev.slotConfigs,
+      [slotId]: { ...slot, staticConfig: { ...slot.staticConfig, [propName]: value } },
+    };
+    saveSlotConfigs(pagePath, slotConfigs);
+    return { ...prev, slotConfigs };
+  });
+}
+
+export function setDynamicProp(pagePath: string, slotId: string, propName: string, config: DynamicPropConfig | null): void {
+  getStore(pagePath).set((prev) => {
+    const slot = prev.slotConfigs[slotId];
+    if (!slot) return prev;
+    const dynamicProps = { ...slot.dynamicProps };
+    if (config === null) delete dynamicProps[propName];
+    else dynamicProps[propName] = config;
+    const slotConfigs = { ...prev.slotConfigs, [slotId]: { ...slot, dynamicProps } };
+    saveSlotConfigs(pagePath, slotConfigs);
+    return { ...prev, slotConfigs };
+  });
+}
+
+export function setCallbackAction(pagePath: string, slotId: string, propName: string, action: CallbackAction | null): void {
+  getStore(pagePath).set((prev) => {
+    const slot = prev.slotConfigs[slotId];
+    if (!slot) return prev;
+    const callbackActions = { ...slot.callbackActions };
+    if (action === null) delete callbackActions[propName];
+    else callbackActions[propName] = action;
+    const slotConfigs = { ...prev.slotConfigs, [slotId]: { ...slot, callbackActions } };
+    saveSlotConfigs(pagePath, slotConfigs);
+    return { ...prev, slotConfigs };
+  });
+}
+
+// ── UI state ─────────────────────────────────────────────────────────────────
 
 export function selectComponent(pagePath: string, name: string | null): void {
   getStore(pagePath).set((prev) => ({ ...prev, selectedComponentName: name }));
@@ -78,22 +166,6 @@ export function setMode(pagePath: string, mode: 'builder' | 'layout'): void {
 
 export function toggleCol1(pagePath: string): void {
   getStore(pagePath).set((prev) => ({ ...prev, col1Collapsed: !prev.col1Collapsed }));
-}
-
-export function assignComponent(pagePath: string, slotId: string, componentName: string): void {
-  getStore(pagePath).set((prev) => ({
-    ...prev,
-    assignments: { ...prev.assignments, [slotId]: { componentName, props: {} } },
-    selectedSlotId: slotId,
-    selectedComponentName: null,
-  }));
-}
-
-export function unassignSlot(pagePath: string, slotId: string): void {
-  getStore(pagePath).set((prev) => ({
-    ...prev,
-    assignments: { ...prev.assignments, [slotId]: null },
-  }));
 }
 
 export function usePageEditorStore(pagePath: string) {

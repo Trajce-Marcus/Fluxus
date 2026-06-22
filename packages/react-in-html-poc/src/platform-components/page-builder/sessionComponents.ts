@@ -4,4 +4,5 @@ export const SESSION_COMPONENTS = [
   { name: 'AppHeader', version: '1.0.0' },
   { name: 'Map', version: '1.0.0' },
   { name: 'InventorList', version: '1.0.0' },
+  { name: 'InventorProfile', version: '1.0.0' },
 ];
