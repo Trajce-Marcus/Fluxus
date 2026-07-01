@@ -1,0 +1,127 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useAppContext } from '../context/AppContext';
+import { RecordDetails } from './RecordDetails';
+import { ActivityHistoryList } from './ActivityHistoryList';
+import { AvailableActivities } from './AvailableActivities';
+import type { RecordInstance, RecordTypeDef, WorkflowDef } from '../types';
+
+type NavEntry = { typeId: string; recordId: string };
+
+const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
+  background: 'none',
+  border: '1px solid #e2e8f0',
+  borderRadius: 4,
+  padding: '3px 10px',
+  fontSize: 14,
+  cursor: enabled ? 'pointer' : 'default',
+  color: enabled ? '#374151' : '#cbd5e1',
+  lineHeight: 1,
+});
+
+export function RecordView() {
+  const { selectedRecord, selectedRecordType, getRecordAndType } = useAppContext();
+
+  const [viewedTypeId, setViewedTypeId] = useState<string | null>(null);
+  const [viewedRecordId, setViewedRecordId] = useState<string | null>(null);
+  const [backStack, setBackStack] = useState<NavEntry[]>([]);
+  const [forwardStack, setForwardStack] = useState<NavEntry[]>([]);
+
+  const viewedTypeIdRef = useRef(viewedTypeId);
+  const viewedRecordIdRef = useRef(viewedRecordId);
+  viewedTypeIdRef.current = viewedTypeId;
+  viewedRecordIdRef.current = viewedRecordId;
+
+  // When the selected record changes, sync viewed state from the record's own typeRef
+  useEffect(() => {
+    setViewedTypeId(selectedRecord?.typeRef ?? null);
+    setViewedRecordId(selectedRecord?.id ?? null);
+    setBackStack([]);
+    setForwardStack([]);
+  }, [selectedRecord?.id]);
+
+  const navigateTo = useCallback((typeId: string, recordId: string) => {
+    const curType = viewedTypeIdRef.current;
+    const curRecord = viewedRecordIdRef.current;
+    if (curType && curRecord) {
+      setBackStack(prev => [...prev, { typeId: curType, recordId: curRecord }]);
+    }
+    setForwardStack([]);
+    setViewedTypeId(typeId);
+    setViewedRecordId(recordId);
+  }, []);
+
+  const navigateBack = useCallback(() => {
+    setBackStack(prev => {
+      if (prev.length === 0) return prev;
+      const entry = prev[prev.length - 1];
+      const curType = viewedTypeIdRef.current;
+      const curRecord = viewedRecordIdRef.current;
+      if (curType && curRecord) {
+        setForwardStack(f => [...f, { typeId: curType, recordId: curRecord }]);
+      }
+      setViewedTypeId(entry.typeId);
+      setViewedRecordId(entry.recordId);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const navigateForward = useCallback(() => {
+    setForwardStack(prev => {
+      if (prev.length === 0) return prev;
+      const entry = prev[prev.length - 1];
+      const curType = viewedTypeIdRef.current;
+      const curRecord = viewedRecordIdRef.current;
+      if (curType && curRecord) {
+        setBackStack(b => [...b, { typeId: curType, recordId: curRecord }]);
+      }
+      setViewedTypeId(entry.typeId);
+      setViewedRecordId(entry.recordId);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  if (!selectedRecord) {
+    return (
+      <div style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
+        {selectedRecordType
+          ? 'Select a record from the grid to view details.'
+          : 'Select a record type, then a record.'}
+      </div>
+    );
+  }
+
+  const viewedData = viewedTypeId && viewedRecordId
+    ? getRecordAndType(viewedTypeId, viewedRecordId)
+    : null;
+
+  // Fall back to selected record if FK target not found
+  const viewedRecord: RecordInstance = viewedData?.record ?? selectedRecord;
+  const viewedTypeDef: RecordTypeDef & { workflow: WorkflowDef } =
+    viewedData?.typeDef ?? selectedRecordType!;
+
+  const canGoBack = backStack.length > 0;
+  const canGoForward = forwardStack.length > 0;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <button onClick={navigateBack} disabled={!canGoBack} style={navBtnStyle(canGoBack)} title="Back">←</button>
+          <button onClick={navigateForward} disabled={!canGoForward} style={navBtnStyle(canGoForward)} title="Forward">→</button>
+        </div>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
+          {viewedTypeDef.name}
+        </h2>
+        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+          id: {viewedRecord.id}
+        </div>
+      </div>
+
+      <AvailableActivities record={viewedRecord} workflow={viewedTypeDef.workflow} />
+      <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+      <RecordDetails record={viewedRecord} typeDef={viewedTypeDef} navigateTo={navigateTo} />
+      <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+      <ActivityHistoryList record={viewedRecord} />
+    </div>
+  );
+}

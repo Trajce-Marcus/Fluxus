@@ -1,0 +1,61 @@
+import { useState } from 'react';
+import { useAppContext } from '../context/AppContext';
+import { AttributesForm } from './AttributesForm';
+import { Modal } from './Modal';
+import type { ActivityDef, RecordInstance, WorkflowDef } from '../types';
+
+interface Props {
+  record: RecordInstance;
+  workflow: WorkflowDef;
+}
+
+export function AvailableActivities({ record, workflow }: Props) {
+  const { runActivity } = useAppContext();
+  const [activeActivity, setActiveActivity] = useState<ActivityDef | null>(null);
+
+  // Record-level activities: CREATE excluded (no anchor; lives in the grid).
+  const activities = workflow.activities
+    .filter(a => a.record_map !== 'CREATE')
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  if (activities.length === 0) return null;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {activities.map(a => (
+          <button
+            key={a.id}
+            onClick={() => setActiveActivity(a)}
+            style={{
+              padding: '6px 14px',
+              background: '#f1f5f9',
+              color: '#374151',
+              border: '1px solid #e2e8f0',
+              borderRadius: 4,
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            {a.name}
+          </button>
+        ))}
+      </div>
+
+      {activeActivity && (
+        <Modal title={activeActivity.name} onClose={() => setActiveActivity(null)}>
+          <AttributesForm
+            activity={activeActivity}
+            anchorRecord={record}
+            onSubmit={(captured) => {
+              runActivity(activeActivity, captured, record);
+              setActiveActivity(null);
+            }}
+            onClose={() => setActiveActivity(null)}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
