@@ -1,5 +1,5 @@
 import type { Store } from './interface';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, Config } from '../types';
+import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from '../types';
 
 const STORAGE_KEY = 'aber-poc-v1-records';
 
@@ -27,10 +27,40 @@ export class LocalStorageAdapter implements Store {
   private workflows: Map<string, WorkflowDef>;
   private records: Map<string, RecordInstance>;
   private listeners: Set<() => void> = new Set();
+  private reverseIndex: Map<string, ReverseRefEntry[]>;
 
-  constructor(config: Config) {
+  constructor(config: ConfigRaw) {
     this.recordTypes = config.recordTypes;
-    this.workflows = new Map(config.workflows.map(wf => [wf.id, wf]));
+
+    // Build an attribute lookup keyed by attribute.key, then resolve each
+    // activity's attribute_ref wrappers into full AttributeDef objects.
+    const attrMap = new Map(config.attributes.map(a => [a.key, a]));
+    this.workflows = new Map(config.workflows.map(wf => [
+      wf.id,
+      {
+        ...wf,
+        activities: wf.activities.map(act => ({
+          ...act,
+          attributes: act.attributes.map(usage => {
+            const def = attrMap.get(usage.attribute_ref);
+            if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
+            return def;
+          }),
+        })),
+      },
+    ]));
+
+    this.reverseIndex = new Map();
+    for (const rt of this.recordTypes) {
+      for (const cf of rt.custom_fields) {
+        if (cf.type === 'fk_ref' && cf.fk_record_type) {
+          const bucket = this.reverseIndex.get(cf.fk_record_type) ?? [];
+          bucket.push({ sourceTypeId: rt.id, fieldKey: cf.key });
+          this.reverseIndex.set(cf.fk_record_type, bucket);
+        }
+      }
+    }
+
     this.records = loadRecords();
     this.migrateNaturalIds();
   }
@@ -65,7 +95,7 @@ export class LocalStorageAdapter implements Store {
       let changed = false;
       const newFields = { ...record.customFields };
       for (const cf of rt.custom_fields) {
-        if (cf.fk_record_type) {
+        if (cf.type === 'fk_ref') {
           const fkVal = String(newFields[cf.key] ?? '');
           const remapped = idRemap.get(fkVal);
           if (remapped) { newFields[cf.key] = remapped; changed = true; }
@@ -112,7 +142,7 @@ export class LocalStorageAdapter implements Store {
     const rt = this.recordTypes.find(r => r.id === typeId);
     if (!rt) throw new Error(`RecordType not found: ${typeId}`);
 
-    const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default]));
+    const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default ?? '']));
     const merged = { ...defaults, ...customFields };
 
     // Enforce field constraints
@@ -181,5 +211,31 @@ export class LocalStorageAdapter implements Store {
     r.activityHistory = [...r.activityHistory, entry];
     saveRecords(this.records);
     this.notify();
+  }
+
+  resolveDisplayLabel(fkRecordType: string, fkDisplayField: string | undefined, rawId: string): string {
+    if (!rawId) return '';
+    const record = this.records.get(rawId);
+    if (!record || record.typeRef !== fkRecordType) return rawId;
+    if (!fkDisplayField) return rawId;
+    return String(record.customFields[fkDisplayField] ?? rawId);
+  }
+
+  getReverseRefs(targetTypeId: string): ReverseRefEntry[] {
+    return this.reverseIndex.get(targetTypeId) ?? [];
+  }
+
+  getRecordsByField(typeId: string, fieldKey: string, value: string): RecordInstance[] {
+    return [...this.records.values()].filter(
+      r => r.typeRef === typeId && String(r.customFields[fieldKey] ?? '') === value
+    );
+  }
+
+  resolveAttributeDisplayField(typeId: string, attrKey: string): string | undefined {
+    const rt = this.recordTypes.find(r => r.id === typeId);
+    if (!rt) return undefined;
+    const cf = rt.custom_fields.find(c => c.key === attrKey);
+    if (!cf || cf.type !== 'fk_ref') return undefined;
+    return cf.fk_display_field;
   }
 }

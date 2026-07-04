@@ -48,6 +48,7 @@ export function AvailableActivities({ record, workflow }: Props) {
           <AttributesForm
             activity={activeActivity}
             anchorRecord={record}
+            recordTypeId={record.typeRef}
             onSubmit={(captured) => {
               runActivity(activeActivity, captured, record);
               setActiveActivity(null);

@@ -1,4 +1,4 @@
-import type { Config } from './types';
-import rawConfig from '../docs/sample_inspection_type.json';
+import type { ConfigRaw } from './types';
+import rawConfig from '../docs/poc_SDM.json';
 
-export const config = rawConfig as unknown as Config;
+export const config = rawConfig as unknown as ConfigRaw;

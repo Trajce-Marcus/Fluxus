@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef } from '../types';
+import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry } from '../types';
 import { LocalStorageAdapter } from '../store/LocalStorageAdapter';
 import { config } from '../config';
 
@@ -20,6 +20,12 @@ interface AppContextValue {
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null
   ) => void;
+  // Resolves a stored fk_ref id to a human-readable label (§SDM_Change §6).
+  resolveDisplayLabel: (fkRecordType: string, fkDisplayField: string | undefined, rawId: string) => string;
+  // Returns the fk_display_field for an attribute key on a record type via key-matching (§SDM_Change §7).
+  resolveAttributeDisplayField: (typeId: string, attrKey: string) => string | undefined;
+  getReverseRefs: (targetTypeId: string) => ReverseRefEntry[];
+  getRecordsByField: (typeId: string, fieldKey: string, value: string) => RecordInstance[];
 }
 
 const Ctx = createContext<AppContextValue | null>(null);
@@ -59,6 +65,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const resolveDisplayLabel = useCallback(
+    (fkRecordType: string, fkDisplayField: string | undefined, rawId: string) =>
+      adapter.resolveDisplayLabel(fkRecordType, fkDisplayField, rawId),
+    []
+  );
+
+  const resolveAttributeDisplayField = useCallback(
+    (typeId: string, attrKey: string) =>
+      adapter.resolveAttributeDisplayField(typeId, attrKey),
+    []
+  );
+
+  const getReverseRefs = useCallback(
+    (targetTypeId: string) => adapter.getReverseRefs(targetTypeId),
+    []
+  );
+
+  const getRecordsByField = useCallback(
+    (typeId: string, fieldKey: string, value: string) =>
+      adapter.getRecordsByField(typeId, fieldKey, value),
+    []
+  );
+
   const runActivity = useCallback((
     activity: ActivityDef,
     captured: Record<string, unknown>,
@@ -71,7 +100,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (activity.record_map === 'CREATE') {
       const typeId = selectedTypeIdRef.current!;
       // Exact-key matching: only attributes whose key matches a custom_field key are written.
-      // Unmatched attributes (e.g. 'notes' on the sample Raise activity) are silently dropped.
+      // Unmatched attributes (e.g. 'raise_notes' on the sample Raise activity) are silently dropped.
       // This is SDM §1.9.3 rule 2 — DO NOT treat it as a bug.
       const cfKeys = new Set(
         adapter.getRecordTypeDef(typeId).custom_fields.map(cf => cf.key)
@@ -136,6 +165,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getRecordTypeDef,
       getRecordAndType,
       runActivity,
+      resolveDisplayLabel,
+      resolveAttributeDisplayField,
+      getReverseRefs,
+      getRecordsByField,
     }}>
       {children}
     </Ctx.Provider>

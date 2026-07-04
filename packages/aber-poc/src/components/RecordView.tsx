@@ -1,11 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordDetails } from './RecordDetails';
+import { RelatedRecords } from './RelatedRecords';
 import { ActivityHistoryList } from './ActivityHistoryList';
 import { AvailableActivities } from './AvailableActivities';
+import { SchemaNavigator } from './SchemaNavigator';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '../types';
 
 type NavEntry = { typeId: string; recordId: string };
+
+const schemaBtnStyle: React.CSSProperties = {
+  background: 'none',
+  border: '1px solid #e2e8f0',
+  borderRadius: 4,
+  padding: '3px 10px',
+  fontSize: 11,
+  cursor: 'pointer',
+  color: '#3b82f6',
+  fontWeight: 500,
+  letterSpacing: '0.02em',
+};
 
 const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
   background: 'none',
@@ -25,6 +39,7 @@ export function RecordView() {
   const [viewedRecordId, setViewedRecordId] = useState<string | null>(null);
   const [backStack, setBackStack] = useState<NavEntry[]>([]);
   const [forwardStack, setForwardStack] = useState<NavEntry[]>([]);
+  const [showSchemaNav, setShowSchemaNav] = useState(false);
 
   const viewedTypeIdRef = useRef(viewedTypeId);
   const viewedRecordIdRef = useRef(viewedRecordId);
@@ -82,10 +97,25 @@ export function RecordView() {
 
   if (!selectedRecord) {
     return (
-      <div style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
-        {selectedRecordType
-          ? 'Select a record from the grid to view details.'
-          : 'Select a record type, then a record.'}
+      <div>
+        {selectedRecordType && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <button onClick={() => setShowSchemaNav(true)} style={schemaBtnStyle} title="Schema Navigator">
+              Schema
+            </button>
+          </div>
+        )}
+        <div style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
+          {selectedRecordType
+            ? 'Select a record from the grid to view details.'
+            : 'Select a record type, then a record.'}
+        </div>
+        {showSchemaNav && selectedRecordType && (
+          <SchemaNavigator
+            initialTypeId={selectedRecordType.id}
+            onClose={() => setShowSchemaNav(false)}
+          />
+        )}
       </div>
     );
   }
@@ -108,9 +138,12 @@ export function RecordView() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <button onClick={navigateBack} disabled={!canGoBack} style={navBtnStyle(canGoBack)} title="Back">←</button>
           <button onClick={navigateForward} disabled={!canGoForward} style={navBtnStyle(canGoForward)} title="Forward">→</button>
+          <button onClick={() => setShowSchemaNav(true)} style={{ ...schemaBtnStyle, marginLeft: 'auto' }} title="Schema Navigator">
+            Schema
+          </button>
         </div>
         <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
-          {viewedTypeDef.name}
+          {viewedTypeDef.name.endsWith('s') ? viewedTypeDef.name.slice(0, -1) : viewedTypeDef.name}
         </h2>
         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
           id: {viewedRecord.id}
@@ -120,8 +153,16 @@ export function RecordView() {
       <AvailableActivities record={viewedRecord} workflow={viewedTypeDef.workflow} />
       <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
       <RecordDetails record={viewedRecord} typeDef={viewedTypeDef} navigateTo={navigateTo} />
+      <RelatedRecords typeId={viewedTypeDef.id} recordId={viewedRecord.id} navigateTo={navigateTo} />
       <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
       <ActivityHistoryList record={viewedRecord} />
+
+      {showSchemaNav && (
+        <SchemaNavigator
+          initialTypeId={viewedTypeDef.id}
+          onClose={() => setShowSchemaNav(false)}
+        />
+      )}
     </div>
   );
 }

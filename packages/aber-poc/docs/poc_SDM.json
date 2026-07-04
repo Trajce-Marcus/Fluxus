@@ -1,0 +1,714 @@
+{
+  "_comment": "POC1 sample config — hand-edited. Three record types: Asset Types, Assets, Inspection Jobs. All IDs use plural entity naming. Valid against SDM_Schema_Reference.md + SDM_Change_Attribute_Type_System.md. Hooks are present in shape but bodies are not executed this cut (stubbed). show_condition and non-text attribute types are omitted (deferred).",
+
+  "attributes": [
+    { "key": "code",             "label": "Code",             "description": "Short unique code for this type.",                                                     "type": "text" },
+    { "key": "description",      "label": "Description",      "description": "Human-readable description.",                                                          "type": "text" },
+    { "key": "confirm",          "label": "Confirm",          "description": "Type DELETE to confirm removal.",                                                       "type": "text" },
+    { "key": "asset_no",         "label": "Asset No",         "description": "Unique asset number.",                                                                  "type": "text" },
+    { "key": "status",           "label": "Status",           "description": "Current status.",                                                                       "type": "text" },
+    { "key": "asset_type_id",    "label": "Asset Type",       "description": "Select the parent Asset Type record.",  "type": "reference", "type_config": { "fk_record_type": "rt_asset_types" } },
+    { "key": "location",         "label": "Location",         "description": "Where the inspection is.",                                                             "type": "text" },
+    { "key": "due_date",         "label": "Due Date",         "description": "When it is due (text for now).",                                                        "type": "text" },
+    { "key": "work_group",       "label": "Work Group",       "description": "Responsible group.",                                                                    "type": "text" },
+    { "key": "raise_notes",      "label": "Raise Notes",      "description": "Free notes at raise time — not stored on the Record (no matching custom field).",      "type": "text" },
+    { "key": "notes",            "label": "Notes",            "description": "Inspector notes.",                                                                      "type": "text" },
+    { "key": "condition_rating", "label": "Condition Rating", "description": "Observed condition.",                                                                   "type": "text" },
+    { "key": "hazard_found",     "label": "Hazard Found?",    "description": "yes / no.",                                                                             "type": "text" },
+    { "key": "completed_by",     "label": "Completed By",     "description": "Who closed it.",                                                                        "type": "text" },
+    { "key": "type",    "label": "Type",             "description": "Category of resource (e.g. lab, plant, vehicle, employee).",                              "type": "text" },
+    { "key": "key",     "label": "Key",              "description": "Unique identifier for this resource (e.g. rego, employee ID).",                          "type": "text" },
+    { "key": "expired_date",     "label": "Expired Date",     "description": "Date on which this resource expires (text for now).",                                    "type": "text" },
+    { "key": "id",               "label": "ID",               "description": "Unique identifier for this record.",                                                    "type": "text" },
+    { "key": "name",             "label": "Name",             "description": "Display name.",                                                                         "type": "text" },
+    { "key": "manager",          "label": "Manager",          "description": "Person responsible for this work group.",                                                "type": "text" },
+    { "key": "job_no",           "label": "Job No",           "description": "External or customer-supplied job reference number. Not required to be unique.",                    "type": "text" },
+    { "key": "contract_id",      "label": "Contract",         "description": "The contract this job is raised against.", "type": "reference", "type_config": { "fk_record_type": "rt_contracts" } },
+    { "key": "customer",         "label": "Customer",         "description": "Customer name.",                                                                        "type": "text" },
+    { "key": "start_date",       "label": "Start Date",       "description": "Contract start date.",                                                                  "type": "text" },
+    { "key": "end_date",         "label": "End Date",         "description": "Contract end date.",                                                                    "type": "text" },
+    { "key": "wg_id",            "label": "Work Group",       "description": "The work group this plan belongs to.",   "type": "reference", "type_config": { "fk_record_type": "rt_workgroups" } },
+    { "key": "shift_date",       "label": "Shift Date",       "description": "Date of the planned shift.",                                                            "type": "text" },
+    { "key": "shift_start",      "label": "Shift Start",      "description": "Shift start time.",                                                                     "type": "text" },
+    { "key": "shift_end",        "label": "Shift End",        "description": "Shift end time.",                                                                       "type": "text" },
+    { "key": "added_by",         "label": "Added By",         "description": "Who created this plan.",                                                                "type": "text" },
+    { "key": "wg_plan_id",       "label": "Workgroup Plan",   "description": "The workgroup plan this resource is assigned to.", "type": "reference", "type_config": { "fk_record_type": "rt_wg_plans" } },
+    { "key": "res_id",           "label": "Resource",         "description": "The resource assigned to this plan.",    "type": "reference", "type_config": { "fk_record_type": "rt_resources" } },
+    { "key": "job_id",           "label": "Job",              "description": "The job this work order belongs to.",                         "type": "reference", "type_config": { "fk_record_type": "rt_jobs" } },
+    { "key": "workgroup_id",     "label": "Work Group",       "description": "The work group assigned to this work order.",                  "type": "reference", "type_config": { "fk_record_type": "rt_workgroups" } },
+    { "key": "activity_code",    "label": "Activity Code",    "description": "Code identifying the type of work activity.",                  "type": "text" },
+    { "key": "problem_code",     "label": "Problem Code",     "description": "Code identifying the problem type.",                           "type": "text" },
+    { "key": "completed_date",   "label": "Completed Date",   "description": "Date the work order was completed.",                           "type": "text" },
+    { "key": "wo_id",            "label": "Work Order",       "description": "The work order this record belongs to.",                       "type": "reference", "type_config": { "fk_record_type": "rt_work_orders" } },
+    { "key": "asset_id",         "label": "Asset",            "description": "The asset linked to this record.",                             "type": "reference", "type_config": { "fk_record_type": "rt_assets" } },
+    { "key": "quantity",         "label": "Quantity",         "description": "Quantity of the resource assigned.",                           "type": "text" }
+  ],
+
+  "recordTypes": [
+    {
+      "id": "rt_asset_types",
+      "name": "Asset Types",
+      "description": "A classification of asset (e.g. Pump, Valve, Pipe).",
+      "workflow_ref": "wf_asset_types",
+      "id_field": "code",
+      "custom_fields": [
+        { "key": "code",        "type": "text", "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "description", "type": "text", "default": "" },
+        { "key": "expired",     "type": "text", "default": "false" }
+      ]
+    },
+    {
+      "id": "rt_assets",
+      "name": "Assets",
+      "description": "A physical asset belonging to a type.",
+      "workflow_ref": "wf_assets",
+      "custom_fields": [
+        { "key": "asset_no",      "type": "text",   "default": "", "required": true, "unique": true, "indexed": true },
+        { "key": "status",        "type": "text",   "default": "Active", "indexed": true },
+        { "key": "description",   "type": "text",   "default": "" },
+        { "key": "asset_type_id", "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_asset_types", "fk_display_field": "code" }
+      ]
+    },
+    {
+      "id": "rt_jobs",
+      "name": "Jobs",
+      "description": "A generic job",
+      "workflow_ref": "wf_jobs",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",           "type": "text",   "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "job_no",       "type": "text",   "default": "", "required": true, "indexed": true },
+        { "key": "contract_id",  "type": "fk_ref", "default": "", "indexed": true, "fk_record_type": "rt_contracts", "fk_display_field": "name" },
+        { "key": "job_type",     "type": "text",   "default": "", "required": true },
+        { "key": "status",       "type": "text",   "default": "Raised", "indexed": true },
+        { "key": "location",     "type": "text",   "default": "", "required": true },
+        { "key": "due_date",     "type": "text",   "default": "", "required": true }
+      ]
+    },
+    {
+      "id": "rt_workgroups",
+      "name": "Work Groups",
+      "description": "Functional unit pairing labour, plant, and equipment resources.",
+      "workflow_ref": "wf_workgroups",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",           "type": "text", "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "name",         "type": "text", "default": "", "required": true },
+        { "key": "description",  "type": "text", "default": "" },
+        { "key": "expired_date", "type": "text", "default": "" },
+        { "key": "manager",      "type": "text", "default": "" }
+      ]
+    },
+    {
+      "id": "rt_resources",
+      "name": "Resources",
+      "description": "Includes labour, plant, equipment etc",
+      "workflow_ref": "wf_resources",
+      "id_field": "key",
+      "custom_fields": [
+        { "key": "type", "type": "text", "default": "", "required": true, "indexed": true },
+        { "key": "key",  "type": "text", "default": "", "required": true, "unique": true, "indexed": true },
+        { "key": "description",   "type": "text", "default": "" },
+        { "key": "expired_date",  "type": "text", "default": "" }
+      ]
+    },
+    {
+      "id": "rt_contracts",
+      "name": "Contracts",
+      "description": "Customer contracts under which jobs are raised.",
+      "workflow_ref": "wf_contracts",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",          "type": "text", "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "name",        "type": "text", "default": "", "required": true },
+        { "key": "description", "type": "text", "default": "" },
+        { "key": "customer",    "type": "text", "default": "", "required": true, "indexed": true },
+        { "key": "start_date",  "type": "text", "default": "" },
+        { "key": "end_date",    "type": "text", "default": "" }
+      ]
+    },
+    {
+      "id": "rt_wg_plans",
+      "name": "Workgroup Plans",
+      "description": "A planned shift for a work group.",
+      "workflow_ref": "wf_wg_plans",
+      "custom_fields": [
+        { "key": "wg_id",       "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_workgroups", "fk_display_field": "name" },
+        { "key": "shift_date",  "type": "text",   "default": "", "required": true },
+        { "key": "status",      "type": "text",   "default": "Draft", "indexed": true },
+        { "key": "shift_start", "type": "text",   "default": "" },
+        { "key": "shift_end",   "type": "text",   "default": "" },
+        { "key": "added_by",    "type": "text",   "default": "" }
+      ]
+    },
+    {
+      "id": "rt_wg_resources",
+      "name": "Workgroup Resources",
+      "description": "A resource assigned to a workgroup plan.",
+      "workflow_ref": "wf_wg_resources",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",         "type": "text",   "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "wg_plan_id", "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_wg_plans",   "fk_display_field": "id" },
+        { "key": "res_id",     "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_resources",   "fk_display_field": "key" }
+      ]
+    },
+    {
+      "id": "rt_work_orders",
+      "name": "Work Orders",
+      "description": "A work order raised against a job.",
+      "workflow_ref": "wf_work_orders",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",             "type": "text",   "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "job_id",         "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_jobs",       "fk_display_field": "job_no" },
+        { "key": "activity_code",  "type": "text",   "default": "", "required": true },
+        { "key": "problem_code",   "type": "text",   "default": "" },
+        { "key": "status",         "type": "text",   "default": "Raised", "indexed": true },
+        { "key": "due_date",       "type": "text",   "default": "" },
+        { "key": "start_date",     "type": "text",   "default": "" },
+        { "key": "completed_date", "type": "text",   "default": "" },
+        { "key": "location",       "type": "text",   "default": "" },
+        { "key": "workgroup_id",   "type": "fk_ref", "default": "", "indexed": true, "fk_record_type": "rt_workgroups", "fk_display_field": "name" }
+      ]
+    },
+    {
+      "id": "rt_wo_resources",
+      "name": "WO Resources",
+      "description": "A resource assigned to a work order.",
+      "workflow_ref": "wf_wo_resources",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",       "type": "text",   "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "wo_id",    "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_work_orders", "fk_display_field": "id" },
+        { "key": "res_id",   "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_resources",   "fk_display_field": "key" },
+        { "key": "quantity", "type": "text",   "default": "1" },
+        { "key": "warehouse","type": "text",   "default": "" }
+      ]
+    },
+    {
+      "id": "rt_wo_assets",
+      "name": "WO Assets",
+      "description": "An asset linked to a work order.",
+      "workflow_ref": "wf_wo_assets",
+      "id_field": "id",
+      "custom_fields": [
+        { "key": "id",       "type": "text",   "default": "", "required": true, "unique": true, "immutable": true, "indexed": true },
+        { "key": "wo_id",    "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_work_orders", "fk_display_field": "id" },
+        { "key": "asset_id", "type": "fk_ref", "default": "", "required": true, "indexed": true, "fk_record_type": "rt_assets",      "fk_display_field": "asset_no" }
+      ]
+    }
+  ],
+
+  "workflows": [
+    {
+      "id": "wf_asset_types",
+      "name": "Asset Types",
+      "description": "Manage asset type records.",
+      "activities": [
+        {
+          "id": "act_create_asset_types",
+          "name": "Create Asset Type",
+          "description": "Creates a new Asset Type record.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "code" },
+            { "attribute_ref": "description" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_asset_types",
+          "name": "Update Asset Type",
+          "description": "Update the description of an Asset Type.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "description" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_asset_types",
+          "name": "Delete Asset Type",
+          "description": "Delete this Asset Type record.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "_comment": "record_map:DELETE — implemented. 'confirm' attribute must equal 'DELETE' exactly; any other value is a no-op. before_hook validation deferred.",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_assets",
+      "name": "Assets",
+      "description": "Manage asset records.",
+      "activities": [
+        {
+          "id": "act_create_assets",
+          "name": "Create Asset",
+          "description": "Creates a new Asset record.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "asset_no" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "asset_type_id" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_assets",
+          "name": "Update Asset",
+          "description": "Update asset details.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "description" },
+            { "attribute_ref": "status" },
+            { "attribute_ref": "asset_type_id" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_assets",
+          "name": "Delete Asset",
+          "description": "Delete this Asset record.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "_comment": "record_map:DELETE — implemented. 'confirm' attribute must equal 'DELETE' exactly.",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_jobs",
+      "name": "Job Workflows",
+      "description": "Planned inspection of a road asset",
+      "activities": [
+        {
+          "id": "act_raise_inspection_jobs",
+          "name": "Raise Inspection",
+          "description": "Creates a new Inspection Job and captures its opening data.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "_comment": "record_map:CREATE — surfaced at the GRID level (no anchor). On submit, attributes whose key matches a custom_field key are written to the new Record. ACCEPTABLE BEHAVIOUR, DO NOT FIX: 'raise_notes' has no matching custom field, so it is captured then silently dropped on create — intended (SDM update 1.9.3 rule 2), not a bug; do not add a raise_notes field or error. ACCEPTABLE BEHAVIOUR, DO NOT FIX: 'status' is not captured here and no hook runs this cut, so it stays 'Raised' permanently — intended; do not add a non-activity write path to change it. See POC1_Runtime_UI_Scope.md §7a.",
+          "attributes": [
+            { "attribute_ref": "job_no" },
+            { "attribute_ref": "contract_id" },
+            { "attribute_ref": "location" },
+            { "attribute_ref": "due_date" },
+            { "attribute_ref": "raise_notes" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_record_finding_inspection_jobs",
+          "name": "Record Finding",
+          "description": "Capture inspection findings against the Job.",
+          "sort_order": 1,
+          "attributes": [
+            { "attribute_ref": "condition_rating" },
+            { "attribute_ref": "notes" },
+            { "attribute_ref": "hazard_found" }
+          ],
+          "before_hook": null,
+          "after_hook": {
+            "_comment": "Shape only — NOT executed this cut. When hooks are staged in, this would conditionally spawn a Hazard Record. Bodies/semantics deferred (SDM 1.6/1.7).",
+            "timing": "after",
+            "commands": [
+              {
+                "condition": "<expr deferred> hazard_found = \"yes\"",
+                "action": "<deferred> create Record \"Hazard\", linked to this Job"
+              }
+            ]
+          }
+        },
+        {
+          "id": "act_close_inspection_jobs",
+          "name": "Close Inspection",
+          "description": "Mark the inspection complete.",
+          "sort_order": 2,
+          "attributes": [
+            { "attribute_ref": "completed_by" }
+          ],
+          "before_hook": null,
+          "after_hook": {
+            "_comment": "Shape only — NOT executed this cut. Would set anchor Record status = Complete once hooks are staged in.",
+            "timing": "after",
+            "commands": [
+              { "action": "<deferred> set anchor Record status = \"Complete\"" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "wf_workgroups",
+      "name": "Work Groups",
+      "description": "Manage work group records.",
+      "activities": [
+        {
+          "id": "act_create_workgroups",
+          "name": "Create Work Group",
+          "description": "Register a new work group.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "id" },
+            { "attribute_ref": "name" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "manager" },
+            { "attribute_ref": "expired_date" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_workgroups",
+          "name": "Update Work Group",
+          "description": "Update work group details.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "name" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "manager" },
+            { "attribute_ref": "expired_date" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_workgroups",
+          "name": "Delete Work Group",
+          "description": "Remove this work group.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_resources",
+      "name": "Resources",
+      "description": "Manage resource register entries.",
+      "activities": [
+        {
+          "id": "act_create_resources",
+          "name": "Create Resource",
+          "description": "Register a new resource.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "type" },
+            { "attribute_ref": "key" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "expired_date" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_resources",
+          "name": "Update Resource",
+          "description": "Update resource details.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "type" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "expired_date" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_resources",
+          "name": "Delete Resource",
+          "description": "Remove this resource from the register.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_contracts",
+      "name": "Contracts",
+      "description": "Manage customer contracts.",
+      "activities": [
+        {
+          "id": "act_create_contracts",
+          "name": "Create Contract",
+          "description": "Register a new contract.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "id" },
+            { "attribute_ref": "name" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "customer" },
+            { "attribute_ref": "start_date" },
+            { "attribute_ref": "end_date" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_contracts",
+          "name": "Update Contract",
+          "description": "Update contract details.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "name" },
+            { "attribute_ref": "description" },
+            { "attribute_ref": "customer" },
+            { "attribute_ref": "start_date" },
+            { "attribute_ref": "end_date" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_contracts",
+          "name": "Delete Contract",
+          "description": "Remove this contract.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_wg_plans",
+      "name": "Workgroup Plans",
+      "description": "Manage workgroup shift plans.",
+      "activities": [
+        {
+          "id": "act_create_wg_plans",
+          "name": "Create Plan",
+          "description": "Create a new workgroup shift plan.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "wg_id" },
+            { "attribute_ref": "shift_date" },
+            { "attribute_ref": "status" },
+            { "attribute_ref": "shift_start" },
+            { "attribute_ref": "shift_end" },
+            { "attribute_ref": "added_by" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_wg_plans",
+          "name": "Update Plan",
+          "description": "Update shift times and status.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "status" },
+            { "attribute_ref": "shift_start" },
+            { "attribute_ref": "shift_end" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_wg_plans",
+          "name": "Delete Plan",
+          "description": "Remove this workgroup plan.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_wg_resources",
+      "name": "Workgroup Resources",
+      "description": "Manage resources assigned to a workgroup plan.",
+      "activities": [
+        {
+          "id": "act_create_wg_resources",
+          "name": "Add Resource",
+          "description": "Assign a resource to a workgroup plan.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "id" },
+            { "attribute_ref": "wg_plan_id" },
+            { "attribute_ref": "res_id" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_wg_resources",
+          "name": "Remove Resource",
+          "description": "Remove this resource assignment from the plan.",
+          "sort_order": 1,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_work_orders",
+      "name": "Work Orders",
+      "description": "Manage work order records.",
+      "activities": [
+        {
+          "id": "act_create_work_orders",
+          "name": "Create Work Order",
+          "description": "Raise a new work order against a job.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "id" },
+            { "attribute_ref": "job_id" },
+            { "attribute_ref": "activity_code" },
+            { "attribute_ref": "problem_code" },
+            { "attribute_ref": "location" },
+            { "attribute_ref": "due_date" },
+            { "attribute_ref": "workgroup_id" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_update_work_orders",
+          "name": "Update Work Order",
+          "description": "Update work order details.",
+          "sort_order": 1,
+          "record_map": "UPDATE",
+          "attributes": [
+            { "attribute_ref": "status" },
+            { "attribute_ref": "start_date" },
+            { "attribute_ref": "completed_date" },
+            { "attribute_ref": "location" },
+            { "attribute_ref": "workgroup_id" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_work_orders",
+          "name": "Delete Work Order",
+          "description": "Delete this work order.",
+          "sort_order": 2,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_wo_resources",
+      "name": "WO Resources",
+      "description": "Manage resources assigned to a work order.",
+      "activities": [
+        {
+          "id": "act_create_wo_resources",
+          "name": "Add Resource",
+          "description": "Assign a resource to this work order.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "id" },
+            { "attribute_ref": "wo_id" },
+            { "attribute_ref": "res_id" },
+            { "attribute_ref": "quantity" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_wo_resources",
+          "name": "Remove Resource",
+          "description": "Remove this resource from the work order.",
+          "sort_order": 1,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    },
+    {
+      "id": "wf_wo_assets",
+      "name": "WO Assets",
+      "description": "Manage assets linked to a work order.",
+      "activities": [
+        {
+          "id": "act_create_wo_assets",
+          "name": "Link Asset",
+          "description": "Link an asset to this work order.",
+          "sort_order": 0,
+          "record_map": "CREATE",
+          "attributes": [
+            { "attribute_ref": "id" },
+            { "attribute_ref": "wo_id" },
+            { "attribute_ref": "asset_id" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        },
+        {
+          "id": "act_delete_wo_assets",
+          "name": "Unlink Asset",
+          "description": "Remove this asset link from the work order.",
+          "sort_order": 1,
+          "record_map": "DELETE",
+          "attributes": [
+            { "attribute_ref": "confirm" }
+          ],
+          "before_hook": null,
+          "after_hook": null
+        }
+      ]
+    }
+  ]
+}

@@ -286,6 +286,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
           <AttributesForm
             activity={createActivity}
             anchorRecord={null}
+            recordTypeId={typeDef.id}
             onSubmit={(captured) => {
               runActivity(createActivity, captured, null);
               setShowCreateForm(false);
@@ -352,7 +353,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                   >
                     {customFields.map(cf => {
                       const cellValue = String(record.customFields[cf.key] ?? '');
-                      const isFk = !pickerMode && !!cf.fk_record_type && cellValue !== '';
+                      const isFk = !pickerMode && cf.type === 'fk_ref' && cellValue !== '';
                       return (
                         <td
                           key={cf.key}

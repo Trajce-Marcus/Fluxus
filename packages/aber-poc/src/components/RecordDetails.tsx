@@ -19,7 +19,7 @@ export function RecordDetails({ record, typeDef, navigateTo }: Props) {
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px' }}>
         {fields.map(cf => {
           const rawValue = String(record.customFields[cf.key] ?? '');
-          const isLink = !!cf.fk_record_type && rawValue !== '';
+          const isLink = cf.type === 'fk_ref' && rawValue !== '';
           return (
             <Fragment key={cf.key}>
               <dt style={{ fontSize: 13, color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>

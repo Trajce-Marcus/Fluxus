@@ -6,12 +6,13 @@ import type { ActivityDef, RecordInstance } from '../types';
 interface Props {
   activity: ActivityDef;
   anchorRecord: RecordInstance | null;
+  recordTypeId: string;
   onSubmit: (captured: Record<string, string>) => void;
   onClose: () => void;
 }
 
-export function AttributesForm({ activity, anchorRecord, onSubmit, onClose }: Props) {
-  const { getRecordAndType } = useAppContext();
+export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
+  const { resolveDisplayLabel, resolveAttributeDisplayField } = useAppContext();
 
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -24,18 +25,19 @@ export function AttributesForm({ activity, anchorRecord, onSubmit, onClose }: Pr
     )
   );
 
-  // Display labels for FK fields — separate from the stored IDs
+  // Display labels for reference fields — separate from the stored IDs
   const [displayLabels, setDisplayLabels] = useState<Record<string, string>>(() => {
     if (activity.record_map !== 'UPDATE' || !anchorRecord) return {};
     return Object.fromEntries(
       activity.attributes
-        .filter(a => a.fk_record_type && a.fk_display_field)
+        .filter(a => a.type === 'reference')
         .map(a => {
           const rawId = String(anchorRecord.customFields[a.key] ?? '');
           if (!rawId) return [a.key, ''];
-          const data = getRecordAndType(a.fk_record_type!, rawId);
-          const label = data ? String(data.record.customFields[a.fk_display_field!] ?? rawId) : rawId;
-          return [a.key, label];
+          const fkRecordType = a.type_config?.fk_record_type;
+          if (!fkRecordType) return [a.key, rawId];
+          const fkDisplayField = resolveAttributeDisplayField(recordTypeId, a.key);
+          return [a.key, resolveDisplayLabel(fkRecordType, fkDisplayField, rawId)];
         })
     );
   });
@@ -56,7 +58,7 @@ export function AttributesForm({ activity, anchorRecord, onSubmit, onClose }: Pr
               {attr.label}
             </label>
 
-            {attr.fk_record_type ? (
+            {attr.type === 'reference' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   flex: 1,
@@ -139,15 +141,16 @@ export function AttributesForm({ activity, anchorRecord, onSubmit, onClose }: Pr
 
       {openPickerFor && (() => {
         const attr = activity.attributes.find(a => a.key === openPickerFor)!;
+        const fkRecordType = attr.type_config?.fk_record_type;
+        if (!fkRecordType) return null;
         return (
           <RecordPickerDialog
-            targetTypeId={attr.fk_record_type!}
+            targetTypeId={fkRecordType}
             onSelect={(record) => {
               setValues(v => ({ ...v, [openPickerFor]: record.id }));
-              if (attr.fk_display_field) {
-                const label = String(record.customFields[attr.fk_display_field] ?? record.id);
-                setDisplayLabels(d => ({ ...d, [openPickerFor]: label }));
-              }
+              const fkDisplayField = resolveAttributeDisplayField(recordTypeId, attr.key);
+              const label = resolveDisplayLabel(fkRecordType, fkDisplayField, record.id);
+              setDisplayLabels(d => ({ ...d, [openPickerFor]: label }));
               setOpenPickerFor(null);
             }}
             onClose={() => setOpenPickerFor(null)}

@@ -9,13 +9,9 @@ interface Props {
 }
 
 export function FkDisplay({ value, fkRecordType, fkDisplayField, asLink = false, onNavigate }: Props) {
-  const { getRecordAndType } = useAppContext();
+  const { resolveDisplayLabel } = useAppContext();
 
-  let displayValue = value;
-  if (fkDisplayField) {
-    const data = getRecordAndType(fkRecordType, value);
-    if (data) displayValue = String(data.record.customFields[fkDisplayField] ?? value);
-  }
+  const displayValue = resolveDisplayLabel(fkRecordType, fkDisplayField, value);
 
   if (asLink) {
     return (

@@ -4,9 +4,11 @@ interface Props {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  width?: number | string;
+  bodyStyle?: React.CSSProperties;
 }
 
-export function Modal({ title, onClose, children }: Props) {
+export function Modal({ title, onClose, children, width = 480, bodyStyle }: Props) {
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -30,7 +32,7 @@ export function Modal({ title, onClose, children }: Props) {
           background: '#fff',
           borderRadius: 8,
           boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-          width: 480,
+          width,
           maxWidth: '90vw',
           maxHeight: '90vh',
           display: 'flex',
@@ -59,7 +61,7 @@ export function Modal({ title, onClose, children }: Props) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: '18px', overflowY: 'auto' }}>
+        <div style={{ padding: '18px', overflowY: 'auto', ...bodyStyle }}>
           {children}
         </div>
       </div>
