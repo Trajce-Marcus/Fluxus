@@ -45,6 +45,8 @@ Additional roots may be injected per embedding point (e.g. `event` — the callb
 
 ## 4. Syntax
 
+Formal grammar: [GRAMMAR.md](GRAMMAR.md) (EBNF, precedence, lexical rules, and the ⚑-flagged micro-decisions pending sign-off).
+
 ### 4.1 Expressions
 
 ```
@@ -166,4 +168,4 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 - Delete semantics (`record_map: DELETE`, `records.x.delete`) — needs SDM-level decisions first.
 - Aggregations/grouping in queries — add when a real case demands them.
 - Multi-line script storage in the SDM JSON (string arrays vs a `scripts` section vs sidecar files) — decide at Phase 1 implementation; leaning `scripts` section referenced by id for anything longer than one line.
-- Formal grammar (EBNF) — written as Phase 1's first artefact.
+- ~~Formal grammar (EBNF)~~ — written: [GRAMMAR.md](GRAMMAR.md); its ⚑ decisions (D1–D10) await sign-off.
