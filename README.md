@@ -1,121 +1,49 @@
 # Fluxus
 
-A low-code platform monorepo. Fluxus provides tools for building, running, and extending workflow automation — WQL (Workflow Query Language) is the first package, with more to come.
+A model-first platform for digitising an organisation's data and processes.
 
-## Packages
+Most app builders treat the data model as a byproduct of each app — every app gets its own tables, connectors, and private definitions, and the organisation's knowledge fragments across them. Fluxus inverts this: the **SDM** (Structured Data Model) defines record types, workflows, and activities once; apps, pages, hooks, and integrations are all projections over that one model, scripted in one language. See [docs/VISION.md](docs/VISION.md).
 
-| Package | Description |
+## The three parts
+
+| Package | What it is |
 |---|---|
-| `@wql/types` | Shared TypeScript interfaces for domain objects, workflows, and execution |
-| `@wql/runtime` | WQL execution engine, mock context builder, and Monaco language definition |
-| `@wql/builder` | React/Vite workflow builder application |
+| [`@fluxus/sdm`](packages/sdm/) | The SDM runtime: record types, workflows, activities, activity history, and the record workbench UI. Currently carries a sample asset-maintenance model ("Aber"). |
+| [`@fluxus/page-builder`](packages/page-builder/) | The page/app builder: layout editor, ComponentContainer wiring layer, reusable app components. |
+| [`@fluxus/dsl`](packages/dsl/) | The scripting language: one DSL for hooks, attribute datasources, page bindings, and headless workflows. |
 
 ## Documentation
 
+- [Vision](docs/VISION.md) — the model-first thesis: why Fluxus exists
+- [Architecture](docs/ARCHITECTURE.md) — how the three parts connect
+- [Glossary](docs/GLOSSARY.md) — canonical definitions of platform terms
+- [Roadmap](docs/ROADMAP.md) — cross-package phases and their interlocks
 - [Conventions](docs/conventions.md) — tree shaking, module authoring rules, review checklist
+
+Each package carries its own docs: `README.md` (what/status/run), `docs/SPEC.md` (living spec), `docs/phases/` (per-phase build summaries).
 
 ## Getting started
 
-### Prerequisites
-- Node.js 18+
-- npm 8+ (workspaces support)
-
-### Install
+Prerequisites: Node.js 18+, npm 8+ (workspaces).
 
 ```bash
 npm install
+
+npm run dev:sdm            # SDM record workbench → http://localhost:5173
+npm run dev:page-builder   # Page builder shell   → http://localhost:5173
 ```
 
-### Run the builder app
-
-```bash
-npm run dev
-```
-
-Then open http://localhost:5173
-
-### Build for production
-
-```bash
-npm run build
-```
+Both apps run entirely in the browser (localStorage persistence) — no external services.
 
 ## Project structure
 
 ```
 fluxus/
-├── package.json                  # Root workspace config
+├── package.json           # Root workspace config
+├── CLAUDE.md              # Working conventions (docs-with-code rule, package skeleton)
+├── docs/                  # Platform-level docs (cross-package concerns only)
 └── packages/
-    └── wql/                      # WQL — Workflow Query Language
-        ├── wql-types/            # @wql/types
-        │   └── src/index.ts      # All shared TypeScript types
-        ├── wql-runtime/          # @wql/runtime
-        │   └── src/
-        │       ├── executor.ts       # WQL execution engine
-        │       ├── mockContext.ts    # Mock wo/wf context builder
-        │       ├── wqlLanguage.ts    # Monaco language + autocomplete
-        │       └── index.ts
-        └── wql-builder/          # @wql/builder — React app
-            └── src/
-                ├── components/
-                │   ├── layout/       # TopBar
-                │   ├── editor/       # WQLEditor, EditorArea, StatusBar
-                │   ├── sidebar/      # WorkflowList, ObjectModelTree, Sidebar
-                │   └── output/       # ContextPanel, ExecutionLog, TriggerConfig, OutputPanel
-                ├── pages/
-                │   └── BuilderPage.tsx
-                ├── store/
-                │   └── workflowStore.ts   # Zustand store
-                ├── App.tsx
-                └── main.tsx
-```
-
-## WQL — Workflow Query Language
-
-WQL is a sandboxed JavaScript DSL for authoring field-service workflows. Each workflow receives two injected context objects:
-
-### `wo` — the work order that triggered the workflow
-
-```js
-wo.woId           // string
-wo.status         // string
-wo.dueDate        // Date
-wo.activityType   // string
-wo.assignedTo     // User | null
-wo.asset          // Asset | null
-wo.attributes     // Attribute[] with .find() and .filter()
-wo.job            // Job — parent job
-wo.job.jobNo      // string
-wo.job.attributes // mutable key-value map
-wo.job.workOrders // WO[]
-wo.job.project    // Project with .users[]
-```
-
-### `wf` — workflow context and built-in functions
-
-```js
-wf.now            // Date — current execution time
-wf.trigger        // string — event that fired this workflow
-wf.owner          // User — workflow owner
-wf.log(msg)       // write to execution log
-wf.error(msg)     // log an error
-wf.notify(user)   // send notification to user
-```
-
-### Attribute value helpers
-
-```js
-attribute.value.toInt()   // parse as integer
-attribute.value.toDate()  // parse as Date
-attribute.value.toBool()  // parse as boolean
-```
-
-### Example
-
-```js
-if (wo.dueDate < (wf.now - 3)) {
-  wo.job.attributes["KPI missed"] = true;
-  wf.log("KPI missed on job " + wo.job.jobNo);
-  wf.notify(wf.owner);
-}
+    ├── sdm/               # @fluxus/sdm
+    ├── page-builder/      # @fluxus/page-builder
+    └── dsl/               # @fluxus/dsl
 ```
