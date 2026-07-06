@@ -162,10 +162,11 @@ If an SDM field name shadows a root name, the field wins inside the chain and th
 | `.where(expr)` | filter; expr evaluated per record in bare-field scope |
 | `.orderBy(field [asc\|desc], ...)` | sort; default `asc` |
 | `.select(field, alias: expr, ...)` | project; any number of entries; aliases may be full expressions incl. FK paths (`group: work_group.name`) |
+| `.values(field)` | project to a scalar list — for subquery membership and scalar datasources ⚑ D10 (resolved: in) |
 | `.first` | first record or null (terminal property) |
 | `.count` | number of records (terminal property) |
 
-`select` always yields a list of records (objects), preserving `key_field`/`columns` behaviour in `List` attributes. A scalar-list projection (`.values(field)`) is deferred until a real case needs it. ⚑ D10 Aggregations (`sum`, grouping) are deferred (SPEC §12).
+`select` always yields a list of records (objects), preserving `key_field`/`columns` behaviour in `List` attributes; `.values` is the scalar escape. Aggregations (`sum`, grouping) are deferred (SPEC §12).
 
 ### 4.3 Examples
 
@@ -183,6 +184,27 @@ records.jobs
 records.assets.where(asset_no = attrs.asset).first
 records.work_orders.where(status = 'Open').count
 ```
+
+### 4.4 Relationships — navigations, not JOIN
+
+There is deliberately **no JOIN construct**. Relationships live in the SDM as FKs, so every join use-case is a navigation:
+
+```
+// N:1 — forward FK dereference, in filters and projections
+records.work_orders.where(work_group.region = 'North')
+records.work_orders.select(id, group: work_group.name)
+
+// 1:N — reverse-FK navigation: incoming FKs appear as list properties,
+// named by the source type (the SDM's reverse-FK index powers this)   ⚑ D12
+ctx.record.wo_resources
+for each line in ctx.record.wo_resources { ... }
+
+// M:N — membership via a join type and a scalar subquery
+records.assets.where(id in
+  records.wo_assets.where(work_order_id = ctx.record.id).values(asset_id))
+```
+
+If two FKs from one source type point at the same target, reverse navigation needs disambiguation — `wo_resources(by: alt_wo_id)` — rare, and the validator names the options. Relating types on non-FK fields is expressible via `in` + subquery, but the first-class answer is: **if two types need relating, put the FK in the SDM** — relationships belong in the model, not ad-hoc inside queries.
 
 ---
 
@@ -216,6 +238,26 @@ function-decl = "function" identifier "(" [ identifier { "," identifier } ] ")" 
 - **No globals, no cross-run persistence** — variables exist for one execution; durable state lives in records.
 - **Roots are not shadowable**: `let ctx = ...` is a validation error, as is redeclaring a name in the same block or using a variable before declaration (all caught at config-save time).
 - **The expressions tier is variable-free** by design: a show condition or datasource is a single expression. When one needs intermediates, promote it to a named function — complexity graduates to the reusable tier rather than accumulating in config strings.
+
+### Mutations
+
+```
+// single record — target is a record or an id
+records.work_orders.update(ctx.record, { status: 'Scheduled', scheduled_date: attrs.date })
+
+let job = records.jobs.where(code = attrs.job_code).first
+records.jobs.update(job, { status: 'Assigned' })
+
+// create
+records.wo_resources.create({ work_order_id: ctx.record.id, resource_id: r.id, qty: 1 })
+
+// bulk, SQL-set-based — chain terminal   ⚑ D13
+records.work_orders
+  .where(status = 'Open' and due_date < now())
+  .update({ status: 'Overdue' })
+```
+
+All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. Delete is deferred pending SDM delete semantics.
 
 ### Example (after hook)
 
@@ -277,5 +319,7 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D7 | Keyword/field collisions | Open (rec: yes) | Keywords reserved as bare identifiers but valid after `.`. |
 | D8 | Bare-field shadowing | Open (rec: yes) | Fields shadow roots inside query chains; validator warns on SDM fields named `ctx`/`attrs`/`records`/`services`. |
 | D9 | Statement termination | **Resolved** | Newline-terminated; **no semicolons** (`;` is a syntax error); continuation on trailing operator/comma/open bracket or leading `.`. |
-| D10 | Scalar projection | Open (rec: defer) | `select` always yields records; add `.values(field)` for scalar lists when needed. |
+| D10 | Scalar projection | **Resolved** | `.values(field)` included in Phase 1 — required for M:N subquery membership (§4.4), also serves scalar datasources. |
 | D11 | Variable semantics | Open (rec: snapshot) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. |
+| D12 | Reverse-FK navigation | Open (rec: yes) | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
+| D13 | Bulk update | Open (rec: yes) | `.where(...).update({...})` chain terminal — SQL set-based habit; transactional, row-quota'd, after hooks only (Phase 2). |
