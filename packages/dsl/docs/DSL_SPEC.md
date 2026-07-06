@@ -79,7 +79,7 @@ records.resources
 
 ```
 if attrs.wo_resources.count = 0 {
-  fail("Select at least one resource")
+  fail('Select at least one resource')
 }
 
 for each r in attrs.wo_resources {
@@ -88,13 +88,13 @@ for each r in attrs.wo_resources {
     resource_id: r.id,
     qty: 1
   })
-  queue services.notify.sms(r.contact, "Assigned to " + ctx.record.code)
+  queue services.notify.sms(r.contact, 'Assigned to ' + ctx.record.code)
 }
 ```
 
 - `let x = ...`, `if/else`, `for each x in <list>`. No `while` initially — scripts provably terminate.
-- `fail("message")` — abort with a user-facing message (see hook semantics, §6).
-- `warn("message")` — non-blocking message to the invoking surface.
+- `fail('message')` — abort with a user-facing message (see hook semantics, §6).
+- `warn('message')` — non-blocking message to the invoking surface.
 - `queue <service call>` — fire-and-forget; see §7. The validator rejects any use of a `queue`d call's return value.
 - Mutations: `records.<type>.create({...})`, `records.<type>.update(<id or record>, {...})`. (Delete deferred until the SDM defines its delete semantics.)
 
@@ -103,7 +103,7 @@ for each r in attrs.wo_resources {
 The `List` attribute type (replaces separate valueList / record-lookup variants): its **datasource is any expression that yields a list** —
 
 ```
-["Sydney", "Melbourne", "Brisbane"]                            ← inline literal
+['Sydney', 'Melbourne', 'Brisbane']                            ← inline literal
 records.resources.where(rest_type = 'Labour').orderBy(name)    ← query
 services.geo.suburbs(attrs.city)                                ← service-backed
 ```
@@ -116,7 +116,7 @@ Storage is unchanged from the SDM runtime: captured attributes persist to activi
 
 ## 6. Hooks
 
-**Before hook = gate.** Runs on activity submission, before anything persists. May read anything (`ctx`, `attrs`, any `records` query, read-only service calls). May `fail("msg")` — the activity is rejected, nothing persists — or `warn("msg")`. **Validate only**: before hooks never modify `attrs` or records. Derived/prepped values are the after hook's job, which keeps activity history a truthful record of user input.
+**Before hook = gate.** Runs on activity submission, before anything persists. May read anything (`ctx`, `attrs`, any `records` query, read-only service calls). May `fail('msg')` — the activity is rejected, nothing persists — or `warn('msg')`. **Validate only**: before hooks never modify `attrs` or records. Derived/prepped values are the after hook's job, which keeps activity history a truthful record of user input.
 
 **After hook = effects.** Runs after the activity persists. Contains the data logic: loops, conditional mutations, service calls, invoice-style derivations.
 
