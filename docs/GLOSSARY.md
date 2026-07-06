@@ -4,7 +4,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 
 ## Model
 
-- **SDM (Structured Data Model)** — the single project-scoped definition of record types, attributes, workflows, and activities. The canonical source of truth; everything else is a projection over it.
+- **SDM (Shared Data Model)** — the single project-scoped definition of record types, attributes, workflows, and activities. The canonical source of truth; everything else is a projection over it.
 - **Record type** — a collection definition (e.g. `rt_assets`): custom fields, FK refs, and a reference to its workflow. Named plural — it names a collection.
 - **Record** — one instance of a record type: `id`, `typeRef`, custom field values, and its activity history.
 - **Custom field** — a typed field on a record type (`text`, `int`, `bool`, `date`, `fk_ref`, …) with optional constraints (`required`, `unique`, `immutable`, `indexed`).

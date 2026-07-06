@@ -8,7 +8,7 @@ That is the fragmentation: the knowledge of what things **are** and how they **b
 
 ## The answer: model-first
 
-Fluxus inverts the relationship. The **SDM** (Structured Data Model) defines the organisation's record types, relationships, workflows, and activities once, at the project level. Everything else — record UIs, page-builder apps, hooks, headless integrations — is a *projection over that one model*, scripted in one language.
+Fluxus inverts the relationship. The **SDM** (Shared Data Model) defines the organisation's record types, relationships, workflows, and activities once, at the project level. Everything else — record UIs, page-builder apps, hooks, headless integrations — is a *projection over that one model*, scripted in one language.
 
 Nothing can fragment because nothing ever leaves the model:
 

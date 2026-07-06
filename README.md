@@ -2,7 +2,7 @@
 
 A model-first platform for digitising an organisation's data and processes.
 
-Most app builders treat the data model as a byproduct of each app — every app gets its own tables, connectors, and private definitions, and the organisation's knowledge fragments across them. Fluxus inverts this: the **SDM** (Structured Data Model) defines record types, workflows, and activities once; apps, pages, hooks, and integrations are all projections over that one model, scripted in one language. See [docs/VISION.md](docs/VISION.md).
+Most app builders treat the data model as a byproduct of each app — every app gets its own tables, connectors, and private definitions, and the organisation's knowledge fragments across them. Fluxus inverts this: the **SDM** (Shared Data Model) defines record types, workflows, and activities once; apps, pages, hooks, and integrations are all projections over that one model, scripted in one language. See [docs/VISION.md](docs/VISION.md).
 
 ## The three parts
 
