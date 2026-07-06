@@ -144,6 +144,21 @@ function calcInvoiceTotal(resources, rate) {
 
 Named functions declare explicit parameters and still receive the four roots implicitly. Creation is open to users (SQL proc/function users adapt readily); constraints that keep openness from decaying into sprawl — mandatory description, flat namespace, schema validation, possibly versioning/permissions — are deliberate enablers, to be specified when Phase 2 lands.
 
+Functions live in a top-level `functions` collection in the SDM, sibling of `attributes` / `recordTypes` / `workflows`:
+
+```json
+{
+  "id": "fn_assignable_resources",
+  "name": "assignableResources",
+  "description": "Active resources assignable to a WO …",  // mandatory
+  "body": ["function assignableResources(wo) {", "  …", "}"]
+}
+```
+
+`body` is an array of lines (JSON has no multi-line strings; arrays keep the SDM readable and diffs line-accurate). Scripts and config reference functions by `name`; `id` exists for stable references across renames. Bodies are parsed and schema-validated at config-save time like every other script. This collection doubles as the answer to multi-line script storage: hooks beyond a line or two either use the same array-of-lines form inline or delegate to a named function.
+
+The division of labour with the expressions tier: **expressions ask, functions think.** Show conditions and datasources are single expressions; the moment one needs intermediate variables, it is promoted to a named function and the config becomes a one-line call.
+
 ## 9. Validation and safety
 
 - **Schema-aware static validation at config-save time** — the defining feature. Every script parses and checks against the SDM: unknown record types/fields, type mismatches in comparisons, `queue` return-value misuse, and (once manifests carry shape contracts) query projections checked against page-builder port shapes. Errors surface when the config is saved, not when a user runs the activity.
@@ -167,5 +182,5 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 - Named-function governance constraints (naming rules, permissions, versioning) — with Phase 2.
 - Delete semantics (`record_map: DELETE`, `records.x.delete`) — needs SDM-level decisions first.
 - Aggregations/grouping in queries — add when a real case demands them.
-- Multi-line script storage in the SDM JSON (string arrays vs a `scripts` section vs sidecar files) — decide at Phase 1 implementation; leaning `scripts` section referenced by id for anything longer than one line.
+- ~~Multi-line script storage in the SDM JSON~~ — settled: the `functions` collection with array-of-lines bodies (§8); inline hooks use the same array form.
 - ~~Formal grammar (EBNF)~~ — written: [GRAMMAR.md](GRAMMAR.md); its ⚑ decisions (D1–D10) await sign-off.
