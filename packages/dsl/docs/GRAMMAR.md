@@ -95,7 +95,7 @@ object-entry   = ( identifier | string ) ":" expression ;
 literal        = number | string | "true" | "false" | "null" ;
 ```
 
-The right side of `in` accepts a list value (`['a', 'b']`, a variable, a query result) **or** a SQL-style parenthesised list: `rest_type in ('a', 'b')`. (`x in (expr)` with one element is read as a one-element list.)
+The right side of `in` accepts a list value (`['a', 'b']`, a variable, a query result) **or** a SQL-style parenthesised list: `rest_type in ('a', 'b')`. A single-element paren (`x in (expr)`) evaluates the expression: if it yields a list (e.g. a parenthesised subquery, the SQL habit), membership is in that list; otherwise it's treated as a one-element list.
 
 ### 3.2 Precedence (low → high)
 
@@ -322,14 +322,14 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D1 | String escaping | **Resolved** | Single quotes only; escape by doubling, SQL style: `'O''Brien'`. |
 | D2 | Date literals | **Resolved** | No literal syntax; `date(str)` / `now()` builtins plus method extensions (`.addDays(n)`, `.addMonths(n)`, `.addYears(n)`). |
 | D3 | Comments | **Resolved** | `//` only — one comment form. |
-| D4 | `like` operator | Open (rec: yes) | Include, with `%` / `_` wildcards, case-insensitive. |
-| D5 | Null comparison semantics | Open (rec: yes) | JS-style total comparisons: `x = null` works, no three-valued logic; `is null` accepted as alias. The deliberate divergence from SQL. |
-| D6 | Conditional expression | Open (rec: yes) | `iif(cond, a, b)` builtin. No `? :`; `case` only if demanded. |
-| D7 | Keyword/field collisions | Open (rec: yes) | Keywords reserved as bare identifiers but valid after `.`. |
-| D8 | Bare-field shadowing | Open (rec: yes) | Fields shadow roots inside query chains; validator warns on SDM fields named `ctx`/`attrs`/`records`/`services`. |
+| D4 | `like` operator | **Resolved** | Included, `%` / `_` wildcards, case-insensitive. |
+| D5 | Null comparison semantics | **Resolved** | The JS way (user): total comparisons, `x = null` works, no three-valued logic; `is null` accepted as alias. The deliberate divergence from SQL. |
+| D6 | Conditional expression | **Resolved** | `iif(cond, a, b)` builtin. No `? :`; `case` only if demanded. |
+| D7 | Keyword/field collisions | **Resolved** | Keywords reserved as bare identifiers but valid after `.`. |
+| D8 | Bare-field shadowing | **Resolved** | Fields shadow roots inside query chains; validator warns on SDM fields named `ctx`/`attrs`/`records`/`services`. |
 | D9 | Statement termination | **Resolved** | Newline-terminated; **no semicolons** (`;` is a syntax error); continuation on trailing operator/comma/open bracket or leading `.`. |
 | D10 | Scalar projection | **Resolved** | `.values(field)` included in Phase 1 — required for M:N subquery membership (§4.4), also serves scalar datasources. |
-| D11 | Variable semantics | Open (rec: snapshot) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. |
-| D12 | Reverse-FK navigation | Open (rec: yes) | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
-| D13 | Bulk update | Open (rec: yes) | `.where(...).update({...})` chain terminal — SQL set-based habit; transactional, row-quota'd, after hooks only (Phase 2). **A `where` is mandatory** — update without one is a validation error; "all records" must be explicit via `.where(true)` (user-required). |
-| D14 | Mutation shape | Open (rec: instance method) | `r.update({fields})` on the record itself (user-proposed); records are read-only values (`r.field = x` errors, pointing to `.update`); `create` collection-level; projections not updatable. Coverage of all cases to be confirmed during Phase 2. |
+| D11 | Variable semantics | Open (building per rec) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. Zero parser impact; revisitable until Phase 2 lands. |
+| D12 | Reverse-FK navigation | **Resolved** | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
+| D13 | Bulk update | **Resolved** | `.where(...).update({...})` chain terminal; transactional, row-quota'd, after hooks only (Phase 2). **A `where` is mandatory** — update without one is a validation error; "all records" must be explicit via `.where(true)`. |
+| D14 | Mutation shape | **Resolved** | `r.update({fields})` on the record itself (user-proposed); records are read-only values (`r.field = x` errors, pointing to `.update`); `create` collection-level; projections not updatable. Case coverage confirmed during Phase 2 build. |

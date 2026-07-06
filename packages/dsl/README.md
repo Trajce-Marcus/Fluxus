@@ -2,7 +2,7 @@
 
 The Fluxus scripting language (working name **FluxScript**): one DSL for attribute show conditions and datasources, before/after hooks, page-builder bindings, and headless workflows. A JS/SQL blend designed to be as learnable as SQL — no lambdas, no visible async, null-safe, case-insensitive, statically validated against the SDM at config-save time.
 
-**Status:** spec complete, implementation not started. Phase 1 (expressions + queries + validator) is next — see the [ROADMAP](../../docs/ROADMAP.md).
+**Status:** Phase 1 in progress. Grammar signed off (GRAMMAR.md D1–D14; D11 provisional). Lexer and expression/query parser implemented and tested (`npm test`). Next: evaluator with the four injected roots, then the schema-aware validator, then wiring into the sdm workbench.
 
 ```
 records.resources

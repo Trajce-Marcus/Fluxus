@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
+  "sideEffects": false,
   "scripts": {
     "build": "tsc",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^3.0.0"
   }
 }
