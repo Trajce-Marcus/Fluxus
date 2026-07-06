@@ -155,7 +155,7 @@ Functions live in a top-level `functions` collection in the SDM, sibling of `att
 }
 ```
 
-`body` is an array of lines (JSON has no multi-line strings; arrays keep the SDM readable and diffs line-accurate). Scripts and config reference functions by `name`; `id` exists for stable references across renames. Bodies are parsed and schema-validated at config-save time like every other script. This collection doubles as the answer to multi-line script storage: hooks beyond a line or two either use the same array-of-lines form inline or delegate to a named function.
+Canonically `body` is a **single string**; the JSON serialization also accepts an array of lines (joined on load) as a hand-editing convenience while the SDM is still edited as a raw file. The distinction is invisible above the loader: authoring happens in a code editor UI (Monaco, language id `fluxscript`), and once the SDM moves behind the backend the body is simply a text column. Scripts and config reference functions by `name`; `id` exists for stable references across renames. Bodies are parsed and schema-validated at config-save time like every other script. This collection is also the answer to multi-line script storage: hooks beyond a line or two use the same string/array-of-lines form inline or delegate to a named function.
 
 The division of labour with the expressions tier: **expressions ask, functions think.** Show conditions and datasources are single expressions; the moment one needs intermediate variables, it is promoted to a named function and the config becomes a one-line call.
 
