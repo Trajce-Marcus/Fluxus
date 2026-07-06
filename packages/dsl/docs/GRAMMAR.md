@@ -264,6 +264,7 @@ records.work_orders
 
 - **Records are read-only values**: `r.status = 'Overdue'` is a validation error whose message points to `r.update({ status: 'Overdue' })`. No silent-local vs persisted-write confusion can exist.
 - **Projected rows are not records**: results of `.select(...)` carry no identity; `.update()` on them is a validation error.
+- **Bulk update requires a `where`**: `records.assets.update({...})` with no preceding `.where(...)` is a validation error (SQL's UPDATE-without-WHERE disaster, made impossible). Updating genuinely every record must be explicit: `.where(true).update({...})`. The same rule will apply to bulk delete when delete semantics arrive.
 - Update-by-raw-id is `records.jobs.where(id = x).first.update({...})`; a `.get(id)` sugar is deferred until that chafes.
 - All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. Delete is deferred pending SDM delete semantics.
 
@@ -330,5 +331,5 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D10 | Scalar projection | **Resolved** | `.values(field)` included in Phase 1 — required for M:N subquery membership (§4.4), also serves scalar datasources. |
 | D11 | Variable semantics | Open (rec: snapshot) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. |
 | D12 | Reverse-FK navigation | Open (rec: yes) | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
-| D13 | Bulk update | Open (rec: yes) | `.where(...).update({...})` chain terminal — SQL set-based habit; transactional, row-quota'd, after hooks only (Phase 2). |
+| D13 | Bulk update | Open (rec: yes) | `.where(...).update({...})` chain terminal — SQL set-based habit; transactional, row-quota'd, after hooks only (Phase 2). **A `where` is mandatory** — update without one is a validation error; "all records" must be explicit via `.where(true)` (user-required). |
 | D14 | Mutation shape | Open (rec: instance method) | `r.update({fields})` on the record itself (user-proposed); records are read-only values (`r.field = x` errors, pointing to `.update`); `create` collection-level; projections not updatable. Coverage of all cases to be confirmed during Phase 2. |
