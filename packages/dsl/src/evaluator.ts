@@ -30,7 +30,7 @@ class RecordsRoot {
   constructor(readonly host: RecordsHost) {}
 }
 
-const CHAIN_METHODS = new Set(['where', 'orderby', 'select', 'values']);
+const CHAIN_METHODS = new Set(['where', 'orderby', 'select', 'values', 'top']);
 const DATE_METHODS = new Set(['adddays', 'addmonths', 'addyears']);
 
 function isRecord(value: unknown): value is DslRecord {
@@ -535,6 +535,14 @@ class Evaluator {
       case 'values': {
         if (args.length !== 1) throw new FluxRuntimeError('values() takes one field', pos);
         return list.map((item) => unwrap(this.eval(args[0].value, this.itemScope(item, outer))));
+      }
+      case 'top': {
+        if (args.length !== 1) throw new FluxRuntimeError('top() takes one number', pos);
+        const n = this.eval(args[0].value, outer);
+        if (typeof n !== 'number' || n < 0) {
+          throw new FluxRuntimeError(`top() needs a non-negative number, got ${describe(n)}`, pos);
+        }
+        return list.slice(0, Math.floor(n));
       }
       default:
         throw new FluxRuntimeError(`Unknown chain method '${method}'`, pos);

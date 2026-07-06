@@ -197,6 +197,12 @@ describe('evaluator — query chains', () => {
     expect(run('records.resources.where(true).count')).toBe(4);
   });
 
+  it('top(n) caps the result set', () => {
+    expect(run('records.resources.orderBy(name).top(2).values(name)')).toEqual(['alice', 'Bob']);
+    expect(run('records.resources.top(0).count')).toBe(0);
+    expect(() => run("records.resources.top('lots')")).toThrowError(/non-negative number/);
+  });
+
   it('where must produce a boolean', () => {
     expect(() => run('records.resources.where(rate)')).toThrowError(/Expected true\/false/);
   });

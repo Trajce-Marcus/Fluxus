@@ -162,6 +162,7 @@ If an SDM field name shadows a root name, the field wins inside the chain and th
 | `.where(expr)` | filter; expr evaluated per record in bare-field scope |
 | `.orderBy(field [asc\|desc], ...)` | sort; default `asc` |
 | `.select(field, alias: expr, ...)` | project; any number of entries; aliases may be full expressions incl. FK paths (`group: work_group.name`) |
+| `.top(n)` | cap the result set (after any `orderBy`) — datasources should always bound what they return |
 | `.values(field)` | project to a scalar list — for subquery membership and scalar datasources ⚑ D10 (resolved: in) |
 | `.first` | first record or null (terminal property) |
 | `.count` | number of records (terminal property) |

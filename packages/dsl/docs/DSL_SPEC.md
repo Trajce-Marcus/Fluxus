@@ -164,6 +164,15 @@ The division of labour with the expressions tier: **expressions ask, functions t
 - **Schema-aware static validation at config-save time** — the defining feature. Every script parses and checks against the SDM: unknown record types/fields, type mismatches in comparisons, `queue` return-value misuse, and (once manifests carry shape contracts) query projections checked against page-builder port shapes. Errors surface when the config is saved, not when a user runs the activity.
 - **Runaway protection from day one**: max loop iterations, max rows per query, execution timeout — quotas enforced by the interpreter.
 
+### Scale strategy (large result sets)
+
+Fetch-all-then-filter does not survive production data volumes. The measures, layered:
+
+1. **Quotas are the fuse, not the fix** — a query over the row cap fails fast with a clear error rather than silently grinding.
+2. **`.top(n)` in the chain set** — scripts can and should bound their result sets; datasources feeding pickers should always end in a `top`.
+3. **Query pushdown is the designed fix**: because chains are lambda-free AST, `where/orderBy/select/top/count/first` are statically compilable to SQL. Internally, chains become a *query plan* the host executes — the in-memory host by filtering, the Postgres host by SQL with indexes (the `indexed` custom-field flag exists for this), so `.count` is `COUNT(*)` and `.first` is `LIMIT 1` at any scale. FK derefs in projections (an N+1 trap in naive execution) compile to joins. Translation caveats: JS-way nulls map to `IS NULL` forms; case-insensitive comparison maps to collation/`ILIKE`. The semantics test suite referees both hosts — identical behaviour or the pushdown is wrong.
+4. **Today's eager materialize-then-filter is a POC simplification** behind the `RecordsHost` seam; the plan-based refactor changes no language surface and no scripts.
+
 ## 10. Implementation
 
 Own grammar, hand-rolled or Chevrotain-based parser, **tree-walking interpreter in TypeScript** — one implementation running in the browser (datasources, show conditions, page bindings, POC hooks) and on the server (hooks, headless) once the backend lands. All host functions are async under the hood; the interpreter awaits internally so the language surface stays synchronous.
