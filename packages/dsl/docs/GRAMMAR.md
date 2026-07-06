@@ -201,6 +201,13 @@ function-decl = "function" identifier "(" [ identifier { "," identifier } ] ")" 
 - No `while` — scripts provably terminate; interpreter quotas cap `for each` regardless.
 - `fail`/`warn` are builtin functions, not keywords.
 
+### Variables and scope
+
+- `let` declares a variable, **block-scoped** to its enclosing `{ }` (or the whole script at top level). `for each x in ...` binds `x` for its block. Reassignment is `x = expr` — legal only in statement position, which is what keeps `=` unambiguous as comparison inside expressions.
+- **No globals, no cross-run persistence** — variables exist for one execution; durable state lives in records.
+- **Roots are not shadowable**: `let ctx = ...` is a validation error, as is redeclaring a name in the same block or using a variable before declaration (all caught at config-save time).
+- **The expressions tier is variable-free** by design: a show condition or datasource is a single expression. When one needs intermediates, promote it to a named function — complexity graduates to the reusable tier rather than accumulating in config strings.
+
 ### Example (after hook)
 
 ```
