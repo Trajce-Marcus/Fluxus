@@ -96,7 +96,7 @@ for each r in attrs.wo_resources {
 - `fail('message')` — abort with a user-facing message (see hook semantics, §6).
 - `warn('message')` — non-blocking message to the invoking surface.
 - `queue <service call>` — fire-and-forget; see §7. The validator rejects any use of a `queue`d call's return value.
-- Mutations: `records.<type>.create({...})`, `records.<type>.update(<id or record>, {...})`. (Delete deferred until the SDM defines its delete semantics.)
+- Mutations: `r.update({...})` on the record itself; `records.<type>.create({...})` at collection level; bulk `.where(...).update({...})` as a chain terminal. Records are read-only values — field assignment errors, pointing to `.update`. (Delete deferred until the SDM defines its delete semantics; see GRAMMAR §5 D13/D14.)
 
 ## 5. Attributes and datasources
 

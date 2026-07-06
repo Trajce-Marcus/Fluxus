@@ -239,16 +239,21 @@ function-decl = "function" identifier "(" [ identifier { "," identifier } ] ")" 
 - **Roots are not shadowable**: `let ctx = ...` is a validation error, as is redeclaring a name in the same block or using a variable before declaration (all caught at config-save time).
 - **The expressions tier is variable-free** by design: a show condition or datasource is a single expression. When one needs intermediates, promote it to a named function — complexity graduates to the reusable tier rather than accumulating in config strings.
 
-### Mutations
+### Mutations   ⚑ D14
+
+The rule: **mutations live where their target lives** — instance, collection, or set.
 
 ```
-// single record — target is a record or an id
-records.work_orders.update(ctx.record, { status: 'Scheduled', scheduled_date: attrs.date })
+// single record — method on the record itself
+ctx.record.update({ status: 'Scheduled', scheduled_date: attrs.date })
 
 let job = records.jobs.where(code = attrs.job_code).first
-records.jobs.update(job, { status: 'Assigned' })
+job.update({ status: 'Assigned' })
 
-// create
+// works on any record value, incl. FK-deref targets
+ctx.record.work_group.update({ last_assigned: now() })
+
+// create — collection level (no instance exists yet)
 records.wo_resources.create({ work_order_id: ctx.record.id, resource_id: r.id, qty: 1 })
 
 // bulk, SQL-set-based — chain terminal   ⚑ D13
@@ -257,7 +262,10 @@ records.work_orders
   .update({ status: 'Overdue' })
 ```
 
-All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. Delete is deferred pending SDM delete semantics.
+- **Records are read-only values**: `r.status = 'Overdue'` is a validation error whose message points to `r.update({ status: 'Overdue' })`. No silent-local vs persisted-write confusion can exist.
+- **Projected rows are not records**: results of `.select(...)` carry no identity; `.update()` on them is a validation error.
+- Update-by-raw-id is `records.jobs.where(id = x).first.update({...})`; a `.get(id)` sugar is deferred until that chafes.
+- All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. Delete is deferred pending SDM delete semantics.
 
 ### Example (after hook)
 
@@ -323,3 +331,4 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D11 | Variable semantics | Open (rec: snapshot) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. |
 | D12 | Reverse-FK navigation | Open (rec: yes) | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
 | D13 | Bulk update | Open (rec: yes) | `.where(...).update({...})` chain terminal — SQL set-based habit; transactional, row-quota'd, after hooks only (Phase 2). |
+| D14 | Mutation shape | Open (rec: instance method) | `r.update({fields})` on the record itself (user-proposed); records are read-only values (`r.field = x` errors, pointing to `.update`); `create` collection-level; projections not updatable. Coverage of all cases to be confirmed during Phase 2. |
