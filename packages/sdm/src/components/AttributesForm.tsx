@@ -43,6 +43,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   });
 
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // show_condition (FluxScript) decides which attributes are presented.
   // Evaluation errors leave the attribute visible — a broken condition should
@@ -67,7 +68,13 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     e.preventDefault();
     // Hidden attributes are not part of the submission
     const visibleKeys = new Set(visibleAttributes.map(a => a.key));
-    onSubmit(Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k))));
+    try {
+      onSubmit(Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k))));
+    } catch (err) {
+      // Constraint violations (required/unique/immutable) surface here; the
+      // modal stays open so the user can correct and resubmit.
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (
@@ -151,6 +158,20 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
             )}
           </div>
         ))}
+
+        {submitError && (
+          <div style={{
+            marginBottom: 10,
+            padding: '8px 12px',
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 4,
+            color: '#b91c1c',
+            fontSize: 13,
+          }}>
+            {submitError}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <button
