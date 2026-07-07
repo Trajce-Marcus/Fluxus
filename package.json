@@ -5,6 +5,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run dev --workspace=@fluxus/sdm",
     "dev:sdm": "npm run dev --workspace=@fluxus/sdm",
     "dev:page-builder": "npm run dev --workspace=@fluxus/page-builder",
     "build:sdm": "npm run build --workspace=@fluxus/sdm",
