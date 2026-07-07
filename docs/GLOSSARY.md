@@ -4,7 +4,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 
 ## Model
 
-- **SDM (Shared Data Model)** — the single project-scoped definition of record types, attributes, workflows, and activities. The canonical source of truth; everything else is a projection over it.
+- **SDM (Shared Data Model)** — the single definition of record types, attributes, workflows, and activities; the platform's unit of scope (records, scripts, and the DSL all bind to one SDM). The canonical source of truth; everything else is a projection over it.
 - **Record type** — a collection definition (e.g. `rt_assets`): custom fields, FK refs, and a reference to its workflow. Named plural — it names a collection.
 - **Record** — one instance of a record type: `id`, `typeRef`, custom field values, and its activity history.
 - **Custom field** — a typed field on a record type (`text`, `int`, `bool`, `date`, `fk_ref`, …) with optional constraints (`required`, `unique`, `immutable`, `indexed`).
@@ -21,7 +21,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **Datasource** — any DSL expression evaluating to a list; powers `List` attributes and page bindings. May be an inline literal, a `records` query, or a service call.
 - **Show condition** — DSL expression deciding whether an attribute is presented (UI) or accepted (headless).
 - **`queue`** — keyword marking a service call as fire-and-forget; dispatched only if the surrounding transaction commits (outbox pattern).
-- **Scope-blind** — scripts never name org/operation/project; scope is injected. Locked invariant.
+- **Scope-blind** — scripts never name their org, repo, or SDM; scope is injected. Locked invariant.
 - **Schema-aware validation** — every script checked against the SDM at config-save time (unknown types/fields/shapes fail before runtime).
 
 ## Pages and apps
@@ -35,4 +35,4 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 
 ## Organisation (future)
 
-- **Hierarchy** — organisation → operation → project. The SDM and its records are project-scoped; services are global modules. Not yet built; the scope-blind invariant exists so its arrival changes no scripts.
+- **Hierarchy** — **org + SDM only**, GitHub-style. Org = tenant (users, auth, billing, org-scoped reporting). **Repos** (org-defined) hold SDMs and are the unit of sharing/import and permissions; **folders** inside repos are pure navigation with no semantics. Domain structure (divisions, projects, contracts) is the org's own repo/folder naming plus record types inside SDMs. SDM ids are stable; paths are display-only. Not yet built; the scope-blind invariant exists so its arrival changes no scripts.

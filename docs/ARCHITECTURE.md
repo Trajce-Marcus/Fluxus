@@ -23,7 +23,7 @@ How the three parts connect. Package-level detail lives in each package's `docs/
 
 ## The SDM is the centre
 
-One SDM per project defines: standalone **attributes**, **record types** (custom fields, FK refs), and **workflows** of **activities** (with before/after hooks). Records are never edited directly — all mutation flows through activities, producing the **activity history** (the audit spine).
+Each SDM defines: standalone **attributes**, **record types** (custom fields, FK refs), and **workflows** of **activities** (with before/after hooks). Records are never edited directly — all mutation flows through activities, producing the **activity history** (the audit spine).
 
 ## The DSL is the shared language
 
@@ -35,10 +35,10 @@ Every script is a function whose environment is dependency-injected by the host 
 |---|---|
 | `ctx` | user, anchor record, activity, workflow — populated by whichever host is executing |
 | `attrs` | captured attribute values for the activity in flight (incl. previously captured attributes) |
-| `records` | the project-scoped SDM data graph — query and mutation |
-| `services` | global add-on modules (notify, geocode, published functions) — project-agnostic |
+| `records` | the SDM-scoped data graph — query and mutation |
+| `services` | global add-on modules (notify, geocode, published functions) — SDM-agnostic |
 
-Scripts are **scope-blind**: they never name an organisation, operation, or project. Scope arrives via injection. (The org → operation → project hierarchy is future work; this invariant is locked now so no script ever needs rewriting for it.)
+Scripts are **scope-blind**: they never name their org, repo, or SDM. Scope arrives via injection. (The platform hierarchy — org + SDM, with org-defined repos/folders between, GitHub-style — is future work; this invariant is locked now so no script ever needs rewriting for it.)
 
 The validator checks every script against the SDM at **config-save time** — unknown record types, fields, or shape mismatches are errors before anything runs.
 
@@ -62,7 +62,7 @@ Records live in two stores with different jobs (CQRS):
                      activities (the only write path)
                               │
                     ┌─────────▼──────────┐
-                    │ TRANSACTIONAL      │  lean, project-partitioned,
+                    │ TRANSACTIONAL      │  lean, SDM-partitioned,
                     │ (single-table      │  serves the platform runtime:
                     │  style)            │  pickers, hooks, grids
                     └─────────┬──────────┘
@@ -70,14 +70,14 @@ Records live in two stores with different jobs (CQRS):
                               │ same machinery as `queue` dispatch)
                     ┌─────────▼──────────┐
                     │ REPORTING          │  real per-type relational tables,
-                    │ (relational,       │  org-scoped, cross-project views,
+                    │ (relational,       │  org-scoped, cross-SDM views,
                     │  projected)        │  BI/SQL tools
                     └────────────────────┘
 ```
 
 - **The activity stream is the projection source, complete by construction** — no write path bypasses activities, so the reporting layer can never miss a change. The after-hook outbox (built for `queue`) simply gains a second consumer. The application never dual-writes.
 - **Each layer gets the storage shape it wins with.** Transactional: generic/JSONB single-table shape — SDM edits never touch the physical schema. Reporting: *generated* per-type tables with real columns, FKs, and indexes — and no migration pain, because projections are **rebuilt by re-projection from the activity stream** when the SDM changes.
-- **Scoping follows access patterns.** Runtime queries are always project-scoped (the DSL's scope-blind rule guarantees it), so the transactional store partitions at project level (`org#operation#project`). Cross-project views belong only to reporting, so the relational side is org-scoped (schema per org, namespaces below).
+- **Scoping follows access patterns.** Runtime queries are always SDM-scoped (the DSL's scope-blind rule guarantees it), so the transactional store partitions per SDM (`org#sdm`). Cross-SDM views belong only to reporting, so the relational side is org-scoped (schema per org).
 - **Leanness of the transactional layer is load-bearing, not cosmetic.** Runtime DSL queries there are partition-fetch + filter, viable only on small partitions. Retention enforces it: a record type may declare a `complete_when` condition (FluxScript) and window in the SDM; completed records archive out of the transactional store (the relational copy remains). Never-ending records (long-lived apps) tier their append-only history instead — hot tail transactional, full spine relational/cold — while the record stays alive.
 - **Consistency rule:** runtime reads (hook validation, pickers) always hit the transactional store — read-your-writes required. Reporting reads may lag; that's their contract.
 
