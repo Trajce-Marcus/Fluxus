@@ -2,7 +2,7 @@
 
 The Fluxus scripting language (working name **FluxScript**): one DSL for attribute show conditions and datasources, before/after hooks, page-builder bindings, and headless workflows. A JS/SQL blend designed to be as learnable as SQL — no lambdas, no visible async, null-safe, case-insensitive, statically validated against the SDM at config-save time.
 
-**Status:** Phase 1 nearly complete (118 tests). Grammar signed off (GRAMMAR.md D1–D14; D11 provisional). Built and tested: lexer; expression/query parser; evaluator (four roots via `EvalHost`, null-safety, case-insensitive comparison, FK auto-deref, reverse-FK navigation, chains `where`/`orderBy`/`select`/`values`/`top`/`first`/`count`, builtins, date methods, snapshot copies, quotas); schema-aware validator (`validateExpression(source, schema)` — unknown types/fields, FK paths, reverse nav, arity, select aliases, teaching errors; `lintSchema` for root shadowing). Remaining: wire into the sdm workbench (`show_condition` + `List` datasources; city → suburb acceptance test).
+**Status: Phase 1 complete** (118 tests here + 7 wiring tests in `@fluxus/sdm`). Grammar signed off (GRAMMAR.md D1–D14; D11 provisional); lexer, parser, evaluator (four roots via `EvalHost`, null-safety, case-insensitive comparison, FK auto-deref, reverse-FK navigation, chains, builtins, quotas, snapshot copies) and schema-aware validator all built and tested; wired into the sdm workbench (`show_condition` + `List` datasources, city → suburb acceptance case live). See [docs/phases/PHASE1_Build_Summary.md](docs/phases/PHASE1_Build_Summary.md). Next: Phase 2 — scripts tier (hooks, mutations, `fail`/`queue`).
 
 ```
 records.resources

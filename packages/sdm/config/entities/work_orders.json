@@ -68,6 +68,20 @@
         "indexed": true,
         "fk_record_type": "rt_workgroups",
         "fk_display_field": "name"
+      },
+      {
+        "key": "city",
+        "type": "fk_ref",
+        "default": "",
+        "fk_record_type": "rt_cities",
+        "fk_display_field": "name"
+      },
+      {
+        "key": "suburb",
+        "type": "fk_ref",
+        "default": "",
+        "fk_record_type": "rt_suburbs",
+        "fk_display_field": "name"
       }
     ]
   },
@@ -143,6 +157,24 @@
         "attributes": [
           {
             "attribute_ref": "confirm"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_set_location_work_orders",
+        "name": "Set Location",
+        "description": "Capture the city and suburb for this work order.",
+        "sort_order": 3,
+        "record_map": "UPDATE",
+        "attributes": [
+          {
+            "attribute_ref": "city"
+          },
+          {
+            "attribute_ref": "suburb",
+            "show_condition": "attrs.city is not null"
           }
         ],
         "before_hook": null,

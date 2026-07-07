@@ -1,10 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { evaluateExpression } from '@fluxus/dsl';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry } from '../types';
 import { LocalStorageAdapter } from '../store/LocalStorageAdapter';
 import { config } from '../config';
+import { buildEvalHost, type ScriptContext } from '../dsl/bridge';
+import { reportConfigFindings } from '../dsl/validateConfig';
 
 // Module-level singleton — one adapter for the lifetime of the app
 const adapter = new LocalStorageAdapter(config);
+
+// Config-save-time validation: with the SDM still file-edited, save time is app start.
+reportConfigFindings(config);
 
 interface AppContextValue {
   recordTypes: RecordTypeDef[];
@@ -26,6 +32,9 @@ interface AppContextValue {
   resolveAttributeDisplayField: (typeId: string, attrKey: string) => string | undefined;
   getReverseRefs: (targetTypeId: string) => ReverseRefEntry[];
   getRecordsByField: (typeId: string, fieldKey: string, value: string) => RecordInstance[];
+  // Evaluate a FluxScript expression (datasource, show condition) against the
+  // live store, with the given script context injected as the four roots.
+  dslEvaluate: (source: string, script: ScriptContext) => unknown;
 }
 
 const Ctx = createContext<AppContextValue | null>(null);
@@ -85,6 +94,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const getRecordsByField = useCallback(
     (typeId: string, fieldKey: string, value: string) =>
       adapter.getRecordsByField(typeId, fieldKey, value),
+    []
+  );
+
+  const dslEvaluate = useCallback(
+    (source: string, script: ScriptContext) =>
+      evaluateExpression(source, buildEvalHost(adapter, config, script)),
     []
   );
 
@@ -169,6 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       resolveAttributeDisplayField,
       getReverseRefs,
       getRecordsByField,
+      dslEvaluate,
     }}>
       {children}
     </Ctx.Provider>

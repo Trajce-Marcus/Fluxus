@@ -59,7 +59,7 @@
   {
     "key": "raise_notes",
     "label": "Raise Notes",
-    "description": "Free notes at raise time — not stored on the Record (no matching custom field).",
+    "description": "Free notes at raise time \u2014 not stored on the Record (no matching custom field).",
     "type": "text"
   },
   {
@@ -265,5 +265,44 @@
     "label": "Quantity",
     "description": "Quantity of the resource assigned.",
     "type": "text"
+  },
+  {
+    "key": "state",
+    "label": "State",
+    "description": "State or territory.",
+    "type": "text"
+  },
+  {
+    "key": "city_id",
+    "label": "City",
+    "description": "The city this suburb belongs to.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_cities"
+    }
+  },
+  {
+    "key": "city",
+    "label": "City",
+    "description": "Select the city.",
+    "type": "list",
+    "type_config": {
+      "datasource": "records.cities.orderBy(name).top(50)",
+      "selection": "single",
+      "key_field": "id",
+      "display_field": "name"
+    }
+  },
+  {
+    "key": "suburb",
+    "label": "Suburb",
+    "description": "Select the suburb within the chosen city.",
+    "type": "list",
+    "type_config": {
+      "datasource": "records.suburbs.where(city_id = attrs.city).orderBy(name).top(50)",
+      "selection": "single",
+      "key_field": "id",
+      "display_field": "name"
+    }
   }
 ]

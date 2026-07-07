@@ -1,0 +1,69 @@
+{
+  "recordType": {
+    "id": "rt_cities",
+    "name": "Cities",
+    "description": "Cities used for location capture.",
+    "workflow_ref": "wf_cities",
+    "custom_fields": [
+      {
+        "key": "name",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "unique": true
+      },
+      {
+        "key": "state",
+        "type": "text",
+        "default": ""
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_cities",
+    "name": "Cities",
+    "description": "Manage city records.",
+    "activities": [
+      {
+        "id": "act_create_cities",
+        "name": "Create City",
+        "description": "Register a new city.",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "attributes": [
+          {
+            "attribute_ref": "name"
+          },
+          {
+            "attribute_ref": "state"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      }
+    ]
+  },
+  "seeds": [
+    {
+      "id": "c_syd",
+      "fields": {
+        "name": "Sydney",
+        "state": "NSW"
+      }
+    },
+    {
+      "id": "c_mel",
+      "fields": {
+        "name": "Melbourne",
+        "state": "VIC"
+      }
+    },
+    {
+      "id": "c_bne",
+      "fields": {
+        "name": "Brisbane",
+        "state": "QLD"
+      }
+    }
+  ]
+}

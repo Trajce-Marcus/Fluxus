@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
-import type { ActivityDef, RecordInstance } from '../types';
+import type { ActivityDef, AttributeDef, RecordInstance } from '../types';
 
 interface Props {
   activity: ActivityDef;
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
-  const { resolveDisplayLabel, resolveAttributeDisplayField } = useAppContext();
+  const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate } = useAppContext();
 
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -44,15 +44,36 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
 
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null);
 
+  // show_condition (FluxScript) decides which attributes are presented.
+  // Evaluation errors leave the attribute visible — a broken condition should
+  // never make an input unreachable.
+  const isVisible = (attr: AttributeDef): boolean => {
+    if (!attr.show_condition) return true;
+    try {
+      return dslEvaluate(attr.show_condition, {
+        attrs: values,
+        anchorRecord,
+        activity: { id: activity.id, name: activity.name },
+      }) === true;
+    } catch (err) {
+      console.warn(`show_condition failed for '${attr.key}':`, err);
+      return true;
+    }
+  };
+
+  const visibleAttributes = activity.attributes.filter(isVisible);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(values);
+    // Hidden attributes are not part of the submission
+    const visibleKeys = new Set(visibleAttributes.map(a => a.key));
+    onSubmit(Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k))));
   };
 
   return (
     <>
       <form onSubmit={handleSubmit}>
-        {activity.attributes.map(attr => (
+        {visibleAttributes.map(attr => (
           <div key={attr.key} style={{ marginBottom: 12 }}>
             <label style={{ display: 'block', marginBottom: 4, fontSize: 13, color: '#374151' }}>
               {attr.label}
@@ -102,6 +123,15 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
                   </button>
                 )}
               </div>
+            ) : attr.type === 'list' ? (
+              <ListField
+                attr={attr}
+                value={values[attr.key]}
+                allValues={values}
+                anchorRecord={anchorRecord}
+                activity={activity}
+                onChange={val => setValues(v => ({ ...v, [attr.key]: val }))}
+              />
             ) : (
               <input
                 type="text"
@@ -159,4 +189,92 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
       })()}
     </>
   );
+}
+
+// ── List attribute (DSL-driven) ────────────────────────────────────────────────
+// Options come from evaluating the attribute's FluxScript datasource against the
+// live store, with current form values injected as `attrs` — which is what makes
+// dependent attributes (city → suburb) work: this re-renders on every form value
+// change, so the datasource re-evaluates with the latest attrs.
+
+interface ListOption {
+  value: string;
+  label: string;
+}
+
+interface ListFieldProps {
+  attr: AttributeDef;
+  value: string;
+  allValues: Record<string, string>;
+  anchorRecord: RecordInstance | null;
+  activity: ActivityDef;
+  onChange: (value: string) => void;
+}
+
+function ListField({ attr, value, allValues, anchorRecord, activity, onChange }: ListFieldProps) {
+  const { dslEvaluate } = useAppContext();
+  const datasource = attr.type_config?.datasource ?? '';
+  const keyField = attr.type_config?.key_field ?? 'id';
+  const displayField = attr.type_config?.display_field ?? 'name';
+
+  const { options, error } = useMemo((): { options: ListOption[]; error: string | null } => {
+    if (!datasource) return { options: [], error: `'${attr.key}' has no datasource` };
+    try {
+      const result = dslEvaluate(datasource, {
+        attrs: allValues,
+        anchorRecord,
+        activity: { id: activity.id, name: activity.name },
+      });
+      if (!Array.isArray(result)) return { options: [], error: 'datasource did not return a list' };
+      return { options: result.map(item => toOption(item, keyField, displayField)), error: null };
+    } catch (err) {
+      return { options: [], error: err instanceof Error ? err.message : String(err) };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasource, keyField, displayField, JSON.stringify(allValues), anchorRecord?.id]);
+
+  // A stale selection (e.g. suburb after the city changed) clears itself
+  useEffect(() => {
+    if (value && !options.some(o => o.value === value)) onChange('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, options]);
+
+  if (error) {
+    return <div style={{ fontSize: 12, color: '#b91c1c' }}>Datasource error: {error}</div>;
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        width: '100%',
+        padding: '6px 10px',
+        border: '1px solid #d1d5db',
+        borderRadius: 4,
+        fontSize: 14,
+        outline: 'none',
+        boxSizing: 'border-box',
+        background: '#fff',
+        color: value ? '#0f172a' : '#94a3b8',
+      }}
+    >
+      <option value="">— select —</option>
+      {options.map(o => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
+  );
+}
+
+function toOption(item: unknown, keyField: string, displayField: string): ListOption {
+  if (item !== null && typeof item === 'object') {
+    // DslRecord ({id, type, fields}) or a projected row (plain object)
+    const record = item as { id?: unknown; fields?: Record<string, unknown> };
+    const bag = record.fields ?? (item as Record<string, unknown>);
+    const value = keyField === 'id' && record.id !== undefined ? record.id : bag[keyField];
+    const label = bag[displayField] ?? value;
+    return { value: String(value ?? ''), label: String(label ?? '') };
+  }
+  return { value: String(item ?? ''), label: String(item ?? '') };
 }

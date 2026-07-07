@@ -6,9 +6,9 @@ Cross-package phases and their interlocks only. Per-package detail lives in each
 
 | Package | Status |
 |---|---|
-| `@fluxus/sdm` | POC1·a complete: list types → CREATE → capture activities → history. Hooks are no-op slots. FK refs, related records, Schema Navigator, CSV import done. |
+| `@fluxus/sdm` | POC1·a complete + DSL Phase 1 wired: `show_condition` and `List` attributes run FluxScript live (city → suburb acceptance case in Work Orders → Set Location); config validated at startup; entity seeds. Hooks remain no-op slots (DSL Phase 2). |
 | `@fluxus/page-builder` | Shell + layout editor + ComponentContainer architecture done. Wiring is structural (context keys / mock procedures), callbacks UI-only. |
-| `@fluxus/dsl` | Phase 1 nearly complete: grammar signed off (D1–D14); lexer + parser + evaluator + schema-aware validator built and tested (118 tests). Remaining: sdm workbench wiring. |
+| `@fluxus/dsl` | **Phase 1 complete** (125 tests incl. sdm wiring): grammar signed off (D1–D14), lexer + parser + evaluator + schema-aware validator, wired into the sdm workbench. Next: Phase 2 (scripts tier — hooks, mutations, fail/queue). |
 
 ## Phase interlocks
 

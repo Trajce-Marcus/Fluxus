@@ -1,4 +1,4 @@
-import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef } from './types';
+import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef, SeedGroup } from './types';
 
 // The SDM is split for hand-editing: shared pools (attributes, functions) plus
 // one file per entity (record type + its workflow, always edited as a pair).
@@ -20,10 +20,13 @@ import wgResources from '../config/entities/wg_resources.json';
 import workOrders from '../config/entities/work_orders.json';
 import woResources from '../config/entities/wo_resources.json';
 import woAssets from '../config/entities/wo_assets.json';
+import cities from '../config/entities/cities.json';
+import suburbs from '../config/entities/suburbs.json';
 
 interface EntityFile {
   recordType: RecordTypeDef;
   workflow: WorkflowRawDef;
+  seeds?: { id: string; fields: Record<string, unknown> }[];
 }
 
 // Order here is display order in the workbench sidebar.
@@ -39,11 +42,18 @@ const entities = [
   workOrders,
   woResources,
   woAssets,
+  cities,
+  suburbs,
 ] as unknown as EntityFile[];
+
+const seeds: SeedGroup[] = entities
+  .filter((e) => e.seeds && e.seeds.length > 0)
+  .map((e) => ({ typeId: e.recordType.id, records: e.seeds! }));
 
 export const config: ConfigRaw = {
   attributes: attributes as unknown as AttributeDef[],
   recordTypes: entities.map((e) => e.recordType),
   workflows: entities.map((e) => e.workflow),
   functions: functions as ConfigRaw['functions'],
+  seeds,
 };

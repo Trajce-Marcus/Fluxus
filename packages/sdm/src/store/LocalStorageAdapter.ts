@@ -44,7 +44,8 @@ export class LocalStorageAdapter implements Store {
           attributes: act.attributes.map(usage => {
             const def = attrMap.get(usage.attribute_ref);
             if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
-            return def;
+            // Carry the usage-level show_condition onto the resolved attribute
+            return usage.show_condition ? { ...def, show_condition: usage.show_condition } : def;
           }),
         })),
       },
@@ -63,6 +64,27 @@ export class LocalStorageAdapter implements Store {
 
     this.records = loadRecords();
     this.migrateNaturalIds();
+    this.seedRecords(config);
+  }
+
+  // Load an entity file's sample records, but only for types that have no
+  // records yet — user data is never touched or duplicated.
+  private seedRecords(config: ConfigRaw): void {
+    let seeded = false;
+    for (const group of config.seeds ?? []) {
+      const hasAny = [...this.records.values()].some(r => r.typeRef === group.typeId);
+      if (hasAny) continue;
+      for (const seed of group.records) {
+        this.records.set(seed.id, {
+          id: seed.id,
+          typeRef: group.typeId,
+          customFields: seed.fields,
+          activityHistory: [],
+        });
+        seeded = true;
+      }
+    }
+    if (seeded) saveRecords(this.records);
   }
 
   // For record types with id_field set, rename any record whose stored id doesn't
