@@ -4,7 +4,7 @@ Current design truth for the SDM runtime. Updated in the same commit as any beha
 
 ## Model
 
-Everything is driven by one config file, [poc_SDM.json](poc_SDM.json) (typed by `src/types.ts`, imported via `src/config.ts`):
+Everything is driven by one logical config (typed by `src/types.ts`), stored split for hand-editing in `packages/sdm/config/` — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — and merged into one `ConfigRaw` by `src/config.ts`. The split is POC-era convenience; the endgame is the SDM in a database edited through UI. Collections:
 
 - **`attributes`** — standalone, reusable capturable inputs; activities reference them by `attribute_ref`.
 - **`recordTypes`** — collections (`rt_<plural>`): custom fields (incl. `fk_ref` with `fk_record_type` / `fk_display_field`), optional constraints (`required`, `unique`, `immutable`, `indexed`), a `workflow_ref`.

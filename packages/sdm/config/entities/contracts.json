@@ -1,0 +1,124 @@
+{
+  "recordType": {
+    "id": "rt_contracts",
+    "name": "Contracts",
+    "description": "Customer contracts under which jobs are raised.",
+    "workflow_ref": "wf_contracts",
+    "id_field": "id",
+    "custom_fields": [
+      {
+        "key": "id",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "unique": true,
+        "immutable": true,
+        "indexed": true
+      },
+      {
+        "key": "name",
+        "type": "text",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "description",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "customer",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "indexed": true
+      },
+      {
+        "key": "start_date",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "end_date",
+        "type": "text",
+        "default": ""
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_contracts",
+    "name": "Contracts",
+    "description": "Manage customer contracts.",
+    "activities": [
+      {
+        "id": "act_create_contracts",
+        "name": "Create Contract",
+        "description": "Register a new contract.",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "attributes": [
+          {
+            "attribute_ref": "id"
+          },
+          {
+            "attribute_ref": "name"
+          },
+          {
+            "attribute_ref": "description"
+          },
+          {
+            "attribute_ref": "customer"
+          },
+          {
+            "attribute_ref": "start_date"
+          },
+          {
+            "attribute_ref": "end_date"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_update_contracts",
+        "name": "Update Contract",
+        "description": "Update contract details.",
+        "sort_order": 1,
+        "record_map": "UPDATE",
+        "attributes": [
+          {
+            "attribute_ref": "name"
+          },
+          {
+            "attribute_ref": "description"
+          },
+          {
+            "attribute_ref": "customer"
+          },
+          {
+            "attribute_ref": "start_date"
+          },
+          {
+            "attribute_ref": "end_date"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_delete_contracts",
+        "name": "Delete Contract",
+        "description": "Remove this contract.",
+        "sort_order": 2,
+        "record_map": "DELETE",
+        "attributes": [
+          {
+            "attribute_ref": "confirm"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      }
+    ]
+  }
+}

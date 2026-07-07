@@ -1,0 +1,142 @@
+{
+  "recordType": {
+    "id": "rt_jobs",
+    "name": "Jobs",
+    "description": "A generic job",
+    "workflow_ref": "wf_jobs",
+    "id_field": "id",
+    "custom_fields": [
+      {
+        "key": "id",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "unique": true,
+        "immutable": true,
+        "indexed": true
+      },
+      {
+        "key": "job_no",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "indexed": true
+      },
+      {
+        "key": "contract_id",
+        "type": "fk_ref",
+        "default": "",
+        "indexed": true,
+        "fk_record_type": "rt_contracts",
+        "fk_display_field": "name"
+      },
+      {
+        "key": "job_type",
+        "type": "text",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "status",
+        "type": "text",
+        "default": "Raised",
+        "indexed": true
+      },
+      {
+        "key": "location",
+        "type": "text",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "due_date",
+        "type": "text",
+        "default": "",
+        "required": true
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_jobs",
+    "name": "Job Workflows",
+    "description": "Planned inspection of a road asset",
+    "activities": [
+      {
+        "id": "act_raise_inspection_jobs",
+        "name": "Raise Inspection",
+        "description": "Creates a new Inspection Job and captures its opening data.",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "_comment": "record_map:CREATE — surfaced at the GRID level (no anchor). On submit, attributes whose key matches a custom_field key are written to the new Record. ACCEPTABLE BEHAVIOUR, DO NOT FIX: 'raise_notes' has no matching custom field, so it is captured then silently dropped on create — intended (SDM update 1.9.3 rule 2), not a bug; do not add a raise_notes field or error. ACCEPTABLE BEHAVIOUR, DO NOT FIX: 'status' is not captured here and no hook runs this cut, so it stays 'Raised' permanently — intended; do not add a non-activity write path to change it. See POC1_Runtime_UI_Scope.md §7a.",
+        "attributes": [
+          {
+            "attribute_ref": "job_no"
+          },
+          {
+            "attribute_ref": "contract_id"
+          },
+          {
+            "attribute_ref": "location"
+          },
+          {
+            "attribute_ref": "due_date"
+          },
+          {
+            "attribute_ref": "raise_notes"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_record_finding_inspection_jobs",
+        "name": "Record Finding",
+        "description": "Capture inspection findings against the Job.",
+        "sort_order": 1,
+        "attributes": [
+          {
+            "attribute_ref": "condition_rating"
+          },
+          {
+            "attribute_ref": "notes"
+          },
+          {
+            "attribute_ref": "hazard_found"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": {
+          "_comment": "Shape only — NOT executed this cut. When hooks are staged in, this would conditionally spawn a Hazard Record. Bodies/semantics deferred (SDM 1.6/1.7).",
+          "timing": "after",
+          "commands": [
+            {
+              "condition": "<expr deferred> hazard_found = \"yes\"",
+              "action": "<deferred> create Record \"Hazard\", linked to this Job"
+            }
+          ]
+        }
+      },
+      {
+        "id": "act_close_inspection_jobs",
+        "name": "Close Inspection",
+        "description": "Mark the inspection complete.",
+        "sort_order": 2,
+        "attributes": [
+          {
+            "attribute_ref": "completed_by"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": {
+          "_comment": "Shape only — NOT executed this cut. Would set anchor Record status = Complete once hooks are staged in.",
+          "timing": "after",
+          "commands": [
+            {
+              "action": "<deferred> set anchor Record status = \"Complete\""
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

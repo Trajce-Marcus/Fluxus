@@ -79,11 +79,21 @@ export interface RecordTypeDef {
   custom_fields: CustomFieldDef[];
 }
 
+// Named reusable FluxScript function (stored in the SDM's functions collection).
+// body is canonically a string; an array of lines is accepted and joined on load.
+export interface FunctionDef {
+  id: string;
+  name: string;
+  description: string;
+  body: string | string[];
+}
+
 // Raw config — matches the JSON on disk exactly
 export interface ConfigRaw {
   attributes: AttributeDef[];
   recordTypes: RecordTypeDef[];
   workflows: WorkflowRawDef[];
+  functions?: FunctionDef[];
 }
 
 // Reverse-FK index entry — one per (sourceType, fieldKey) pair that points at a given target type

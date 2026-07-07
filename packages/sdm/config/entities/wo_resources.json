@@ -1,0 +1,92 @@
+{
+  "recordType": {
+    "id": "rt_wo_resources",
+    "name": "WO Resources",
+    "description": "A resource assigned to a work order.",
+    "workflow_ref": "wf_wo_resources",
+    "id_field": "id",
+    "custom_fields": [
+      {
+        "key": "id",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "unique": true,
+        "immutable": true,
+        "indexed": true
+      },
+      {
+        "key": "wo_id",
+        "type": "fk_ref",
+        "default": "",
+        "required": true,
+        "indexed": true,
+        "fk_record_type": "rt_work_orders",
+        "fk_display_field": "id"
+      },
+      {
+        "key": "res_id",
+        "type": "fk_ref",
+        "default": "",
+        "required": true,
+        "indexed": true,
+        "fk_record_type": "rt_resources",
+        "fk_display_field": "key"
+      },
+      {
+        "key": "quantity",
+        "type": "text",
+        "default": "1"
+      },
+      {
+        "key": "warehouse",
+        "type": "text",
+        "default": ""
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_wo_resources",
+    "name": "WO Resources",
+    "description": "Manage resources assigned to a work order.",
+    "activities": [
+      {
+        "id": "act_create_wo_resources",
+        "name": "Add Resource",
+        "description": "Assign a resource to this work order.",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "attributes": [
+          {
+            "attribute_ref": "id"
+          },
+          {
+            "attribute_ref": "wo_id"
+          },
+          {
+            "attribute_ref": "res_id"
+          },
+          {
+            "attribute_ref": "quantity"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_delete_wo_resources",
+        "name": "Remove Resource",
+        "description": "Remove this resource from the work order.",
+        "sort_order": 1,
+        "record_map": "DELETE",
+        "attributes": [
+          {
+            "attribute_ref": "confirm"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      }
+    ]
+  }
+}

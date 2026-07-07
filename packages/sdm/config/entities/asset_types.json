@@ -1,0 +1,83 @@
+{
+  "recordType": {
+    "id": "rt_asset_types",
+    "name": "Asset Types",
+    "description": "A classification of asset (e.g. Pump, Valve, Pipe).",
+    "workflow_ref": "wf_asset_types",
+    "id_field": "code",
+    "custom_fields": [
+      {
+        "key": "code",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "unique": true,
+        "immutable": true,
+        "indexed": true
+      },
+      {
+        "key": "description",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "expired",
+        "type": "text",
+        "default": "false"
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_asset_types",
+    "name": "Asset Types",
+    "description": "Manage asset type records.",
+    "activities": [
+      {
+        "id": "act_create_asset_types",
+        "name": "Create Asset Type",
+        "description": "Creates a new Asset Type record.",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "attributes": [
+          {
+            "attribute_ref": "code"
+          },
+          {
+            "attribute_ref": "description"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_update_asset_types",
+        "name": "Update Asset Type",
+        "description": "Update the description of an Asset Type.",
+        "sort_order": 1,
+        "record_map": "UPDATE",
+        "attributes": [
+          {
+            "attribute_ref": "description"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_delete_asset_types",
+        "name": "Delete Asset Type",
+        "description": "Delete this Asset Type record.",
+        "sort_order": 2,
+        "record_map": "DELETE",
+        "_comment": "record_map:DELETE — implemented. 'confirm' attribute must equal 'DELETE' exactly; any other value is a no-op. before_hook validation deferred.",
+        "attributes": [
+          {
+            "attribute_ref": "confirm"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      }
+    ]
+  }
+}

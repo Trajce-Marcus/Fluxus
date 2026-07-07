@@ -4,7 +4,7 @@ The SDM (Shared Data Model) runtime: record types, workflows, activities, activi
 
 **Status:** POC1·a complete. List record types → create via CREATE activity → run capture activities → view history; FK refs with related records, Schema Navigator, CSV import/export. Hooks are no-op slots awaiting DSL Phase 2 (see [ROADMAP](../../docs/ROADMAP.md)).
 
-The package currently carries a sample asset-maintenance model ("Aber") in [docs/poc_SDM.json](docs/poc_SDM.json) — the model is config; the runtime is generic.
+The package currently carries a sample asset-maintenance model ("Aber") in [config/](config/) — shared pools (`attributes.json`, `functions.json`) plus one file per entity (record type + workflow) under `config/entities/`, merged into one `ConfigRaw` by [src/config.ts](src/config.ts). The model is config; the runtime is generic. (File layout is POC-era convenience — the endgame is the SDM in a database, edited through UI.)
 
 ## Run
 

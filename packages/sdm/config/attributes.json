@@ -1,0 +1,269 @@
+[
+  {
+    "key": "code",
+    "label": "Code",
+    "description": "Short unique code for this type.",
+    "type": "text"
+  },
+  {
+    "key": "description",
+    "label": "Description",
+    "description": "Human-readable description.",
+    "type": "text"
+  },
+  {
+    "key": "confirm",
+    "label": "Confirm",
+    "description": "Type DELETE to confirm removal.",
+    "type": "text"
+  },
+  {
+    "key": "asset_no",
+    "label": "Asset No",
+    "description": "Unique asset number.",
+    "type": "text"
+  },
+  {
+    "key": "status",
+    "label": "Status",
+    "description": "Current status.",
+    "type": "text"
+  },
+  {
+    "key": "asset_type_id",
+    "label": "Asset Type",
+    "description": "Select the parent Asset Type record.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_asset_types"
+    }
+  },
+  {
+    "key": "location",
+    "label": "Location",
+    "description": "Where the inspection is.",
+    "type": "text"
+  },
+  {
+    "key": "due_date",
+    "label": "Due Date",
+    "description": "When it is due (text for now).",
+    "type": "text"
+  },
+  {
+    "key": "work_group",
+    "label": "Work Group",
+    "description": "Responsible group.",
+    "type": "text"
+  },
+  {
+    "key": "raise_notes",
+    "label": "Raise Notes",
+    "description": "Free notes at raise time — not stored on the Record (no matching custom field).",
+    "type": "text"
+  },
+  {
+    "key": "notes",
+    "label": "Notes",
+    "description": "Inspector notes.",
+    "type": "text"
+  },
+  {
+    "key": "condition_rating",
+    "label": "Condition Rating",
+    "description": "Observed condition.",
+    "type": "text"
+  },
+  {
+    "key": "hazard_found",
+    "label": "Hazard Found?",
+    "description": "yes / no.",
+    "type": "text"
+  },
+  {
+    "key": "completed_by",
+    "label": "Completed By",
+    "description": "Who closed it.",
+    "type": "text"
+  },
+  {
+    "key": "type",
+    "label": "Type",
+    "description": "Category of resource (e.g. lab, plant, vehicle, employee).",
+    "type": "text"
+  },
+  {
+    "key": "key",
+    "label": "Key",
+    "description": "Unique identifier for this resource (e.g. rego, employee ID).",
+    "type": "text"
+  },
+  {
+    "key": "expired_date",
+    "label": "Expired Date",
+    "description": "Date on which this resource expires (text for now).",
+    "type": "text"
+  },
+  {
+    "key": "id",
+    "label": "ID",
+    "description": "Unique identifier for this record.",
+    "type": "text"
+  },
+  {
+    "key": "name",
+    "label": "Name",
+    "description": "Display name.",
+    "type": "text"
+  },
+  {
+    "key": "manager",
+    "label": "Manager",
+    "description": "Person responsible for this work group.",
+    "type": "text"
+  },
+  {
+    "key": "job_no",
+    "label": "Job No",
+    "description": "External or customer-supplied job reference number. Not required to be unique.",
+    "type": "text"
+  },
+  {
+    "key": "contract_id",
+    "label": "Contract",
+    "description": "The contract this job is raised against.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_contracts"
+    }
+  },
+  {
+    "key": "customer",
+    "label": "Customer",
+    "description": "Customer name.",
+    "type": "text"
+  },
+  {
+    "key": "start_date",
+    "label": "Start Date",
+    "description": "Contract start date.",
+    "type": "text"
+  },
+  {
+    "key": "end_date",
+    "label": "End Date",
+    "description": "Contract end date.",
+    "type": "text"
+  },
+  {
+    "key": "wg_id",
+    "label": "Work Group",
+    "description": "The work group this plan belongs to.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_workgroups"
+    }
+  },
+  {
+    "key": "shift_date",
+    "label": "Shift Date",
+    "description": "Date of the planned shift.",
+    "type": "text"
+  },
+  {
+    "key": "shift_start",
+    "label": "Shift Start",
+    "description": "Shift start time.",
+    "type": "text"
+  },
+  {
+    "key": "shift_end",
+    "label": "Shift End",
+    "description": "Shift end time.",
+    "type": "text"
+  },
+  {
+    "key": "added_by",
+    "label": "Added By",
+    "description": "Who created this plan.",
+    "type": "text"
+  },
+  {
+    "key": "wg_plan_id",
+    "label": "Workgroup Plan",
+    "description": "The workgroup plan this resource is assigned to.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_wg_plans"
+    }
+  },
+  {
+    "key": "res_id",
+    "label": "Resource",
+    "description": "The resource assigned to this plan.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_resources"
+    }
+  },
+  {
+    "key": "job_id",
+    "label": "Job",
+    "description": "The job this work order belongs to.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_jobs"
+    }
+  },
+  {
+    "key": "workgroup_id",
+    "label": "Work Group",
+    "description": "The work group assigned to this work order.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_workgroups"
+    }
+  },
+  {
+    "key": "activity_code",
+    "label": "Activity Code",
+    "description": "Code identifying the type of work activity.",
+    "type": "text"
+  },
+  {
+    "key": "problem_code",
+    "label": "Problem Code",
+    "description": "Code identifying the problem type.",
+    "type": "text"
+  },
+  {
+    "key": "completed_date",
+    "label": "Completed Date",
+    "description": "Date the work order was completed.",
+    "type": "text"
+  },
+  {
+    "key": "wo_id",
+    "label": "Work Order",
+    "description": "The work order this record belongs to.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_work_orders"
+    }
+  },
+  {
+    "key": "asset_id",
+    "label": "Asset",
+    "description": "The asset linked to this record.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_assets"
+    }
+  },
+  {
+    "key": "quantity",
+    "label": "Quantity",
+    "description": "Quantity of the resource assigned.",
+    "type": "text"
+  }
+]
