@@ -8,7 +8,7 @@ Everything is driven by one logical config (typed by `src/types.ts`), stored spl
 
 - **`attributes`** — standalone, reusable capturable inputs; activities reference them by `attribute_ref`.
 - **`recordTypes`** — collections (`rt_<plural>`): custom fields (incl. `fk_ref` with `fk_record_type` / `fk_display_field`), optional constraints (`required`, `unique`, `immutable`, `indexed`), a `workflow_ref`.
-- **`workflows`** — one per record type (`wf_<plural>`): ordered activities. One `record_map: CREATE` activity per workflow is the expected pattern; capture activities (no `record_map`) appear in the record-level activity strip.
+- **`workflows`** — one per record type (`wf_<plural>`): ordered activities. One `record_map: CREATE` activity per workflow is the expected pattern; capture activities (no `record_map` — log-only unless hooks act) appear in the record-level activity strip. `record_map: "GET"` (query activities: attributes = parameters, `returns` expression = response, never mutates, logged with duration/outcome) is specified in the DSL spec §5a and lands with Phase 2+.
 
 Records are never edited directly. All mutation flows through activities; each run appends an `ActivityHistoryEntry` (exactly what the user entered). Attribute → custom field mapping is exact-key only; unmatched attributes are intentionally dropped (SDM §1.9.3 rule 2 — not a bug). Custom fields without a matching captured attribute seed from `default`.
 

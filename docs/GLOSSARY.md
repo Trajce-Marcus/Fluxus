@@ -10,7 +10,8 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **Custom field** — a typed field on a record type (`text`, `int`, `bool`, `date`, `fk_ref`, …) with optional constraints (`required`, `unique`, `immutable`, `indexed`).
 - **Attribute** — a standalone, reusable definition of a capturable input (label, type, type_config). Activities reference attributes; attributes are shared across activities.
 - **Workflow** — the ordered set of activities available for a record type. One workflow per record type.
-- **Activity** — the unit of action and the only way data changes. Has attributes (its inputs), an optional `record_map` (CREATE/UPDATE/DELETE), and before/after hooks. In headless mode, an activity is a callable function whose attribute list is its parameter signature.
+- **Activity** — the unit of action and the only way data changes. Has attributes (its inputs), an optional `record_map` (CREATE/UPDATE/DELETE/GET; null = log-only), and before/after hooks. In headless mode, an activity is a callable function whose attribute list is its parameter signature.
+- **GET activity** — `record_map: "GET"`: a query activity; attributes are parameters, a `returns` expression produces the response. Never mutates (validator-enforced); logged like every activity (async, retention-managed). The platform's read path — apps call GET activities instead of ad-hoc APIs.
 - **Activity history** — the append-only per-record log of executed activities and exactly what the user entered. The audit spine.
 - **Hook** — DSL script on an activity. **Before hook** = gate: validation only, `fail("msg")` vetoes, nothing persists. **After hook** = effects: record mutations (transactional) and service calls.
 

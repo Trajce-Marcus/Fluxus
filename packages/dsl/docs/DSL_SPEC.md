@@ -116,6 +116,28 @@ Per-usage settings on an activity's attribute list: `show_condition`, `required`
 
 Storage is unchanged from the SDM runtime: captured attributes persist to activity history as primitives or JSON — exactly what the user entered, untouched by any script.
 
+## 5a. Query activities — `record_map: "GET"`
+
+The read path (settled July 2026). Alongside CREATE/UPDATE/DELETE, a **GET** activity answers a question: its attributes are its parameters (validated by the trio), and a `returns` expression produces the response:
+
+```json
+{
+  "id": "act_get_top_invoices",
+  "name": "Get Top Invoices",
+  "record_map": "GET",
+  "attributes": [
+    { "attribute_ref": "how_many", "required": true, "validation": "value between 1 and 100" }
+  ],
+  "returns": "records.invoices.orderBy(amount desc).top(attributes.how_many).select(id, code, amount, customer)"
+}
+```
+
+- **Everything is an activity** — user capture, commands, and data gets share one authoring concept, one pipeline, and one invoke surface (`invoke(name, params)`). Apps call GET activities instead of ad-hoc APIs.
+- **GET never mutates**: the validator enforces purity (no mutations, no `queue`). Responses are cacheable.
+- **GET is logged like every activity** — parameters, caller, duration, outcome — giving out-of-the-box observability and an AI-legible uniform stream. The log append is asynchronous (a read never waits on its paperwork); volume is managed by a per-activity logging level and the customer's retention/archiving module, which moves history but never edits it.
+- Null `record_map` remains "log only": the activity and its captured attributes are recorded; any behaviour comes from hooks.
+- Named functions (§8) are script-level helpers for reuse inside expressions and hooks — they are **not** an app-facing surface; GET activities are.
+
 ## 6. Hooks
 
 **Before hook = gate.** Runs on activity submission, before anything persists. May read anything (`context`, `attributes`, any `records` query, read-only service calls). May `fail('msg')` — the activity is rejected, nothing persists — or `warn('msg')`. **Validate only**: before hooks never modify `attributes` or records. Derived/prepped values are the after hook's job, which keeps activity history a truthful record of user input.
