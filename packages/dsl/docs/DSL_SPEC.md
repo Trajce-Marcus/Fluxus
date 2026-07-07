@@ -112,6 +112,8 @@ Scalars render as a simple picker; records/objects as a grid picker driven by `t
 
 `show_condition` (expression tier) decides whether an attribute is presented (UI) or applicable (headless). In headless mode the datasource doubles as validation: a submitted value must be in the datasource's result set.
 
+Per-usage settings on an activity's attribute list: `show_condition`, `required` (hidden attributes are exempt), and `validation` — an expression that must evaluate `true` for the captured value, injected as the extra root **`value`** (e.g. `value <= now()`), with an optional `validation_message`. Captured values are coerced to their attribute's declared type before scripts see them. Attribute validation is per-field; cross-record rules belong to before hooks (§6). In headless mode the same three settings define the parameter contract.
+
 Storage is unchanged from the SDM runtime: captured attributes persist to activity history as primitives or JSON — exactly what the user entered, untouched by any script.
 
 ## 6. Hooks

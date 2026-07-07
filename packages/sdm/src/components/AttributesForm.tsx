@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
+import { coerceCaptured, coerceValue } from '../dsl/bridge';
 import type { ActivityDef, AttributeDef, RecordInstance } from '../types';
 
 interface Props {
@@ -48,11 +49,14 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   // show_condition (FluxScript) decides which attributes are presented.
   // Evaluation errors leave the attribute visible — a broken condition should
   // never make an input unreachable.
+  // Captured strings coerced to typed script values (dates, numbers) per attribute type
+  const typedValues = coerceCaptured(activity.attributes, values);
+
   const isVisible = (attr: AttributeDef): boolean => {
     if (!attr.show_condition) return true;
     try {
       return dslEvaluate(attr.show_condition, {
-        attributes: values,
+        attributes: typedValues,
         anchorRecord,
         activity: { id: activity.id, name: activity.name },
       }) === true;
@@ -72,6 +76,26 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     const missing = visibleAttributes.filter(a => a.required && !String(values[a.key] ?? '').trim());
     if (missing.length > 0) {
       setSubmitError(`Required: ${missing.map(a => a.label).join(', ')}`);
+      return;
+    }
+    // Attribute-level validation rules (FluxScript; the captured value is `value`)
+    const failures: string[] = [];
+    for (const attr of visibleAttributes) {
+      if (!attr.validation || !String(values[attr.key] ?? '').trim()) continue; // empties are required's job
+      try {
+        const ok = dslEvaluate(attr.validation, {
+          attributes: typedValues,
+          anchorRecord,
+          activity: { id: activity.id, name: activity.name },
+          extras: { value: typedValues[attr.key] },
+        });
+        if (ok !== true) failures.push(attr.validation_message ?? `${attr.label} is invalid`);
+      } catch (err) {
+        failures.push(`${attr.label}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (failures.length > 0) {
+      setSubmitError(failures.join(' · '));
       return;
     }
     try {
@@ -148,7 +172,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
               />
             ) : (
               <input
-                type="text"
+                type={attr.type === 'date' ? 'date' : 'text'}
                 value={values[attr.key]}
                 onChange={e => setValues(v => ({ ...v, [attr.key]: e.target.value }))}
                 placeholder={attr.description}
@@ -249,7 +273,7 @@ function ListField({ attr, value, allValues, anchorRecord, activity, onChange }:
     if (!datasource) return { options: [], error: `'${attr.key}' has no datasource` };
     try {
       const result = dslEvaluate(datasource, {
-        attributes: allValues,
+        attributes: coerceCaptured(activity.attributes, allValues),
         anchorRecord,
         activity: { id: activity.id, name: activity.name },
       });

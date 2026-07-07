@@ -136,6 +136,12 @@ describe('evaluator — the four roots', () => {
     expect(() => run('rest_type')).toThrowError(/inside query methods/);
   });
 
+  it('extras inject embedding-point roots (e.g. value in validation rules)', () => {
+    const h = host({ extras: { value: new Date('2026-01-01') }, now: () => new Date('2026-07-07') });
+    expect(run('value <= now()', h)).toBe(true);
+    expect(run('value is null', host({ extras: { value: null } }))).toBe(true);
+  });
+
   it('services functions are callable', () => {
     const h = host({ services: { geo: { suburbsOf: (cityId: unknown) => `suburbs-of-${cityId}` } } });
     expect(run("services.geo.suburbsOf(attributes.city)", h)).toBe('suburbs-of-c1');

@@ -130,6 +130,15 @@ describe('validator — functions and methods', () => {
   });
 });
 
+describe('validator — extra roots', () => {
+  it('extraRoots pass as dynamic; without them the name errors', () => {
+    expect(validateExpression('value <= now()', schema, { extraRoots: ['value'] })).toEqual([]);
+    expect(validateExpression('value <= now()', schema).map(d => d.message)).toEqual([
+      "Unknown name 'value' — bare field names are only available inside query methods",
+    ]);
+  });
+});
+
 describe('validator — syntax errors surface as diagnostics', () => {
   it('parse failure becomes a single error diagnostic', () => {
     const diags = validate('records.resources.where(');

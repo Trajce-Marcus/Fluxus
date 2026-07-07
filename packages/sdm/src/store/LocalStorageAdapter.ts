@@ -62,8 +62,14 @@ export class LocalStorageAdapter implements Store {
             const def = attrMap.get(usage.attribute_ref);
             if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
             // Carry usage-level settings onto the resolved attribute
-            return usage.show_condition || usage.required
-              ? { ...def, show_condition: usage.show_condition, required: usage.required }
+            return usage.show_condition || usage.required || usage.validation
+              ? {
+                  ...def,
+                  show_condition: usage.show_condition ?? def.show_condition,
+                  required: usage.required,
+                  validation: usage.validation ?? def.validation,
+                  validation_message: usage.validation_message ?? def.validation_message,
+                }
               : def;
           }),
         })),

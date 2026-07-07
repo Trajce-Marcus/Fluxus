@@ -136,7 +136,9 @@
             "attribute_ref": "start_date"
           },
           {
-            "attribute_ref": "completed_date"
+            "attribute_ref": "completed_date",
+            "validation": "value <= now()",
+            "validation_message": "Completed date cannot be in the future"
           },
           {
             "attribute_ref": "location"

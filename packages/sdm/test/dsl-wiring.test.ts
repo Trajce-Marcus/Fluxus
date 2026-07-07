@@ -68,6 +68,19 @@ describe('DSL ↔ SDM wiring', () => {
     expect(evaluateExpression(condition, buildEvalHost(adapter, config, { attributes: { city: 'c_syd' } }))).toBe(true);
   });
 
+  it('attribute validation rule: completed_date must not be in the future', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    const { coerceValue } = await import('../src/dsl/bridge');
+    const rule = 'value <= now()';
+    const check = (raw: string) =>
+      evaluateExpression(rule, buildEvalHost(adapter, config, {
+        attributes: {},
+        extras: { value: coerceValue('date', raw) },
+      }));
+    expect(check('2020-01-01')).toBe(true);
+    expect(check('2099-01-01')).toBe(false);
+  });
+
   it('FK auto-deref works through the bridge (suburb → city name)', async () => {
     const { config, adapter, buildEvalHost } = await setup();
     const host = buildEvalHost(adapter, config, { attributes: {} });

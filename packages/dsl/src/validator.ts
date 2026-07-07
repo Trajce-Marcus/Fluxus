@@ -30,6 +30,11 @@ export interface DslSchema {
 export interface ValidateOptions {
   /** Record type of context.record (the activity's anchor), when known. */
   anchorType?: string;
+  /**
+   * Extra roots available at this embedding point (e.g. ['value'] for attribute
+   * validation rules, ['event'] for page-builder callbacks). Treated as dynamic.
+   */
+  extraRoots?: string[];
 }
 
 export interface Diagnostic {
@@ -140,6 +145,7 @@ class Validator {
         }
         if (expr.name === 'records') return { kind: 'recordsRoot' };
         if (ROOTS.has(expr.name)) return UNKNOWN;
+        if (this.options.extraRoots?.some((r) => r.toLowerCase() === expr.name)) return UNKNOWN;
         if (itemType !== null) {
           this.error(expr, `'${itemType}' has no field '${expr.name}'`);
         } else {

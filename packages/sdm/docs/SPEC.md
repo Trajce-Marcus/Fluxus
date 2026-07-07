@@ -20,6 +20,7 @@ The workbench executes FluxScript (see `packages/dsl`) for two attribute feature
 
 - **`show_condition`** on an activity's attribute usage (e.g. `"attributes.city is not null"`): evaluated live in AttributesForm; hidden attributes are excluded from submission. Evaluation errors leave the attribute visible (a broken condition must never make an input unreachable).
 - **`required`** on an activity's attribute usage: blocks submission until captured (inline banner + `*` on the label). Per-usage, not per-attribute — a shared attribute can be optional in one activity and mandatory in another. Hidden attributes are exempt by construction.
+- **`validation`** (+ optional `validation_message`) on a usage or attribute def (usage wins): a FluxScript rule that must evaluate `true` for the captured value, with the value injected as the extra root `value` — e.g. `"value <= now()"` on completed_date. Runs on submit for visible, non-empty attributes (empties are `required`'s job). Captured strings are **type-coerced** first (`date`/`int`/`bool` per the attribute's type; `coerceCaptured` in bridge.ts), which also types `attributes.*` in show conditions and datasources. Date attributes render as native date inputs.
 - **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attributes` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear.
 
 Plumbing (`src/dsl/`):

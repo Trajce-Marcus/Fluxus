@@ -240,7 +240,7 @@
     "key": "completed_date",
     "label": "Completed Date",
     "description": "Date the work order was completed.",
-    "type": "text"
+    "type": "date"
   },
   {
     "key": "wo_id",

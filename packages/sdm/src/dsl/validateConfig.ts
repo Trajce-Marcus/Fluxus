@@ -16,8 +16,8 @@ export function validateConfig(config: ConfigRaw): Finding[] {
   const schema = buildDslSchema(config);
   const findings: Finding[] = [];
 
-  const collect = (where: string, source: string, anchorType?: string) => {
-    for (const diagnostic of validateExpression(source, schema, { anchorType })) {
+  const collect = (where: string, source: string, anchorType?: string, extraRoots?: string[]) => {
+    for (const diagnostic of validateExpression(source, schema, { anchorType, extraRoots })) {
       findings.push({ where, diagnostic });
     }
   };
@@ -43,6 +43,10 @@ export function validateConfig(config: ConfigRaw): Finding[] {
           collect(`${activity.id} → '${usage.attribute_ref}' show_condition`, usage.show_condition, anchorType);
         }
         const attr = attrByKey.get(usage.attribute_ref);
+        const validation = usage.validation ?? attr?.validation;
+        if (validation) {
+          collect(`${activity.id} → '${usage.attribute_ref}' validation`, validation, anchorType, ['value']);
+        }
         if (attr?.type_config?.datasource) {
           collect(`${activity.id} → '${usage.attribute_ref}' datasource`, attr.type_config.datasource, anchorType);
         }

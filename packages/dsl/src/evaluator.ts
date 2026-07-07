@@ -98,8 +98,15 @@ class Evaluator {
         case 'records':
           if (!this.host.records) return { found: false, value: undefined };
           return { found: true, value: new RecordsRoot(this.host.records) };
-        default:
+        default: {
+          // Embedding-point extras (e.g. `value` in validation, `event` in wiring)
+          const extras = this.host.extras;
+          if (extras) {
+            const key = lookupKey(extras, name);
+            if (key !== null) return { found: true, value: extras[key] ?? null };
+          }
           return { found: false, value: undefined };
+        }
       }
     };
   }

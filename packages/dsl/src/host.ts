@@ -57,4 +57,9 @@ export interface EvalHost {
   /** Injectable clock, so hooks are testable (GRAMMAR §6). Defaults to real time. */
   now?: () => Date;
   quotas?: Partial<Quotas>;
+  /**
+   * Additional roots injected per embedding point (DSL_SPEC §3) — e.g. `value`
+   * in attribute validation rules, `event` in page-builder callback wiring.
+   */
+  extras?: Record<string, unknown>;
 }

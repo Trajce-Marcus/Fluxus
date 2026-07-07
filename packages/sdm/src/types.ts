@@ -37,6 +37,10 @@ export interface AttributeDef {
   show_condition?: string;
   /** Must be captured before the activity can submit; carried over from the usage wrapper. */
   required?: boolean;
+  /** FluxScript rule; must evaluate true for the captured value (`value` root available). */
+  validation?: string;
+  /** Shown when validation fails; defaults to "<label> is invalid". */
+  validation_message?: string;
 }
 
 // Usage wrapper in a raw activity — resolved to AttributeDef at runtime by the adapter
@@ -46,6 +50,9 @@ export interface AttributeUsageDef {
   show_condition?: string;
   /** Must be captured before the activity can submit. Hidden attributes are exempt. */
   required?: boolean;
+  /** FluxScript rule; must evaluate true for the captured value (`value` root available). */
+  validation?: string;
+  validation_message?: string;
 }
 
 // Raw activity shape (as it appears in the JSON config)
