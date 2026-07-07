@@ -17,8 +17,8 @@ Hooks (`before_hook` / `after_hook`) are no-op slots this cut. Fields like `stat
 ## Architecture
 
 ```
-docs/poc_SDM.json
-  └── config.ts (typed import)
+config/{attributes,functions}.json + config/entities/*.json
+  └── config.ts (merges to one typed ConfigRaw)
         └── store/LocalStorageAdapter (seeds defs; loads/persists records; pub/sub;
               enforces field constraints on CREATE/UPDATE; key 'fluxus:sdm:records')
               └── context/AppContext (singleton adapter; subscribe → tick → re-render;
