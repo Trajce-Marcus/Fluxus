@@ -35,6 +35,8 @@ export interface AttributeDef {
   type_config?: AttributeTypeConfig;
   /** FluxScript expression; carried over from the usage wrapper during resolution. */
   show_condition?: string;
+  /** Must be captured before the activity can submit; carried over from the usage wrapper. */
+  required?: boolean;
 }
 
 // Usage wrapper in a raw activity — resolved to AttributeDef at runtime by the adapter
@@ -42,6 +44,8 @@ export interface AttributeUsageDef {
   attribute_ref: string;
   /** FluxScript expression deciding whether this attribute is presented. */
   show_condition?: string;
+  /** Must be captured before the activity can submit. Hidden attributes are exempt. */
+  required?: boolean;
 }
 
 // Raw activity shape (as it appears in the JSON config)

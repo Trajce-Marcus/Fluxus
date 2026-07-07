@@ -61,8 +61,10 @@ export class LocalStorageAdapter implements Store {
           attributes: act.attributes.map(usage => {
             const def = attrMap.get(usage.attribute_ref);
             if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
-            // Carry the usage-level show_condition onto the resolved attribute
-            return usage.show_condition ? { ...def, show_condition: usage.show_condition } : def;
+            // Carry usage-level settings onto the resolved attribute
+            return usage.show_condition || usage.required
+              ? { ...def, show_condition: usage.show_condition, required: usage.required }
+              : def;
           }),
         })),
       },

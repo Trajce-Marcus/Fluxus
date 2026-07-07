@@ -170,11 +170,13 @@
         "record_map": "UPDATE",
         "attributes": [
           {
-            "attribute_ref": "city"
+            "attribute_ref": "city",
+            "required": true
           },
           {
             "attribute_ref": "suburb",
-            "show_condition": "attrs.city is not null"
+            "show_condition": "attrs.city is not null",
+            "required": true
           }
         ],
         "before_hook": null,

@@ -68,6 +68,12 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     e.preventDefault();
     // Hidden attributes are not part of the submission
     const visibleKeys = new Set(visibleAttributes.map(a => a.key));
+    // Required attributes must be captured (hidden ones are exempt by construction)
+    const missing = visibleAttributes.filter(a => a.required && !String(values[a.key] ?? '').trim());
+    if (missing.length > 0) {
+      setSubmitError(`Required: ${missing.map(a => a.label).join(', ')}`);
+      return;
+    }
     try {
       onSubmit(Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k))));
     } catch (err) {
@@ -84,6 +90,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
           <div key={attr.key} style={{ marginBottom: 12 }}>
             <label style={{ display: 'block', marginBottom: 4, fontSize: 13, color: '#374151' }}>
               {attr.label}
+              {attr.required && <span style={{ color: '#b91c1c' }}> *</span>}
             </label>
 
             {attr.type === 'reference' ? (

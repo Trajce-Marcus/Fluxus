@@ -19,6 +19,7 @@ Hooks (`before_hook` / `after_hook`) are no-op slots this cut. Fields like `stat
 The workbench executes FluxScript (see `packages/dsl`) for two attribute features:
 
 - **`show_condition`** on an activity's attribute usage (e.g. `"attrs.city is not null"`): evaluated live in AttributesForm; hidden attributes are excluded from submission. Evaluation errors leave the attribute visible (a broken condition must never make an input unreachable).
+- **`required`** on an activity's attribute usage: blocks submission until captured (inline banner + `*` on the label). Per-usage, not per-attribute — a shared attribute can be optional in one activity and mandatory in another. Hidden attributes are exempt by construction.
 - **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attrs` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear.
 
 Plumbing (`src/dsl/`):
