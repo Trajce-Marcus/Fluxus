@@ -4,6 +4,8 @@
 export { lex } from './lexer';
 export { parseExpression } from './parser';
 export { evaluateExpression, evaluateAst, FluxRuntimeError } from './evaluator';
+export { validateExpression, lintSchema } from './validator';
+export type { DslSchema, TypeSchema, FieldSchema, Diagnostic, ValidateOptions } from './validator';
 export { FluxSyntaxError } from './errors';
 export { TokenType, KEYWORDS } from './tokens';
 export { FkPointer, DEFAULT_QUOTAS } from './host';

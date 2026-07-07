@@ -8,7 +8,7 @@ Cross-package phases and their interlocks only. Per-package detail lives in each
 |---|---|
 | `@fluxus/sdm` | POC1·a complete: list types → CREATE → capture activities → history. Hooks are no-op slots. FK refs, related records, Schema Navigator, CSV import done. |
 | `@fluxus/page-builder` | Shell + layout editor + ComponentContainer architecture done. Wiring is structural (context keys / mock procedures), callbacks UI-only. |
-| `@fluxus/dsl` | Phase 1 in progress: grammar signed off (D1–D14); lexer + parser + evaluator built and tested (90 tests). Validator next, then sdm workbench wiring. |
+| `@fluxus/dsl` | Phase 1 nearly complete: grammar signed off (D1–D14); lexer + parser + evaluator + schema-aware validator built and tested (118 tests). Remaining: sdm workbench wiring. |
 
 ## Phase interlocks
 
