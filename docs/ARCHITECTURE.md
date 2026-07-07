@@ -54,6 +54,43 @@ The activity pipeline — resolve attributes → evaluate show conditions → va
 
 Page-builder app components are SDM-blind: a **manifest** declares ports (static config, dynamic data in, callbacks out, with item-shape contracts), and per-page **wiring** adapts them — dynamic props are DSL queries (aliasing `select` maps SDM fields to the component's shape), callbacks run activities. Reusing an app under a different SDM is a few lines of wiring, not a rewrite. The pattern is model-agnostic (a non-SDM backend can sit behind the wiring), but schema validation and the audit spine exist only with an SDM.
 
-## Deployment shape (agreed direction)
+## Data architecture — two layers
 
-tRPC + Hono locally, Lambda in production, Neon + Drizzle for storage. The DSL interpreter is one TypeScript implementation running in both browser (POC, attribute datasources, page bindings) and server (hooks, headless). The SDM package's `Store` interface is the seam for swapping localStorage for the real backend.
+Records live in two stores with different jobs (CQRS):
+
+```
+                     activities (the only write path)
+                              │
+                    ┌─────────▼──────────┐
+                    │ TRANSACTIONAL      │  lean, project-partitioned,
+                    │ (single-table      │  serves the platform runtime:
+                    │  style)            │  pickers, hooks, grids
+                    └─────────┬──────────┘
+                              │ committed activity stream (outbox —
+                              │ same machinery as `queue` dispatch)
+                    ┌─────────▼──────────┐
+                    │ REPORTING          │  real per-type relational tables,
+                    │ (relational,       │  org-scoped, cross-project views,
+                    │  projected)        │  BI/SQL tools
+                    └────────────────────┘
+```
+
+- **The activity stream is the projection source, complete by construction** — no write path bypasses activities, so the reporting layer can never miss a change. The after-hook outbox (built for `queue`) simply gains a second consumer. The application never dual-writes.
+- **Each layer gets the storage shape it wins with.** Transactional: generic/JSONB single-table shape — SDM edits never touch the physical schema. Reporting: *generated* per-type tables with real columns, FKs, and indexes — and no migration pain, because projections are **rebuilt by re-projection from the activity stream** when the SDM changes.
+- **Scoping follows access patterns.** Runtime queries are always project-scoped (the DSL's scope-blind rule guarantees it), so the transactional store partitions at project level (`org#operation#project`). Cross-project views belong only to reporting, so the relational side is org-scoped (schema per org, namespaces below).
+- **Leanness of the transactional layer is load-bearing, not cosmetic.** Runtime DSL queries there are partition-fetch + filter, viable only on small partitions. Retention enforces it: a record type may declare a `complete_when` condition (FluxScript) and window in the SDM; completed records archive out of the transactional store (the relational copy remains). Never-ending records (long-lived apps) tier their append-only history instead — hot tail transactional, full spine relational/cold — while the record stays alive.
+- **Consistency rule:** runtime reads (hook validation, pickers) always hit the transactional store — read-your-writes required. Reporting reads may lag; that's their contract.
+
+## Hosting options
+
+| Layer | Options | Notes |
+|---|---|---|
+| Transactional | **Neon Postgres (JSONB tables)** — v1 choice | Serverless, HTTP driver suits Lambda, free tier; Postgres does single-table-style storage fine. `indexed` custom fields → JSONB expression indexes or stored generated columns. |
+| | **DynamoDB single-table** — the scale option | On-demand pricing, effectively unbounded throughput, Streams as the built-in change feed. Key-based access only — depends on lean partitions (which retention guarantees). Swap-in later behind `RecordsHost`; no script or SDM changes. |
+| Reporting | **Neon Postgres (relational schemas)** — v1 and likely long-term | Org-scoped schemas, projected per-type tables, standard SQL for BI tools. |
+| | Column store (e.g. ClickHouse, BigQuery) — only if analytics outgrow Postgres | A third projection from the same activity stream; nothing upstream changes. |
+| Compute | **Hono (local) / AWS Lambda (prod)** — agreed | Same tRPC router both sides; the DSL interpreter is one TypeScript implementation running in browser and server. |
+
+**v1 deployment: one Neon Postgres wearing both hats** — JSONB transactional tables plus projected relational schemas, projection synchronous in-transaction (no sync infrastructure while the platform is young). The two-layer *architecture* holds from day one; DynamoDB and async projection are deployment upgrades behind existing seams, not redesigns.
+
+The SDM package's `Store` interface (browser POC) and the DSL's `RecordsHost` are the seams all of this hides behind. Drizzle ORM over Neon for schema and queries; tRPC for the function-call API surface (no GET/POST distinction — pages and headless callers just call functions by name).
