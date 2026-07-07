@@ -2,16 +2,33 @@ import type { Store } from './interface';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from '../types';
 
 const STORAGE_KEY = 'fluxus:sdm:records';
+// Pre-rename key (aber-poc era). Data found here is merged in once, then the key is removed.
+const LEGACY_STORAGE_KEY = 'aber-poc-v1-records';
 
 function loadRecords(): Map<string, RecordInstance> {
+  let records = new Map<string, RecordInstance>();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return new Map();
-    const entries: [string, RecordInstance][] = JSON.parse(raw);
-    return new Map(entries);
+    if (raw) records = new Map(JSON.parse(raw) as [string, RecordInstance][]);
   } catch {
-    return new Map();
+    records = new Map();
   }
+
+  try {
+    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacyRaw) {
+      const entries: [string, RecordInstance][] = JSON.parse(legacyRaw);
+      for (const [id, record] of entries) {
+        if (!records.has(id)) records.set(id, record);
+      }
+      saveRecords(records);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+  } catch {
+    // unreadable legacy data — leave it in place, don't block loading
+  }
+
+  return records;
 }
 
 function saveRecords(records: Map<string, RecordInstance>): void {
