@@ -52,7 +52,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     if (!attr.show_condition) return true;
     try {
       return dslEvaluate(attr.show_condition, {
-        attrs: values,
+        attributes: values,
         anchorRecord,
         activity: { id: activity.id, name: activity.name },
       }) === true;
@@ -221,9 +221,9 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
 
 // ── List attribute (DSL-driven) ────────────────────────────────────────────────
 // Options come from evaluating the attribute's FluxScript datasource against the
-// live store, with current form values injected as `attrs` — which is what makes
+// live store, with current form values injected as `attributes` — which is what makes
 // dependent attributes (city → suburb) work: this re-renders on every form value
-// change, so the datasource re-evaluates with the latest attrs.
+// change, so the datasource re-evaluates with the latest attribute values.
 
 interface ListOption {
   value: string;
@@ -249,7 +249,7 @@ function ListField({ attr, value, allValues, anchorRecord, activity, onChange }:
     if (!datasource) return { options: [], error: `'${attr.key}' has no datasource` };
     try {
       const result = dslEvaluate(datasource, {
-        attrs: allValues,
+        attributes: allValues,
         anchorRecord,
         activity: { id: activity.id, name: activity.name },
       });

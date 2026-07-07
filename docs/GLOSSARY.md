@@ -17,7 +17,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 ## Language
 
 - **DSL** — the one Fluxus scripting language (working name *FluxScript*): JS/SQL blend, no lambdas, case-insensitive, null-safe, no visible async. Three tiers: expressions → queries → scripts.
-- **Four roots** — the entire environment a script can touch, dependency-injected by the host: `ctx` (user, record, activity, workflow), `attrs` (captured values), `records` (SDM data graph), `services` (add-on modules).
+- **Four roots** — the entire environment a script can touch, dependency-injected by the host: `context` (user, record, activity, workflow), `attributes` (captured values), `records` (SDM data graph), `services` (add-on modules).
 - **Datasource** — any DSL expression evaluating to a list; powers `List` attributes and page bindings. May be an inline literal, a `records` query, or a service call.
 - **Show condition** — DSL expression deciding whether an attribute is presented (UI) or accepted (headless).
 - **`queue`** — keyword marking a service call as fire-and-forget; dispatched only if the surrounding transaction commits (outbox pattern).

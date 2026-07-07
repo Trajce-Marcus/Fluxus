@@ -42,7 +42,7 @@ describe('DSL ↔ SDM wiring', () => {
 
   it('city datasource lists all cities ordered by name', async () => {
     const { config, adapter, buildEvalHost } = await setup();
-    const host = buildEvalHost(adapter, config, { attrs: {} });
+    const host = buildEvalHost(adapter, config, { attributes: {} });
     const names = evaluateExpression(
       'records.cities.orderBy(name).top(50).values(name)', host);
     expect(names).toEqual(['Brisbane', 'Melbourne', 'Sydney']);
@@ -50,34 +50,34 @@ describe('DSL ↔ SDM wiring', () => {
 
   it('ACCEPTANCE: suburb datasource depends on the selected city via attrs', async () => {
     const { config, adapter, buildEvalHost } = await setup();
-    const datasource = "records.suburbs.where(city_id = attrs.city).orderBy(name).top(50)";
+    const datasource = "records.suburbs.where(city_id = attributes.city).orderBy(name).top(50)";
 
     const sydney = evaluateExpression(datasource,
-      buildEvalHost(adapter, config, { attrs: { city: 'c_syd' } })) as { fields: { name: string } }[];
+      buildEvalHost(adapter, config, { attributes: { city: 'c_syd' } })) as { fields: { name: string } }[];
     expect(sydney.map(s => s.fields.name)).toEqual(['Manly', 'Newtown', 'Parramatta']);
 
     const melbourne = evaluateExpression(datasource,
-      buildEvalHost(adapter, config, { attrs: { city: 'c_mel' } })) as { fields: { name: string } }[];
+      buildEvalHost(adapter, config, { attributes: { city: 'c_mel' } })) as { fields: { name: string } }[];
     expect(melbourne.map(s => s.fields.name)).toEqual(['Fitzroy', 'St Kilda']);
   });
 
   it('show_condition: suburb hidden until a city is chosen (empty string reads as null)', async () => {
     const { config, adapter, buildEvalHost } = await setup();
-    const condition = 'attrs.city is not null';
-    expect(evaluateExpression(condition, buildEvalHost(adapter, config, { attrs: { city: '' } }))).toBe(false);
-    expect(evaluateExpression(condition, buildEvalHost(adapter, config, { attrs: { city: 'c_syd' } }))).toBe(true);
+    const condition = 'attributes.city is not null';
+    expect(evaluateExpression(condition, buildEvalHost(adapter, config, { attributes: { city: '' } }))).toBe(false);
+    expect(evaluateExpression(condition, buildEvalHost(adapter, config, { attributes: { city: 'c_syd' } }))).toBe(true);
   });
 
   it('FK auto-deref works through the bridge (suburb → city name)', async () => {
     const { config, adapter, buildEvalHost } = await setup();
-    const host = buildEvalHost(adapter, config, { attrs: {} });
+    const host = buildEvalHost(adapter, config, { attributes: {} });
     expect(evaluateExpression(
       "records.suburbs.where(name = 'Manly').first.city_id.name", host)).toBe('Sydney');
   });
 
   it('reverse-FK navigation works through the bridge (city → suburbs)', async () => {
     const { config, adapter, buildEvalHost } = await setup();
-    const host = buildEvalHost(adapter, config, { attrs: {} });
+    const host = buildEvalHost(adapter, config, { attributes: {} });
     expect(evaluateExpression(
       "records.cities.where(name = 'Sydney').first.suburbs.count", host)).toBe(3);
   });

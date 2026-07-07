@@ -30,16 +30,16 @@ const errors = (source: string, anchorType?: string) =>
 describe('validator — happy paths produce no diagnostics', () => {
   const good = [
     "records.resources.where(rest_type = 'Labour' and status = 'Active').orderBy(name).select(id, name, rate)",
-    "records.suburbs.where(city_id = attrs.city).values(name)",
+    "records.suburbs.where(city_id = attributes.city).values(name)",
     "records.suburbs.where(city_id.state = 'NSW').top(10)",          // FK path in where
     "records.suburbs.select(id, city: city_id.name)",                // FK path in select
     "records.resources.where(true).count",
     "records.resources.first.rate > 100",
     "records.cities.where(id in records.suburbs.where(name like 'M%').values(city_id)).values(name)",
     "records.resources.where(hired_on < now().addDays(-30)).count",
-    "iif(ctx.page.flag, 'a', 'b')",
-    "attrs.qty + ' attributes'",
-    "ctx.record.anything.at.all",                                    // ctx untyped without anchorType
+    "iif(context.page.flag, 'a', 'b')",
+    "attributes.qty + ' attributes'",
+    "context.record.anything.at.all",                                    // ctx untyped without anchorType
   ];
   for (const source of good) {
     it(`ok: ${source.slice(0, 60)}`, () => {
@@ -78,9 +78,9 @@ describe('validator — schema errors', () => {
     ]);
   });
 
-  it('anchorType types ctx.record', () => {
-    expect(errors('ctx.record.rate > 50', 'resources')).toEqual([]);
-    expect(errors('ctx.record.no_field', 'resources')).toEqual([
+  it('anchorType types context.record', () => {
+    expect(errors('context.record.rate > 50', 'resources')).toEqual([]);
+    expect(errors('context.record.no_field', 'resources')).toEqual([
       "'resources' has no field 'no_field'",
     ]);
   });
@@ -125,7 +125,7 @@ describe('validator — functions and methods', () => {
   });
 
   it('services calls pass through untyped, arguments still checked', () => {
-    expect(errors('services.geo.suburbsOf(attrs.city)')).toEqual([]);
+    expect(errors('services.geo.suburbsOf(attributes.city)')).toEqual([]);
     expect(errors('services.geo.suburbsOf(records.nope.count)')).toEqual(["Unknown record type 'nope'"]);
   });
 });
@@ -142,12 +142,12 @@ describe('validator — syntax errors surface as diagnostics', () => {
 describe('validator — schema lint (D8)', () => {
   it('warns when an SDM field shadows a root', () => {
     const shadowing: DslSchema = {
-      types: { jobs: { fields: { ctx: { type: 'text' }, name: { type: 'text' } } } },
+      types: { jobs: { fields: { context: { type: 'text' }, name: { type: 'text' } } } },
     };
     const diags = lintSchema(shadowing);
     expect(diags).toHaveLength(1);
     expect(diags[0].severity).toBe('warning');
-    expect(diags[0].message).toContain("shadows the 'ctx' root");
+    expect(diags[0].message).toContain("shadows the 'context' root");
   });
 
   it('clean schema lints clean', () => {

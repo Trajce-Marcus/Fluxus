@@ -32,8 +32,8 @@ The entire environment a script can touch, dependency-injected by the host at ca
 
 | Root | Contents |
 |---|---|
-| `ctx` | execution context: `ctx.user`, `ctx.record` (anchor record), `ctx.activity`, `ctx.workflow` |
-| `attrs` | captured attribute values for the activity in flight, including attributes captured earlier in the same activity (basis of dependent attributes) |
+| `context` | execution context: `context.user`, `context.record` (anchor record), `context.activity`, `context.workflow` |
+| `attributes` | captured attribute values for the activity in flight, including attributes captured earlier in the same activity (basis of dependent attributes) |
 | `records` | the project-scoped SDM data graph: `records.<record_type>` for query and mutation |
 | `services` | global add-on modules: `services.notify.email(...)`, `services.geo.geocode(...)`, published functions |
 
@@ -50,9 +50,9 @@ Formal grammar: [GRAMMAR.md](GRAMMAR.md) (EBNF, precedence, lexical rules, and t
 ### 4.1 Expressions
 
 ```
-ctx.record.status != 'Closed'
-attrs.qty > 0 and attrs.qty <= 100
-ctx.record.contract_id.contact_email      ← FK auto-dereference
+context.record.status != 'Closed'
+attributes.qty > 0 and attributes.qty <= 100
+context.record.contract_id.contact_email      ← FK auto-dereference
 ```
 
 - **Comparison is SQL-style `=`** (and `!=`; `==` and `<>` accepted as aliases). In statement position `=` is assignment (`let x = 5`, `x = 5`); in expression position it is comparison — context-resolved, as SQL users already expect from `SET x = 5` vs `WHERE x = 5`.
@@ -71,24 +71,24 @@ records.resources
   .select(id, name, rate)
 ```
 
-- Inside `where(...)`, **bare field names are scoped to the queried record type** — the SQL trick that removes the need for lambdas. Roots (`ctx`, `attrs`, …) remain visible for the other side of comparisons: `where(city_id = attrs.city)`.
+- Inside `where(...)`, **bare field names are scoped to the queried record type** — the SQL trick that removes the need for lambdas. Roots (`context`, `attributes`, …) remain visible for the other side of comparisons: `where(city_id = attributes.city)`.
 - `select(...)` projects and **aliases**: `select(id, title: code, start: due_date)`. Aliasing is the adapter that maps SDM fields onto a consumer's expected shape (page-builder ports, service payloads).
 - Chain set (initial): `where`, `orderBy`, `select`, `first`, `count`. Extended (later, as needed): `top/limit`, `sum/min/max`, grouping.
 
 ### 4.3 Statements (scripts tier)
 
 ```
-if attrs.wo_resources.count = 0 {
+if attributes.wo_resources.count = 0 {
   fail('Select at least one resource')
 }
 
-for each r in attrs.wo_resources {
+for each r in attributes.wo_resources {
   records.wo_resources.create({
-    work_order_id: ctx.record.id,
+    work_order_id: context.record.id,
     resource_id: r.id,
     qty: 1
   })
-  queue services.notify.sms(r.contact, 'Assigned to ' + ctx.record.code)
+  queue services.notify.sms(r.contact, 'Assigned to ' + context.record.code)
 }
 ```
 
@@ -105,10 +105,10 @@ The `List` attribute type (replaces separate valueList / record-lookup variants)
 ```
 ['Sydney', 'Melbourne', 'Brisbane']                            ← inline literal
 records.resources.where(rest_type = 'Labour').orderBy(name)    ← query
-services.geo.suburbs(attrs.city)                                ← service-backed
+services.geo.suburbs(attributes.city)                                ← service-backed
 ```
 
-Scalars render as a simple picker; records/objects as a grid picker driven by `type_config` (`selection: single|multi`, `columns`, `key_field`). A datasource referencing `attrs.<earlier key>` creates a dependent attribute (city → suburb) and re-evaluates when that value changes.
+Scalars render as a simple picker; records/objects as a grid picker driven by `type_config` (`selection: single|multi`, `columns`, `key_field`). A datasource referencing `attributes.<earlier key>` creates a dependent attribute (city → suburb) and re-evaluates when that value changes.
 
 `show_condition` (expression tier) decides whether an attribute is presented (UI) or applicable (headless). In headless mode the datasource doubles as validation: a submitted value must be in the datasource's result set.
 
@@ -116,7 +116,7 @@ Storage is unchanged from the SDM runtime: captured attributes persist to activi
 
 ## 6. Hooks
 
-**Before hook = gate.** Runs on activity submission, before anything persists. May read anything (`ctx`, `attrs`, any `records` query, read-only service calls). May `fail('msg')` — the activity is rejected, nothing persists — or `warn('msg')`. **Validate only**: before hooks never modify `attrs` or records. Derived/prepped values are the after hook's job, which keeps activity history a truthful record of user input.
+**Before hook = gate.** Runs on activity submission, before anything persists. May read anything (`context`, `attributes`, any `records` query, read-only service calls). May `fail('msg')` — the activity is rejected, nothing persists — or `warn('msg')`. **Validate only**: before hooks never modify `attributes` or records. Derived/prepped values are the after hook's job, which keeps activity history a truthful record of user input.
 
 **After hook = effects.** Runs after the activity persists. Contains the data logic: loops, conditional mutations, service calls, invoice-style derivations.
 
@@ -181,7 +181,7 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 
 ## 11. Phases
 
-1. **Phase 1 — expressions + queries.** Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attrs.` dependencies (city → suburb is the acceptance test). Entirely client-side.
+1. **Phase 1 — expressions + queries.** Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attributes.` dependencies (city → suburb is the acceptance test). Entirely client-side.
 2. **Phase 2 — scripts.** Statements, `fail`/`warn`, `records` mutations, transactional after hooks, `queue`. Fills the sdm hook slots; `run activity` callback action in the page builder (payload as `event` root).
 3. **Phase 3 — services registry** with one or two real modules (notify, geocode).
 4. **Phase 4 — headless invocation**: activities as the API surface over the agreed backend stack.

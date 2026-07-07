@@ -299,7 +299,7 @@
     "description": "Select the suburb within the chosen city.",
     "type": "list",
     "type_config": {
-      "datasource": "records.suburbs.where(city_id = attrs.city).orderBy(name).top(50)",
+      "datasource": "records.suburbs.where(city_id = attributes.city).orderBy(name).top(50)",
       "selection": "single",
       "key_field": "id",
       "display_field": "name"

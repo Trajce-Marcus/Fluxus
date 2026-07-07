@@ -50,8 +50,8 @@ export const DEFAULT_QUOTAS: Quotas = {
 
 export interface EvalHost {
   records?: RecordsHost;
-  ctx?: Record<string, unknown>;
-  attrs?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  attributes?: Record<string, unknown>;
   /** Service modules (Phase 3): plain objects whose function members are callable. */
   services?: Record<string, unknown>;
   /** Injectable clock, so hooks are testable (GRAMMAR §6). Defaults to real time. */

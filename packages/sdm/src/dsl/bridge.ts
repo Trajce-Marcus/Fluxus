@@ -65,28 +65,28 @@ export function buildRecordsHost(adapter: Store, config: ConfigRaw): RecordsHost
 }
 
 export interface ScriptContext {
-  attrs?: Record<string, unknown>;
+  attributes?: Record<string, unknown>;
   anchorRecord?: RecordInstance | null;
   activity?: { id: string; name: string };
   workflow?: { id: string; name: string };
 }
 
 export function buildEvalHost(adapter: Store, config: ConfigRaw, script: ScriptContext): EvalHost {
-  // Empty-string form values read as null in scripts, so `attrs.city is not null`
+  // Empty-string form values read as null in scripts, so `attributes.city is not null`
   // behaves before anything is selected.
-  const attrs: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(script.attrs ?? {})) {
-    attrs[key] = value === '' ? null : value;
+  const attributes: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(script.attributes ?? {})) {
+    attributes[key] = value === '' ? null : value;
   }
 
   return {
     records: buildRecordsHost(adapter, config),
-    ctx: {
+    context: {
       user: { id: 'demo', name: 'Demo User' },
       record: script.anchorRecord ? toDslRecord(script.anchorRecord) : null,
       activity: script.activity ?? null,
       workflow: script.workflow ?? null,
     },
-    attrs,
+    attributes,
   };
 }

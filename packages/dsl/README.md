@@ -18,6 +18,6 @@ records.resources
 ## Design pillars
 
 - **Three tiers, one grammar:** expressions → queries → scripts; each embedding point admits a tier.
-- **Four roots:** `ctx`, `attrs`, `records`, `services` — the entire injectable environment; every script is a function.
+- **Four roots:** `context`, `attributes`, `records`, `services` — the entire injectable environment; every script is a function.
 - **Gate/effects hooks:** before hook validates only (`fail`), after hook acts — transactionally, with `queue` for fire-and-forget service dispatch on commit.
 - **Own grammar + TS tree-walking interpreter**, identical in browser and server.

@@ -42,8 +42,8 @@ const recordsHost: RecordsHost = {
 function host(extra: Partial<EvalHost> = {}): EvalHost {
   return {
     records: recordsHost,
-    ctx: { record: DATA.cities[0], page: { selectedState: 'NSW' } },
-    attrs: { city: 'c1', qty: 5 },
+    context: { record: DATA.cities[0], page: { selectedState: 'NSW' } },
+    attributes: { city: 'c1', qty: 5 },
     now: () => new Date('2026-07-07T00:00:00'),
     ...extra,
   };
@@ -60,7 +60,7 @@ describe('evaluator — operators and semantics', () => {
   });
 
   it('string concat with + needs no cast', () => {
-    expect(run("attrs.qty + ' attributes'")).toBe('5 attributes');
+    expect(run("attributes.qty + ' attributes'")).toBe('5 attributes');
     expect(run("'rate: ' + 12.5")).toBe('rate: 12.5');
   });
 
@@ -72,12 +72,12 @@ describe('evaluator — operators and semantics', () => {
 
   it('null semantics: the JS way (D5)', () => {
     expect(run('null = null')).toBe(true);
-    expect(run("attrs.missing = null")).toBe(true);
+    expect(run("attributes.missing = null")).toBe(true);
     expect(run('null < 5')).toBe(false);
     expect(run('null + 1')).toBe(null);
     expect(run("null + 'x'")).toBe(null);
-    expect(run('attrs.missing is null')).toBe(true);
-    expect(run('attrs.qty is not null')).toBe(true);
+    expect(run('attributes.missing is null')).toBe(true);
+    expect(run('attributes.qty is not null')).toBe(true);
   });
 
   it('null-safe navigation through dotted paths', () => {
@@ -127,9 +127,9 @@ describe('evaluator — operators and semantics', () => {
 
 describe('evaluator — the four roots', () => {
   it('ctx and attrs resolve case-insensitively; missing keys are null', () => {
-    expect(run('ctx.page.selectedState')).toBe('NSW');
-    expect(run('ctx.page.SELECTEDSTATE')).toBe('NSW');
-    expect(run('ctx.page.not_a_key')).toBe(null);
+    expect(run('context.page.selectedState')).toBe('NSW');
+    expect(run('context.page.SELECTEDSTATE')).toBe('NSW');
+    expect(run('context.page.not_a_key')).toBe(null);
   });
 
   it('bare identifiers outside chains are errors with guidance', () => {
@@ -138,7 +138,7 @@ describe('evaluator — the four roots', () => {
 
   it('services functions are callable', () => {
     const h = host({ services: { geo: { suburbsOf: (cityId: unknown) => `suburbs-of-${cityId}` } } });
-    expect(run("services.geo.suburbsOf(attrs.city)", h)).toBe('suburbs-of-c1');
+    expect(run("services.geo.suburbsOf(attributes.city)", h)).toBe('suburbs-of-c1');
   });
 });
 
@@ -146,7 +146,7 @@ describe('evaluator — the four roots', () => {
 
 describe('evaluator — query chains', () => {
   it('where with bare-field scope and outer attrs (the city → suburb case)', () => {
-    const names = run('records.suburbs.where(city_id = attrs.city).values(name)');
+    const names = run('records.suburbs.where(city_id = attributes.city).values(name)');
     expect(names).toEqual(['Newtown', 'Manly']);
   });
 
@@ -177,8 +177,8 @@ describe('evaluator — query chains', () => {
   });
 
   it('reverse-FK navigation (D12)', () => {
-    expect(run('ctx.record.suburbs.count')).toBe(2);
-    expect(run('ctx.record.suburbs.orderBy(name desc).first.name')).toBe('Newtown');
+    expect(run('context.record.suburbs.count')).toBe(2);
+    expect(run('context.record.suburbs.orderBy(name desc).first.name')).toBe('Newtown');
   });
 
   it('M:N-style subquery membership via values()', () => {

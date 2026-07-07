@@ -18,12 +18,12 @@ Hooks (`before_hook` / `after_hook`) are no-op slots this cut. Fields like `stat
 
 The workbench executes FluxScript (see `packages/dsl`) for two attribute features:
 
-- **`show_condition`** on an activity's attribute usage (e.g. `"attrs.city is not null"`): evaluated live in AttributesForm; hidden attributes are excluded from submission. Evaluation errors leave the attribute visible (a broken condition must never make an input unreachable).
+- **`show_condition`** on an activity's attribute usage (e.g. `"attributes.city is not null"`): evaluated live in AttributesForm; hidden attributes are excluded from submission. Evaluation errors leave the attribute visible (a broken condition must never make an input unreachable).
 - **`required`** on an activity's attribute usage: blocks submission until captured (inline banner + `*` on the label). Per-usage, not per-attribute — a shared attribute can be optional in one activity and mandatory in another. Hidden attributes are exempt by construction.
-- **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attrs` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear.
+- **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attributes` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear.
 
 Plumbing (`src/dsl/`):
-- `bridge.ts` — `buildDslSchema(config)` (validator schema; short type names, `rt_` stripped), `buildRecordsHost(adapter, config)` (evaluator store adapter incl. FK targets and reverse refs), `buildEvalHost(...)` (the four roots; `ctx.user` is a demo stub until auth).
+- `bridge.ts` — `buildDslSchema(config)` (validator schema; short type names, `rt_` stripped), `buildRecordsHost(adapter, config)` (evaluator store adapter incl. FK targets and reverse refs), `buildEvalHost(...)` (the four roots; `context.user` is a demo stub until auth).
 - `validateConfig.ts` — validates every datasource and show_condition against the schema at app start ("config-save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`, whose acceptance case is the city → suburb dependent datasource.
 
 **Seeds:** an entity file may carry `seeds` (sample records); the adapter loads them only when the store has no records of that type. Cities/suburbs ship seeded so the location picker works out of the box.

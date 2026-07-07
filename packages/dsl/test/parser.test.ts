@@ -102,7 +102,7 @@ describe('parser — comparison forms', () => {
 
 describe('parser — postfix: members, calls, chains', () => {
   it('parses dotted paths', () => {
-    const ast = parseExpression('ctx.record.contract_id.contact_email') as Member;
+    const ast = parseExpression('context.record.contract_id.contact_email') as Member;
     expect(ast).toMatchObject({
       kind: 'member',
       name: 'contact_email',
@@ -111,7 +111,7 @@ describe('parser — postfix: members, calls, chains', () => {
   });
 
   it('allows keywords as member names after a dot (D7)', () => {
-    expect(parseExpression('ctx.record.like')).toMatchObject({ kind: 'member', name: 'like' });
+    expect(parseExpression('context.record.like')).toMatchObject({ kind: 'member', name: 'like' });
   });
 
   it('parses calls with aliases and directions', () => {
@@ -136,30 +136,30 @@ describe('parser — postfix: members, calls, chains', () => {
 
 describe('parser — grammar doc examples verbatim (§3.4, §4.3)', () => {
   const examples = [
-    "ctx.record.status != 'Closed'",
-    'attrs.qty > 0 and attrs.qty <= 100',
-    "ctx.record.due_date between date('2026-07-01') and date('2026-07-31')",
-    'ctx.record.due_date <= now().addDays(7)',
-    "ctx.record.work_group in ('WG1', 'WG2')",
-    'ctx.record.contract_id is not null',
+    "context.record.status != 'Closed'",
+    'attributes.qty > 0 and attributes.qty <= 100',
+    "context.record.due_date between date('2026-07-01') and date('2026-07-31')",
+    'context.record.due_date <= now().addDays(7)',
+    "context.record.work_group in ('WG1', 'WG2')",
+    'context.record.contract_id is not null',
     "name like 'pump%'",
-    "iif(attrs.urgent, 'P1', 'P3')",
-    "'Job ' + ctx.record.code + ' assigned'",
-    "attrs.qty + ' attributes'",
+    "iif(attributes.urgent, 'P1', 'P3')",
+    "'Job ' + context.record.code + ' assigned'",
+    "attributes.qty + ' attributes'",
     `records.resources
   .where(rest_type = 'Labour' and status = 'Active')
   .orderBy(name)
   .select(id, name, rate)`,
     `records.jobs
-  .where(work_group in ctx.page.selectedGroups
-         and due_date between ctx.page.rangeStart and ctx.page.rangeEnd)
+  .where(work_group in context.page.selectedGroups
+         and due_date between context.page.rangeStart and context.page.rangeEnd)
   .select(id, title: code, start: due_date, laneId: work_group)`,
-    'records.assets.where(asset_no = attrs.asset).first',
+    'records.assets.where(asset_no = attributes.asset).first',
     "records.work_orders.where(status = 'Open').count",
     "records.work_orders.where(work_group.region = 'North')",
     'records.work_orders.select(id, group: work_group.name)',
     `records.assets.where(id in
-  records.wo_assets.where(work_order_id = ctx.record.id).values(asset_id))`,
+  records.wo_assets.where(work_order_id = context.record.id).values(asset_id))`,
     "records.resources.where(status = 'Active').where(true)",
   ];
 

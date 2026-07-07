@@ -33,7 +33,7 @@ and or not in between like is null true false
 let if else for each queue return function asc desc
 ```
 
-Reserved words cannot be bare identifiers, but **are valid member names after `.`** — an SDM field named `like` is still reachable as `ctx.record.like`. ⚑ D7
+Reserved words cannot be bare identifiers, but **are valid member names after `.`** — an SDM field named `like` is still reachable as `context.record.like`. ⚑ D7
 
 ### 1.4 Statements and lines
 
@@ -115,27 +115,27 @@ The right side of `in` accepts a list value (`['a', 'b']`, a variable, a query r
 ### 3.3 Semantics bound to the grammar
 
 - **`=` is comparison in expression position** (assignment exists only in statement position, §5). `==`, `<>` are silent aliases; canonical form `=` / `!=`.
-- **Null-safe navigation:** a dotted path through null yields null: `ctx.record.contract_id.contact_email` is null when contract_id is. Arithmetic with null yields null.
+- **Null-safe navigation:** a dotted path through null yields null: `context.record.contract_id.contact_email` is null when contract_id is. Arithmetic with null yields null.
 - **Comparisons are total — no SQL three-valued logic.** `x = null` is a genuine null check (true/false), `null = null` → true, ordering comparisons against null → false. `is null` / `is not null` accepted as readable aliases. This deliberately removes SQL's `= NULL` trap. ⚑ D5
 - **FK auto-dereference:** dotting past an `fk_ref` field transparently fetches the target record (the SDM tells the engine which fields are FKs).
-- **`+` concatenates when either operand is a string**, formatting the other operand — no cast needed: `attrs.qty + ' attributes'` → `'5 attributes'`. Other type mismatches in arithmetic are validation errors when statically known, runtime errors otherwise — no JS-style silent coercion.
+- **`+` concatenates when either operand is a string**, formatting the other operand — no cast needed: `attributes.qty + ' attributes'` → `'5 attributes'`. Other type mismatches in arithmetic are validation errors when statically known, runtime errors otherwise — no JS-style silent coercion.
 - **`in`** accepts a list literal, parenthesised list, query result, or any list value. **`between`** is inclusive. **`like`** uses `%` (any run) and `_` (one char), case-insensitive like all string comparison. ⚑ D4
 - **Conditional expression** is the builtin `iif(cond, then, else)` — no `? :` operator, no `case` yet. ⚑ D6
-- **List properties:** `.count`, `.first` are terminal properties (no parens): `attrs.wo_resources.count`.
+- **List properties:** `.count`, `.first` are terminal properties (no parens): `attributes.wo_resources.count`.
 
 ### 3.4 Examples
 
 ```
-ctx.record.status != 'Closed'
-attrs.qty > 0 and attrs.qty <= 100
-ctx.record.due_date between date('2026-07-01') and date('2026-07-31')
-ctx.record.due_date <= now().addDays(7)
-ctx.record.work_group in ('WG1', 'WG2')
-ctx.record.contract_id is not null
+context.record.status != 'Closed'
+attributes.qty > 0 and attributes.qty <= 100
+context.record.due_date between date('2026-07-01') and date('2026-07-31')
+context.record.due_date <= now().addDays(7)
+context.record.work_group in ('WG1', 'WG2')
+context.record.contract_id is not null
 name like 'pump%'
-iif(attrs.urgent, 'P1', 'P3')
-'Job ' + ctx.record.code + ' assigned'
-attrs.qty + ' attributes'
+iif(attributes.urgent, 'P1', 'P3')
+'Job ' + context.record.code + ' assigned'
+attributes.qty + ' attributes'
 ```
 
 ---
@@ -146,11 +146,11 @@ Syntactically, queries are ordinary postfix chains on `records.<record_type>` �
 
 ### 4.1 Bare-field scope
 
-Inside the arguments of `where`, `orderBy`, and `select`, bare identifiers resolve **first to fields of the queried record type**, then to the roots (`ctx`, `attrs`, `records`, `services`) and enclosing `let` bindings. This is the SQL implicit-table-scope rule and the reason the language needs no lambdas:
+Inside the arguments of `where`, `orderBy`, and `select`, bare identifiers resolve **first to fields of the queried record type**, then to the roots (`context`, `attributes`, `records`, `services`) and enclosing `let` bindings. This is the SQL implicit-table-scope rule and the reason the language needs no lambdas:
 
 ```
 records.resources.where(rest_type = 'Labour' and status = 'Active')
-records.suburbs.where(city_id = attrs.city)
+records.suburbs.where(city_id = attributes.city)
 ```
 
 If an SDM field name shadows a root name, the field wins inside the chain and the validator emits a warning at config-save time. ⚑ D8
@@ -178,11 +178,11 @@ records.resources
   .select(id, name, rate)
 
 records.jobs
-  .where(work_group in ctx.page.selectedGroups
-         and due_date between ctx.page.rangeStart and ctx.page.rangeEnd)
+  .where(work_group in context.page.selectedGroups
+         and due_date between context.page.rangeStart and context.page.rangeEnd)
   .select(id, title: code, start: due_date, laneId: work_group)
 
-records.assets.where(asset_no = attrs.asset).first
+records.assets.where(asset_no = attributes.asset).first
 records.work_orders.where(status = 'Open').count
 ```
 
@@ -197,12 +197,12 @@ records.work_orders.select(id, group: work_group.name)
 
 // 1:N — reverse-FK navigation: incoming FKs appear as list properties,
 // named by the source type (the SDM's reverse-FK index powers this)   ⚑ D12
-ctx.record.wo_resources
-for each line in ctx.record.wo_resources { ... }
+context.record.wo_resources
+for each line in context.record.wo_resources { ... }
 
 // M:N — membership via a join type and a scalar subquery
 records.assets.where(id in
-  records.wo_assets.where(work_order_id = ctx.record.id).values(asset_id))
+  records.wo_assets.where(work_order_id = context.record.id).values(asset_id))
 ```
 
 If two FKs from one source type point at the same target, reverse navigation needs disambiguation — `wo_resources(by: alt_wo_id)` — rare, and the validator names the options. Relating types on non-FK fields is expressible via `in` + subquery, but the first-class answer is: **if two types need relating, put the FK in the SDM** — relationships belong in the model, not ad-hoc inside queries.
@@ -237,7 +237,7 @@ function-decl = "function" identifier "(" [ identifier { "," identifier } ] ")" 
 - `let` declares a variable, **block-scoped** to its enclosing `{ }` (or the whole script at top level). `for each x in ...` binds `x` for its block. Reassignment is `x = expr` — legal only in statement position, which is what keeps `=` unambiguous as comparison inside expressions.
 - **Variables hold snapshot copies.** ⚑ D11 Assigning a query materializes it: `let pool = records.resources.where(status = 'Active')` runs the query and `pool` holds the results as copies. Later changes to the store do not ripple into `pool`, and writing to a field of a record held in a variable **never writes to the store** — data changes only via `records.<type>.update(...)` / `.create(...)`. Chaining on a variable (`pool = pool.where(...)`) filters the snapshot in memory.
 - **No globals, no cross-run persistence** — variables exist for one execution; durable state lives in records.
-- **Roots are not shadowable**: `let ctx = ...` is a validation error, as is redeclaring a name in the same block or using a variable before declaration (all caught at config-save time).
+- **Roots are not shadowable**: `let context = ...` is a validation error, as is redeclaring a name in the same block or using a variable before declaration (all caught at config-save time).
 - **The expressions tier is variable-free** by design: a show condition or datasource is a single expression. When one needs intermediates, promote it to a named function — complexity graduates to the reusable tier rather than accumulating in config strings.
 
 ### Mutations   ⚑ D14
@@ -246,16 +246,16 @@ The rule: **mutations live where their target lives** — instance, collection, 
 
 ```
 // single record — method on the record itself
-ctx.record.update({ status: 'Scheduled', scheduled_date: attrs.date })
+context.record.update({ status: 'Scheduled', scheduled_date: attributes.date })
 
-let job = records.jobs.where(code = attrs.job_code).first
+let job = records.jobs.where(code = attributes.job_code).first
 job.update({ status: 'Assigned' })
 
 // works on any record value, incl. FK-deref targets
-ctx.record.work_group.update({ last_assigned: now() })
+context.record.work_group.update({ last_assigned: now() })
 
 // create — collection level (no instance exists yet)
-records.wo_resources.create({ work_order_id: ctx.record.id, resource_id: r.id, qty: 1 })
+records.wo_resources.create({ work_order_id: context.record.id, resource_id: r.id, qty: 1 })
 
 // bulk, SQL-set-based — chain terminal   ⚑ D13
 records.work_orders
@@ -272,17 +272,17 @@ records.work_orders
 ### Example (after hook)
 
 ```
-for each r in attrs.wo_resources {
+for each r in attributes.wo_resources {
   records.wo_resources.create({
-    work_order_id: ctx.record.id,
+    work_order_id: context.record.id,
     resource_id: r.id,
     qty: 1
   })
-  queue services.notify.sms(r.contact, 'Assigned to ' + ctx.record.code)
+  queue services.notify.sms(r.contact, 'Assigned to ' + context.record.code)
 }
-if ctx.record.contract_id is not null {
-  queue services.notify.email(ctx.record.contract_id.contact_email,
-    'Resources assigned to ' + ctx.record.code)
+if context.record.contract_id is not null {
+  queue services.notify.email(context.record.contract_id.contact_email,
+    'Resources assigned to ' + context.record.code)
 }
 ```
 
@@ -327,7 +327,7 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D5 | Null comparison semantics | **Resolved** | The JS way (user): total comparisons, `x = null` works, no three-valued logic; `is null` accepted as alias. The deliberate divergence from SQL. |
 | D6 | Conditional expression | **Resolved** | `iif(cond, a, b)` builtin. No `? :`; `case` only if demanded. |
 | D7 | Keyword/field collisions | **Resolved** | Keywords reserved as bare identifiers but valid after `.`. |
-| D8 | Bare-field shadowing | **Resolved** | Fields shadow roots inside query chains; validator warns on SDM fields named `ctx`/`attrs`/`records`/`services`. |
+| D8 | Bare-field shadowing | **Resolved** | Fields shadow roots inside query chains; validator warns on SDM fields named `context`/`attributes`/`records`/`services`. |
 | D9 | Statement termination | **Resolved** | Newline-terminated; **no semicolons** (`;` is a syntax error); continuation on trailing operator/comma/open bracket or leading `.`. |
 | D10 | Scalar projection | **Resolved** | `.values(field)` included in Phase 1 — required for M:N subquery membership (§4.4), also serves scalar datasources. |
 | D11 | Variable semantics | Open (building per rec) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. Zero parser impact; revisitable until Phase 2 lands. |

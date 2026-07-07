@@ -175,7 +175,7 @@
           },
           {
             "attribute_ref": "suburb",
-            "show_condition": "attrs.city is not null",
+            "show_condition": "attributes.city is not null",
             "required": true
           }
         ],

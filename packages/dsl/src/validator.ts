@@ -2,7 +2,7 @@
 // Walks the AST tracking the static *shape* of each expression (record list of
 // type T, record of type T, FK reference, scalar…) so unknown record types,
 // unknown fields, and broken FK paths fail when the config is saved, not when
-// a user runs the activity. Unknown/dynamic shapes (ctx, attrs, services)
+// a user runs the activity. Unknown/dynamic shapes (context, attributes, services)
 // propagate silently — no false positives on host-defined content.
 
 import type { Arg, Expr } from './ast';
@@ -28,7 +28,7 @@ export interface DslSchema {
 }
 
 export interface ValidateOptions {
-  /** Record type of ctx.record (the activity's anchor), when known. */
+  /** Record type of context.record (the activity's anchor), when known. */
   anchorType?: string;
 }
 
@@ -39,7 +39,7 @@ export interface Diagnostic {
   col: number;
 }
 
-const ROOTS = new Set(['ctx', 'attrs', 'records', 'services']);
+const ROOTS = new Set(['context', 'attributes', 'records', 'services']);
 
 const BUILTINS: Record<string, { min: number; max: number }> = {
   iif: { min: 3, max: 3 },
@@ -95,7 +95,7 @@ export function lintSchema(schema: DslSchema): Diagnostic[] {
 // ── Shapes ──────────────────────────────────────────────────────────────────────
 
 type Shape =
-  | { kind: 'unknown' }                             // dynamic (ctx/attrs/services content)
+  | { kind: 'unknown' }                             // dynamic (context/attributes/services content)
   | { kind: 'scalar' }
   | { kind: 'recordsRoot' }
   | { kind: 'record'; type: string }
@@ -258,7 +258,7 @@ class Validator {
       }
 
       case 'unknown': {
-        // ctx.record is typable when the host declares the anchor type
+        // context.record is typable when the host declares the anchor type
         if (this.options.anchorType && this.isCtxRecord(expr)) {
           return { kind: 'record', type: this.options.anchorType };
         }
@@ -273,7 +273,7 @@ class Validator {
   }
 
   private isCtxRecord(expr: Expr & { kind: 'member' }): boolean {
-    return expr.name === 'record' && expr.object.kind === 'ident' && expr.object.name === 'ctx';
+    return expr.name === 'record' && expr.object.kind === 'ident' && expr.object.name === 'context';
   }
 
   // ── Calls ─────────────────────────────────────────────────────────────────────

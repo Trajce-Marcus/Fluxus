@@ -89,10 +89,10 @@ class Evaluator {
   private rootScope(): Scope {
     return (name) => {
       switch (name) {
-        case 'ctx':
-          return { found: true, value: this.host.ctx ?? {} };
-        case 'attrs':
-          return { found: true, value: this.host.attrs ?? {} };
+        case 'context':
+          return { found: true, value: this.host.context ?? {} };
+        case 'attributes':
+          return { found: true, value: this.host.attributes ?? {} };
         case 'services':
           return { found: true, value: this.host.services ?? {} };
         case 'records':
@@ -355,7 +355,7 @@ class Evaluator {
 
     if (isPlainObject(object)) {
       const key = lookupKey(object, name);
-      return key === null ? null : (object[key] ?? null); // ctx/attrs content is host-defined — missing keys are null
+      return key === null ? null : (object[key] ?? null); // context/attributes content is host-defined — missing keys are null
     }
 
     throw new FluxRuntimeError(`Cannot access '.${name}' on ${describe(object)}`, pos);

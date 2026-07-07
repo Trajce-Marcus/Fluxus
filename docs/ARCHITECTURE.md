@@ -33,8 +33,8 @@ Every script is a function whose environment is dependency-injected by the host 
 
 | Root | Contents |
 |---|---|
-| `ctx` | user, anchor record, activity, workflow — populated by whichever host is executing |
-| `attrs` | captured attribute values for the activity in flight (incl. previously captured attributes) |
+| `context` | user, anchor record, activity, workflow — populated by whichever host is executing |
+| `attributes` | captured attribute values for the activity in flight (incl. previously captured attributes) |
 | `records` | the SDM-scoped data graph — query and mutation |
 | `services` | global add-on modules (notify, geocode, published functions) — SDM-agnostic |
 
