@@ -1,5 +1,6 @@
 import type { Store } from './interface';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from '../types';
+import { joinScript } from '../dsl/bridge';
 
 const STORAGE_KEY = 'fluxus:sdm:records';
 // Pre-rename key (aber-poc era). Data found here is merged in once, then the key is removed.
@@ -58,17 +59,21 @@ export class LocalStorageAdapter implements Store {
         ...wf,
         activities: wf.activities.map(act => ({
           ...act,
+          // Hooks may be written as arrays of lines in the JSON — joined here
+          before_hook: joinScript(act.before_hook),
+          after_hook: joinScript(act.after_hook),
           attributes: act.attributes.map(usage => {
             const def = attrMap.get(usage.attribute_ref);
             if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
             // Carry usage-level settings onto the resolved attribute
-            return usage.show_condition || usage.required || usage.validation
+            return usage.show_condition || usage.required || usage.validation || usage.can_waive
               ? {
                   ...def,
                   show_condition: usage.show_condition ?? def.show_condition,
                   required: usage.required,
                   validation: usage.validation ?? def.validation,
                   validation_message: usage.validation_message ?? def.validation_message,
+                  can_waive: usage.can_waive ?? def.can_waive,
                 }
               : def;
           }),
@@ -185,7 +190,9 @@ export class LocalStorageAdapter implements Store {
     return r;
   }
 
-  createRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance {
+  // Validate + shape a create without persisting — the staging half of createRecord.
+  // Hooks build records while their script runs and insert only on commit.
+  buildRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance {
     const rt = this.recordTypes.find(r => r.id === typeId);
     if (!rt) throw new Error(`RecordType not found: ${typeId}`);
 
@@ -211,20 +218,28 @@ export class LocalStorageAdapter implements Store {
       id = `r_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     }
 
-    const record: RecordInstance = {
+    return {
       id,
       typeRef: typeId,
       customFields: merged,
       activityHistory: [],
     };
+  }
 
-    this.records.set(id, record);
+  insertRecord(record: RecordInstance): void {
+    this.records.set(record.id, record);
     saveRecords(this.records);
     this.notify();
+  }
+
+  createRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance {
+    const record = this.buildRecord(typeId, customFields);
+    this.insertRecord(record);
     return record;
   }
 
-  updateRecord(recordId: string, fields: Record<string, unknown>): void {
+  // Constraint check for an update without applying it — the staging half of updateRecord.
+  validateUpdate(recordId: string, fields: Record<string, unknown>): void {
     const r = this.records.get(recordId);
     if (!r) throw new Error(`Record not found: ${recordId}`);
     const rt = this.recordTypes.find(t => t.id === r.typeRef);
@@ -240,6 +255,11 @@ export class LocalStorageAdapter implements Store {
         if (clash) throw new Error(`"${cf.key}" must be unique — "${newVal}" already exists`);
       }
     }
+  }
+
+  updateRecord(recordId: string, fields: Record<string, unknown>): void {
+    this.validateUpdate(recordId, fields);
+    const r = this.records.get(recordId)!;
     r.customFields = { ...r.customFields, ...fields };
     saveRecords(this.records);
     this.notify();

@@ -2,13 +2,22 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
 import { coerceCaptured, coerceValue } from '../dsl/bridge';
-import type { ActivityDef, AttributeDef, RecordInstance } from '../types';
+import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '../types';
 
 interface Props {
   activity: ActivityDef;
   anchorRecord: RecordInstance | null;
   recordTypeId: string;
-  onSubmit: (captured: Record<string, string>) => void;
+  /**
+   * Runs the activity. 'needs-confirmation' means the before hook warn()ed and
+   * nothing persisted — the form shows Continue/Cancel and re-submits with
+   * acknowledgedWarnings on Continue. `waived` carries the attributes the user
+   * declared unavailable (key → reason).
+   */
+  onSubmit: (
+    captured: Record<string, string>,
+    options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
+  ) => RunActivityResult;
   onClose: () => void;
 }
 
@@ -45,6 +54,32 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
 
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Attributes declared unavailable ("can't provide"): key → the user's reason.
+  // Presence of a key means the toggle is on; the value input is replaced by
+  // the reason box and the captured value is cleared.
+  const [waived, setWaived] = useState<Record<string, string>>({});
+  // Before-hook warnings awaiting the user's Continue/Cancel decision, together
+  // with a frozen snapshot of the values/waivers that were validated and warned
+  // about. Continue submits the snapshot — editing the form cannot sneak past
+  // the validations that already ran (the fields are locked while pending anyway).
+  const [pending, setPending] = useState<{
+    warnings: string[];
+    captured: Record<string, string>;
+    waived: Record<string, string>;
+  } | null>(null);
+
+  const toggleWaive = (key: string, on: boolean) => {
+    setWaived(w => {
+      const next = { ...w };
+      if (on) next[key] = next[key] ?? '';
+      else delete next[key];
+      return next;
+    });
+    if (on) {
+      setValues(v => ({ ...v, [key]: '' }));
+      setDisplayLabels(d => ({ ...d, [key]: '' }));
+    }
+  };
 
   // show_condition (FluxScript) decides which attributes are presented.
   // Evaluation errors leave the attribute visible — a broken condition should
@@ -68,14 +103,47 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
 
   const visibleAttributes = activity.attributes.filter(isVisible);
 
+  // The submission payload: hidden attributes are not part of it
+  const capturedForSubmit = () => {
+    const visibleKeys = new Set(visibleAttributes.map(a => a.key));
+    return Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k)));
+  };
+
+  const submit = (
+    captured: Record<string, string>,
+    capturedWaived: Record<string, string>,
+    options?: { acknowledgedWarnings?: boolean }
+  ) => {
+    try {
+      const result = onSubmit(captured, { ...options, waived: capturedWaived });
+      if (result.status === 'needs-confirmation') {
+        setPending({ warnings: result.warnings, captured, waived: capturedWaived });
+      } else {
+        setPending(null);
+      }
+    } catch (err) {
+      // fail() in a hook and constraint violations (required/unique/immutable)
+      // surface here; the modal stays open so the user can correct and resubmit.
+      setPending(null);
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Hidden attributes are not part of the submission
-    const visibleKeys = new Set(visibleAttributes.map(a => a.key));
-    // Required attributes must be captured (hidden ones are exempt by construction)
-    const missing = visibleAttributes.filter(a => a.required && !String(values[a.key] ?? '').trim());
+    const isWaived = (key: string) => key in waived;
+    // Required attributes must be captured (hidden ones are exempt by
+    // construction; waived ones trade the value for a mandatory reason)
+    const missing = visibleAttributes.filter(
+      a => a.required && !isWaived(a.key) && !String(values[a.key] ?? '').trim()
+    );
     if (missing.length > 0) {
       setSubmitError(`Required: ${missing.map(a => a.label).join(', ')}`);
+      return;
+    }
+    const reasonless = visibleAttributes.filter(a => isWaived(a.key) && !waived[a.key].trim());
+    if (reasonless.length > 0) {
+      setSubmitError(`A reason is needed for: ${reasonless.map(a => a.label).join(', ')}`);
       return;
     }
     // Attribute-level validation rules (FluxScript; the captured value is `value`)
@@ -98,26 +166,60 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
       setSubmitError(failures.join(' · '));
       return;
     }
-    try {
-      onSubmit(Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k))));
-    } catch (err) {
-      // Constraint violations (required/unique/immutable) surface here; the
-      // modal stays open so the user can correct and resubmit.
-      setSubmitError(err instanceof Error ? err.message : String(err));
-    }
+    setSubmitError(null);
+    // Only visible attributes can be waived in this submission
+    const visibleKeys = new Set(visibleAttributes.map(a => a.key));
+    const capturedWaived = Object.fromEntries(
+      Object.entries(waived).filter(([k]) => visibleKeys.has(k)).map(([k, r]) => [k, r.trim()])
+    );
+    submit(capturedForSubmit(), capturedWaived);
   };
 
   return (
     <>
       <form onSubmit={handleSubmit}>
+        {/* Fields lock while a warning decision is pending — the snapshot that
+            was validated is what Continue submits, so editing must wait. */}
+        <fieldset disabled={pending !== null} style={{ border: 'none', padding: 0, margin: 0, minInlineSize: 'auto', opacity: pending ? 0.6 : 1 }}>
         {visibleAttributes.map(attr => (
           <div key={attr.key} style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 13, color: '#374151' }}>
-              {attr.label}
-              {attr.required && <span style={{ color: '#b91c1c' }}> *</span>}
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <label style={{ fontSize: 13, color: '#374151' }}>
+                {attr.label}
+                {attr.required && <span style={{ color: '#b91c1c' }}> *</span>}
+              </label>
+              {attr.can_waive && (
+                <label style={{ fontSize: 12, color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={attr.key in waived}
+                    onChange={e => toggleWaive(attr.key, e.target.checked)}
+                    style={{ verticalAlign: 'middle', marginRight: 4 }}
+                  />
+                  Can't provide
+                </label>
+              )}
+            </div>
 
-            {attr.type === 'reference' ? (
+            {attr.key in waived ? (
+              // Value traded for a mandatory reason — nothing is written to the field
+              <input
+                type="text"
+                value={waived[attr.key]}
+                onChange={e => setWaived(w => ({ ...w, [attr.key]: e.target.value }))}
+                placeholder="Why can't this be provided?"
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  border: '1px solid #fde68a',
+                  background: '#fffbeb',
+                  borderRadius: 4,
+                  fontSize: 14,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            ) : attr.type === 'reference' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   flex: 1,
@@ -189,6 +291,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
             )}
           </div>
         ))}
+        </fieldset>
 
         {submitError && (
           <div style={{
@@ -204,20 +307,59 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
           </div>
         )}
 
+        {pending && (
+          // The before hook warn()ed: nothing has been saved yet. Same layout
+          // as the fail banner — messages above, buttons below.
+          <div style={{
+            marginBottom: 10,
+            padding: '8px 12px',
+            background: '#fffbeb',
+            border: '1px solid #fde68a',
+            borderRadius: 4,
+            color: '#92400e',
+            fontSize: 13,
+          }}>
+            {pending.warnings.map((w, i) => (
+              <div key={i}>⚠ {w}</div>
+            ))}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <button
-            type="submit"
-            style={{ padding: '7px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-          >
-            Submit
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ padding: '7px 16px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
-          >
-            Cancel
-          </button>
+          {pending ? (
+            <>
+              <button
+                type="button"
+                onClick={() => submit(pending.captured, pending.waived, { acknowledgedWarnings: true })}
+                style={{ padding: '7px 16px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Continue anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                style={{ padding: '7px 16px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="submit"
+                style={{ padding: '7px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Submit
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{ padding: '7px 16px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </form>
 

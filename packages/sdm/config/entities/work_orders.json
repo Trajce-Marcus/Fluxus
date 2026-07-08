@@ -183,6 +183,34 @@
         ],
         "before_hook": null,
         "after_hook": null
+      },
+      {
+        "id": "act_complete_work_orders",
+        "name": "Complete Work Order",
+        "description": "Mark this work order complete. No record_map: the status change is the after hook's job.",
+        "sort_order": 4,
+        "attributes": [
+          {
+            "attribute_ref": "completed_date",
+            "required": true,
+            "validation": "value <= now()",
+            "validation_message": "Completed date cannot be in the future"
+          }
+        ],
+        "before_hook": [
+          "if context.record.status = 'Completed' {",
+          "  fail('This work order is already completed')",
+          "}",
+          "if context.record.start_date is null or context.record.start_date = '' {",
+          "  warn('Completing a work order that was never started')",
+          "}"
+        ],
+        "after_hook": [
+          "context.record.update({",
+          "  status: 'Completed',",
+          "  completed_date: attributes.completed_date",
+          "})"
+        ]
       }
     ]
   }

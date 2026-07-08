@@ -1,9 +1,10 @@
-// Headless acceptance test for the DSL ↔ SDM wiring (Phase 1 final step):
+// Headless acceptance tests for the DSL ↔ SDM wiring:
 // real config, real LocalStorageAdapter (localStorage shimmed), real evaluator.
-// The city → suburb dependent datasource is the acceptance case.
+// Phase 1: the city → suburb dependent datasource.
+// Phase 2: the Complete Work Order hook pair (before gate, after effects).
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { evaluateExpression } from '@fluxus/dsl';
+import { evaluateExpression, executeScript, FluxFailError } from '@fluxus/dsl';
 
 // LocalStorageAdapter touches localStorage at construction — shim before import
 beforeAll(() => {
@@ -93,5 +94,104 @@ describe('DSL ↔ SDM wiring', () => {
     const host = buildEvalHost(adapter, config, { attributes: {} });
     expect(evaluateExpression(
       "records.cities.where(name = 'Sydney').first.suburbs.count", host)).toBe(3);
+  });
+});
+
+describe('DSL Phase 2 — hooks through the SDM wiring', () => {
+  it('ACCEPTANCE: Complete Work Order — before gate warns/fails, after hook moves status', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    const workflow = adapter.getRecordTypeDef('rt_work_orders').workflow;
+    const complete = workflow.activities.find(a => a.id === 'act_complete_work_orders')!;
+    expect(typeof complete.before_hook).toBe('string'); // line arrays joined on load
+    expect(typeof complete.after_hook).toBe('string');
+
+    const wo = adapter.createRecord('rt_work_orders', {
+      id: 'WO-P2', job_id: 'j1', activity_code: 'AC1', status: 'Raised',
+    });
+
+    // before hook (gate, read-only): passes but warns — the WO was never started
+    const gate = executeScript(
+      complete.before_hook!,
+      buildEvalHost(adapter, config, { attributes: {}, anchorRecord: wo }),
+      { mode: 'read' },
+    );
+    expect(gate.warnings).toEqual(['Completing a work order that was never started']);
+
+    // after hook (effects): status moves via the staged, atomic commit;
+    // the captured date attribute persists as a plain date string
+    executeScript(
+      complete.after_hook!,
+      buildEvalHost(adapter, config, {
+        attributes: { completed_date: new Date('2026-07-01T00:00:00') },
+        anchorRecord: wo,
+      }),
+      { mode: 'mutate' },
+    );
+    const updated = adapter.getRecord('WO-P2');
+    expect(updated.customFields.status).toBe('Completed');
+    expect(updated.customFields.completed_date).toBe('2026-07-01');
+
+    // re-running the gate now fails: the activity is rejected with the script's message
+    expect(() =>
+      executeScript(
+        complete.before_hook!,
+        buildEvalHost(adapter, config, { attributes: {}, anchorRecord: updated }),
+        { mode: 'read' },
+      ),
+    ).toThrow(FluxFailError);
+  });
+
+  it('before hooks cannot mutate, even if a script tries', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    const wo = adapter.createRecord('rt_work_orders', {
+      id: 'WO-P2-RO', job_id: 'j1', activity_code: 'AC1', status: 'Raised',
+    });
+    expect(() =>
+      executeScript(
+        "context.record.update({ status: 'Hacked' })",
+        buildEvalHost(adapter, config, { attributes: {}, anchorRecord: wo }),
+        { mode: 'read' },
+      ),
+    ).toThrow(/after hooks only/);
+    expect(adapter.getRecord('WO-P2-RO').customFields.status).toBe('Raised');
+  });
+
+  it('a failing after hook applies nothing (transaction)', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    const wo = adapter.createRecord('rt_work_orders', {
+      id: 'WO-P2-TX', job_id: 'j1', activity_code: 'AC1', status: 'Raised',
+    });
+    expect(() =>
+      executeScript(
+        `context.record.update({ status: 'Half done' })
+         fail('abort')`,
+        buildEvalHost(adapter, config, { attributes: {}, anchorRecord: wo }),
+        { mode: 'mutate' },
+      ),
+    ).toThrow(FluxFailError);
+    expect(adapter.getRecord('WO-P2-TX').customFields.status).toBe('Raised');
+  });
+
+  it('can_waive carries through usage resolution (serial_no on Create Asset)', async () => {
+    const { adapter } = await setup();
+    const create = adapter.getRecordTypeDef('rt_assets').workflow.activities
+      .find(a => a.id === 'act_create_assets')!;
+    const serial = create.attributes.find(a => a.key === 'serial_no')!;
+    expect(serial.required).toBe(true);
+    expect(serial.can_waive).toBe(true);
+    // and only where the usage asks for it
+    const update = adapter.getRecordTypeDef('rt_assets').workflow.activities
+      .find(a => a.id === 'act_update_assets')!;
+    expect(update.attributes.find(a => a.key === 'serial_no')!.can_waive).toBeUndefined();
+  });
+
+  it('named functions from the config are callable in expressions', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    adapter.createRecord('rt_work_orders', {
+      id: 'WO-P2-FN', job_id: 'j1', activity_code: 'AC1', status: 'Raised', workgroup_id: 'wg_fn',
+    });
+    const host = buildEvalHost(adapter, config, { attributes: {} });
+    expect(evaluateExpression("openWorkOrders('wg_fn').count", host)).toBe(1);
+    expect(evaluateExpression("openWorkOrders('wg_other').count", host)).toBe(0);
   });
 });

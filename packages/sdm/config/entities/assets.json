@@ -20,6 +20,11 @@
         "indexed": true
       },
       {
+        "key": "serial_no",
+        "type": "text",
+        "default": ""
+      },
+      {
         "key": "description",
         "type": "text",
         "default": ""
@@ -51,6 +56,11 @@
             "attribute_ref": "asset_no"
           },
           {
+            "attribute_ref": "serial_no",
+            "required": true,
+            "can_waive": true
+          },
+          {
             "attribute_ref": "description"
           },
           {
@@ -67,6 +77,9 @@
         "sort_order": 1,
         "record_map": "UPDATE",
         "attributes": [
+          {
+            "attribute_ref": "serial_no"
+          },
           {
             "attribute_ref": "description"
           },
@@ -86,7 +99,7 @@
         "description": "Delete this Asset record.",
         "sort_order": 2,
         "record_map": "DELETE",
-        "_comment": "record_map:DELETE — implemented. 'confirm' attribute must equal 'DELETE' exactly.",
+        "_comment": "record_map:DELETE \u2014 implemented. 'confirm' attribute must equal 'DELETE' exactly.",
         "attributes": [
           {
             "attribute_ref": "confirm"

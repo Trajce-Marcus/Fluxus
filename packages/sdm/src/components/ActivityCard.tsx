@@ -7,7 +7,9 @@ interface Props {
 
 export function ActivityCard({ entry }: Props) {
   const ts = new Date(entry.timestamp).toLocaleString();
-  const attrs = Object.entries(entry.capturedAttributes);
+  const waived = entry.waived ?? {};
+  // Waived attributes show in their own block with the reason, not as empty values
+  const attrs = Object.entries(entry.capturedAttributes).filter(([k]) => !(k in waived));
 
   return (
     <div style={{
@@ -34,6 +36,24 @@ export function ActivityCard({ entry }: Props) {
         </dl>
       ) : (
         <span style={{ fontSize: 12, color: '#94a3b8' }}>No attributes captured.</span>
+      )}
+      {Object.keys(waived).length > 0 && (
+        // Values declared unavailable at capture time, with the user's reason
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e2e8f0' }}>
+          {Object.entries(waived).map(([k, reason]) => (
+            <div key={k} style={{ fontSize: 12, color: '#64748b' }}>
+              ⊘ <span style={{ fontWeight: 500 }}>{k}</span> — can't provide: {reason}
+            </div>
+          ))}
+        </div>
+      )}
+      {entry.warnings && entry.warnings.length > 0 && (
+        // Gate warnings the user acknowledged — part of this submission's audit
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #fde68a' }}>
+          {entry.warnings.map((w, i) => (
+            <div key={i} style={{ fontSize: 12, color: '#92400e' }}>⚠ {w}</div>
+          ))}
+        </div>
       )}
     </div>
   );

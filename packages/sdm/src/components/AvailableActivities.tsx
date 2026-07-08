@@ -49,9 +49,10 @@ export function AvailableActivities({ record, workflow }: Props) {
             activity={activeActivity}
             anchorRecord={record}
             recordTypeId={record.typeRef}
-            onSubmit={(captured) => {
-              runActivity(activeActivity, captured, record);
-              setActiveActivity(null);
+            onSubmit={(captured, options) => {
+              const result = runActivity(activeActivity, captured, record, options);
+              if (result.status === 'done') setActiveActivity(null);
+              return result;
             }}
             onClose={() => setActiveActivity(null)}
           />

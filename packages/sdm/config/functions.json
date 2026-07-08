@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "id": "fn_open_work_orders",
+    "name": "openWorkOrders",
+    "description": "Work orders not yet completed for a workgroup, oldest due date first.",
+    "body": [
+      "function openWorkOrders(wg) {",
+      "  return records.work_orders",
+      "    .where(workgroup_id = wg and status != 'Completed')",
+      "    .orderBy(due_date)",
+      "}"
+    ]
+  }
+]

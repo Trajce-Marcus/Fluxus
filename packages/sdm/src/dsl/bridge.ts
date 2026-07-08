@@ -10,6 +10,40 @@ import type { Store } from '../store/interface';
 export const shortName = (rtId: string): string => rtId.replace(/^rt_/, '');
 export const fullId = (short: string): string => `rt_${short}`;
 
+/**
+ * Scripts in the SDM JSON (hooks, function bodies) are canonically strings; an
+ * array of lines is a hand-editing convenience, joined on load (DSL_SPEC §8).
+ */
+export function joinScript(script: string | string[] | null | undefined): string | null {
+  if (script === null || script === undefined) return null;
+  return Array.isArray(script) ? script.join('\n') : script;
+}
+
+/** Named function sources for the evaluator/validator (bodies joined). */
+export function resolveFunctions(config: ConfigRaw): string[] {
+  return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? '');
+}
+
+/**
+ * Script values → stored field values. Dates persist as strings: date-only for
+ * local midnight (matching hand-entered form values), full ISO otherwise.
+ */
+function serializeFieldValue(value: unknown): unknown {
+  if (value instanceof Date) {
+    if (value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0) {
+      const mm = String(value.getMonth() + 1).padStart(2, '0');
+      const dd = String(value.getDate()).padStart(2, '0');
+      return `${value.getFullYear()}-${mm}-${dd}`;
+    }
+    return value.toISOString();
+  }
+  return value;
+}
+
+function serializeFields(fields: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
+}
+
 export function buildDslSchema(config: ConfigRaw): DslSchema {
   const types: DslSchema['types'] = {};
   for (const rt of config.recordTypes) {
@@ -60,6 +94,31 @@ export function buildRecordsHost(adapter: Store, config: ConfigRaw): RecordsHost
         (c) => c.type === 'fk_ref' && c.fk_record_type === fullId(type),
       );
       return fk ? { sourceType: name, field: fk.key } : null;
+    },
+    // Staged mutations (DSL Phase 2): validate/shape now, persist on commit.
+    mutate: {
+      prepareCreate: (type, fields) => {
+        const rt = byShortName.get(type);
+        if (!rt) throw new Error(`Unknown record type '${type}'`);
+        return toDslRecord(adapter.buildRecord(rt.id, serializeFields(fields)));
+      },
+      prepareUpdate: (type, id, fields) => {
+        adapter.validateUpdate(String(id), serializeFields(fields));
+      },
+      apply: (ops) => {
+        for (const op of ops) {
+          if (op.op === 'create') {
+            adapter.insertRecord({
+              id: op.record.id,
+              typeRef: fullId(op.type),
+              customFields: serializeFields(op.record.fields),
+              activityHistory: [],
+            });
+          } else {
+            adapter.updateRecord(op.id, serializeFields(op.fields));
+          }
+        }
+      },
     },
   };
 }
@@ -124,6 +183,7 @@ export function buildEvalHost(adapter: Store, config: ConfigRaw, script: ScriptC
       workflow: script.workflow ?? null,
     },
     attributes,
+    functions: resolveFunctions(config),
     extras: script.extras,
   };
 }

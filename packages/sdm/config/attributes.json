@@ -24,6 +24,12 @@
     "type": "text"
   },
   {
+    "key": "serial_no",
+    "label": "Serial No",
+    "description": "Manufacturer serial number.",
+    "type": "text"
+  },
+  {
     "key": "status",
     "label": "Status",
     "description": "Current status.",

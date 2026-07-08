@@ -7,6 +7,16 @@ export interface Store {
   getRecord(recordId: string): RecordInstance;
   createRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance;
   updateRecord(recordId: string, fields: Record<string, unknown>): void;
+  // ── Staged-mutation support (DSL Phase 2) ─────────────────────────────────
+  // Hooks stage mutations and commit atomically: build/validate now, persist
+  // later. createRecord ≡ buildRecord + insertRecord; updateRecord ≡
+  // validateUpdate + apply.
+  // Validate a create and shape the record (defaults merged, id assigned) WITHOUT persisting.
+  buildRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance;
+  // Persist a previously built record.
+  insertRecord(record: RecordInstance): void;
+  // Constraint check (immutable/unique) for an update WITHOUT applying it.
+  validateUpdate(recordId: string, fields: Record<string, unknown>): void;
   deleteRecord(recordId: string): void;
   appendActivity(recordId: string, entry: ActivityHistoryEntry): void;
   subscribe(cb: () => void): () => void;

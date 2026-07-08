@@ -1,9 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { evaluateExpression } from '@fluxus/dsl';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry } from '../types';
+import { evaluateExpression, executeScript, FluxFailError } from '@fluxus/dsl';
+import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult } from '../types';
 import { LocalStorageAdapter } from '../store/LocalStorageAdapter';
 import { config } from '../config';
-import { buildEvalHost, type ScriptContext } from '../dsl/bridge';
+import { buildEvalHost, coerceCaptured, type ScriptContext } from '../dsl/bridge';
 import { reportConfigFindings } from '../dsl/validateConfig';
 
 // Module-level singleton — one adapter for the lifetime of the app
@@ -24,8 +24,9 @@ interface AppContextValue {
   runActivity: (
     activity: ActivityDef,
     captured: Record<string, unknown>,
-    anchorRecord: RecordInstance | null
-  ) => void;
+    anchorRecord: RecordInstance | null,
+    options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
+  ) => RunActivityResult;
   // Resolves a stored fk_ref id to a human-readable label (§SDM_Change §6).
   resolveDisplayLabel: (fkRecordType: string, fkDisplayField: string | undefined, rawId: string) => string;
   // Returns the fk_display_field for an attribute key on a record type via key-matching (§SDM_Change §7).
@@ -106,9 +107,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const runActivity = useCallback((
     activity: ActivityDef,
     captured: Record<string, unknown>,
-    anchorRecord: RecordInstance | null
-  ) => {
-    // before_hook — stubbed this cut (pipeline slot exists; body deferred)
+    anchorRecord: RecordInstance | null,
+    options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
+  ): RunActivityResult => {
+    const warnings: string[] = [];
+    // Attributes declared unavailable: scripts see them as null, they never
+    // write to record fields, and the waiver lands on the history entry.
+    const waived = options?.waived ?? {};
+
+    // Hooks see captured values coerced to their attribute's declared type (DSL_SPEC §5)
+    const stringValues = Object.fromEntries(
+      Object.entries(captured).map(([k, v]) => [k, String(v ?? '')])
+    );
+    const typedAttributes = coerceCaptured(activity.attributes, stringValues);
+    const scriptContext: ScriptContext = {
+      attributes: typedAttributes,
+      anchorRecord,
+      activity: { id: activity.id, name: activity.name },
+    };
+
+    // before hook = gate (DSL_SPEC §6): read-only; fail() rejects the activity
+    // before anything persists. A runtime error in the hook also blocks — a
+    // broken gate must not wave submissions through.
+    if (activity.before_hook) {
+      try {
+        const result = executeScript(activity.before_hook, buildEvalHost(adapter, config, scriptContext), { mode: 'read' });
+        warnings.push(...result.warnings);
+      } catch (err) {
+        if (err instanceof FluxFailError) throw new Error(err.message);
+        throw new Error(`Before hook error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      // Gate warnings are a soft stop: hand them back for the user to confirm.
+      // Nothing has persisted (the gate is read-only), so cancelling is free.
+      if (warnings.length > 0 && !options?.acknowledgedWarnings) {
+        return { status: 'needs-confirmation', warnings };
+      }
+    }
 
     let targetRecordId: string;
 
@@ -122,7 +156,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
       const mappedFields: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(captured)) {
-        if (cfKeys.has(k)) mappedFields[k] = v;
+        if (cfKeys.has(k) && !(k in waived)) mappedFields[k] = v; // waived: field seeds from default
       }
       const newRecord = adapter.createRecord(typeId, mappedFields);
       targetRecordId = newRecord.id;
@@ -133,31 +167,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
       const mappedFields: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(captured)) {
-        if (cfKeys.has(k)) mappedFields[k] = v;
+        // Waived = "can't provide it now" — it must never blank a value
+        // someone captured earlier
+        if (cfKeys.has(k) && !(k in waived)) mappedFields[k] = v;
       }
       adapter.updateRecord(anchorRecord!.id, mappedFields);
       targetRecordId = anchorRecord!.id;
     } else if (activity.record_map === 'DELETE') {
-      if (String(captured['confirm'] ?? '').trim() !== 'DELETE') return;
+      if (String(captured['confirm'] ?? '').trim() !== 'DELETE') return { status: 'done', warnings };
       const recordId = anchorRecord!.id;
       adapter.deleteRecord(recordId);
       // deselect if this record was selected
       setSelectedRecordId(id => (id === recordId ? null : id));
-      return;
+      return { status: 'done', warnings };
     } else {
       // ordinary capture — append against the anchor record
       targetRecordId = anchorRecord!.id;
     }
 
-    // append an entry to the Record's activity history
+    // append an entry to the Record's activity history; acknowledged gate
+    // warnings are part of the submission's story (audit), captured separately
+    // from user input
     adapter.appendActivity(targetRecordId, {
       activityId: activity.id,
       activityName: activity.name,
       capturedAttributes: captured,
+      ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
+      ...(Object.keys(waived).length > 0 ? { waived: { ...waived } } : {}),
       timestamp: new Date().toISOString(),
     });
 
-    // after_hook — stubbed this cut (pipeline slot exists; body deferred)
+    // after hook = effects (DSL_SPEC §6–§7): mutations stage during the run and
+    // commit atomically; queued service calls dispatch only after the commit.
+    // The activity itself has already persisted — a failing after hook applies
+    // no changes but does not un-record the activity.
+    if (activity.after_hook) {
+      try {
+        const result = executeScript(
+          activity.after_hook,
+          buildEvalHost(adapter, config, { ...scriptContext, anchorRecord: adapter.getRecord(targetRecordId) }),
+          { mode: 'mutate' },
+        );
+        warnings.push(...result.warnings);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`After hook failed — the activity was recorded but no changes were applied: ${message}`);
+      }
+    }
+
+    // After-hook warnings are informational (the commit already happened):
+    // console for now, until the workbench grows a toast slot.
+    if (warnings.length > 0) console.warn(`[${activity.name}]`, warnings.join(' · '));
+    return { status: 'done', warnings };
   }, [setSelectedRecordId]);
 
   // Derived from adapter on every render; forceUpdate (via setTick) keeps it fresh

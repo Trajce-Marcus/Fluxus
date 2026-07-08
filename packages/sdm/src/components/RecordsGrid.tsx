@@ -287,9 +287,10 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
             activity={createActivity}
             anchorRecord={null}
             recordTypeId={typeDef.id}
-            onSubmit={(captured) => {
-              runActivity(createActivity, captured, null);
-              setShowCreateForm(false);
+            onSubmit={(captured, options) => {
+              const result = runActivity(createActivity, captured, null, options);
+              if (result.status === 'done') setShowCreateForm(false);
+              return result;
             }}
             onClose={() => setShowCreateForm(false)}
           />
@@ -301,7 +302,9 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
           typeName={typeDef.name}
           customFields={customFields}
           onImport={(rows) => {
-            rows.forEach(row => runActivity(createActivity, row, null));
+            // Bulk import acknowledges gate warnings up front (there's no one to
+            // confirm per row); fail() still rejects the row.
+            rows.forEach(row => runActivity(createActivity, row, null, { acknowledgedWarnings: true }));
             setShowImportCSV(false);
           }}
           onClose={() => setShowImportCSV(false)}

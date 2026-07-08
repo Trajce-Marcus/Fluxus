@@ -41,6 +41,13 @@ export interface AttributeDef {
   validation?: string;
   /** Shown when validation fails; defaults to "<label> is invalid". */
   validation_message?: string;
+  /**
+   * The user may declare the value unavailable ("can't provide") with a
+   * mandatory reason instead of entering it — no fake data to satisfy
+   * `required`. The waiver is recorded on the history entry; the record field
+   * is never written. Carried over from the usage wrapper.
+   */
+  can_waive?: boolean;
 }
 
 // Usage wrapper in a raw activity — resolved to AttributeDef at runtime by the adapter
@@ -53,9 +60,13 @@ export interface AttributeUsageDef {
   /** FluxScript rule; must evaluate true for the captured value (`value` root available). */
   validation?: string;
   validation_message?: string;
+  /** "Can't provide" escape hatch — see AttributeDef.can_waive. */
+  can_waive?: boolean;
 }
 
-// Raw activity shape (as it appears in the JSON config)
+// Raw activity shape (as it appears in the JSON config).
+// Hooks are FluxScript scripts; an array of lines is a hand-editing convenience
+// (joined on load), same as function bodies.
 export interface ActivityRawDef {
   id: string;
   name: string;
@@ -63,11 +74,13 @@ export interface ActivityRawDef {
   sort_order: number;
   record_map?: 'CREATE' | 'UPDATE' | 'DELETE';
   attributes: AttributeUsageDef[];
-  before_hook: object | null;
-  after_hook: object | null;
+  /** FluxScript, validate-only: may fail()/warn(), never mutates (DSL_SPEC §6). */
+  before_hook: string | string[] | null;
+  /** FluxScript, effects: mutations staged and committed atomically (DSL_SPEC §7). */
+  after_hook: string | string[] | null;
 }
 
-// Resolved activity (attributes fully resolved from the standalone collection)
+// Resolved activity (attributes resolved from the standalone collection, hook lines joined)
 export interface ActivityDef {
   id: string;
   name: string;
@@ -75,8 +88,8 @@ export interface ActivityDef {
   sort_order: number;
   record_map?: 'CREATE' | 'UPDATE' | 'DELETE';
   attributes: AttributeDef[];
-  before_hook: object | null;
-  after_hook: object | null;
+  before_hook: string | null;
+  after_hook: string | null;
 }
 
 export interface WorkflowRawDef {
@@ -133,12 +146,34 @@ export interface ReverseRefEntry {
   fieldKey: string;
 }
 
+// Outcome of running an activity. 'needs-confirmation': the before hook raised
+// warn()ings and nothing was persisted — re-run with acknowledgedWarnings to
+// proceed, or drop it to cancel (the gate is read-only, so cancelling is free).
+export interface RunActivityResult {
+  status: 'done' | 'needs-confirmation';
+  warnings: string[];
+}
+
 // ── Runtime types (store reads/writes these) ──────────────────────────────────
 
 export interface ActivityHistoryEntry {
   activityId: string;
   activityName: string;
+  /** Exactly what the user entered — never touched by scripts or the system. */
   capturedAttributes: Record<string, unknown>;
+  /**
+   * Gate warnings the user acknowledged to proceed ("warned X, continued
+   * anyway") — audit, kept separate from capturedAttributes. After-hook
+   * warnings are execution outcome, not part of the entry (they belong to the
+   * future activity log stream).
+   */
+  warnings?: string[];
+  /**
+   * Attributes declared unavailable at capture time, keyed by attribute →
+   * the user's reason. Presence of a key is the flag; only waived attributes
+   * appear. Waived attributes never write to record fields.
+   */
+  waived?: Record<string, string>;
   timestamp: string;
 }
 
