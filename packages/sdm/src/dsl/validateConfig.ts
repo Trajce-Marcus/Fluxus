@@ -48,8 +48,8 @@ export function validateConfig(config: ConfigRaw): Finding[] {
     }
   }
 
-  const collect = (where: string, source: string, anchorType?: string, extraRoots?: string[]) => {
-    for (const diagnostic of validateExpression(source, schema, { anchorType, extraRoots, functions })) {
+  const collect = (where: string, source: string, anchorType?: string, extraRoots?: string[], bannedRoots?: string[]) => {
+    for (const diagnostic of validateExpression(source, schema, { anchorType, extraRoots, bannedRoots, functions })) {
       findings.push({ where, diagnostic });
     }
   };
@@ -70,6 +70,10 @@ export function validateConfig(config: ConfigRaw): Finding[] {
   for (const workflow of config.workflows) {
     const anchorType = rtByWorkflow.has(workflow.id) ? shortName(rtByWorkflow.get(workflow.id)!.id) : undefined;
     for (const activity of workflow.activities) {
+      // Availability condition: evaluated before capture, so `attributes` is banned
+      if (activity.show_condition) {
+        collect(`${activity.id} show_condition`, activity.show_condition, anchorType, undefined, ['attributes']);
+      }
       for (const usage of activity.attributes) {
         if (usage.show_condition) {
           collect(`${activity.id} → '${usage.attribute_ref}' show_condition`, usage.show_condition, anchorType);

@@ -125,9 +125,10 @@
       {
         "id": "act_update_work_orders",
         "name": "Update Work Order",
-        "description": "Update work order details.",
+        "description": "Update work order details. Not available once the work order is completed.",
         "sort_order": 1,
         "record_map": "UPDATE",
+        "show_condition": "context.record.status <> 'Completed'",
         "attributes": [
           {
             "attribute_ref": "status"
@@ -187,8 +188,9 @@
       {
         "id": "act_complete_work_orders",
         "name": "Complete Work Order",
-        "description": "Mark this work order complete. No record_map: the status change is the after hook's job.",
+        "description": "Mark this work order complete. No record_map: the status change is the after hook's job. Availability (not already completed) is the show_condition's job, not the before hook's.",
         "sort_order": 4,
+        "show_condition": "context.record.status <> 'Completed'",
         "attributes": [
           {
             "attribute_ref": "completed_date",
@@ -198,9 +200,6 @@
           }
         ],
         "before_hook": [
-          "if context.record.status = 'Completed' {",
-          "  fail('This work order is already completed')",
-          "}",
           "if context.record.start_date is null or context.record.start_date = '' {",
           "  warn('Completing a work order that was never started')",
           "}"

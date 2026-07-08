@@ -20,6 +20,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     getRecordTypeData,
     getRecordTypeDef,
     runActivity,
+    isActivityAvailable,
   } = useAppContext();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -69,9 +70,11 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
 
   const allRecords = getRecordTypeData(typeDef.id);
   const customFields = typeDef.custom_fields;
-  const createActivity = !pickerMode
+  // CREATE has no anchor: its availability condition sees context.record = null
+  const foundCreate = !pickerMode
     ? typeDef.workflow?.activities.find(a => a.record_map === 'CREATE')
     : undefined;
+  const createActivity = foundCreate && isActivityAvailable(foundCreate, null) ? foundCreate : undefined;
 
   // Filter
   const filtered = searchTerm

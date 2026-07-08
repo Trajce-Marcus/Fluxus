@@ -12,6 +12,27 @@ const adapter = new LocalStorageAdapter(config);
 // Config-save-time validation: with the SDM still file-edited, save time is app start.
 reportConfigFindings(config);
 
+// Activity-level show_condition — the availability gate. Strict boolean: only
+// `true` makes the activity available. Evaluation errors FAIL CLOSED (unlike
+// attribute show_conditions, which leave the input visible): this is an access
+// rule, and a broken gate must not wave the activity through.
+function activityAvailability(
+  activity: ActivityDef,
+  anchorRecord: RecordInstance | null
+): { available: boolean; error?: string } {
+  if (!activity.show_condition) return { available: true };
+  try {
+    const result = evaluateExpression(
+      activity.show_condition,
+      buildEvalHost(adapter, config, { anchorRecord, activity: { id: activity.id, name: activity.name } })
+    );
+    return { available: result === true };
+  } catch (err) {
+    console.warn(`show_condition failed for activity '${activity.id}' — failing closed:`, err);
+    return { available: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 interface AppContextValue {
   recordTypes: RecordTypeDef[];
   selectedRecordType: (RecordTypeDef & { workflow: WorkflowDef }) | null;
@@ -27,6 +48,9 @@ interface AppContextValue {
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
   ) => RunActivityResult;
+  // Activity-level show_condition (availability): drives UI visibility; the
+  // same rule is re-checked inside runActivity as the pipeline gate.
+  isActivityAvailable: (activity: ActivityDef, anchorRecord: RecordInstance | null) => boolean;
   // Resolves a stored fk_ref id to a human-readable label (§SDM_Change §6).
   resolveDisplayLabel: (fkRecordType: string, fkDisplayField: string | undefined, rawId: string) => string;
   // Returns the fk_display_field for an attribute key on a record type via key-matching (§SDM_Change §7).
@@ -110,6 +134,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
   ): RunActivityResult => {
+    // Availability gate — first step of the pipeline, before the before hook.
+    // The UI hides unavailable activities, but the gate is the enforcement
+    // point (headless callers skip the UI entirely).
+    const availability = activityAvailability(activity, anchorRecord);
+    if (!availability.available) {
+      throw new Error(
+        availability.error
+          ? `'${activity.name}' availability check failed — blocked: ${availability.error}`
+          : `'${activity.name}' is not available for this record`
+      );
+    }
+
     const warnings: string[] = [];
     // Attributes declared unavailable: scripts see them as null, they never
     // write to record fields, and the waiver lands on the history entry.
@@ -241,6 +277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getRecordTypeDef,
       getRecordAndType,
       runActivity,
+      isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
       resolveDisplayLabel,
       resolveAttributeDisplayField,
       getReverseRefs,

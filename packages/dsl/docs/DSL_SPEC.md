@@ -37,7 +37,7 @@ The entire environment a script can touch, dependency-injected by the host at ca
 | `records` | the project-scoped SDM data graph: `records.<record_type>` for query and mutation |
 | `services` | global add-on modules: `services.notify.email(...)`, `services.geo.geocode(...)`, published functions |
 
-Additional roots may be injected per embedding point (e.g. `event` — the callback payload — in page-builder callback wiring).
+Additional roots may be injected per embedding point (e.g. `event` — the callback payload — in page-builder callback wiring). The converse also holds: an embedding point may **withhold** a standard root when it cannot exist there — activity availability conditions run before capture begins, so `attributes` is banned and the validator rejects a reference at config-save time.
 
 **Every script is a function.** Inline scripts (hooks, conditions, datasources) receive the four roots implicitly. Named functions (see §8) may declare explicit parameters and still receive the roots implicitly. Scripts never construct their environment; the host always hands it in — which is why the same script runs unchanged in the browser, in Lambda, and inside the page builder.
 
@@ -113,6 +113,8 @@ Scalars render as a simple picker; records/objects as a grid picker driven by `t
 `show_condition` (expression tier) decides whether an attribute is presented (UI) or applicable (headless). In headless mode the datasource doubles as validation: a submitted value must be in the datasource's result set.
 
 Per-usage settings on an activity's attribute list: `show_condition`, `required` (hidden attributes are exempt), and `validation` — an expression that must evaluate `true` for the captured value, injected as the extra root **`value`** (e.g. `value <= now()`), with an optional `validation_message`. Captured values are coerced to their attribute's declared type before scripts see them. Attribute validation is per-field; cross-record rules belong to before hooks (§6). In headless mode the same three settings define the parameter contract. A fourth setting, `can_waive`, lets the user declare a required value unavailable with a recorded reason instead of entering fake data — an SDM-level concern (see the sdm SPEC); scripts simply see the attribute as null.
+
+`show_condition` also exists one level up, **on the activity itself** — the availability condition: whether the activity is offered (UI) or invocable at all (headless / pipeline gate), e.g. `context.record.status <> 'Completed'`. It is evaluated before capture begins, so `attributes` is withheld (§3) and `context.record` is the anchor — null for CREATE activities, whose conditions can only use the other context members. Two deliberate contrasts with the attribute-level setting: evaluation errors **fail closed** (an access rule must not wave the activity through; a broken attribute condition instead leaves the input visible), and hiding the button is courtesy while the host's pipeline gate — re-running the same expression as the first step before the before hook — is the enforcement. Division of labour: whether the activity applies to this record right now is the availability condition's job; validating the captured payload is the before hook's job. Enforcement details live in the sdm SPEC ("Hooks").
 
 Storage is unchanged from the SDM runtime: captured attributes persist to activity history as primitives or JSON — exactly what the user entered, untouched by any script.
 

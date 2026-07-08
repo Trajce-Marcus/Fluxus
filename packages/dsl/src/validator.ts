@@ -38,6 +38,12 @@ export interface ValidateOptions {
    * validation rules, ['event'] for page-builder callbacks). Treated as dynamic.
    */
   extraRoots?: string[];
+  /**
+   * Standard roots NOT available at this embedding point (e.g. ['attributes']
+   * for activity-level availability conditions, which are evaluated before
+   * capture begins). Referencing one is an error.
+   */
+  bannedRoots?: string[];
   /** Named functions callable at this embedding point (name → parameter list). */
   functions?: Record<string, { params: string[] }>;
 }
@@ -334,6 +340,10 @@ class Validator {
         }
         const variable = this.lookupVar(expr.name);
         if (variable !== null) return variable;
+        if (ROOTS.has(expr.name) && this.options.bannedRoots?.some((r) => r.toLowerCase() === expr.name)) {
+          this.error(expr, `'${expr.name}' is not available at this embedding point`);
+          return UNKNOWN;
+        }
         if (expr.name === 'records') return { kind: 'recordsRoot' };
         if (ROOTS.has(expr.name)) return UNKNOWN;
         if (this.options.extraRoots?.some((r) => r.toLowerCase() === expr.name)) return UNKNOWN;

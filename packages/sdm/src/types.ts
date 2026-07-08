@@ -73,6 +73,15 @@ export interface ActivityRawDef {
   description: string;
   sort_order: number;
   record_map?: 'CREATE' | 'UPDATE' | 'DELETE';
+  /**
+   * FluxScript availability condition: whether this activity is offered (UI)
+   * or invocable (pipeline gate — server-authoritative once the backend
+   * lands). Evaluated before capture begins, so `attributes` is not available;
+   * `context.record` is the anchor (null for CREATE). Unlike the attribute
+   * setting of the same name, evaluation errors FAIL CLOSED — a broken access
+   * rule must not wave the activity through.
+   */
+  show_condition?: string;
   attributes: AttributeUsageDef[];
   /** FluxScript, validate-only: may fail()/warn(), never mutates (DSL_SPEC §6). */
   before_hook: string | string[] | null;
@@ -87,6 +96,8 @@ export interface ActivityDef {
   description: string;
   sort_order: number;
   record_map?: 'CREATE' | 'UPDATE' | 'DELETE';
+  /** Availability condition — see ActivityRawDef.show_condition. */
+  show_condition?: string;
   attributes: AttributeDef[];
   before_hook: string | null;
   after_hook: string | null;

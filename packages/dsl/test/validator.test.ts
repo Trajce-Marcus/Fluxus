@@ -137,6 +137,14 @@ describe('validator — extra roots', () => {
       "Unknown name 'value' — bare field names are only available inside query methods",
     ]);
   });
+
+  it('bannedRoots make a standard root an error at this embedding point', () => {
+    expect(validateExpression("attributes.city is not null", schema, { bannedRoots: ['attributes'] }).map(d => d.message)).toEqual([
+      "'attributes' is not available at this embedding point",
+    ]);
+    // the other roots stay available
+    expect(validateExpression("context.record.status <> 'completed'", schema, { anchorType: 'resources', bannedRoots: ['attributes'] })).toEqual([]);
+  });
 });
 
 describe('validator — syntax errors surface as diagnostics', () => {

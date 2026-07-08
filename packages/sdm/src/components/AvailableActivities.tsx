@@ -10,12 +10,14 @@ interface Props {
 }
 
 export function AvailableActivities({ record, workflow }: Props) {
-  const { runActivity } = useAppContext();
+  const { runActivity, isActivityAvailable } = useAppContext();
   const [activeActivity, setActiveActivity] = useState<ActivityDef | null>(null);
 
   // Record-level activities: CREATE excluded (no anchor; lives in the grid).
+  // Availability (activity show_condition) filters against the current record;
+  // runActivity re-checks the same rule as the pipeline gate.
   const activities = workflow.activities
-    .filter(a => a.record_map !== 'CREATE')
+    .filter(a => a.record_map !== 'CREATE' && isActivityAvailable(a, record))
     .sort((a, b) => a.sort_order - b.sort_order);
 
   if (activities.length === 0) return null;

@@ -131,14 +131,12 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
     expect(updated.customFields.status).toBe('Completed');
     expect(updated.customFields.completed_date).toBe('2026-07-01');
 
-    // re-running the gate now fails: the activity is rejected with the script's message
-    expect(() =>
-      executeScript(
-        complete.before_hook!,
-        buildEvalHost(adapter, config, { attributes: {}, anchorRecord: updated }),
-        { mode: 'read' },
-      ),
-    ).toThrow(FluxFailError);
+    // "already completed" is availability, not payload validation: the
+    // activity's show_condition (not the before hook) now says no
+    expect(evaluateExpression(
+      complete.show_condition!,
+      buildEvalHost(adapter, config, { anchorRecord: updated }),
+    )).toBe(false);
   });
 
   it('before hooks cannot mutate, even if a script tries', async () => {
@@ -183,6 +181,39 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
     const update = adapter.getRecordTypeDef('rt_assets').workflow.activities
       .find(a => a.id === 'act_update_assets')!;
     expect(update.attributes.find(a => a.key === 'serial_no')!.can_waive).toBeUndefined();
+  });
+
+  it('activity-level show_condition: availability flips on record state', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    const workflow = adapter.getRecordTypeDef('rt_work_orders').workflow;
+
+    // carried through workflow resolution onto the ActivityDef
+    const complete = workflow.activities.find(a => a.id === 'act_complete_work_orders')!;
+    const update = workflow.activities.find(a => a.id === 'act_update_work_orders')!;
+    expect(complete.show_condition).toBe("context.record.status <> 'Completed'");
+    expect(update.show_condition).toBe("context.record.status <> 'Completed'");
+
+    const wo = adapter.createRecord('rt_work_orders', {
+      id: 'WO-AVAIL', job_id: 'j1', activity_code: 'AC1', status: 'Raised',
+    });
+    const available = (anchorRecord: typeof wo) =>
+      evaluateExpression(complete.show_condition!, buildEvalHost(adapter, config, { anchorRecord })) === true;
+
+    expect(available(wo)).toBe(true);
+    adapter.updateRecord('WO-AVAIL', { status: 'Completed' });
+    expect(available(adapter.getRecord('WO-AVAIL'))).toBe(false);
+  });
+
+  it('activity show_condition may not reference attributes (validated at config load)', async () => {
+    const { config, validateConfig } = await setup();
+    const broken = structuredClone(config);
+    const wf = broken.workflows.find(w => w.id === 'wf_work_orders')!;
+    wf.activities.find(a => a.id === 'act_update_work_orders')!.show_condition =
+      'attributes.status is not null';
+    const findings = validateConfig(broken);
+    expect(findings.map(f => `${f.where}: ${f.diagnostic.message}`)).toEqual([
+      "act_update_work_orders show_condition: 'attributes' is not available at this embedding point",
+    ]);
   });
 
   it('named functions from the config are callable in expressions', async () => {
