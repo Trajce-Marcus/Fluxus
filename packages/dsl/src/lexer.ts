@@ -173,9 +173,11 @@ export function lex(source: string): Token[] {
 
     if (ch in BRACKETS) {
       const type = BRACKETS[ch];
-      if (type === TokenType.LParen || type === TokenType.LBracket || type === TokenType.LBrace) {
+      // Braces don't suppress newlines: a `{` may open a statement block, where
+      // newlines separate statements. The parser skips newlines inside object literals.
+      if (type === TokenType.LParen || type === TokenType.LBracket) {
         bracketDepth++;
-      } else {
+      } else if (type === TokenType.RParen || type === TokenType.RBracket) {
         bracketDepth = Math.max(0, bracketDepth - 1);
       }
       push(type, ch, ch);

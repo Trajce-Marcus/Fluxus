@@ -1,7 +1,7 @@
 import { lex } from './lexer';
 import { Token, TokenType } from './tokens';
 import { FluxSyntaxError } from './errors';
-import type { Arg, Expr, ObjectEntry, Position } from './ast';
+import type { Arg, Call, Expr, FunctionDecl, Ident, Member, ObjectEntry, Position, Script, Stmt } from './ast';
 
 const COMPARISON_OPS = new Set(['=', '!=', '<', '<=', '>', '>=']);
 
@@ -11,6 +11,16 @@ const COMPARISON_OPS = new Set(['=', '!=', '<', '<=', '>', '>=']);
  */
 export function parseExpression(source: string): Expr {
   return new Parser(lex(source)).parseExpressionEntry();
+}
+
+/** Parse a script-tier entry point (hooks, headless workflows): `{ statement }` (GRAMMAR.md §2, §5). */
+export function parseScript(source: string): Script {
+  return new Parser(lex(source)).parseScriptEntry();
+}
+
+/** Parse a named-function entry point: a single `function name(params) { … }` declaration (GRAMMAR.md §2). */
+export function parseFunction(source: string): FunctionDecl {
+  return new Parser(lex(source)).parseFunctionEntry();
 }
 
 class Parser {
@@ -35,6 +45,178 @@ class Parser {
       throw this.error(trailing, `Unexpected '${trailing.raw}' after the expression`);
     }
     return expr;
+  }
+
+  parseScriptEntry(): Script {
+    const body = this.statements();
+    const trailing = this.peek();
+    if (trailing.type !== TokenType.EOF) {
+      throw this.error(trailing, `Unexpected '${trailing.raw}'`);
+    }
+    return { kind: 'script', body };
+  }
+
+  parseFunctionEntry(): FunctionDecl {
+    this.skipNewlines();
+    this.expectKeyword('function', "Expected 'function'");
+    const decl = this.functionDecl();
+    this.skipNewlines();
+    const trailing = this.peek();
+    if (trailing.type !== TokenType.EOF) {
+      throw this.error(trailing, `Unexpected '${trailing.raw}' after the function`);
+    }
+    return decl;
+  }
+
+  // ── Statements (GRAMMAR.md §5) ───────────────────────────────────────────────
+
+  /** Newline-separated statements until '}' or end of input. */
+  private statements(): Stmt[] {
+    const out: Stmt[] = [];
+    for (;;) {
+      this.skipNewlines();
+      if (this.at(TokenType.RBrace) || this.at(TokenType.EOF)) return out;
+      out.push(this.statement());
+      const next = this.peek();
+      if (next.type !== TokenType.Newline && next.type !== TokenType.RBrace && next.type !== TokenType.EOF) {
+        throw this.error(next, `Expected end of line after the statement, found '${next.raw}'`);
+      }
+    }
+  }
+
+  private statement(): Stmt {
+    const token = this.peek();
+
+    if (token.type === TokenType.Keyword) {
+      switch (token.value) {
+        case 'let': {
+          this.advance();
+          const name = this.expectName("Expected a variable name after 'let'");
+          this.expectAssignOp("Expected '=' after the variable name");
+          const value = this.expression();
+          return { kind: 'let', name: name.value, value, pos: this.toPos(token) };
+        }
+        case 'if':
+          return this.ifStatement();
+        case 'for': {
+          this.advance();
+          this.expectKeyword('each', "Expected 'each' after 'for'");
+          const name = this.expectName("Expected a variable name after 'for each'");
+          this.expectKeyword('in', "Expected 'in' after the variable name");
+          const source = this.expression();
+          const body = this.block();
+          return { kind: 'foreach', name: name.value, source, body, pos: this.toPos(token) };
+        }
+        case 'queue': {
+          this.advance();
+          const call = this.postfix();
+          if (call.kind !== 'call') {
+            throw this.error(token, "'queue' needs a service call: queue services.module.fn(...)");
+          }
+          return { kind: 'queue', call: call as Call, pos: this.toPos(token) };
+        }
+        case 'return': {
+          this.advance();
+          const next = this.peek();
+          const done =
+            next.type === TokenType.Newline || next.type === TokenType.RBrace || next.type === TokenType.EOF;
+          return { kind: 'return', value: done ? null : this.expression(), pos: this.toPos(token) };
+        }
+        case 'function':
+          throw this.error(token, 'Named functions live in the SDM functions collection, not inside scripts');
+      }
+    }
+
+    // Assignment vs expression statement: tentatively parse an lvalue and look
+    // for a plain '=' (not '=='). Anything else re-parses as an expression.
+    if (token.type === TokenType.Identifier) {
+      const save = this.pos;
+      const target = this.tryLvalue();
+      if (target !== null) {
+        const next = this.peek();
+        if (next.type === TokenType.Operator && next.value === '=' && next.raw === '=') {
+          this.advance();
+          const value = this.expression();
+          return { kind: 'assign', target, value, pos: this.toPos(token) };
+        }
+      }
+      this.pos = save;
+    }
+
+    const expr = this.expression();
+    return { kind: 'exprstmt', expr, pos: expr.pos };
+  }
+
+  private ifStatement(): Stmt {
+    const token = this.expectKeyword('if', "Expected 'if'");
+    const cond = this.expression();
+    const then = this.block();
+    // Allow 'else' on the same line or the next
+    const save = this.pos;
+    this.skipNewlines();
+    if (this.matchKeyword('else')) {
+      if (this.atKeyword('if')) {
+        return { kind: 'if', cond, then, else: [this.ifStatement()], pos: this.toPos(token) };
+      }
+      return { kind: 'if', cond, then, else: this.block(), pos: this.toPos(token) };
+    }
+    this.pos = save;
+    return { kind: 'if', cond, then, pos: this.toPos(token) };
+  }
+
+  /** Braces are mandatory around statement bodies (GRAMMAR.md §5). */
+  private block(): Stmt[] {
+    this.expect(TokenType.LBrace, "Expected '{' — braces are required around the body");
+    const body = this.statements();
+    this.expect(TokenType.RBrace, "Expected '}' to close the block");
+    return body;
+  }
+
+  private functionDecl(): FunctionDecl {
+    const name = this.expectName("Expected the function's name");
+    this.expect(TokenType.LParen, "Expected '(' after the function name");
+    const params: string[] = [];
+    if (!this.match(TokenType.RParen)) {
+      for (;;) {
+        params.push(this.expectName('Expected a parameter name').value);
+        if (this.match(TokenType.Comma)) continue;
+        this.expect(TokenType.RParen, "Expected ')' or ',' in the parameter list");
+        break;
+      }
+    }
+    const body = this.block();
+    return { kind: 'functiondecl', name: name.value, params, body, pos: { line: name.line, col: name.col } };
+  }
+
+  /** lvalue = identifier { "." member } — no calls or indexing. Returns null (caller restores) otherwise. */
+  private tryLvalue(): Ident | Member | null {
+    const first = this.advance();
+    let node: Ident | Member = { kind: 'ident', name: first.value, pos: this.toPos(first) };
+    while (this.at(TokenType.Dot)) {
+      this.advance();
+      const nameToken = this.peek();
+      if (nameToken.type !== TokenType.Identifier && nameToken.type !== TokenType.Keyword) return null;
+      this.advance();
+      node = { kind: 'member', object: node, name: nameToken.value, pos: this.toPos(nameToken) };
+    }
+    return node;
+  }
+
+  private expectName(message: string): Token {
+    const token = this.peek();
+    if (token.type === TokenType.Keyword) {
+      throw this.error(token, `'${token.raw}' is a reserved word and cannot be used as a name`);
+    }
+    if (token.type !== TokenType.Identifier) throw this.error(token, message);
+    return this.advance();
+  }
+
+  private expectAssignOp(message: string): void {
+    const token = this.peek();
+    if (token.type !== TokenType.Operator || token.value !== '=' || token.raw !== '=') {
+      throw this.error(token, message);
+    }
+    this.advance();
   }
 
   // ── Expression cascade (GRAMMAR.md §3.1) ─────────────────────────────────────
@@ -266,8 +448,10 @@ class Parser {
         return { kind: 'list', items, pos: this.toPos(open) };
       }
       case TokenType.LBrace: {
+        // Newlines inside object literals are layout, not statement separators
         const open = this.advance();
         const entries: ObjectEntry[] = [];
+        this.skipNewlines();
         if (!this.match(TokenType.RBrace)) {
           for (;;) {
             const keyToken = this.peek();
@@ -281,7 +465,11 @@ class Parser {
             this.expect(TokenType.Colon, "Expected ':' after the key");
             const value = this.expression();
             entries.push({ key: keyToken.value, value });
-            if (this.match(TokenType.Comma)) continue;
+            this.skipNewlines();
+            if (this.match(TokenType.Comma)) {
+              this.skipNewlines();
+              continue;
+            }
             this.expect(TokenType.RBrace, "Expected '}' or ',' in the object");
             break;
           }

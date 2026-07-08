@@ -4,9 +4,12 @@
 // unknown fields, and broken FK paths fail when the config is saved, not when
 // a user runs the activity. Unknown/dynamic shapes (context, attributes, services)
 // propagate silently — no false positives on host-defined content.
+// Scripts add scope tracking (let/redeclare/shadowing) and mutation placement
+// rules (before hooks validate only; bulk update needs a where; rows have no
+// identity) — GRAMMAR §5, DSL_SPEC §6–§7.
 
-import type { Arg, Expr } from './ast';
-import { parseExpression } from './parser';
+import type { Arg, Expr, FunctionDecl, Stmt } from './ast';
+import { parseExpression, parseFunction, parseScript } from './parser';
 import { FluxSyntaxError } from './errors';
 
 // ── Schema input (derived from the SDM by the host) ─────────────────────────────
@@ -35,6 +38,16 @@ export interface ValidateOptions {
    * validation rules, ['event'] for page-builder callbacks). Treated as dynamic.
    */
   extraRoots?: string[];
+  /** Named functions callable at this embedding point (name → parameter list). */
+  functions?: Record<string, { params: string[] }>;
+}
+
+export interface ScriptValidateOptions extends ValidateOptions {
+  /**
+   * 'before': the gate — mutations and `queue` are errors (DSL_SPEC §6).
+   * 'after' (default): effects — mutations and `queue` allowed.
+   */
+  mode?: 'before' | 'after';
 }
 
 export interface Diagnostic {
@@ -57,6 +70,8 @@ const BUILTINS: Record<string, { min: number; max: number }> = {
   trim: { min: 1, max: 1 },
   abs: { min: 1, max: 1 },
   round: { min: 1, max: 2 },
+  fail: { min: 1, max: 1 },
+  warn: { min: 1, max: 1 },
 };
 
 const CHAIN_METHODS = new Set(['where', 'orderby', 'select', 'values', 'top']);
@@ -74,8 +89,44 @@ export function validateExpression(source: string, schema: DslSchema, options: V
     }
     throw e;
   }
-  const v = new Validator(schema, options);
+  const v = new Validator(schema, options, 'expression');
   v.check(ast, null);
+  return v.diagnostics;
+}
+
+/** Validate a script-tier source (hook, headless workflow) against the schema. */
+export function validateScript(source: string, schema: DslSchema, options: ScriptValidateOptions = {}): Diagnostic[] {
+  let stmts: Stmt[];
+  try {
+    stmts = parseScript(source).body;
+  } catch (e) {
+    if (e instanceof FluxSyntaxError) {
+      return [{ severity: 'error', message: e.message, line: e.line, col: e.col }];
+    }
+    throw e;
+  }
+  const v = new Validator(schema, options, options.mode ?? 'after');
+  v.checkScript(stmts);
+  return v.diagnostics;
+}
+
+/**
+ * Validate a named function declaration. Bodies are checked in 'after' mode —
+ * whether a mutation is allowed depends on the calling surface, which the
+ * evaluator enforces at run time.
+ */
+export function validateFunction(source: string, schema: DslSchema, options: ValidateOptions = {}): Diagnostic[] {
+  let decl: FunctionDecl;
+  try {
+    decl = parseFunction(source);
+  } catch (e) {
+    if (e instanceof FluxSyntaxError) {
+      return [{ severity: 'error', message: e.message, line: e.line, col: e.col }];
+    }
+    throw e;
+  }
+  const v = new Validator(schema, options, 'after');
+  v.checkFunction(decl);
   return v.diagnostics;
 }
 
@@ -104,7 +155,8 @@ type Shape =
   | { kind: 'scalar' }
   | { kind: 'recordsRoot' }
   | { kind: 'record'; type: string }
-  | { kind: 'recordList'; type: string }
+  // collection: bare `records.<type>` (create lives here); filtered: a where() ran (D13)
+  | { kind: 'recordList'; type: string; collection?: boolean; filtered?: boolean }
   | { kind: 'rowList'; keys: string[] }             // result of select()
   | { kind: 'row'; keys: string[] }
   | { kind: 'scalarList' }
@@ -113,18 +165,155 @@ type Shape =
 const UNKNOWN: Shape = { kind: 'unknown' };
 const SCALAR: Shape = { kind: 'scalar' };
 
+type Mode = 'expression' | 'before' | 'after';
+
 class Validator {
   readonly diagnostics: Diagnostic[] = [];
   private schema: DslSchema;
   private options: ValidateOptions;
+  private mode: Mode;
+  /** Variable shapes, one map per block (scripts tier). */
+  private scopes: Map<string, Shape>[] = [];
 
-  constructor(schema: DslSchema, options: ValidateOptions) {
+  constructor(schema: DslSchema, options: ValidateOptions, mode: Mode) {
     this.schema = schema;
     this.options = options;
+    this.mode = mode;
   }
 
-  private error(expr: Expr, message: string): void {
+  private error(expr: Expr | Stmt, message: string): void {
     this.diagnostics.push({ severity: 'error', message, line: expr.pos.line, col: expr.pos.col });
+  }
+
+  // ── Statements (scripts tier) ─────────────────────────────────────────────────
+
+  checkScript(stmts: Stmt[]): void {
+    this.scopes.push(new Map());
+    stmts.forEach((s) => this.checkStmt(s));
+    this.scopes.pop();
+  }
+
+  checkFunction(decl: FunctionDecl): void {
+    this.scopes.push(new Map());
+    for (const param of decl.params) {
+      this.declare(param, UNKNOWN, decl);
+    }
+    decl.body.forEach((s) => this.checkStmt(s));
+    this.scopes.pop();
+  }
+
+  private checkStmt(stmt: Stmt): void {
+    switch (stmt.kind) {
+      case 'let': {
+        const shape = this.check(stmt.value, null);
+        this.declare(stmt.name, shape, stmt);
+        return;
+      }
+      case 'assign': {
+        const shape = this.check(stmt.value, null);
+        if (stmt.target.kind === 'ident') {
+          const name = stmt.target.name;
+          if (ROOTS.has(name)) {
+            this.error(stmt, `'${name}' is a root and cannot be assigned`);
+            return;
+          }
+          const scope = this.scopeWith(name);
+          if (scope === null) {
+            this.error(stmt, `Unknown variable '${name}' — declare it with 'let ${name} = …'`);
+            return;
+          }
+          scope.set(name, shape);
+          return;
+        }
+        const object = this.check(stmt.target.object, null);
+        if (object.kind === 'record') {
+          this.error(
+            stmt,
+            `Records are read-only values — use .update({ ${stmt.target.name}: … }) to change '${stmt.target.name}'`,
+          );
+        } else if (object.kind !== 'unknown' && object.kind !== 'row' && object.kind !== 'rowList') {
+          this.error(stmt, `Cannot set '.${stmt.target.name}' on this value`);
+        }
+        return;
+      }
+      case 'if': {
+        this.check(stmt.cond, null);
+        this.scopes.push(new Map());
+        stmt.then.forEach((s) => this.checkStmt(s));
+        this.scopes.pop();
+        if (stmt.else) {
+          this.scopes.push(new Map());
+          stmt.else.forEach((s) => this.checkStmt(s));
+          this.scopes.pop();
+        }
+        return;
+      }
+      case 'foreach': {
+        const source = this.check(stmt.source, null);
+        this.scopes.push(new Map());
+        this.declare(stmt.name, this.elementOf(source), stmt);
+        stmt.body.forEach((s) => this.checkStmt(s));
+        this.scopes.pop();
+        return;
+      }
+      case 'queue': {
+        if (this.mode === 'before') {
+          this.error(stmt, "'queue' runs in after hooks only — before hooks validate, they don't act");
+        }
+        if (!isServiceCall(stmt.call.callee)) {
+          this.error(stmt, "'queue' needs a service call: queue services.module.fn(...)");
+        } else {
+          this.check(stmt.call.callee, null);
+        }
+        stmt.call.args.forEach((arg) => this.check(arg.value, null));
+        return;
+      }
+      case 'return':
+        if (stmt.value) this.check(stmt.value, null);
+        return;
+      case 'exprstmt':
+        this.check(stmt.expr, null);
+        return;
+    }
+  }
+
+  private declare(name: string, shape: Shape, at: Expr | Stmt | FunctionDecl): void {
+    const here = { pos: at.pos } as Stmt;
+    if (ROOTS.has(name) || this.options.extraRoots?.some((r) => r.toLowerCase() === name)) {
+      this.error(here, `'${name}' is a root and cannot be redeclared`);
+      return;
+    }
+    if (name in BUILTINS || this.functionSpec(name) !== null) {
+      this.error(here, `'${name}' is a function name and cannot be redeclared`);
+      return;
+    }
+    const scope = this.scopes[this.scopes.length - 1];
+    if (scope.has(name)) {
+      this.error(here, `'${name}' is already declared in this block`);
+      return;
+    }
+    scope.set(name, shape);
+  }
+
+  private scopeWith(name: string): Map<string, Shape> | null {
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      if (this.scopes[i].has(name)) return this.scopes[i];
+    }
+    return null;
+  }
+
+  private lookupVar(name: string): Shape | null {
+    return this.scopeWith(name)?.get(name) ?? null;
+  }
+
+  private functionSpec(name: string): { params: string[] } | null {
+    const fns = this.options.functions;
+    if (!fns) return null;
+    if (name in fns) return fns[name];
+    for (const key of Object.keys(fns)) {
+      if (key.toLowerCase() === name) return fns[key];
+    }
+    return null;
   }
 
   /** itemType: record type whose fields are in bare-field scope (inside chain args), else null. */
@@ -141,8 +330,10 @@ class Validator {
           if (expr.name === 'id') return SCALAR;
           const field = this.fieldOf(itemType, expr.name);
           if (field !== null) return this.fieldShape(field);
-          // fall through to roots — outer scope is still visible inside chains
+          // fall through to variables and roots — the outer scope is still visible inside chains
         }
+        const variable = this.lookupVar(expr.name);
+        if (variable !== null) return variable;
         if (expr.name === 'records') return { kind: 'recordsRoot' };
         if (ROOTS.has(expr.name)) return UNKNOWN;
         if (this.options.extraRoots?.some((r) => r.toLowerCase() === expr.name)) return UNKNOWN;
@@ -214,7 +405,7 @@ class Validator {
           this.error(expr, `Unknown record type '${name}'`);
           return UNKNOWN;
         }
-        return { kind: 'recordList', type: name };
+        return { kind: 'recordList', type: name, collection: true };
       }
 
       case 'record': {
@@ -290,9 +481,23 @@ class Validator {
     if (callee.kind === 'ident') {
       const spec = BUILTINS[callee.name];
       if (!spec) {
+        const fn = this.functionSpec(callee.name);
+        if (fn !== null) {
+          if (expr.args.length !== fn.params.length) {
+            this.error(
+              expr,
+              `${callee.name}() takes ${fn.params.length} argument${fn.params.length === 1 ? '' : 's'}, got ${expr.args.length}`,
+            );
+          }
+          expr.args.forEach((arg) => this.check(arg.value, itemType));
+          return UNKNOWN;
+        }
         this.error(expr, `Unknown function '${callee.name}'`);
         expr.args.forEach((arg) => this.check(arg.value, itemType));
         return UNKNOWN;
+      }
+      if ((callee.name === 'fail' || callee.name === 'warn') && this.mode === 'expression') {
+        this.error(expr, `${callee.name}() belongs to scripts (hooks, functions), not expressions`);
       }
       if (expr.args.length < spec.min || expr.args.length > spec.max) {
         const wants = spec.min === spec.max ? `${spec.min}` : `${spec.min}–${spec.max}`;
@@ -306,6 +511,12 @@ class Validator {
     if (callee.kind === 'member') {
       const object = this.check(callee.object, itemType);
       const method = callee.name;
+
+      if (method === 'create' || method === 'update') {
+        const handled = this.mutation(object, method, expr, itemType);
+        if (handled !== null) return handled;
+        // not a records mutation — fall through (e.g. a service module's own method)
+      }
 
       if ((object.kind === 'recordList' || object.kind === 'rowList' || object.kind === 'scalarList') && CHAIN_METHODS.has(method)) {
         return this.chain(object, method, expr, itemType);
@@ -333,6 +544,83 @@ class Validator {
     return UNKNOWN;
   }
 
+  /**
+   * Mutation placement rules (D13/D14, DSL_SPEC §6–§7). Returns null when the
+   * call is not a records mutation and should fall through to generic handling.
+   */
+  private mutation(object: Shape, method: 'create' | 'update', expr: Expr & { kind: 'call' }, itemType: string | null): Shape | null {
+    const target =
+      object.kind === 'record' || object.kind === 'recordList' || object.kind === 'rowList' ? object : null;
+    if (target === null && !(object.kind === 'unknown' && this.isCtxRecordChain(expr.callee))) return null;
+
+    if (this.mode === 'expression') {
+      this.error(expr, `${method}() is not allowed in expressions — mutations run in after hooks`);
+    } else if (this.mode === 'before') {
+      this.error(expr, `Before hooks validate only — move ${method}() to the after hook`);
+    }
+
+    const type =
+      object.kind === 'record' || object.kind === 'recordList'
+        ? object.type
+        : this.options.anchorType ?? null;
+
+    if (method === 'create') {
+      if (object.kind !== 'recordList' || !object.collection) {
+        this.error(expr, 'create is collection-level: records.<type>.create({...})');
+        expr.args.forEach((arg) => this.check(arg.value, itemType));
+        return UNKNOWN;
+      }
+      this.checkFieldsArg(expr, object.type, itemType, 'create');
+      return { kind: 'record', type: object.type };
+    }
+
+    // update
+    if (object.kind === 'rowList') {
+      this.error(expr, 'Projected rows have no identity and cannot be updated — update the records themselves');
+      expr.args.forEach((arg) => this.check(arg.value, itemType));
+      return UNKNOWN;
+    }
+    if (object.kind === 'recordList' && !object.filtered) {
+      this.error(expr, `Bulk update needs a filter: records.${object.type}.where(...).update({...}) — updating every record must say .where(true)`);
+    }
+    this.checkFieldsArg(expr, type, itemType, 'update');
+    if (object.kind === 'record') return object;
+    if (object.kind === 'recordList') return SCALAR; // bulk update yields the affected count
+    return UNKNOWN;
+  }
+
+  /** `context.record.update(...)` (or deeper) when the anchor type is not declared: still a mutation. */
+  private isCtxRecordChain(callee: Expr): boolean {
+    let node = callee;
+    while (node.kind === 'member') {
+      if (this.isCtxRecord(node)) return true;
+      node = node.object;
+    }
+    return false;
+  }
+
+  /** The single object argument of create/update; keys checked against the target type. */
+  private checkFieldsArg(expr: Expr & { kind: 'call' }, type: string | null, itemType: string | null, what: string): void {
+    if (expr.args.length !== 1) {
+      this.error(expr, `${what}() takes one object: ${what}({ field: value, … })`);
+      expr.args.forEach((arg) => this.check(arg.value, itemType));
+      return;
+    }
+    const arg = expr.args[0].value;
+    this.check(arg, itemType);
+    if (arg.kind !== 'object') return; // dynamic argument — checked at run time
+    if (type === null || !(type in this.schema.types)) return;
+    for (const entry of arg.entries) {
+      if (entry.key === 'id') {
+        this.error(arg, `'id' is not writable`);
+        continue;
+      }
+      if (this.fieldOf(type, entry.key.toLowerCase()) === null) {
+        this.error(arg, `'${type}' has no field '${entry.key}'`);
+      }
+    }
+  }
+
   private chain(object: Shape & { kind: 'recordList' | 'rowList' | 'scalarList' }, method: string, expr: Expr & { kind: 'call' }, outerItemType: string | null): Shape {
     // Bare-field scope for chain args: the element type when filtering records.
     const innerType = object.kind === 'recordList' ? object.type : outerItemType;
@@ -342,15 +630,15 @@ class Validator {
       case 'where':
         if (expr.args.length !== 1) this.error(expr, 'where() takes one condition');
         expr.args.forEach(checkArg);
-        return object;
+        return object.kind === 'recordList' ? { ...object, collection: false, filtered: true } : object;
       case 'top':
         if (expr.args.length !== 1) this.error(expr, 'top() takes one number');
         expr.args.forEach((arg) => this.check(arg.value, outerItemType));
-        return object;
+        return object.kind === 'recordList' ? { ...object, collection: false } : object;
       case 'orderby':
         if (expr.args.length === 0) this.error(expr, 'orderBy() needs at least one field');
         expr.args.forEach(checkArg);
-        return object;
+        return object.kind === 'recordList' ? { ...object, collection: false } : object;
       case 'select': {
         if (expr.args.length === 0) this.error(expr, 'select() needs at least one field');
         const keys: string[] = [];
@@ -416,4 +704,11 @@ class Validator {
         return UNKNOWN;
     }
   }
+}
+
+/** `queue`'s operand must be a call on a member chain rooted at `services`. */
+function isServiceCall(callee: Expr): boolean {
+  let node = callee;
+  while (node.kind === 'member') node = node.object;
+  return node.kind === 'ident' && node.name === 'services';
 }

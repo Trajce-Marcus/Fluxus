@@ -2,7 +2,7 @@
 
 The Fluxus scripting language (working name **FluxScript**): one DSL for attribute show conditions and datasources, before/after hooks, page-builder bindings, and headless workflows. A JS/SQL blend designed to be as learnable as SQL — no lambdas, no visible async, null-safe, case-insensitive, statically validated against the SDM at config-save time.
 
-**Status: Phase 1 complete** (118 tests here + 7 wiring tests in `@fluxus/sdm`). Grammar signed off (GRAMMAR.md D1–D14; D11 provisional); lexer, parser, evaluator (four roots via `EvalHost`, null-safety, case-insensitive comparison, FK auto-deref, reverse-FK navigation, chains, builtins, quotas, snapshot copies) and schema-aware validator all built and tested; wired into the sdm workbench (`show_condition` + `List` datasources, city → suburb acceptance case live). See [docs/phases/PHASE1_Build_Summary.md](docs/phases/PHASE1_Build_Summary.md). Next: Phase 2 — scripts tier (hooks, mutations, `fail`/`queue`).
+**Status: Phase 2 complete** (173 tests here + 14 wiring tests in `@fluxus/sdm`). Phase 1 (grammar D1–D14 signed off; lexer, parser, evaluator, schema-aware validator; `show_condition` + `List` datasources live in the workbench) plus the Phase 2 scripts tier: statements (`let`, `if/else`, `for each`, assignment), `fail`/`warn`, staged record mutations with atomic commit (`update`/`create`/bulk-with-`where`), `queue` outbox, named functions — all wired into the sdm hook slots (Complete Work Order is the acceptance case). The page-builder `run activity` callback moved to the Extraction milestone (root ROADMAP). See [docs/phases/](docs/phases/). Next: Phase 3 — services registry.
 
 ```
 records.resources

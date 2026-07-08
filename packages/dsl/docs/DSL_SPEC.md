@@ -112,7 +112,7 @@ Scalars render as a simple picker; records/objects as a grid picker driven by `t
 
 `show_condition` (expression tier) decides whether an attribute is presented (UI) or applicable (headless). In headless mode the datasource doubles as validation: a submitted value must be in the datasource's result set.
 
-Per-usage settings on an activity's attribute list: `show_condition`, `required` (hidden attributes are exempt), and `validation` — an expression that must evaluate `true` for the captured value, injected as the extra root **`value`** (e.g. `value <= now()`), with an optional `validation_message`. Captured values are coerced to their attribute's declared type before scripts see them. Attribute validation is per-field; cross-record rules belong to before hooks (§6). In headless mode the same three settings define the parameter contract.
+Per-usage settings on an activity's attribute list: `show_condition`, `required` (hidden attributes are exempt), and `validation` — an expression that must evaluate `true` for the captured value, injected as the extra root **`value`** (e.g. `value <= now()`), with an optional `validation_message`. Captured values are coerced to their attribute's declared type before scripts see them. Attribute validation is per-field; cross-record rules belong to before hooks (§6). In headless mode the same three settings define the parameter contract. A fourth setting, `can_waive`, lets the user declare a required value unavailable with a recorded reason instead of entering fake data — an SDM-level concern (see the sdm SPEC); scripts simply see the attribute as null.
 
 Storage is unchanged from the SDM runtime: captured attributes persist to activity history as primitives or JSON — exactly what the user entered, untouched by any script.
 
@@ -144,11 +144,15 @@ The read path (settled July 2026). Alongside CREATE/UPDATE/DELETE, a **GET** act
 
 **After hook = effects.** Runs after the activity persists. Contains the data logic: loops, conditional mutations, service calls, invoice-style derivations.
 
+Failure semantics: a runtime error in a before hook blocks the activity exactly like `fail` (a broken gate must never wave submissions through). A failing after hook applies none of its mutations (§7) but does not un-record the activity — history stays truthful; the surface reports that the activity was recorded and no changes applied.
+
 ## 7. Transactions and `queue`
 
-After-hook record mutations are **staged and committed atomically** when the hook completes. If the hook fails midway, no mutations apply.
+After-hook record mutations are **staged and committed atomically** when the hook completes. If the hook fails midway, no mutations apply. Constraint checks (`required`, `unique`, `immutable`) run at staging time, so a violating mutation fails at its statement — before anything has persisted.
 
-`queue`d service calls are held in the same staging area and **dispatched only if the commit succeeds** (outbox pattern) — eventually to a separate queue/process. Hook fails → no records changed, no messages sent. Business users get transactional behaviour without learning the word.
+Within the running script, **reads see staged writes**: a query, `context.record`, or FK deref reflects the script's own uncommitted mutations; snapshots taken earlier keep their values (D11). A record returned by `create` carries its final committed id, usable immediately for FKs.
+
+`queue`d service calls are held in the same staging area and **dispatched only if the commit succeeds** (outbox pattern) — eventually to a separate queue/process; arguments are evaluated at the `queue` statement (snapshot), the call itself runs after commit. Hook fails → no records changed, no messages sent. Business users get transactional behaviour without learning the word. A queued call that itself fails at dispatch becomes a warning, never an error (the commit already happened).
 
 Waiting service calls with side effects inside after hooks are the documented non-transactional exception — prefer `queue` for anything with effects.
 
@@ -166,7 +170,7 @@ function calcInvoiceTotal(resources, rate) {
 }
 ```
 
-Named functions declare explicit parameters and still receive the four roots implicitly. Creation is open to users (SQL proc/function users adapt readily); constraints that keep openness from decaying into sprawl — mandatory description, flat namespace, schema validation, possibly versioning/permissions — are deliberate enablers, to be specified when Phase 2 lands.
+Named functions declare explicit parameters and still receive the four roots implicitly. Function calls are **lexically isolated**: a body sees its parameters and the roots, never the caller's variables. Creation is open to users (SQL proc/function users adapt readily); the governance floor shipped with Phase 2 — **mandatory description, flat namespace (duplicate names rejected), declared name must match the collection entry, bodies schema-validated at config-save time**; versioning/permissions remain future enablers. Bodies are validated permissively (as if in an after hook) because the same function may be called from any surface; the evaluator enforces the calling surface's rules at run time (a function that mutates fails when called from a before hook or datasource).
 
 Functions live in a top-level `functions` collection in the SDM, sibling of `attributes` / `recordTypes` / `workflows`:
 
@@ -205,15 +209,17 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 
 ## 11. Phases
 
-1. **Phase 1 — expressions + queries.** Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attributes.` dependencies (city → suburb is the acceptance test). Entirely client-side.
-2. **Phase 2 — scripts.** Statements, `fail`/`warn`, `records` mutations, transactional after hooks, `queue`. Fills the sdm hook slots; `run activity` callback action in the page builder (payload as `event` root).
+1. **Phase 1 — expressions + queries.** ✅ Done. Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attributes.` dependencies (city → suburb is the acceptance test). Entirely client-side.
+2. **Phase 2 — scripts.** ✅ Done (July 2026). Statements, `fail`/`warn`, `records` mutations, transactional after hooks, `queue`, named functions — built and wired into the sdm hook slots (Complete Work Order is the acceptance case: before gate + after-hook status move). The `run activity` page-builder callback (payload as `event` root) was re-scoped out to the **Extraction** milestone (root ROADMAP): it is blocked on the page builder hosting the SDM store, not on any language work.
 3. **Phase 3 — services registry** with one or two real modules (notify, geocode).
 4. **Phase 4 — headless invocation**: activities as the API surface over the agreed backend stack.
 
 ## 12. Open items
 
-- Named-function governance constraints (naming rules, permissions, versioning) — with Phase 2.
+- Page-builder `run activity` callback — with the **Extraction** milestone (root ROADMAP): needs the page builder to host the SDM store; no language work involved.
 - Delete semantics (`record_map: DELETE`, `records.x.delete`) — needs SDM-level decisions first.
 - Aggregations/grouping in queries — add when a real case demands them.
+- `warn(...)` surfacing: before-hook warnings are a **soft stop** (Continue/Cancel in the form — see sdm SPEC "Hooks"); after-hook warnings are informational and still console-only, pending a toast/banner slot.
+- ~~Named-function governance constraints~~ — floor shipped with Phase 2 (§8); versioning/permissions later.
 - ~~Multi-line script storage in the SDM JSON~~ — settled: the `functions` collection with array-of-lines bodies (§8); inline hooks use the same array form.
-- ~~Formal grammar (EBNF)~~ — written: [GRAMMAR.md](GRAMMAR.md); its ⚑ decisions (D1–D10) await sign-off.
+- ~~Formal grammar (EBNF)~~ — written: [GRAMMAR.md](GRAMMAR.md); D1–D14 all resolved.

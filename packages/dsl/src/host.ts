@@ -21,6 +21,25 @@ export class FkPointer {
   ) {}
 }
 
+/** A staged record mutation (DSL_SPEC §7): held by the evaluator, applied atomically on commit. */
+export type MutationOp =
+  | { op: 'create'; type: string; record: DslRecord }
+  | { op: 'update'; type: string; id: string; fields: Record<string, unknown> };
+
+/**
+ * Mutation surface of a records host (Phase 2). `prepare*` validate and shape a
+ * mutation *without persisting* — constraint violations surface while the script
+ * runs, so a failing script stages nothing. `apply` commits the staged ops.
+ */
+export interface RecordsMutationHost {
+  /** Validate a create, merge type defaults, assign the committed id. Does not persist. */
+  prepareCreate(type: string, fields: Record<string, unknown>): DslRecord;
+  /** Validate an update (immutable/unique constraints). Does not persist. Throws on violation. */
+  prepareUpdate(type: string, id: string, fields: Record<string, unknown>): void;
+  /** Commit staged mutations, in order. */
+  apply(ops: MutationOp[]): void;
+}
+
 /** Adapter over the SDM record store + schema, injected as the `records` root. */
 export interface RecordsHost {
   hasType(type: string): boolean;
@@ -31,6 +50,8 @@ export interface RecordsHost {
   fkTarget(type: string, field: string): string | null;
   /** Reverse-FK navigation (D12): resolve `record.<name>` to the incoming FK it names. */
   reverseRef(type: string, name: string): { sourceType: string; field: string } | null;
+  /** Mutation support. Read-only hosts (expression embedding points) omit it. */
+  mutate?: RecordsMutationHost;
 }
 
 export interface Quotas {
@@ -54,6 +75,11 @@ export interface EvalHost {
   attributes?: Record<string, unknown>;
   /** Service modules (Phase 3): plain objects whose function members are callable. */
   services?: Record<string, unknown>;
+  /**
+   * Named functions (DSL_SPEC §8): full `function name(params) { … }` sources.
+   * Callable by declared name from any tier; parsed lazily and cached per evaluation.
+   */
+  functions?: string[];
   /** Injectable clock, so hooks are testable (GRAMMAR §6). Defaults to real time. */
   now?: () => Date;
   quotas?: Partial<Quotas>;

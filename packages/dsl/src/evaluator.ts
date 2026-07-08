@@ -1,6 +1,7 @@
-import type { Arg, Expr, Position } from './ast';
-import { parseExpression } from './parser';
-import { DEFAULT_QUOTAS, DslRecord, EvalHost, FkPointer, Quotas, RecordsHost } from './host';
+import type { Arg, Call, Expr, FunctionDecl, Position, QueueStmt, Script, Stmt } from './ast';
+import { parseExpression, parseFunction, parseScript } from './parser';
+import { FluxFailError, FluxSyntaxError } from './errors';
+import { DEFAULT_QUOTAS, DslRecord, EvalHost, FkPointer, MutationOp, Quotas, RecordsHost } from './host';
 
 export class FluxRuntimeError extends Error {
   readonly line: number;
@@ -20,7 +21,34 @@ export function evaluateExpression(source: string, host: EvalHost = {}): unknown
 }
 
 export function evaluateAst(expr: Expr, host: EvalHost = {}): unknown {
-  return new Evaluator(host).run(expr);
+  return new Evaluator(host, 'read').run(expr);
+}
+
+export interface ScriptOptions {
+  /**
+   * 'read' (default): validation surfaces — before hooks, expression embeddings.
+   * Mutations and `queue` are runtime errors.
+   * 'mutate': after hooks — mutations stage and commit atomically (DSL_SPEC §7).
+   */
+  mode?: 'read' | 'mutate';
+}
+
+export interface ScriptResult {
+  /** Value of a top-level `return`, else null. */
+  value: unknown;
+  /** Messages from `warn(...)`, plus any queued-dispatch failures. */
+  warnings: string[];
+}
+
+/**
+ * Execute a script-tier source (hook, headless workflow). Record mutations are
+ * staged during the run and committed only if the whole script succeeds; `queue`d
+ * service calls dispatch only after the commit (outbox). `fail('msg')` throws
+ * FluxFailError — the caller rejects the activity and nothing persists.
+ */
+export function executeScript(source: string | Script, host: EvalHost = {}, options: ScriptOptions = {}): ScriptResult {
+  const script = typeof source === 'string' ? parseScript(source) : source;
+  return new Evaluator(host, options.mode ?? 'read').runScript(script);
 }
 
 // ── Internal values ─────────────────────────────────────────────────────────────
@@ -69,14 +97,61 @@ function unwrap(value: unknown): unknown {
 
 type Scope = (name: string) => { found: boolean; value: unknown };
 
+/** Block-scoped variables (GRAMMAR §5): `let` declares, `x = …` assigns up the chain. */
+class Env {
+  private vars = new Map<string, unknown>();
+
+  constructor(private parent: Env | null) {}
+
+  lookup(name: string): { found: boolean; value: unknown } {
+    if (this.vars.has(name)) return { found: true, value: this.vars.get(name) };
+    return this.parent ? this.parent.lookup(name) : { found: false, value: undefined };
+  }
+
+  /** False when the name is already declared in this block. */
+  declare(name: string, value: unknown): boolean {
+    if (this.vars.has(name)) return false;
+    this.vars.set(name, value);
+    return true;
+  }
+
+  /** False when the name is not declared in any enclosing block. */
+  assign(name: string, value: unknown): boolean {
+    if (this.vars.has(name)) {
+      this.vars.set(name, value);
+      return true;
+    }
+    return this.parent ? this.parent.assign(name, value) : false;
+  }
+}
+
+const ROOT_NAMES = new Set(['context', 'attributes', 'records', 'services']);
+const MAX_CALL_DEPTH = 64;
+
+type Signal = { signal: 'return'; value: unknown } | null;
+
 class Evaluator {
   private host: EvalHost;
   private quotas: Quotas;
+  private mode: 'read' | 'mutate';
   private steps = 0;
   private deadline = 0;
+  private callDepth = 0;
 
-  constructor(host: EvalHost) {
+  // Transaction staging (DSL_SPEC §7): ops in order, plus overlays so the
+  // script reads its own writes before anything commits.
+  private staged: MutationOp[] = [];
+  private stagedCreates = new Map<string, DslRecord[]>();
+  private stagedPatches = new Map<string, Map<string, Record<string, unknown>>>();
+  private queued: { label: string; invoke: () => unknown }[] = [];
+  private warnings: string[] = [];
+
+  // Named functions (DSL_SPEC §8), parsed lazily from host.functions.
+  private functions: Map<string, FunctionDecl> | null = null;
+
+  constructor(host: EvalHost, mode: 'read' | 'mutate') {
     this.host = host;
+    this.mode = mode;
     this.quotas = { ...DEFAULT_QUOTAS, ...host.quotas };
   }
 
@@ -84,6 +159,141 @@ class Evaluator {
     this.steps = 0;
     this.deadline = Date.now() + this.quotas.timeoutMs;
     return this.eval(expr, this.rootScope());
+  }
+
+  runScript(script: Script): ScriptResult {
+    this.steps = 0;
+    this.deadline = Date.now() + this.quotas.timeoutMs;
+    const sig = this.execBlock(script.body, new Env(null));
+    this.commit();
+    return { value: sig ? sig.value : null, warnings: this.warnings };
+  }
+
+  /** Commit staged mutations, then dispatch queued calls (outbox — only after a clean commit). */
+  private commit(): void {
+    if (this.staged.length > 0) {
+      this.host.records!.mutate!.apply(this.staged); // guarded at staging time
+    }
+    for (const q of this.queued) {
+      try {
+        q.invoke();
+      } catch (e) {
+        this.warnings.push(`queued ${q.label} failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  }
+
+  // ── Statements (GRAMMAR §5) ───────────────────────────────────────────────────
+
+  private execBlock(stmts: Stmt[], env: Env): Signal {
+    for (const stmt of stmts) {
+      const sig = this.execStmt(stmt, env);
+      if (sig) return sig;
+    }
+    return null;
+  }
+
+  private execStmt(stmt: Stmt, env: Env): Signal {
+    this.tick(stmt.pos);
+    const scope = this.scopeOf(env);
+    switch (stmt.kind) {
+      case 'let': {
+        if (ROOT_NAMES.has(stmt.name)) {
+          throw new FluxRuntimeError(`'${stmt.name}' is a root and cannot be redeclared`, stmt.pos);
+        }
+        if (!env.declare(stmt.name, this.eval(stmt.value, scope))) {
+          throw new FluxRuntimeError(`'${stmt.name}' is already declared in this block`, stmt.pos);
+        }
+        return null;
+      }
+      case 'assign': {
+        const value = this.eval(stmt.value, scope);
+        if (stmt.target.kind === 'ident') {
+          if (ROOT_NAMES.has(stmt.target.name)) {
+            throw new FluxRuntimeError(`'${stmt.target.name}' is a root and cannot be assigned`, stmt.pos);
+          }
+          if (!env.assign(stmt.target.name, value)) {
+            throw new FluxRuntimeError(`Unknown variable '${stmt.target.name}' — declare it with 'let'`, stmt.pos);
+          }
+          return null;
+        }
+        // Member assignment: records are read-only values (D14); plain objects
+        // (rows, object literals) accept local-only writes.
+        const object = this.eval(stmt.target.object, scope);
+        const field = stmt.target.name;
+        if (object === null) throw new FluxRuntimeError(`Cannot set '.${field}' on null`, stmt.pos);
+        if (isRecord(object)) {
+          throw new FluxRuntimeError(
+            `Records are read-only values — use .update({ ${field}: … }) to change '${field}'`,
+            stmt.pos,
+          );
+        }
+        if (!isPlainObject(object)) {
+          throw new FluxRuntimeError(`Cannot set '.${field}' on ${describe(object)}`, stmt.pos);
+        }
+        object[lookupKey(object, field) ?? field] = value;
+        return null;
+      }
+      case 'if': {
+        if (this.toBool(this.eval(stmt.cond, scope), stmt.pos)) {
+          return this.execBlock(stmt.then, new Env(env));
+        }
+        return stmt.else ? this.execBlock(stmt.else, new Env(env)) : null;
+      }
+      case 'foreach': {
+        const source = this.eval(stmt.source, scope);
+        const list = source === null ? [] : source; // null-safe: iterate nothing
+        if (!Array.isArray(list)) {
+          throw new FluxRuntimeError(`'for each' needs a list, got ${describe(source)}`, stmt.pos);
+        }
+        for (const item of list) {
+          this.tick(stmt.pos);
+          const loopEnv = new Env(env);
+          loopEnv.declare(stmt.name, item);
+          const sig = this.execBlock(stmt.body, loopEnv);
+          if (sig) return sig;
+        }
+        return null;
+      }
+      case 'queue':
+        return this.queueStmt(stmt, scope);
+      case 'return':
+        return { signal: 'return', value: stmt.value ? this.eval(stmt.value, scope) : null };
+      case 'exprstmt':
+        this.eval(stmt.expr, scope);
+        return null;
+    }
+  }
+
+  private queueStmt(stmt: QueueStmt, scope: Scope): null {
+    if (this.mode !== 'mutate') {
+      throw new FluxRuntimeError("'queue' runs in after hooks only — before hooks validate, they don't act", stmt.pos);
+    }
+    const callee = stmt.call.callee;
+    if (callee.kind !== 'member') {
+      throw new FluxRuntimeError("'queue' needs a service call: queue services.module.fn(...)", stmt.pos);
+    }
+    const object = this.eval(callee.object, scope);
+    if (!isPlainObject(object)) {
+      throw new FluxRuntimeError("'queue' needs a service call: queue services.module.fn(...)", stmt.pos);
+    }
+    const key = lookupKey(object, callee.name);
+    const fn = key === null ? null : object[key];
+    if (typeof fn !== 'function') {
+      throw new FluxRuntimeError(`Unknown service function '${callee.name}'`, stmt.pos);
+    }
+    // Arguments evaluate now (snapshot); the call itself dispatches after commit.
+    const args = stmt.call.args.map((a) => this.eval(a.value, scope));
+    this.queued.push({ label: calleePath(callee), invoke: () => (fn as (...a: unknown[]) => unknown)(...args) });
+    return null;
+  }
+
+  private scopeOf(env: Env): Scope {
+    const roots = this.rootScope();
+    return (name) => {
+      const local = env.lookup(name);
+      return local.found ? local : roots(name);
+    };
   }
 
   private rootScope(): Scope {
@@ -326,12 +536,12 @@ class Evaluator {
       if (!object.host.hasType(name)) {
         throw new FluxRuntimeError(`Unknown record type '${name}'`, pos);
       }
-      return this.materialize(object.host.getAll(name), pos);
+      return this.readAll(name, pos);
     }
 
     if (object instanceof FkPointer) {
-      const target = this.recordsHost(pos).getById(object.targetType, object.id);
-      return target === null ? null : this.member(this.copyRecord(target), name, pos);
+      const target = this.readById(object.targetType, object.id, pos);
+      return target === null ? null : this.member(target, name, pos);
     }
 
     if (isRecord(object)) {
@@ -347,9 +557,8 @@ class Evaluator {
       }
       const reverse = this.host.records?.reverseRef(object.type, name) ?? null;
       if (reverse !== null) {
-        const all = this.recordsHost(pos).getAll(reverse.sourceType);
-        const matches = all.filter((r) => this.looseEquals(unwrap(r.fields[reverse.field]), object.id));
-        return this.materialize(matches, pos);
+        const all = this.readAll(reverse.sourceType, pos);
+        return all.filter((r) => this.looseEquals(unwrap(r.fields[reverse.field]), object.id));
       }
       throw new FluxRuntimeError(`'${object.type}' has no field '${name}'`, pos);
     }
@@ -362,7 +571,16 @@ class Evaluator {
 
     if (isPlainObject(object)) {
       const key = lookupKey(object, name);
-      return key === null ? null : (object[key] ?? null); // context/attributes content is host-defined — missing keys are null
+      const value = key === null ? null : (object[key] ?? null); // context/attributes content is host-defined — missing keys are null
+      // Records handed out by host roots (context.record, …) are snapshotted so
+      // scripts never alias live store objects, and read staged patches.
+      if (isRecord(value)) {
+        const copy = this.copyRecord(value);
+        const patch = this.stagedPatches.get(copy.type)?.get(copy.id);
+        if (patch) Object.assign(copy.fields, patch);
+        return copy;
+      }
+      return value;
     }
 
     throw new FluxRuntimeError(`Cannot access '.${name}' on ${describe(object)}`, pos);
@@ -373,16 +591,69 @@ class Evaluator {
   private call(expr: Expr & { kind: 'call' }, scope: Scope): unknown {
     const { callee } = expr;
 
-    // Builtin functions
+    // Builtin and named functions
     if (callee.kind === 'ident') {
       return this.builtin(callee.name, expr, scope);
     }
 
     if (callee.kind === 'member') {
-      const object = this.eval(callee.object, scope);
       const method = callee.name;
 
+      // Mutations (GRAMMAR §5 D13/D14). The collection patterns
+      // records.<type>.create / records.<type>.update are recognized on the AST
+      // so the collection is never materialized just to mutate it; the inner
+      // object is evaluated once and the chain resumed from it.
+      let object: unknown;
+      if ((method === 'create' || method === 'update') && callee.object.kind === 'member') {
+        const inner = this.eval(callee.object.object, scope);
+        if (inner instanceof RecordsRoot) {
+          const type = callee.object.name;
+          if (!inner.host.hasType(type)) {
+            throw new FluxRuntimeError(`Unknown record type '${type}'`, callee.object.pos);
+          }
+          if (method === 'create') {
+            return this.createRecord(type, this.fieldsArg(expr, scope, 'create'), expr.pos);
+          }
+          throw new FluxRuntimeError(
+            `Bulk update needs a filter: records.${type}.where(...).update({...})`,
+            expr.pos,
+          );
+        }
+        object = this.member(inner, callee.object.name, callee.object.pos);
+      } else {
+        object = this.eval(callee.object, scope);
+      }
+
+      // FK auto-deref extends to method calls: wo.workgroup_id.update({...})
+      if (object instanceof FkPointer) {
+        object = this.readById(object.targetType, object.id, expr.pos);
+      }
+
       if (object === null) return null; // null-safe: method on null is null
+
+      if (method === 'update' && isRecord(object)) {
+        return this.updateRecord(object, this.fieldsArg(expr, scope, 'update'), expr.pos);
+      }
+      if (method === 'update' && Array.isArray(object)) {
+        // Bulk update as chain terminal — every element must carry record identity
+        const fields = this.fieldsArg(expr, scope, 'update');
+        for (const item of object) {
+          if (!isRecord(item)) {
+            throw new FluxRuntimeError(
+              'Only records can be updated — projected rows have no identity',
+              expr.pos,
+            );
+          }
+        }
+        for (const item of object) {
+          this.tick(expr.pos);
+          this.updateRecord(item as DslRecord, fields, expr.pos);
+        }
+        return object.length;
+      }
+      if (method === 'create' && (Array.isArray(object) || isRecord(object))) {
+        throw new FluxRuntimeError('create is collection-level: records.<type>.create({...})', expr.pos);
+      }
 
       if (Array.isArray(object) && CHAIN_METHODS.has(method)) {
         return this.chainMethod(object, method, expr.args, scope, expr.pos);
@@ -479,8 +750,62 @@ class Evaluator {
         const factor = 10 ** places;
         return Math.round(v * factor) / factor;
       }
-      default:
+      case 'fail': {
+        need(1);
+        throw new FluxFailError(this.toText(evalArg(0), expr.pos));
+      }
+      case 'warn': {
+        need(1);
+        this.warnings.push(this.toText(evalArg(0), expr.pos));
+        return null;
+      }
+      default: {
+        const fn = this.functionByName(name, expr.pos);
+        if (fn) return this.callFunction(fn, expr, scope);
         throw new FluxRuntimeError(`Unknown function '${name}'`, expr.pos);
+      }
+    }
+  }
+
+  // ── Named functions (DSL_SPEC §8) ─────────────────────────────────────────────
+
+  private functionByName(name: string, pos: Position): FunctionDecl | null {
+    if (this.functions === null) {
+      this.functions = new Map();
+      for (const source of this.host.functions ?? []) {
+        try {
+          const decl = parseFunction(source);
+          this.functions.set(decl.name, decl);
+        } catch (e) {
+          if (e instanceof FluxSyntaxError) {
+            throw new FluxRuntimeError(`A named function failed to parse: ${e.message}`, pos);
+          }
+          throw e;
+        }
+      }
+    }
+    return this.functions.get(name) ?? null;
+  }
+
+  private callFunction(fn: FunctionDecl, expr: Expr & { kind: 'call' }, scope: Scope): unknown {
+    if (expr.args.length !== fn.params.length) {
+      throw new FluxRuntimeError(
+        `${fn.name}() takes ${fn.params.length} argument${fn.params.length === 1 ? '' : 's'}, got ${expr.args.length}`,
+        expr.pos,
+      );
+    }
+    if (this.callDepth >= MAX_CALL_DEPTH) {
+      throw new FluxRuntimeError(`Call depth exceeded (${MAX_CALL_DEPTH}) — check for runaway recursion`, expr.pos);
+    }
+    // Lexical isolation: parameters + the roots; never the caller's variables.
+    const env = new Env(null);
+    fn.params.forEach((param, i) => env.declare(param, this.eval(expr.args[i].value, scope)));
+    this.callDepth++;
+    try {
+      const sig = this.execBlock(fn.body, env);
+      return sig ? sig.value : null;
+    } finally {
+      this.callDepth--;
     }
   }
 
@@ -578,7 +903,7 @@ class Evaluator {
     };
   }
 
-  // ── Records ───────────────────────────────────────────────────────────────────
+  // ── Records: reads through the staging overlay, staged mutations ───────────────
 
   private recordsHost(pos: Position): RecordsHost {
     if (!this.host.records) {
@@ -587,17 +912,120 @@ class Evaluator {
     return this.host.records;
   }
 
-  /** Snapshot copies (D11): what scripts hold never aliases the store. */
-  private materialize(records: DslRecord[], pos: Position): DslRecord[] {
-    if (records.length > this.quotas.maxRows) {
+  /**
+   * Snapshot copies (D11) with read-your-writes: staged updates patch the base
+   * rows, staged creates append — the script sees its own uncommitted changes.
+   */
+  private readAll(type: string, pos: Position): DslRecord[] {
+    const patches = this.stagedPatches.get(type);
+    const out = this.recordsHost(pos).getAll(type).map((r) => {
+      const copy = this.copyRecord(r);
+      const patch = patches?.get(r.id);
+      if (patch) Object.assign(copy.fields, patch);
+      return copy;
+    });
+    for (const created of this.stagedCreates.get(type) ?? []) {
+      out.push(this.copyRecord(created));
+    }
+    if (out.length > this.quotas.maxRows) {
       throw new FluxRuntimeError(`Query exceeded the row quota (${this.quotas.maxRows})`, pos);
     }
-    return records.map((r) => this.copyRecord(r));
+    return out;
+  }
+
+  private readById(type: string, id: unknown, pos: Position): DslRecord | null {
+    const raw = unwrap(id);
+    const created = this.stagedCreates.get(type)?.find((r) => this.looseEquals(r.id, raw));
+    if (created) return this.copyRecord(created);
+    const record = this.recordsHost(pos).getById(type, raw);
+    if (record === null) return null;
+    const copy = this.copyRecord(record);
+    const patch = this.stagedPatches.get(type)?.get(record.id);
+    if (patch) Object.assign(copy.fields, patch);
+    return copy;
   }
 
   private copyRecord(record: DslRecord): DslRecord {
     return { id: record.id, type: record.type, fields: { ...record.fields } };
   }
+
+  // ── Mutations (staged; committed by runScript on success) ──────────────────────
+
+  private mutationHost(pos: Position, what: string) {
+    if (this.mode !== 'mutate') {
+      throw new FluxRuntimeError(
+        `${what} is not allowed here — mutations run in after hooks only`,
+        pos,
+      );
+    }
+    const mutate = this.host.records?.mutate;
+    if (!mutate) {
+      throw new FluxRuntimeError('This host does not support record mutations', pos);
+    }
+    return mutate;
+  }
+
+  private createRecord(type: string, fields: Record<string, unknown>, pos: Position): DslRecord {
+    const mutate = this.mutationHost(pos, 'create');
+    let record: DslRecord;
+    try {
+      record = mutate.prepareCreate(type, fields);
+    } catch (e) {
+      throw new FluxRuntimeError(e instanceof Error ? e.message : String(e), pos);
+    }
+    const list = this.stagedCreates.get(type) ?? [];
+    list.push(record);
+    this.stagedCreates.set(type, list);
+    this.staged.push({ op: 'create', type, record });
+    return record;
+  }
+
+  private updateRecord(record: DslRecord, fields: Record<string, unknown>, pos: Position): DslRecord {
+    const mutate = this.mutationHost(pos, 'update');
+
+    // Updating a record this script created: fold into the staged create.
+    const created = this.stagedCreates.get(record.type)?.find((r) => r.id === record.id);
+    if (created) {
+      Object.assign(created.fields, fields);
+      if (created !== record) Object.assign(record.fields, fields);
+      return record;
+    }
+
+    try {
+      mutate.prepareUpdate(record.type, record.id, fields);
+    } catch (e) {
+      throw new FluxRuntimeError(e instanceof Error ? e.message : String(e), pos);
+    }
+    this.staged.push({ op: 'update', type: record.type, id: record.id, fields });
+    const patches = this.stagedPatches.get(record.type) ?? new Map<string, Record<string, unknown>>();
+    patches.set(record.id, { ...patches.get(record.id), ...fields });
+    this.stagedPatches.set(record.type, patches);
+    Object.assign(record.fields, fields); // the held snapshot reads its own write
+    return record;
+  }
+
+  /** The single `{ field: value }` argument of create/update, values normalized to ids. */
+  private fieldsArg(expr: Expr & { kind: 'call' }, scope: Scope, what: string): Record<string, unknown> {
+    if (expr.args.length !== 1) {
+      throw new FluxRuntimeError(`${what}() takes one object: ${what}({ field: value, … })`, expr.pos);
+    }
+    const raw = this.eval(expr.args[0].value, scope);
+    if (!isPlainObject(raw)) {
+      throw new FluxRuntimeError(`${what}() needs an object: ${what}({ field: value, … })`, expr.pos);
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      out[key] = isRecord(value) ? value.id : unwrap(value);
+    }
+    return out;
+  }
+}
+
+/** Dotted path of a member callee, for queue labels: `services.notify.sms`. */
+function calleePath(expr: Expr): string {
+  if (expr.kind === 'member') return `${calleePath(expr.object)}.${expr.name}`;
+  if (expr.kind === 'ident') return expr.name;
+  return '(…)';
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────

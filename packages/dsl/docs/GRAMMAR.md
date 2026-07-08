@@ -1,6 +1,6 @@
 # FluxScript — Grammar
 
-Formal grammar for the Fluxus DSL. First artefact of Phase 1 (see [DSL_SPEC.md](DSL_SPEC.md) for semantics and rationale). Expressions and queries (§3–§4) are Phase 1; statements (§5) are Phase 2 and provisional.
+Formal grammar for the Fluxus DSL. First artefact of Phase 1 (see [DSL_SPEC.md](DSL_SPEC.md) for semantics and rationale). Expressions and queries (§3–§4) shipped with Phase 1; statements (§5) shipped with Phase 2.
 
 Notation: EBNF. `{ x }` = zero or more, `[ x ]` = optional, `|` = alternatives, `( )` = grouping, quoted strings are literal tokens. `⚑ Dn` marks a decision listed in §7 (with status).
 
@@ -209,7 +209,7 @@ If two FKs from one source type point at the same target, reverse navigation nee
 
 ---
 
-## 5. Statements (scripts tier — Phase 2, provisional)
+## 5. Statements (scripts tier — Phase 2)
 
 ```ebnf
 statement     = let-stmt | assign-stmt | if-stmt | for-stmt
@@ -231,6 +231,8 @@ function-decl = "function" identifier "(" [ identifier { "," identifier } ] ")" 
 - No parentheses required around `if`/`for each` conditions; braces are **mandatory** (no single-statement bodies).
 - No `while` — scripts provably terminate; interpreter quotas cap `for each` regardless.
 - `fail`/`warn` are builtin functions, not keywords.
+- `else` may follow `}` on the same line or the next; `for each` over null iterates zero times (null-safe).
+- Newlines inside `{ }` object literals are layout, not statement separators.
 
 ### Variables and scope
 
@@ -265,7 +267,7 @@ records.work_orders
 
 - **Records are read-only values**: `r.status = 'Overdue'` is a validation error whose message points to `r.update({ status: 'Overdue' })`. No silent-local vs persisted-write confusion can exist.
 - **Projected rows are not records**: results of `.select(...)` carry no identity; `.update()` on them is a validation error.
-- **Bulk update requires a `where`**: `records.assets.update({...})` with no preceding `.where(...)` is a validation error (SQL's UPDATE-without-WHERE disaster, made impossible). Updating genuinely every record must be explicit: `.where(true).update({...})`. The same rule will apply to bulk delete when delete semantics arrive.
+- **Bulk update requires a `where`**: `records.assets.update({...})` with no preceding `.where(...)` is a validation error (SQL's UPDATE-without-WHERE disaster, made impossible). Updating genuinely every record must be explicit: `.where(true).update({...})`. The same rule will apply to bulk delete when delete semantics arrive. A bulk update evaluates to the affected count; an instance update evaluates to the record.
 - Update-by-raw-id is `records.jobs.where(id = x).first.update({...})`; a `.get(id)` sugar is deferred until that chafes.
 - All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. Delete is deferred pending SDM delete semantics.
 
@@ -330,7 +332,7 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D8 | Bare-field shadowing | **Resolved** | Fields shadow roots inside query chains; validator warns on SDM fields named `context`/`attributes`/`records`/`services`. |
 | D9 | Statement termination | **Resolved** | Newline-terminated; **no semicolons** (`;` is a syntax error); continuation on trailing operator/comma/open bracket or leading `.`. |
 | D10 | Scalar projection | **Resolved** | `.values(field)` included in Phase 1 — required for M:N subquery membership (§4.4), also serves scalar datasources. |
-| D11 | Variable semantics | Open (building per rec) | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store; chaining filters in memory. Zero parser impact; revisitable until Phase 2 lands. |
+| D11 | Variable semantics | **Resolved** | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store (records reject them outright, D14); chaining filters in memory. Nuance settled in the Phase 2 build: a record you call `.update()` on reflects the staged change immediately, and **new** reads (queries, `context.record`, FK derefs) see staged mutations (read-your-writes); snapshots taken *earlier* stay as they were. |
 | D12 | Reverse-FK navigation | **Resolved** | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
 | D13 | Bulk update | **Resolved** | `.where(...).update({...})` chain terminal; transactional, row-quota'd, after hooks only (Phase 2). **A `where` is mandatory** — update without one is a validation error; "all records" must be explicit via `.where(true)`. |
 | D14 | Mutation shape | **Resolved** | `r.update({fields})` on the record itself (user-proposed); records are read-only values (`r.field = x` errors, pointing to `.update`); `create` collection-level; projections not updatable. Case coverage confirmed during Phase 2 build. |
