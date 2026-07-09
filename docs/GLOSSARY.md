@@ -26,6 +26,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **Datasource** — any DSL expression evaluating to a list; powers `List` attributes and page bindings. May be an inline literal, a `records` query, or a service call.
 - **Show condition** — DSL expression deciding applicability. On an attribute usage: whether the attribute is presented (UI) or accepted (headless); errors leave it visible. On an activity: whether the activity is offered/invocable at all — the **availability gate**, re-checked as the first step of the activity pipeline; `attributes` is unavailable (runs before capture) and errors fail closed.
 - **`queue`** — keyword marking a service call as fire-and-forget; dispatched only if the surrounding transaction commits (outbox pattern).
+- **Service module** — the unit behind the `services` root: manifest (name, description, functions with params + `kind`) plus implementation. `kind: read` = pure query, callable anywhere; `kind: effect` = changes the world, after hooks only, prefer `queue`. Manifests make service calls schema-validatable (existence, arity, purity) at config-save time.
 - **Scope-blind** — scripts never name their org, repo, or SDM; scope is injected. Locked invariant.
 - **Schema-aware validation** — every script checked against the SDM at config-save time (unknown types/fields/shapes fail before runtime).
 

@@ -37,10 +37,21 @@ The workbench executes FluxScript (see `packages/dsl`) for two attribute feature
 Acceptance (in `test/dsl-wiring.test.ts`): `act_complete_work_orders` — the availability condition hides/blocks it once Completed, the before hook warns when never started, the after hook sets `status`/`completed_date` via the staged commit. ("Already completed" moved from a before-hook `fail` to the show_condition when the availability gate landed — it is applicability, not payload validation.)
 
 Plumbing (`src/dsl/`):
-- `bridge.ts` — `buildDslSchema(config)` (validator schema; short type names, `rt_` stripped), `buildRecordsHost(adapter, config)` (evaluator store adapter incl. FK targets, reverse refs, and the `mutate` staging surface), `buildEvalHost(...)` (the four roots + named functions; `context.user` is a demo stub until auth), `joinScript`/`resolveFunctions` (array-of-lines → source).
+- `bridge.ts` — `buildDslSchema(config, services)` (validator schema; short type names, `rt_` stripped; service manifests → `schema.services`), `buildRecordsHost(adapter, config)` (evaluator store adapter incl. FK targets, reverse refs, and the `mutate` staging surface), `buildEvalHost(adapter, config, script, services)` (the four roots + named functions + `onQueuedFailure`; `context.user` is a demo stub until auth), `joinScript`/`resolveFunctions` (array-of-lines → source).
 - `validateConfig.ts` — validates every datasource, show_condition (attribute-level, and activity-level with the `attributes` root banned), validation rule, hook (before hooks in gate mode), and named function against the schema at app start ("config-save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`.
 
 **Seeds:** an entity file may carry `seeds` (sample records); the adapter loads them only when the store has no records of that type. Cities/suburbs ship seeded so the location picker works out of the box.
+
+## Services (DSL Phase 3)
+
+The workbench registers two service modules (DSL_SPEC §7a) with the evaluator and validator — `src/services/`, composed in AppContext alongside the adapter:
+
+- **`notify`** (effect) — `user(message)` and `email(to, subject, body)`. In the POC "sending" means appending to the **notification centre**: `NotificationLog` (localStorage `fluxus:sdm:notifications`, capped at 200, subscribe pattern) rendered as the header bell with an unseen count and a newest-first panel. When a real gateway exists it slots behind the same manifest; scripts don't change.
+- **`geo`** (read) — `suburbsOf(city)`: suburb records for a city id, ordered by name, over the seeded reference data. Backs the suburb `List` datasource (`services.geo.suburbsOf(attributes.city)` — the query-chain version it replaced is noted in the attribute's description), so the city → suburb dependent picker now exercises a service call end to end.
+
+Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification appears only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Async dispatch failures land on the console via the bridge's `onQueuedFailure` (the after-hook-warn toast slot may take this over later).
+
+`validateConfig` passes the registry, so the shipped config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring").
 
 ## Cancelling a mistaken activity (doctrine, decided July 2026)
 

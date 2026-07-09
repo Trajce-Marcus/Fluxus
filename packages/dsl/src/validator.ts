@@ -11,6 +11,7 @@
 import type { Arg, Expr, FunctionDecl, Stmt } from './ast';
 import { parseExpression, parseFunction, parseScript } from './parser';
 import { FluxSyntaxError } from './errors';
+import type { ServiceModuleDef } from './host';
 
 // ── Schema input (derived from the SDM by the host) ─────────────────────────────
 
@@ -25,9 +26,25 @@ export interface TypeSchema {
   fields: Record<string, FieldSchema>;
 }
 
+/** Manifest half of a service function — what the validator checks calls against. */
+export interface ServiceFunctionSchema {
+  params: string[];
+  kind: 'read' | 'effect';
+}
+
+export interface ServiceModuleSchema {
+  functions: Record<string, ServiceFunctionSchema>;
+}
+
 export interface DslSchema {
   /** Record types by the name used after `records.` */
   types: Record<string, TypeSchema>;
+  /**
+   * Service modules by the name used after `services.` (Phase 3). When absent,
+   * `services.*` passes through untyped (hosts without a registry); when
+   * present, module/function existence, arity, and purity are enforced.
+   */
+  services?: Record<string, ServiceModuleSchema>;
 }
 
 export interface ValidateOptions {
@@ -136,6 +153,19 @@ export function validateFunction(source: string, schema: DslSchema, options: Val
   return v.diagnostics;
 }
 
+/** Manifest half of a service registry — what hosts hand to DslSchema.services. */
+export function servicesSchema(modules: ServiceModuleDef[]): Record<string, ServiceModuleSchema> {
+  const out: Record<string, ServiceModuleSchema> = {};
+  for (const module of modules) {
+    out[module.name] = {
+      functions: Object.fromEntries(
+        Object.entries(module.functions).map(([name, fn]) => [name, { params: fn.params, kind: fn.kind }]),
+      ),
+    };
+  }
+  return out;
+}
+
 /** D8 lint: warn about SDM fields that shadow root names inside query chains. */
 export function lintSchema(schema: DslSchema): Diagnostic[] {
   const out: Diagnostic[] = [];
@@ -157,9 +187,11 @@ export function lintSchema(schema: DslSchema): Diagnostic[] {
 // ── Shapes ──────────────────────────────────────────────────────────────────────
 
 type Shape =
-  | { kind: 'unknown' }                             // dynamic (context/attributes/services content)
+  | { kind: 'unknown' }                             // dynamic (context/attributes content)
   | { kind: 'scalar' }
   | { kind: 'recordsRoot' }
+  | { kind: 'servicesRoot' }                        // only when schema.services is declared
+  | { kind: 'serviceModule'; name: string }
   | { kind: 'record'; type: string }
   // collection: bare `records.<type>` (create lives here); filtered: a where() ran (D13)
   | { kind: 'recordList'; type: string; collection?: boolean; filtered?: boolean }
@@ -189,6 +221,70 @@ class Validator {
 
   private error(expr: Expr | Stmt, message: string): void {
     this.diagnostics.push({ severity: 'error', message, line: expr.pos.line, col: expr.pos.col });
+  }
+
+  private warning(expr: Expr | Stmt, message: string): void {
+    this.diagnostics.push({ severity: 'warning', message, line: expr.pos.line, col: expr.pos.col });
+  }
+
+  // ── Services (Phase 3) ────────────────────────────────────────────────────────
+
+  /** Case-insensitive module lookup; null when the registry has no such module. */
+  private serviceModule(name: string): { name: string; schema: ServiceModuleSchema } | null {
+    const services = this.schema.services;
+    if (!services) return null;
+    const lower = name.toLowerCase();
+    for (const [key, schema] of Object.entries(services)) {
+      if (key.toLowerCase() === lower) return { name: key, schema };
+    }
+    return null;
+  }
+
+  /**
+   * Check one service call: function existence, arity, and purity. Arguments
+   * are the caller's job. `queued` calls skip the purity complaint — `queue`
+   * IS the sanctioned effect path.
+   */
+  private serviceCall(
+    moduleName: string,
+    fnName: string,
+    at: Expr,
+    argCount: number,
+    opts: { queued: boolean },
+  ): Shape {
+    const module = this.serviceModule(moduleName);
+    if (module === null) return UNKNOWN; // caller reported the unknown module
+    let fn: ServiceFunctionSchema | null = null;
+    let fnKey = fnName;
+    const lower = fnName.toLowerCase();
+    for (const [key, f] of Object.entries(module.schema.functions)) {
+      if (key.toLowerCase() === lower) {
+        fn = f;
+        fnKey = key;
+        break;
+      }
+    }
+    if (fn === null) {
+      this.error(at, `Service '${module.name}' has no function '${fnName}'`);
+      return UNKNOWN;
+    }
+    const label = `services.${module.name}.${fnKey}`;
+    if (argCount !== fn.params.length) {
+      this.error(
+        at,
+        `${label}(${fn.params.join(', ')}) takes ${fn.params.length} argument${fn.params.length === 1 ? '' : 's'}, got ${argCount}`,
+      );
+    }
+    if (fn.kind === 'effect' && !opts.queued) {
+      if (this.mode === 'expression') {
+        this.error(at, `'${label}' has effects — services with effects run in after hooks`);
+      } else if (this.mode === 'before') {
+        this.error(at, `Before hooks validate only — queue '${label}' in the after hook`);
+      } else {
+        this.warning(at, `'${label}' has effects — a waiting call is non-transactional; prefer 'queue ${label}(…)'`);
+      }
+    }
+    return UNKNOWN;
   }
 
   // ── Statements (scripts tier) ─────────────────────────────────────────────────
@@ -268,8 +364,17 @@ class Validator {
         }
         if (!isServiceCall(stmt.call.callee)) {
           this.error(stmt, "'queue' needs a service call: queue services.module.fn(...)");
-        } else {
-          this.check(stmt.call.callee, null);
+        } else if (this.schema.services) {
+          // queue services.<module>.<fn>(...) — resolve module + function against
+          // the registry; `queue` is the effect path, so purity is not flagged.
+          const callee = stmt.call.callee as Expr & { kind: 'member' };
+          const moduleExpr = callee.object as Expr & { kind: 'member' };
+          const module = this.serviceModule(moduleExpr.name);
+          if (module === null) {
+            this.error(moduleExpr, `Unknown service module '${moduleExpr.name}'`);
+          } else {
+            this.serviceCall(module.name, callee.name, callee, stmt.call.args.length, { queued: true });
+          }
         }
         stmt.call.args.forEach((arg) => this.check(arg.value, null));
         return;
@@ -345,6 +450,7 @@ class Validator {
           return UNKNOWN;
         }
         if (expr.name === 'records') return { kind: 'recordsRoot' };
+        if (expr.name === 'services' && this.schema.services) return { kind: 'servicesRoot' };
         if (ROOTS.has(expr.name)) return UNKNOWN;
         if (this.options.extraRoots?.some((r) => r.toLowerCase() === expr.name)) return UNKNOWN;
         if (itemType !== null) {
@@ -416,6 +522,25 @@ class Validator {
           return UNKNOWN;
         }
         return { kind: 'recordList', type: name, collection: true };
+      }
+
+      case 'servicesRoot': {
+        const module = this.serviceModule(name);
+        if (module === null) {
+          this.error(expr, `Unknown service module '${name}'`);
+          return UNKNOWN;
+        }
+        return { kind: 'serviceModule', name: module.name };
+      }
+
+      case 'serviceModule': {
+        // identifiers arrive lowercased — recover the declared casing for the message
+        const declared =
+          Object.keys(this.serviceModule(object.name)?.schema.functions ?? {}).find(
+            (k) => k.toLowerCase() === name,
+          ) ?? name;
+        this.error(expr, `Service functions are called, not read: services.${object.name}.${declared}(…)`);
+        return UNKNOWN;
       }
 
       case 'record': {
@@ -536,8 +661,14 @@ class Validator {
         expr.args.forEach((arg) => this.check(arg.value, itemType));
         return { kind: 'date' };
       }
+      if (object.kind === 'serviceModule') {
+        const shape = this.serviceCall(object.name, method, expr, expr.args.length, { queued: false });
+        expr.args.forEach((arg) => this.check(arg.value, itemType));
+        return shape;
+      }
       if (object.kind === 'unknown') {
-        // services.x.y(...) and other host-defined calls — arguments still get checked
+        // services.x.y(...) without a registry, and other host-defined calls —
+        // arguments still get checked
         expr.args.forEach((arg) => this.check(arg.value, itemType));
         return UNKNOWN;
       }

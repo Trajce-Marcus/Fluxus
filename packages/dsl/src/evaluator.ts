@@ -1,7 +1,7 @@
 import type { Arg, Call, Expr, FunctionDecl, Position, QueueStmt, Script, Stmt } from './ast';
 import { parseExpression, parseFunction, parseScript } from './parser';
 import { FluxFailError, FluxSyntaxError } from './errors';
-import { DEFAULT_QUOTAS, DslRecord, EvalHost, FkPointer, MutationOp, Quotas, RecordsHost } from './host';
+import { DEFAULT_QUOTAS, DslRecord, EvalHost, FkPointer, MutationOp, Quotas, RecordsHost, ServiceFunctionDef, ServiceModuleDef } from './host';
 
 export class FluxRuntimeError extends Error {
   readonly line: number;
@@ -58,6 +58,34 @@ class RecordsRoot {
   constructor(readonly host: RecordsHost) {}
 }
 
+/** Marker for the `services` root; member access yields service modules. */
+class ServicesRoot {
+  constructor(readonly modules: ServiceModuleDef[]) {}
+
+  module(name: string): ServiceModuleValue | null {
+    const lower = name.toLowerCase();
+    const def = this.modules.find((m) => m.name.toLowerCase() === lower);
+    return def ? new ServiceModuleValue(def) : null;
+  }
+}
+
+/** A resolved service module; its functions are callable, nothing is readable. */
+class ServiceModuleValue {
+  constructor(readonly def: ServiceModuleDef) {}
+
+  fn(name: string): { key: string; def: ServiceFunctionDef } | null {
+    const lower = name.toLowerCase();
+    for (const [key, def] of Object.entries(this.def.functions)) {
+      if (key.toLowerCase() === lower) return { key, def };
+    }
+    return null;
+  }
+}
+
+function isThenable(value: unknown): value is Promise<unknown> {
+  return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
+}
+
 const CHAIN_METHODS = new Set(['where', 'orderby', 'select', 'values', 'top']);
 const DATE_METHODS = new Set(['adddays', 'addmonths', 'addyears']);
 
@@ -73,6 +101,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     !(value instanceof Date) &&
     !(value instanceof FkPointer) &&
     !(value instanceof RecordsRoot) &&
+    !(value instanceof ServicesRoot) &&
+    !(value instanceof ServiceModuleValue) &&
     !isRecord(value)
   );
 }
@@ -176,7 +206,14 @@ class Evaluator {
     }
     for (const q of this.queued) {
       try {
-        q.invoke();
+        const result = q.invoke();
+        if (isThenable(result)) {
+          // Fire-and-forget: the script has already returned when an async
+          // dispatch fails, so the failure goes to the host, not to warnings.
+          result.then(undefined, (e: unknown) => {
+            this.host.onQueuedFailure?.(q.label, e instanceof Error ? e.message : String(e));
+          });
+        }
       } catch (e) {
         this.warnings.push(`queued ${q.label} failed: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -274,17 +311,17 @@ class Evaluator {
       throw new FluxRuntimeError("'queue' needs a service call: queue services.module.fn(...)", stmt.pos);
     }
     const object = this.eval(callee.object, scope);
-    if (!isPlainObject(object)) {
+    if (!(object instanceof ServiceModuleValue)) {
       throw new FluxRuntimeError("'queue' needs a service call: queue services.module.fn(...)", stmt.pos);
     }
-    const key = lookupKey(object, callee.name);
-    const fn = key === null ? null : object[key];
-    if (typeof fn !== 'function') {
-      throw new FluxRuntimeError(`Unknown service function '${callee.name}'`, stmt.pos);
+    const resolved = object.fn(callee.name);
+    if (resolved === null) {
+      throw new FluxRuntimeError(`Service '${object.def.name}' has no function '${callee.name}'`, stmt.pos);
     }
     // Arguments evaluate now (snapshot); the call itself dispatches after commit.
+    // `queue` is the effect path, so `kind` is not checked here.
     const args = stmt.call.args.map((a) => this.eval(a.value, scope));
-    this.queued.push({ label: calleePath(callee), invoke: () => (fn as (...a: unknown[]) => unknown)(...args) });
+    this.queued.push({ label: calleePath(callee), invoke: () => resolved.def.fn(...args) });
     return null;
   }
 
@@ -304,7 +341,7 @@ class Evaluator {
         case 'attributes':
           return { found: true, value: this.host.attributes ?? {} };
         case 'services':
-          return { found: true, value: this.host.services ?? {} };
+          return { found: true, value: new ServicesRoot(this.host.services ?? []) };
         case 'records':
           if (!this.host.records) return { found: false, value: undefined };
           return { found: true, value: new RecordsRoot(this.host.records) };
@@ -539,6 +576,21 @@ class Evaluator {
       return this.readAll(name, pos);
     }
 
+    if (object instanceof ServicesRoot) {
+      const module = object.module(name);
+      if (module === null) {
+        throw new FluxRuntimeError(`Unknown service module '${name}'`, pos);
+      }
+      return module;
+    }
+
+    if (object instanceof ServiceModuleValue) {
+      throw new FluxRuntimeError(
+        `Service functions are called, not read: services.${object.def.name}.${name}(…)`,
+        pos,
+      );
+    }
+
     if (object instanceof FkPointer) {
       const target = this.readById(object.targetType, object.id, pos);
       return target === null ? null : this.member(target, name, pos);
@@ -668,14 +720,25 @@ class Evaluator {
         return out;
       }
 
-      // Service module functions (host-provided)
-      if (isPlainObject(object)) {
-        const key = lookupKey(object, method);
-        const fn = key === null ? null : object[key];
-        if (typeof fn === 'function') {
-          const args = expr.args.map((arg) => this.eval(arg.value, scope));
-          return (fn as (...a: unknown[]) => unknown)(...args);
+      // Service module functions (Phase 3): registry-resolved, purity-checked
+      if (object instanceof ServiceModuleValue) {
+        const resolved = object.fn(method);
+        if (resolved === null) {
+          throw new FluxRuntimeError(`Service '${object.def.name}' has no function '${method}'`, expr.pos);
         }
+        const label = `services.${object.def.name}.${resolved.key}`;
+        if (resolved.def.kind === 'effect' && this.mode !== 'mutate') {
+          throw new FluxRuntimeError(`'${label}' has effects — it runs in after hooks only (prefer 'queue')`, expr.pos);
+        }
+        const args = expr.args.map((arg) => this.eval(arg.value, scope));
+        const result = resolved.def.fn(...args);
+        if (isThenable(result)) {
+          throw new FluxRuntimeError(
+            `'${label}' is asynchronous — waiting async service calls arrive with the async evaluator; use 'queue' for fire-and-forget`,
+            expr.pos,
+          );
+        }
+        return result;
       }
 
       throw new FluxRuntimeError(`Unknown method '${method}' on ${describe(object)}`, expr.pos);
@@ -1035,6 +1098,8 @@ function describe(value: unknown): string {
   if (Array.isArray(value)) return 'a list';
   if (value instanceof Date) return 'a date';
   if (value instanceof FkPointer) return 'a reference';
+  if (value instanceof ServicesRoot) return 'the services root';
+  if (value instanceof ServiceModuleValue) return `the '${value.def.name}' service`;
   if (isRecord(value)) return `a ${value.type} record`;
   if (typeof value === 'object') return 'an object';
   if (typeof value === 'string') return `text ('${value.length > 20 ? value.slice(0, 20) + '…' : value}')`;

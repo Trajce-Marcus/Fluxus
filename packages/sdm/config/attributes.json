@@ -302,10 +302,10 @@
   {
     "key": "suburb",
     "label": "Suburb",
-    "description": "Select the suburb within the chosen city.",
+    "description": "Select the suburb within the chosen city. Service-backed datasource (DSL Phase 3); the query-chain equivalent is records.suburbs.where(city_id = attributes.city).orderBy(name).top(50).",
     "type": "list",
     "type_config": {
-      "datasource": "records.suburbs.where(city_id = attributes.city).orderBy(name).top(50)",
+      "datasource": "services.geo.suburbsOf(attributes.city)",
       "selection": "single",
       "key_field": "id",
       "display_field": "name"

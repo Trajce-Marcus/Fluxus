@@ -158,6 +158,19 @@ Within the running script, **reads see staged writes**: a query, `context.record
 
 Waiting service calls with side effects inside after hooks are the documented non-transactional exception — prefer `queue` for anything with effects.
 
+## 7a. Services registry (Phase 3)
+
+The `services` root is backed by a **registry of modules**, not an untyped bag. A module carries a manifest alongside its implementation (`ServiceModuleDef` in `host.ts`): name, description, and functions, each declaring `params`, a mandatory `description`, and a **`kind`**:
+
+- **`read`** — a pure query (`services.geo.suburbsOf(city)`). Callable from every tier: datasources, show conditions, before hooks, after hooks.
+- **`effect`** — does something to the world (`services.notify.email(…)`). After hooks only, and preferably `queue`d. A *waiting* effect call in an after hook is the §7 non-transactional exception — the validator lets it through with a **warning**; anywhere else it is an **error**, statically and at run time.
+
+The manifest feeds the validator: `DslSchema.services` (derived via `servicesSchema(modules)`) makes unknown modules, unknown functions, and wrong arity **config-save-time errors**, and enforces the purity rules above. A schema without a registry keeps the old behaviour — `services.*` passes through untyped (for hosts that haven't adopted the registry).
+
+**Async posture (decided July 2026, deferred implementation):** service functions may return Promises — the registry API is async-shaped from day one. The current sync evaluator handles that only on `queue` dispatch (fire-and-forget; a rejection lands on the host's `onQueuedFailure` hook, since the script has already returned). A *waiting* call that returns a Promise is a runtime error pointing at `queue`. The "interpreter awaits internally" promise (§4) is honoured when the evaluator goes async with the backend phase — no script, manifest, or module signature changes then; only evaluator internals.
+
+First two modules live in the sdm workbench (see its SPEC): `notify` (effect — in-app notification centre, stub email) and `geo` (read — suburbs lookup backing the suburb datasource).
+
 ## 8. Named functions
 
 Scripts can be named, stored in the SDM as a first-class collection (like `attributes`), and reused by attributes, workflows, and apps:
@@ -191,7 +204,7 @@ The division of labour with the expressions tier: **expressions ask, functions t
 
 ## 9. Validation and safety
 
-- **Schema-aware static validation at config-save time** — the defining feature. Every script parses and checks against the SDM: unknown record types/fields, type mismatches in comparisons, `queue` return-value misuse, and (once manifests carry shape contracts) query projections checked against page-builder port shapes. Errors surface when the config is saved, not when a user runs the activity.
+- **Schema-aware static validation at config-save time** — the defining feature. Every script parses and checks against the SDM: unknown record types/fields, type mismatches in comparisons, `queue` return-value misuse, service module/function existence + arity + purity (§7a), and (once manifests carry shape contracts) query projections checked against page-builder port shapes. Errors surface when the config is saved, not when a user runs the activity.
 - **Runaway protection from day one**: max loop iterations, max rows per query, execution timeout — quotas enforced by the interpreter.
 
 ### Scale strategy (large result sets)
@@ -213,7 +226,7 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 
 1. **Phase 1 — expressions + queries.** ✅ Done. Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attributes.` dependencies (city → suburb is the acceptance test). Entirely client-side.
 2. **Phase 2 — scripts.** ✅ Done (July 2026). Statements, `fail`/`warn`, `records` mutations, transactional after hooks, `queue`, named functions — built and wired into the sdm hook slots (Complete Work Order is the acceptance case: before gate + after-hook status move). The `run activity` page-builder callback (payload as `event` root) was re-scoped out to the **Extraction** milestone (root ROADMAP): it is blocked on the page builder hosting the SDM store, not on any language work.
-3. **Phase 3 — services registry** with one or two real modules (notify, geocode).
+3. **Phase 3 — services registry.** ✅ Done (July 2026). Module manifests (`params`/`description`/`kind`) behind the `services` root, read/effect purity enforced statically and at run time, registry-strict validation (existence, arity), async-shaped API with the sync-evaluator posture of §7a. Two live modules in the sdm workbench: `notify` (queued from Complete Work Order into the notification centre) and `geo` (service-backed suburb datasource). Async evaluator deliberately deferred to the backend phase.
 4. **Phase 4 — headless invocation**: activities as the API surface over the agreed backend stack.
 
 ## 12. Open items

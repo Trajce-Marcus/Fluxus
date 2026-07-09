@@ -157,6 +157,7 @@
         "description": "Delete this work order.",
         "sort_order": 2,
         "record_map": "DELETE",
+        "show_condition": "context.record.status <> 'Completed'",
         "attributes": [
           {
             "attribute_ref": "confirm"
@@ -171,6 +172,7 @@
         "description": "Capture the city and suburb for this work order.",
         "sort_order": 3,
         "record_map": "UPDATE",
+        "show_condition": "context.record.status <> 'Completed'",
         "attributes": [
           {
             "attribute_ref": "city",
@@ -208,7 +210,8 @@
           "context.record.update({",
           "  status: 'Completed',",
           "  completed_date: attributes.completed_date",
-          "})"
+          "})",
+          "queue services.notify.user('Work order ' + context.record.id + ' was completed')"
         ]
       }
     ]

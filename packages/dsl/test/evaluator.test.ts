@@ -142,9 +142,49 @@ describe('evaluator — the four roots', () => {
     expect(run('value is null', host({ extras: { value: null } }))).toBe(true);
   });
 
-  it('services functions are callable', () => {
-    const h = host({ services: { geo: { suburbsOf: (cityId: unknown) => `suburbs-of-${cityId}` } } });
+  it('registered read service functions are callable', () => {
+    const h = host({
+      services: [{
+        name: 'geo',
+        description: 'test geo module',
+        functions: {
+          suburbsOf: { params: ['city'], description: 'suburbs of a city', kind: 'read', fn: (cityId: unknown) => `suburbs-of-${cityId}` },
+        },
+      }],
+    });
     expect(run("services.geo.suburbsOf(attributes.city)", h)).toBe('suburbs-of-c1');
+    // case-insensitive like the rest of the language
+    expect(run("SERVICES.Geo.SUBURBSOF(attributes.city)", h)).toBe('suburbs-of-c1');
+  });
+
+  it('unknown service modules and functions are runtime errors', () => {
+    const h = host({
+      services: [{ name: 'geo', description: 'test', functions: {} }],
+    });
+    expect(() => run("services.nope.fn(1)", h)).toThrow(/Unknown service module 'nope'/);
+    expect(() => run("services.geo.fn(1)", h)).toThrow(/Service 'geo' has no function 'fn'/);
+  });
+
+  it('effect service functions are rejected outside after hooks', () => {
+    const h = host({
+      services: [{
+        name: 'notify',
+        description: 'test',
+        functions: { user: { params: ['message'], description: 'notify', kind: 'effect', fn: () => undefined } },
+      }],
+    });
+    expect(() => run("services.notify.user('hi')", h)).toThrow(/has effects — it runs in after hooks only/);
+  });
+
+  it('a waiting call that returns a Promise is a runtime error (async evaluator not here yet)', () => {
+    const h = host({
+      services: [{
+        name: 'geo',
+        description: 'test',
+        functions: { lookup: { params: ['q'], description: 'async lookup', kind: 'read', fn: async () => 'later' } },
+      }],
+    });
+    expect(() => run("services.geo.lookup('x')", h)).toThrow(/is asynchronous/);
   });
 });
 

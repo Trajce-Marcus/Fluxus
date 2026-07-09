@@ -3,7 +3,7 @@
 // EvalHosts for script execution. Scripts use short type names (records.assets),
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
-import type { DslRecord, DslSchema, EvalHost, RecordsHost } from '@fluxus/dsl';
+import { servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
 import type { AttributeDef, ConfigRaw, RecordInstance } from '../types';
 import type { Store } from '../store/interface';
 
@@ -44,7 +44,7 @@ function serializeFields(fields: Record<string, unknown>): Record<string, unknow
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
 }
 
-export function buildDslSchema(config: ConfigRaw): DslSchema {
+export function buildDslSchema(config: ConfigRaw, services: ServiceModuleDef[] = []): DslSchema {
   const types: DslSchema['types'] = {};
   for (const rt of config.recordTypes) {
     const fields: DslSchema['types'][string]['fields'] = {};
@@ -58,10 +58,10 @@ export function buildDslSchema(config: ConfigRaw): DslSchema {
     }
     types[shortName(rt.id)] = { fields };
   }
-  return { types };
+  return { types, services: servicesSchema(services) };
 }
 
-function toDslRecord(record: RecordInstance): DslRecord {
+export function toDslRecord(record: RecordInstance): DslRecord {
   return { id: record.id, type: shortName(record.typeRef), fields: record.customFields };
 }
 
@@ -166,7 +166,12 @@ export function coerceValue(type: string | undefined, raw: string): unknown {
   }
 }
 
-export function buildEvalHost(adapter: Store, config: ConfigRaw, script: ScriptContext): EvalHost {
+export function buildEvalHost(
+  adapter: Store,
+  config: ConfigRaw,
+  script: ScriptContext,
+  services: ServiceModuleDef[] = [],
+): EvalHost {
   // Empty-string form values read as null in scripts, so `attributes.city is not null`
   // behaves before anything is selected.
   const attributes: Record<string, unknown> = {};
@@ -183,7 +188,11 @@ export function buildEvalHost(adapter: Store, config: ConfigRaw, script: ScriptC
       workflow: script.workflow ?? null,
     },
     attributes,
+    services,
     functions: resolveFunctions(config),
+    // Async queue dispatch failures land after the script returned — console
+    // is the workbench's channel for them (a toast slot may take over later).
+    onQueuedFailure: (label, message) => console.warn(`[queued ${label}] failed: ${message}`),
     extras: script.extras,
   };
 }

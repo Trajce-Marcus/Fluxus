@@ -22,16 +22,23 @@ beforeAll(() => {
 async function setup() {
   const { config } = await import('../src/config');
   const { LocalStorageAdapter } = await import('../src/store/LocalStorageAdapter');
-  const { buildEvalHost } = await import('../src/dsl/bridge');
+  const { NotificationLog } = await import('../src/store/NotificationLog');
+  const { buildNotifyModule } = await import('../src/services/notify');
+  const { buildGeoModule } = await import('../src/services/geo');
+  const { buildEvalHost: rawBuildEvalHost } = await import('../src/dsl/bridge');
   const { validateConfig } = await import('../src/dsl/validateConfig');
   const adapter = new LocalStorageAdapter(config);
-  return { config, adapter, buildEvalHost, validateConfig };
+  const notifications = new NotificationLog();
+  notifications.clear(); // the localStorage shim persists across tests in this file
+  const services = [buildNotifyModule(notifications), buildGeoModule(adapter)];
+  const buildEvalHost: typeof rawBuildEvalHost = (a, c, script) => rawBuildEvalHost(a, c, script, services);
+  return { config, adapter, buildEvalHost, validateConfig, services, notifications };
 }
 
 describe('DSL ↔ SDM wiring', () => {
-  it('every FluxScript expression in the shipped config validates clean', async () => {
-    const { config, validateConfig } = await setup();
-    expect(validateConfig(config)).toEqual([]);
+  it('every FluxScript expression in the shipped config validates clean against the service registry', async () => {
+    const { config, validateConfig, services } = await setup();
+    expect(validateConfig(config, services)).toEqual([]);
   });
 
   it('seeds load cities and suburbs into an empty store', async () => {
@@ -205,12 +212,12 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
   });
 
   it('activity show_condition may not reference attributes (validated at config load)', async () => {
-    const { config, validateConfig } = await setup();
+    const { config, validateConfig, services } = await setup();
     const broken = structuredClone(config);
     const wf = broken.workflows.find(w => w.id === 'wf_work_orders')!;
     wf.activities.find(a => a.id === 'act_update_work_orders')!.show_condition =
       'attributes.status is not null';
-    const findings = validateConfig(broken);
+    const findings = validateConfig(broken, services);
     expect(findings.map(f => `${f.where}: ${f.diagnostic.message}`)).toEqual([
       "act_update_work_orders show_condition: 'attributes' is not available at this embedding point",
     ]);
@@ -225,4 +232,83 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
     expect(evaluateExpression("openWorkOrders('wg_fn').count", host)).toBe(1);
     expect(evaluateExpression("openWorkOrders('wg_other').count", host)).toBe(0);
   });
+});
+
+describe('DSL Phase 3 — services through the SDM wiring', () => {
+  it('ACCEPTANCE: suburb datasource is service-backed and matches the query-chain result', async () => {
+    const { config, adapter, buildEvalHost } = await setup();
+    const datasource = 'services.geo.suburbsOf(attributes.city)';
+    const sydney = evaluateExpression(datasource,
+      buildEvalHost(adapter, config, { attributes: { city: 'c_syd' } })) as { fields: { name: string } }[];
+    expect(sydney.map(s => s.fields.name)).toEqual(['Manly', 'Newtown', 'Parramatta']);
+    // no city selected yet → empty list, picker stays empty
+    expect(evaluateExpression(datasource, buildEvalHost(adapter, config, { attributes: { city: '' } }))).toEqual([]);
+  });
+
+  it('ACCEPTANCE: Complete Work Order queues a notification, dispatched only on commit', async () => {
+    const { config, adapter, buildEvalHost, notifications } = await setup();
+    const complete = adapter.getRecordTypeDef('rt_work_orders').workflow.activities
+      .find(a => a.id === 'act_complete_work_orders')!;
+    const wo = adapter.createRecord('rt_work_orders', {
+      id: 'WO-P3', job_id: 'j1', activity_code: 'AC1', status: 'Raised', start_date: '2026-06-01',
+    });
+
+    executeScript(
+      complete.after_hook!,
+      buildEvalHost(adapter, config, {
+        attributes: { completed_date: new Date('2026-07-01T00:00:00') },
+        anchorRecord: wo,
+      }),
+      { mode: 'mutate' },
+    );
+    const landed = notifications.list();
+    expect(landed.length).toBe(1);
+    expect(landed[0].channel).toBe('user');
+    expect(landed[0].message).toBe('Work order WO-P3 was completed');
+    expect(adapter.getRecord('WO-P3').customFields.status).toBe('Completed');
+  });
+
+  it('a failing after hook dispatches no notification (outbox holds until commit)', async () => {
+    const { config, adapter, buildEvalHost, notifications } = await setup();
+    const wo = adapter.createRecord('rt_work_orders', {
+      id: 'WO-P3-TX', job_id: 'j1', activity_code: 'AC1', status: 'Raised',
+    });
+    expect(() =>
+      executeScript(
+        `queue services.notify.user('should never land')
+         fail('abort')`,
+        buildEvalHost(adapter, config, { attributes: {}, anchorRecord: wo }),
+        { mode: 'mutate' },
+      ),
+    ).toThrow(FluxFailError);
+    expect(notifications.list()).toEqual([]);
+  });
+
+  it('effect services are blocked outside after hooks; validator flags them at config-save time', async () => {
+    const { config, adapter, buildEvalHost, services } = await setup();
+    // runtime: a datasource/before-hook surface runs in read mode
+    expect(() =>
+      evaluateExpression("services.notify.user('hi')", buildEvalHost(adapter, config, { attributes: {} })),
+    ).toThrow(/has effects/);
+    // config-save time: same rule, statically
+    const { validateExpression } = await import('@fluxus/dsl');
+    const { buildDslSchema } = await import('../src/dsl/bridge');
+    const diags = validateExpression("services.notify.user('hi')", buildDslSchema(config, services));
+    expect(diags.map(d => d.message)).toEqual([
+      "'services.notify.user' has effects — services with effects run in after hooks",
+    ]);
+  });
+
+  it('the validator catches unknown service functions and wrong arity in config scripts', async () => {
+    const { config, validateConfig, services } = await setup();
+    const broken = structuredClone(config);
+    const complete = broken.workflows.find(w => w.id === 'wf_work_orders')!
+      .activities.find(a => a.id === 'act_complete_work_orders')!;
+    complete.after_hook = "queue services.notify.sms('0400', 'done')";
+    const findings = validateConfig(broken, services);
+    expect(findings.map(f => f.diagnostic.message)).toEqual([
+      "Service 'notify' has no function 'sms'",
+    ]);
+  });
+
 });

@@ -54,6 +54,35 @@ export interface RecordsHost {
   mutate?: RecordsMutationHost;
 }
 
+/**
+ * One callable function of a service module (Phase 3). The manifest half
+ * (params/description/kind) feeds the validator; `fn` is the implementation.
+ */
+export interface ServiceFunctionDef {
+  /** Parameter names — arity is validator-checked at config-save time. */
+  params: string[];
+  description: string;
+  /**
+   * 'read' = pure query, callable from any tier (datasources, before hooks).
+   * 'effect' = does something to the world — after hooks only, prefer `queue`.
+   */
+  kind: 'read' | 'effect';
+  /**
+   * May return a Promise. The sync evaluator accepts that only on `queue`
+   * dispatch (fire-and-forget); a *waiting* call that returns a Promise is a
+   * runtime error until the async evaluator lands with the backend phase.
+   */
+  fn: (...args: unknown[]) => unknown;
+}
+
+/** A service module: the unit registered under the `services` root. */
+export interface ServiceModuleDef {
+  /** Name after `services.` (e.g. 'notify', 'geo'). */
+  name: string;
+  description: string;
+  functions: Record<string, ServiceFunctionDef>;
+}
+
 export interface Quotas {
   /** Max evaluator steps (AST nodes visited) per evaluation. */
   maxSteps: number;
@@ -73,8 +102,13 @@ export interface EvalHost {
   records?: RecordsHost;
   context?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
-  /** Service modules (Phase 3): plain objects whose function members are callable. */
-  services?: Record<string, unknown>;
+  /** Service modules (Phase 3): the registry behind the `services` root. */
+  services?: ServiceModuleDef[];
+  /**
+   * Where async `queue` dispatch failures land (the script already returned,
+   * so they can't become warnings). Sync dispatch failures stay warnings.
+   */
+  onQueuedFailure?: (label: string, message: string) => void;
   /**
    * Named functions (DSL_SPEC §8): full `function name(params) { … }` sources.
    * Callable by declared name from any tier; parsed lazily and cached per evaluation.

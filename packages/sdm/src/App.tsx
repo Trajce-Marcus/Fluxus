@@ -2,6 +2,7 @@ import { AppProvider } from './context/AppContext';
 import { RecordTypeList } from './components/RecordTypeList';
 import { RecordsGrid } from './components/RecordsGrid';
 import { RecordView } from './components/RecordView';
+import { NotificationCentre } from './components/NotificationCentre';
 import './App.css';
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
         <header className="app-header">
           Fluxus SDM
           <span className="app-header-sub">Aber sample</span>
+          <NotificationCentre />
         </header>
         <div className="app-body">
           <aside className="side-panel">

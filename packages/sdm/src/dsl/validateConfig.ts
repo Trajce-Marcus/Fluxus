@@ -4,7 +4,7 @@
 // with the SDM still hand-edited as files, "save time" is app start, and
 // diagnostics land on the console.
 
-import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic } from '@fluxus/dsl';
+import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ConfigRaw } from '../types';
 import { buildDslSchema, joinScript, shortName } from './bridge';
 
@@ -13,8 +13,8 @@ interface Finding {
   diagnostic: Diagnostic;
 }
 
-export function validateConfig(config: ConfigRaw): Finding[] {
-  const schema = buildDslSchema(config);
+export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] = []): Finding[] {
+  const schema = buildDslSchema(config, services);
   const findings: Finding[] = [];
 
   const note = (where: string, message: string) => {
@@ -101,8 +101,8 @@ export function validateConfig(config: ConfigRaw): Finding[] {
   return findings;
 }
 
-export function reportConfigFindings(config: ConfigRaw): void {
-  const findings = validateConfig(config);
+export function reportConfigFindings(config: ConfigRaw, services: ServiceModuleDef[] = []): void {
+  const findings = validateConfig(config, services);
   for (const { where, diagnostic } of findings) {
     const log = diagnostic.severity === 'error' ? console.error : console.warn;
     log(`[SDM config ${diagnostic.severity}] ${where}: ${diagnostic.message}`);

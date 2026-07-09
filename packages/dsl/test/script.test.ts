@@ -334,11 +334,20 @@ describe('scripts — staged mutations', () => {
 
 // ── queue (outbox) ──────────────────────────────────────────────────────────────
 
+/** One-module test registry: services.notify.sms(to, message), kind 'effect'. */
+function notifyServices(sms: (...args: unknown[]) => unknown) {
+  return [{
+    name: 'notify',
+    description: 'test notifications',
+    functions: { sms: { params: ['to', 'message'], description: 'send an SMS', kind: 'effect' as const, fn: sms } },
+  }];
+}
+
 describe('scripts — queue', () => {
   it('queued calls dispatch only after a successful commit, with staged args', () => {
     const store = makeStore();
     const sms = vi.fn();
-    const h = host(store, { services: { notify: { sms } } });
+    const h = host(store, { services: notifyServices(sms) });
     run(
       `for each r in records.resources.where(status = 'Active') {
          queue services.notify.sms(r.contact, 'Assigned to ' + context.record.code)
@@ -353,7 +362,7 @@ describe('scripts — queue', () => {
 
   it('a failing script dispatches nothing', () => {
     const sms = vi.fn();
-    const h = host(makeStore(), { services: { notify: { sms } } });
+    const h = host(makeStore(), { services: notifyServices(sms) });
     expect(() =>
       run(
         `queue services.notify.sms('111', 'hi')
@@ -366,15 +375,47 @@ describe('scripts — queue', () => {
 
   it('a failing queued dispatch becomes a warning, not an error', () => {
     const h = host(makeStore(), {
-      services: { notify: { sms: () => { throw new Error('gateway down'); } } },
+      services: notifyServices(() => { throw new Error('gateway down'); }),
     });
     const { warnings } = run(`queue services.notify.sms('111', 'hi')`, h);
     expect(warnings).toEqual(['queued services.notify.sms failed: gateway down']);
   });
 
   it("queue is rejected in 'read' mode", () => {
-    const h = host(makeStore(), { services: { notify: { sms: vi.fn() } } });
+    const h = host(makeStore(), { services: notifyServices(vi.fn()) });
     expect(() => run(`queue services.notify.sms('111', 'hi')`, h, 'read')).toThrow(/after hooks only/);
+  });
+
+  it('queue dispatches async services fire-and-forget; rejections reach onQueuedFailure', async () => {
+    const failures: string[] = [];
+    const h = host(makeStore(), {
+      services: notifyServices(async () => { throw new Error('smtp down'); }),
+      onQueuedFailure: (label, message) => failures.push(`${label}: ${message}`),
+    });
+    const { warnings } = run(`queue services.notify.sms('111', 'hi')`, h);
+    expect(warnings).toEqual([]); // the script already returned — not a warning
+    await Promise.resolve(); // let the rejection propagate
+    expect(failures).toEqual(['services.notify.sms: smtp down']);
+  });
+
+  it('a waiting effect call is allowed in after hooks (the documented non-transactional exception)', () => {
+    const sms = vi.fn(() => 'sent');
+    const h = host(makeStore(), { services: notifyServices(sms) });
+    run(`let receipt = services.notify.sms('111', 'now')`, h);
+    expect(sms).toHaveBeenCalledWith('111', 'now');
+  });
+
+  it('queueing an unknown service function is a runtime error before anything commits', () => {
+    const store = makeStore();
+    const h = host(store, { services: notifyServices(vi.fn()) });
+    expect(() =>
+      run(
+        `context.record.update({ status: 'Assigned' })
+         queue services.notify.nope('111')`,
+        h,
+      ),
+    ).toThrow(/Service 'notify' has no function 'nope'/);
+    expect(store.data.work_orders[0].fields.status).not.toBe('Assigned');
   });
 });
 

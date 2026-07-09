@@ -147,6 +147,43 @@ describe('validator — extra roots', () => {
   });
 });
 
+describe('validator — service registry (schema.services)', () => {
+  const withServices: DslSchema = {
+    ...schema,
+    services: {
+      geo: { functions: { suburbsOf: { params: ['city'], kind: 'read' } } },
+      notify: { functions: { user: { params: ['message'], kind: 'effect' } } },
+    },
+  };
+  const msgs = (source: string) =>
+    validateExpression(source, withServices, { anchorType: 'resources' }).map(d => `${d.severity}: ${d.message}`);
+
+  it('known read calls validate clean; module/function/arity are checked', () => {
+    expect(msgs('services.geo.suburbsOf(attributes.city)')).toEqual([]);
+    expect(msgs('services.nope.fn(1)')).toEqual(["error: Unknown service module 'nope'"]);
+    expect(msgs('services.geo.nope(1)')).toEqual(["error: Service 'geo' has no function 'nope'"]);
+    expect(msgs('services.geo.suburbsOf()')).toEqual([
+      'error: services.geo.suburbsOf(city) takes 1 argument, got 0',
+    ]);
+  });
+
+  it('effect calls are errors in expressions', () => {
+    expect(msgs("services.notify.user('hi')")).toEqual([
+      "error: 'services.notify.user' has effects — services with effects run in after hooks",
+    ]);
+  });
+
+  it('service functions are called, not read', () => {
+    expect(msgs('services.geo.suburbsOf')).toEqual([
+      'error: Service functions are called, not read: services.geo.suburbsOf(…)',
+    ]);
+  });
+
+  it('without schema.services the old untyped pass-through holds', () => {
+    expect(validateExpression('services.anything.goes(1, 2, 3)', schema)).toEqual([]);
+  });
+});
+
 describe('validator — syntax errors surface as diagnostics', () => {
   it('parse failure becomes a single error diagnostic', () => {
     const diags = validate('records.resources.where(');

@@ -2,15 +2,21 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { evaluateExpression, executeScript, FluxFailError } from '@fluxus/dsl';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult } from '../types';
 import { LocalStorageAdapter } from '../store/LocalStorageAdapter';
+import { NotificationLog } from '../store/NotificationLog';
 import { config } from '../config';
 import { buildEvalHost, coerceCaptured, type ScriptContext } from '../dsl/bridge';
 import { reportConfigFindings } from '../dsl/validateConfig';
+import { buildNotifyModule } from '../services/notify';
+import { buildGeoModule } from '../services/geo';
 
-// Module-level singleton — one adapter for the lifetime of the app
+// Module-level singletons — one adapter, one notification log, one service
+// registry for the lifetime of the app.
 const adapter = new LocalStorageAdapter(config);
+export const notificationLog = new NotificationLog();
+const serviceModules = [buildNotifyModule(notificationLog), buildGeoModule(adapter)];
 
 // Config-save-time validation: with the SDM still file-edited, save time is app start.
-reportConfigFindings(config);
+reportConfigFindings(config, serviceModules);
 
 // Activity-level show_condition — the availability gate. Strict boolean: only
 // `true` makes the activity available. Evaluation errors FAIL CLOSED (unlike
@@ -24,7 +30,7 @@ function activityAvailability(
   try {
     const result = evaluateExpression(
       activity.show_condition,
-      buildEvalHost(adapter, config, { anchorRecord, activity: { id: activity.id, name: activity.name } })
+      buildEvalHost(adapter, config, { anchorRecord, activity: { id: activity.id, name: activity.name } }, serviceModules)
     );
     return { available: result === true };
   } catch (err) {
@@ -124,7 +130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const dslEvaluate = useCallback(
     (source: string, script: ScriptContext) =>
-      evaluateExpression(source, buildEvalHost(adapter, config, script)),
+      evaluateExpression(source, buildEvalHost(adapter, config, script, serviceModules)),
     []
   );
 
@@ -167,7 +173,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // broken gate must not wave submissions through.
     if (activity.before_hook) {
       try {
-        const result = executeScript(activity.before_hook, buildEvalHost(adapter, config, scriptContext), { mode: 'read' });
+        const result = executeScript(activity.before_hook, buildEvalHost(adapter, config, scriptContext, serviceModules), { mode: 'read' });
         warnings.push(...result.warnings);
       } catch (err) {
         if (err instanceof FluxFailError) throw new Error(err.message);
@@ -241,7 +247,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const result = executeScript(
           activity.after_hook,
-          buildEvalHost(adapter, config, { ...scriptContext, anchorRecord: adapter.getRecord(targetRecordId) }),
+          buildEvalHost(adapter, config, { ...scriptContext, anchorRecord: adapter.getRecord(targetRecordId) }, serviceModules),
           { mode: 'mutate' },
         );
         warnings.push(...result.warnings);

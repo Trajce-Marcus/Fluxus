@@ -130,6 +130,37 @@ describe('script validation — queue', () => {
   });
 });
 
+describe('script validation — service registry in hooks', () => {
+  const SERVICES = {
+    notify: { functions: { sms: { params: ['to', 'message'], kind: 'effect' as const } } },
+    geo: { functions: { suburbsOf: { params: ['city'], kind: 'read' as const } } },
+  };
+  const withServices = { ...SCHEMA, services: SERVICES };
+  const diag = (source: string, options: ScriptValidateOptions = {}) =>
+    validateScript(source, withServices, { anchorType: 'work_orders', ...options }).map(
+      (d) => `${d.severity}: ${d.message}`,
+    );
+
+  it('queue resolves module, function, and arity against the registry', () => {
+    expect(diag(`queue services.notify.sms('1', 'hi')`)).toEqual([]);
+    expect(diag(`queue services.nope.sms('1')`)).toEqual(["error: Unknown service module 'nope'"]);
+    expect(diag(`queue services.notify.nope('1')`)).toEqual(["error: Service 'notify' has no function 'nope'"]);
+    expect(diag(`queue services.notify.sms('1')`)).toEqual([
+      'error: services.notify.sms(to, message) takes 2 arguments, got 1',
+    ]);
+  });
+
+  it('read service calls pass anywhere; waiting effect calls error in before hooks, warn in after hooks', () => {
+    expect(diag(`let s = services.geo.suburbsOf(attributes.city)`, { mode: 'before' })).toEqual([]);
+    expect(diag(`let x = services.notify.sms('1', 'hi')`, { mode: 'before' })).toEqual([
+      "error: Before hooks validate only — queue 'services.notify.sms' in the after hook",
+    ]);
+    expect(diag(`let x = services.notify.sms('1', 'hi')`)).toEqual([
+      "warning: 'services.notify.sms' has effects — a waiting call is non-transactional; prefer 'queue services.notify.sms(…)'",
+    ]);
+  });
+});
+
 describe('script validation — named functions', () => {
   it('declared functions are callable with arity checking', () => {
     const options: ScriptValidateOptions = { functions: { calcTotal: { params: ['items', 'rate'] } } };
