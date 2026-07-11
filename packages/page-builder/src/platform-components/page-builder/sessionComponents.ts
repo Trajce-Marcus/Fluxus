@@ -5,4 +5,5 @@ export const SESSION_COMPONENTS = [
   { name: 'Map', version: '1.0.0' },
   { name: 'InventorList', version: '1.0.0' },
   { name: 'InventorProfile', version: '1.0.0' },
+  { name: 'WorkOrderList', version: '1.0.0' },
 ];
