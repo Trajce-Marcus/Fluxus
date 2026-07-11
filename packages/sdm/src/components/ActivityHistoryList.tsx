@@ -1,4 +1,5 @@
 import { ActivityCard } from './ActivityCard';
+import { ComponentLabel } from '../context/UatLabels';
 import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
@@ -9,7 +10,8 @@ export function ActivityHistoryList({ record }: Props) {
   const history = record.activityHistory;
 
   return (
-    <div style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: 20, position: 'relative' }}>
+      <ComponentLabel name="ActivityHistoryList" />
       <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         Activity History
       </h3>

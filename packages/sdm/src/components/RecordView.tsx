@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { ComponentLabel } from '../context/UatLabels';
 import { RecordDetails } from './RecordDetails';
 import { RelatedRecords } from './RelatedRecords';
 import { ActivityHistoryList } from './ActivityHistoryList';
@@ -97,7 +98,8 @@ export function RecordView() {
 
   if (!selectedRecord) {
     return (
-      <div>
+      <div className="panel-body" style={{ position: 'relative' }}>
+        <ComponentLabel name="RecordView" />
         {selectedRecordType && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button onClick={() => setShowSchemaNav(true)} style={schemaBtnStyle} title="Schema Navigator">
@@ -133,8 +135,9 @@ export function RecordView() {
   const canGoForward = forwardStack.length > 0;
 
   return (
-    <div>
-      <div style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #e2e8f0' }}>
+    <>
+      <div className="panel-header">
+        <ComponentLabel name="RecordView" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <button onClick={navigateBack} disabled={!canGoBack} style={navBtnStyle(canGoBack)} title="Back">←</button>
           <button onClick={navigateForward} disabled={!canGoForward} style={navBtnStyle(canGoForward)} title="Forward">→</button>
@@ -150,19 +153,21 @@ export function RecordView() {
         </div>
       </div>
 
-      <AvailableActivities record={viewedRecord} workflow={viewedTypeDef.workflow} />
-      <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
-      <RecordDetails record={viewedRecord} typeDef={viewedTypeDef} navigateTo={navigateTo} />
-      <RelatedRecords typeId={viewedTypeDef.id} recordId={viewedRecord.id} navigateTo={navigateTo} />
-      <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
-      <ActivityHistoryList record={viewedRecord} />
+      <div className="panel-body">
+        <AvailableActivities record={viewedRecord} workflow={viewedTypeDef.workflow} />
+        <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+        <RecordDetails record={viewedRecord} typeDef={viewedTypeDef} navigateTo={navigateTo} />
+        <RelatedRecords typeId={viewedTypeDef.id} recordId={viewedRecord.id} navigateTo={navigateTo} />
+        <div style={{ borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+        <ActivityHistoryList record={viewedRecord} />
 
-      {showSchemaNav && (
-        <SchemaNavigator
-          initialTypeId={viewedTypeDef.id}
-          onClose={() => setShowSchemaNav(false)}
-        />
-      )}
-    </div>
+        {showSchemaNav && (
+          <SchemaNavigator
+            initialTypeId={viewedTypeDef.id}
+            onClose={() => setShowSchemaNav(false)}
+          />
+        )}
+      </div>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { notificationLog } from '../context/AppContext';
+import { ComponentLabel } from '../context/UatLabels';
 
 // Notification centre — where queued services.notify.* calls land (DSL Phase 3).
 // A bell in the header with an unseen count; the panel lists newest first.
@@ -38,6 +39,11 @@ export function NotificationCentre() {
 
   return (
     <div ref={panelRef} style={{ position: 'relative', marginLeft: 'auto' }}>
+      {/* Sits left of the bell — the header is too short for a corner badge */}
+      <ComponentLabel
+        name="NotificationCentre"
+        style={{ top: '50%', right: '100%', transform: 'translateY(-50%)', marginRight: 6, borderRadius: 4 }}
+      />
       <button
         onClick={toggle}
         title="Notifications"

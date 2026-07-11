@@ -30,6 +30,8 @@ interface AppContextValue {
   selectedRecord: RecordInstance | null;
   selectRecordType: (type: RecordTypeDef) => void;
   selectRecord: (record: RecordInstance) => void;
+  // Select by id — used after CREATE, where only RunActivityResult.recordId is known.
+  selectRecordById: (id: string) => void;
   getRecordTypeData: (typeId: string) => RecordInstance[];
   getRecordTypeDef: (typeId: string) => (RecordTypeDef & { workflow: WorkflowDef }) | null;
   getRecordAndType: (typeId: string, recordId: string) => { record: RecordInstance; typeDef: RecordTypeDef & { workflow: WorkflowDef } } | null;
@@ -70,6 +72,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const selectRecord = useCallback((record: RecordInstance) => {
     setSelectedRecordId(record.id);
+  }, []);
+
+  const selectRecordById = useCallback((id: string) => {
+    setSelectedRecordId(id);
   }, []);
 
   const getRecordTypeDef = useCallback((typeId: string) => {
@@ -149,6 +155,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       selectedRecordType: rtDef,
       selectedRecord,
       selectRecord,
+      selectRecordById,
       selectRecordType,
       getRecordTypeData: (typeId) => adapter.getRecordTypeData(typeId),
       getRecordTypeDef,

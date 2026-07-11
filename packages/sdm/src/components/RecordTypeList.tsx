@@ -1,10 +1,12 @@
 import { useAppContext } from '../context/AppContext';
+import { ComponentLabel } from '../context/UatLabels';
 
 export function RecordTypeList() {
   const { recordTypes, selectedRecordType, selectRecordType } = useAppContext();
 
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
+      <ComponentLabel name="RecordTypeList" />
       <div style={{
         padding: '12px 16px',
         fontSize: 11,

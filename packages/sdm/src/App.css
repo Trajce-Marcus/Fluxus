@@ -54,13 +54,30 @@ body {
   overflow: hidden;
 }
 
+/* Each panel is a fixed header strip over a scrolling body, so grid toolbars
+   and record headers stay pinned while the content below them scrolls. */
 .panel {
   flex: 1;
-  overflow: auto;
-  padding: 20px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .panel + .panel {
   border-left: 1px solid #e2e8f0;
+}
+
+.panel-header {
+  flex-shrink: 0;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  position: relative; /* anchors the UAT component label */
+}
+
+.panel-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px 20px;
 }

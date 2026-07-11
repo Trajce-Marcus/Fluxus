@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { ComponentLabel } from '../context/UatLabels';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
@@ -17,6 +18,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     selectedRecordType,
     selectedRecord,
     selectRecord,
+    selectRecordById,
     getRecordTypeData,
     getRecordTypeDef,
     runActivity,
@@ -57,12 +59,18 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     return () => document.removeEventListener('mousedown', handler);
   }, [showNewMenu]);
 
+  // Keep the selected row visible — e.g. right after CREATE selects the new record.
+  const selectedRowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedRecord?.id]);
+
   const pickerMode = !!onRecordSelected;
   const typeDef = typeId ? getRecordTypeDef(typeId) : selectedRecordType;
 
   if (!typeDef) {
     return (
-      <div style={{ color: '#94a3b8', padding: 8 }}>
+      <div className={pickerMode ? undefined : 'panel-body'} style={{ color: '#94a3b8', padding: 8 }}>
         Select a record type from the panel to view records.
       </div>
     );
@@ -118,10 +126,8 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     ? `${filtered.length} of ${allRecords.length}`
     : `${allRecords.length}`;
 
-  return (
-    <div>
-      {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+  const headerRow = (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: pickerMode ? 12 : 0, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
             {typeDef.name}
@@ -283,7 +289,10 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
           </div>
         )}
       </div>
+  );
 
+  const body = (
+    <>
       {showCreateForm && createActivity && (
         <Modal title={createActivity.name} onClose={() => setShowCreateForm(false)}>
           <AttributesForm
@@ -292,7 +301,15 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
             recordTypeId={typeDef.id}
             onSubmit={(captured, options) => {
               const result = runActivity(createActivity, captured, null, options);
-              if (result.status === 'done') setShowCreateForm(false);
+              if (result.status === 'done') {
+                setShowCreateForm(false);
+                if (!pickerMode && result.recordId) {
+                  // Show the new record: select it (detail view follows) and
+                  // drop any search filter that would hide its row.
+                  setSearchTerm('');
+                  selectRecordById(result.recordId);
+                }
+              }
               return result;
             }}
             onClose={() => setShowCreateForm(false)}
@@ -315,14 +332,15 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
       )}
 
       {sorted.length === 0 ? (
-        <p style={{ color: '#94a3b8', margin: 0, fontSize: 13 }}>
+        <p style={{ color: '#94a3b8', margin: 0, paddingTop: pickerMode ? 0 : 16, fontSize: 13 }}>
           {searchTerm ? 'No records match your search.' : `No records yet.${createActivity ? ' Use the button above to create one.' : ''}`}
         </p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div style={pickerMode ? { overflowX: 'auto' } : undefined}>
+          {/* borderCollapse must stay 'separate': collapsed borders break sticky headers */}
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
             <thead>
-              <tr style={{ background: '#f1f5f9' }}>
+              <tr>
                 {customFields.map(cf => (
                   <th
                     key={cf.key}
@@ -332,10 +350,15 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                       textAlign: 'left',
                       fontWeight: 600,
                       color: '#374151',
+                      background: '#f1f5f9',
                       borderBottom: '1px solid #e2e8f0',
                       whiteSpace: 'nowrap',
                       cursor: 'pointer',
                       userSelect: 'none',
+                      // Pin column headers to the top of the scrolling panel body
+                      position: pickerMode ? undefined : 'sticky',
+                      top: 0,
+                      zIndex: 2,
                     }}
                   >
                     {cf.key}{sortIcon(cf.key)}
@@ -349,12 +372,15 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                 return (
                   <tr
                     key={record.id}
+                    ref={isSelected ? selectedRowRef : undefined}
                     onClick={() => handleRowClick(record)}
                     style={{
                       background: isSelected ? '#eff6ff' : i % 2 === 0 ? '#fff' : '#fafafa',
                       cursor: 'pointer',
                       outline: isSelected ? '2px solid #bfdbfe' : 'none',
                       outlineOffset: -2,
+                      // Keep scrollIntoView from tucking the row under the sticky header
+                      scrollMarginTop: 36,
                     }}
                   >
                     {customFields.map(cf => {
@@ -384,6 +410,26 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
           </table>
         </div>
       )}
-    </div>
+    </>
+  );
+
+  if (pickerMode) {
+    return (
+      <div>
+        {headerRow}
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="panel-header">
+        <ComponentLabel name="RecordsGrid" />
+        {headerRow}
+      </div>
+      {/* Flush top so the sticky column headers pin directly under the toolbar */}
+      <div className="panel-body" style={{ paddingTop: 0 }}>{body}</div>
+    </>
   );
 }

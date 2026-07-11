@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
+import { ComponentLabel } from '../context/UatLabels';
 import type { ActivityDef, RecordInstance, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -23,7 +24,8 @@ export function AvailableActivities({ record, workflow }: Props) {
   if (activities.length === 0) return null;
 
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
+      <ComponentLabel name="AvailableActivities" />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {activities.map(a => (
           <button

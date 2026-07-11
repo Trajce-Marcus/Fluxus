@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
+import { ComponentLabel } from '../context/UatLabels';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -12,7 +13,8 @@ export function RecordDetails({ record, typeDef, navigateTo }: Props) {
   const fields = typeDef.custom_fields;
 
   return (
-    <div style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: 20, position: 'relative' }}>
+      <ComponentLabel name="RecordDetails" />
       <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         Record Details
       </h3>

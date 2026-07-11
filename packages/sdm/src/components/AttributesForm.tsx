@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
+import { ComponentLabel } from '../context/UatLabels';
 import { coerceCaptured, coerceValue } from '@fluxus/engine';
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 
@@ -176,7 +177,8 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   };
 
   return (
-    <>
+    <div style={{ position: 'relative' }}>
+      <ComponentLabel name="AttributesForm" />
       <form onSubmit={handleSubmit}>
         {/* Fields lock while a warning decision is pending — the snapshot that
             was validated is what Continue submits, so editing must wait. */}
@@ -381,7 +383,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
           />
         );
       })()}
-    </>
+    </div>
   );
 }
 

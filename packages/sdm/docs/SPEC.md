@@ -116,7 +116,7 @@ config/{attributes,functions}.json + config/entities/*.json
 ## UI
 
 ```
-Header ("Fluxus SDM / Aber sample")
+Header ("Fluxus SDM / Aber sample", UAT Labels toggle, notification bell)
 ├── Side panel — RecordTypeList
 └── Content
     ├── RecordsGrid — sort, search, count, CSV import/export, FK links, CREATE launch
@@ -128,6 +128,12 @@ Header ("Fluxus SDM / Aber sample")
 ```
 
 Schema Navigator: org-chart-style record-type relationship viewer — focal type centred, FK targets one side, reverse FKs the other, click to recentre; launched from the RecordView header.
+
+Panel layout (July 2026 UX pass): each content panel is a fixed `panel-header` strip over a scrolling `panel-body` (`App.css`), so the grid toolbar and the record header stay pinned; the grid's column headers are additionally `position: sticky` inside the scrolling body (which requires `border-collapse: separate` — collapsed borders don't stick). The picker dialog reuses RecordsGrid without this structure (`pickerMode`).
+
+**CREATE selects its record:** after a successful Insert-row CREATE, the grid selects the new record via `RunActivityResult.recordId` (clearing any search filter that would hide it) and scrolls its row into view; the detail view follows the selection. CSV import deliberately leaves selection alone.
+
+**UAT component labels:** the header "Labels" toggle (`context/UatLabels.tsx`, persisted at `fluxus:sdm:uat-labels`) overlays a corner badge with the component name on each major region — RecordTypeList, RecordsGrid, RecordView, AvailableActivities, RecordDetails, RelatedRecords, ActivityHistoryList, NotificationCentre, SchemaNavigator, AttributesForm — so UAT feedback can name components precisely. UAT aid only; off by default.
 
 ## Naming conventions
 
