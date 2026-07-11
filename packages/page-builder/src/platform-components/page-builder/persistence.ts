@@ -32,7 +32,11 @@ export type DynamicPropConfig =
 export type CallbackAction =
   | { type: 'set-context'; key: string }
   | { type: 'hide-component' }
-  | { type: 'show-overlay'; overlayId: string };
+  | { type: 'show-overlay'; overlayId: string }
+  // Extraction stage 2: the callback contract is (record, data object).
+  // UI activity (has attributes) → standard capture form opens; non-UI →
+  // straight to the hooks with the data object as the `callbackData` root.
+  | { type: 'run-activity'; activityId: string };
 
 export interface SlotConfig {
   componentName: string;

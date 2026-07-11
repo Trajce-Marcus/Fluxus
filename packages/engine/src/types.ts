@@ -176,7 +176,12 @@ export interface RunActivityResult {
 export interface ActivityHistoryEntry {
   activityId: string;
   activityName: string;
-  /** Exactly what the user entered — never touched by scripts or the system. */
+  /**
+   * The activity's attributes: what the user entered, plus attributes hook
+   * logic wrote (`attributes.crew = …`), plus the run's system log under the
+   * reserved `system_log` key. Immutable means users never edit them; hooks
+   * legitimately write them (ruled 2026-07-11, Extraction stage 2).
+   */
   capturedAttributes: Record<string, unknown>;
   /**
    * Gate warnings the user acknowledged to proceed ("warned X, continued

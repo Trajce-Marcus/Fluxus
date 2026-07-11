@@ -4,6 +4,8 @@
 
 export type MockFn = (args: Record<string, unknown>) => Promise<unknown>;
 
+import { sdmStore } from '../../sdm-runtime/engine';
+
 const MOCK_INVENTORS = [
   { name: 'Nikola Tesla',   invention: 'AC Motor',      date: '1888', country: 'Serbia',   birthYear: 1856, deathYear: 1943, bio: 'Pioneer of alternating current electrical systems.' },
   { name: 'Thomas Edison',  invention: 'Phonograph',    date: '1877', country: 'USA',      birthYear: 1847, deathYear: 1931, bio: 'Prolific inventor who developed the phonograph and a practical incandescent light bulb.' },
@@ -24,4 +26,10 @@ export const mockRegistry: Record<string, MockFn> = {
   'platform.appName': async () => 'Fluxus',
 
   'map.getLocation': async () => ({ x: 42, y: 67 }),
+
+  // Real procedure backed by the page builder's SDM store (Extraction stage 2):
+  // same function-call-by-name shape the backend will keep (tRPC per root
+  // ARCHITECTURE.md), so wiring never changes when localStorage swaps out.
+  'sdm.listWorkOrders': async () =>
+    sdmStore.getRecordTypeData('rt_work_orders').map((r) => ({ ...r.customFields })),
 };

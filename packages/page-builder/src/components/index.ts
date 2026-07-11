@@ -5,9 +5,10 @@ import { Map } from './Map';
 import { InventorList } from './InventorList';
 import { InventorProfile } from './InventorProfile';
 import { AppHeader } from './AppHeader';
+import { WorkOrderList } from './WorkOrderList';
 import { Shell } from '../platform-components/shell/Shell';
 
-export { Map, InventorList, InventorProfile, AppHeader, Shell };
+export { Map, InventorList, InventorProfile, AppHeader, WorkOrderList, Shell };
 
 export type FluxusComponent<P = Record<string, unknown>> = ComponentType<P> & { css?: string; schema?: PropSchema[] };
 
@@ -17,5 +18,6 @@ export const registry: Record<string, FluxusComponent<any>> = {
   InventorList,
   InventorProfile,
   AppHeader,
+  WorkOrderList,
   Shell,
 };

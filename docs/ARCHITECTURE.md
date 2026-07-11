@@ -16,7 +16,7 @@ How the parts connect. Package-level detail lives in each package's `docs/SPEC.m
 │  the activity pipeline (runActivity) · Store contract ·         │
 │  DSL bridge · config validation · core SDM types                │
 └────────────┬───────────────────────┬────────────────────────────┘
-             │ hosted by             │ hosted by (Extraction stage 2)
+             │ hosted by             │ hosted by
 ┌────────────▼────────────┐  ┌───────▼─────────────────────────────┐
 │      @fluxus/sdm        │  │      @fluxus/page-builder           │
 │  SDM config (types,     │  │  layout editor · ComponentContainer │
@@ -54,7 +54,7 @@ The validator checks every script against the SDM at **config-save time** — un
 The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine (`@fluxus/engine`, extracted from the sdm package July 2026) with three front doors:
 
 1. **SDM record workbench** — activity strip / CREATE launch on the grid. *(Live.)*
-2. **Page builder apps** — a component callback wired to `run activity`; attribute capture, validation, hooks and history all identical. *(Extraction stage 2 — next.)*
+2. **Page builder apps** — a component's named callback wired to `run-activity`; the callback contract is (record, one data object). UI activities open the standard capture form; non-UI activities pass straight to the hooks, which read the data object via the `callbackData` root. Same gate, hooks, history. *(Live — Extraction stage 2.)*
 3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation. *(DSL Phase 4 + backend.)*
 
 ## The ComponentContainer is the reuse seam
@@ -84,6 +84,7 @@ Records live in two stores with different jobs (CQRS):
 
 - **The activity stream is the projection source, complete by construction** — no write path bypasses activities, so the reporting layer can never miss a change. The after-hook outbox (built for `queue`) simply gains a second consumer. The application never dual-writes.
 - **Each layer gets the storage shape it wins with.** Transactional: generic/JSONB single-table shape — SDM edits never touch the physical schema. Reporting: *generated* per-type tables with real columns, FKs, and indexes — and no migration pain, because projections are **rebuilt by re-projection from the activity stream** when the SDM changes.
+- **Reporting history is fully normalized, not JSONB (agreed 2026-07-12):** record → `activities` → `attributes` as related tables — one `activities` row per run (record, activity, author, timestamp; class derived from type class + author, never stored) and one `attributes` row per attribute (entry ref, `key`, `value`, `waive_desc`). `value` is a single text column — queries stay uniform (`key = 'crew' AND value = 'Crew A'`); typed queries cast on query, with expression indexes added per hot path if metrics demand. A waived attribute is the **same row** with `value` null and `waive_desc` carrying the reason — never a separate row. System-produced attributes (`system_log`, `system_warnings`) are ordinary rows. Row volume is accepted — queryability is this layer's contract, and re-projection makes the shape cheap to evolve.
 - **Scoping follows access patterns.** Runtime queries are always SDM-scoped (the DSL's scope-blind rule guarantees it), so the transactional store partitions per SDM (`org#sdm`). Cross-SDM views belong only to reporting, so the relational side is org-scoped (schema per org).
 - **Leanness of the transactional layer is load-bearing, not cosmetic.** Runtime DSL queries there are partition-fetch + filter, viable only on small partitions. Retention enforces it: a record type may declare a `complete_when` condition (FluxScript) and window in the SDM; completed records archive out of the transactional store (the relational copy remains). Never-ending records (long-lived apps) tier their append-only history instead — hot tail transactional, full spine relational/cold — while the record stays alive.
 - **Consistency rule:** runtime reads (hook validation, pickers) always hit the transactional store — read-your-writes required. Reporting reads may lag; that's their contract.

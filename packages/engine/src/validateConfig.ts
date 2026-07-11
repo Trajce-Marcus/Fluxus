@@ -87,11 +87,13 @@ export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] =
           collect(`${activity.id} → '${usage.attribute_ref}' datasource`, attr.type_config.datasource, anchorType);
         }
       }
-      // Hooks (scripts tier): before = gate (validate only), after = effects
+      // Hooks (scripts tier): before = gate (validate only), after = effects.
+      // `callbackData` is legal in any hook — every activity may be
+      // app-triggered (Extraction stage 2); it is null on direct runs.
       for (const phase of ['before', 'after'] as const) {
         const source = joinScript(phase === 'before' ? activity.before_hook : activity.after_hook);
         if (!source) continue;
-        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
+        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions, extraRoots: ['callbackData'] })) {
           findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
         }
       }

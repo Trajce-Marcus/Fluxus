@@ -67,8 +67,40 @@ One engine per host per SDM — a platform singleton created at bootstrap
 `recordId` (added at extraction) is the record acted on — created, updated,
 appended to, or deleted; absent when nothing persisted (needs-confirmation, or
 a DELETE whose confirm text didn't match). Hosts use it to react (the
-workbench deselects a deleted record); fork 3's page-builder callback will
-lean on it.
+workbench deselects a deleted record).
+
+## App-triggered runs (Extraction stage 2, ruled 2026-07-11)
+
+An app triggers an activity through a host's named-callback wiring; the
+callback contract is **(record, one data object)** — the host resolves the
+record to the anchor and passes the object as `options.callbackData`.
+
+- **`callbackData` root** — the data object, injected as an embedding-point
+  extra root into both hooks (like `value` in validation rules); `null` on
+  direct (workbench-form) runs. The validator accepts it in any hook — every
+  activity may be app-triggered. Untyped (validated as UNKNOWN); its shape is
+  the implementer's contract with their component.
+- **UI vs non-UI activity** — with attributes, the host opens the standard
+  capture form and the run proceeds normally; with no attributes there is
+  nothing to fill in and the run passes straight to the hooks.
+- **Hook-written attributes** — hooks may assign onto the `attributes` root
+  (`attributes.crew = callbackData.crew`); new or changed keys land on the
+  history entry alongside what the user typed. Enabled by the live-bag
+  mechanism (`ScriptContext.liveAttributes`): the same object is shared with
+  the evaluator un-copied, and the engine diffs it after the after hook. If
+  the after hook fails, its attribute writes are discarded with the rest of
+  its effects ("recorded, but no changes applied").
+- **`services.logger`** — engine-owned module, name reserved: `note(message)`
+  appends to the run's system log, which lands on the entry as the reserved
+  `system_log` attribute. The pipeline is the log — there is no separate log
+  store. `kind: 'read'` deliberately, so it is callable from any hook;
+  lines are discarded when no entry commits (rejected gate, cancelled soft
+  stop, DELETE).
+- **Entry append order** — the entry is appended *after* the after hook runs
+  (one write carrying user input + hook-written attributes + system log), but
+  a failing after hook still appends the entry before the error propagates —
+  the activity is recorded; no changes were applied. Gate warnings ride the
+  entry; after-hook warnings only travel in the result (host's channel).
 
 ### Host-leak removals made during extraction
 

@@ -7,7 +7,7 @@
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ActivityDef, ConfigRaw, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
-import { buildEvalHost, coerceCaptured, type ScriptContext } from './bridge';
+import { buildEvalHost, coerceCaptured, serializeFields, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 
 export interface EngineOptions {
@@ -24,6 +24,13 @@ export interface ActivityAvailability {
 export interface RunActivityOptions {
   acknowledgedWarnings?: boolean;
   waived?: Record<string, string>;
+  /**
+   * The one data object an app-triggered run carries (Extraction stage 2).
+   * Hooks read it via the `callbackData` root; null/absent on direct runs.
+   * Which record to anchor on travels alongside it in the host's callback
+   * contract — it is the host's job to pass the right anchorRecord.
+   */
+  callbackData?: unknown;
 }
 
 export interface Engine {
@@ -48,7 +55,33 @@ export interface Engine {
   reportConfigFindings(): void;
 }
 
-export function createEngine({ store, config, services = [] }: EngineOptions): Engine {
+export function createEngine({ store, config, services: hostServices = [] }: EngineOptions): Engine {
+  // services.logger — engine-owned: its sink is the activity history entry
+  // (the pipeline is the log; no separate log store). Lines noted during a
+  // run land on the entry as the reserved `system_log` attribute — only if
+  // the run commits an entry (rejected submissions leave no trace, DELETEs
+  // have no entry). kind 'read' deliberately: logging is observability, legal
+  // in any hook; the buffer, not the world, changes.
+  if (hostServices.some((m) => m.name.toLowerCase() === 'logger')) {
+    throw new Error("Service module name 'logger' is reserved by the engine");
+  }
+  let runLog: string[] = [];
+  const loggerModule: ServiceModuleDef = {
+    name: 'logger',
+    description: 'System log: lines land on the running activity\'s history entry (system_log).',
+    functions: {
+      note: {
+        params: ['message'],
+        description: "Append a line to the run's system log.",
+        kind: 'read',
+        fn: (message) => {
+          runLog.push(String(message ?? ''));
+        },
+      },
+    },
+  };
+  const services = [...hostServices, loggerModule];
+
   // A CREATE activity targets the record type whose workflow declares it —
   // derived from config here so hosts never have to say which type is
   // "selected" (the pipeline must work headless).
@@ -103,16 +136,24 @@ export function createEngine({ store, config, services = [] }: EngineOptions): E
     // Attributes declared unavailable: scripts see them as null, they never
     // write to record fields, and the waiver lands on the history entry.
     const waived = options?.waived ?? {};
+    // Fresh system log per run (sync evaluator — runs never interleave).
+    runLog = [];
 
-    // Hooks see captured values coerced to their attribute's declared type (DSL_SPEC §5)
+    // Hooks see captured values coerced to their attribute's declared type (DSL_SPEC §5).
+    // The live bag is shared across both hooks WITHOUT copying: hooks may write
+    // attributes (`attributes.crew = …`) and the writes land on the history
+    // entry below. coerceCaptured already maps empty strings to null.
     const stringValues = Object.fromEntries(
       Object.entries(captured).map(([k, v]) => [k, String(v ?? '')])
     );
-    const typedAttributes = coerceCaptured(activity.attributes, stringValues);
+    const liveAttributes = { ...coerceCaptured(activity.attributes, stringValues) };
+    const initialAttributes = { ...liveAttributes };
     const scriptContext: ScriptContext = {
-      attributes: typedAttributes,
+      liveAttributes,
       anchorRecord,
       activity: { id: activity.id, name: activity.name },
+      // The one data object of an app-triggered run; null on direct runs.
+      extras: { callbackData: options?.callbackData ?? null },
     };
 
     // before hook = gate (DSL_SPEC §6): read-only; fail() rejects the activity
@@ -132,6 +173,9 @@ export function createEngine({ store, config, services = [] }: EngineOptions): E
         return { status: 'needs-confirmation', warnings };
       }
     }
+    // Acknowledged gate warnings ride the entry; after-hook warnings are
+    // execution outcome and only travel in the result.
+    const gateWarnings = [...warnings];
 
     let targetRecordId: string;
 
@@ -173,22 +217,13 @@ export function createEngine({ store, config, services = [] }: EngineOptions): E
       targetRecordId = anchorRecord!.id;
     }
 
-    // append an entry to the Record's activity history; acknowledged gate
-    // warnings are part of the submission's story (audit), captured separately
-    // from user input
-    store.appendActivity(targetRecordId, {
-      activityId: activity.id,
-      activityName: activity.name,
-      capturedAttributes: captured,
-      ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
-      ...(Object.keys(waived).length > 0 ? { waived: { ...waived } } : {}),
-      timestamp: new Date().toISOString(),
-    });
-
     // after hook = effects (DSL_SPEC §6–§7): mutations stage during the run and
     // commit atomically; queued service calls dispatch only after the commit.
-    // The activity itself has already persisted — a failing after hook applies
-    // no changes but does not un-record the activity.
+    // It runs before the entry is appended so hook-written attributes and the
+    // system log land in the same single write — but a failing after hook
+    // still gets the entry appended (the activity is recorded; no changes
+    // were applied).
+    let afterHookError: string | null = null;
     if (activity.after_hook) {
       try {
         const result = executeScript(
@@ -198,9 +233,34 @@ export function createEngine({ store, config, services = [] }: EngineOptions): E
         );
         warnings.push(...result.warnings);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`After hook failed — the activity was recorded but no changes were applied: ${message}`);
+        afterHookError = err instanceof Error ? err.message : String(err);
       }
+    }
+
+    // Entry attributes: what the user entered, plus what hooks wrote into the
+    // live bag (new or changed keys; skipped when the after hook failed —
+    // "no changes applied" covers its attribute writes too), plus the run's
+    // system log under the reserved `system_log` key.
+    const hookWritten: Record<string, unknown> = {};
+    if (afterHookError === null) {
+      for (const [k, v] of Object.entries(liveAttributes)) {
+        if (!(k in initialAttributes) || initialAttributes[k] !== v) hookWritten[k] = v;
+      }
+    }
+    const entryAttributes = { ...captured, ...serializeFields(hookWritten) };
+    if (runLog.length > 0) entryAttributes['system_log'] = [...runLog];
+
+    store.appendActivity(targetRecordId, {
+      activityId: activity.id,
+      activityName: activity.name,
+      capturedAttributes: entryAttributes,
+      ...(gateWarnings.length > 0 ? { warnings: gateWarnings } : {}),
+      ...(Object.keys(waived).length > 0 ? { waived: { ...waived } } : {}),
+      timestamp: new Date().toISOString(),
+    });
+
+    if (afterHookError !== null) {
+      throw new Error(`After hook failed — the activity was recorded but no changes were applied: ${afterHookError}`);
     }
 
     // After-hook warnings are informational (the commit already happened);

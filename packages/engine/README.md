@@ -5,9 +5,10 @@ The shared activity engine — the SDM core every host drives. One pipeline
 append → after hook), the `Store` contract, the core SDM types, and the bridge
 that wires FluxScript evaluation/validation to a live store.
 
-**Status:** extracted from `@fluxus/sdm` at the Extraction milestone (stage 1).
-Current hosts: the sdm workbench. Next host: the page builder (`run activity`
-callback action — stage 2).
+**Status:** Extraction milestone complete (July 2026). Two live hosts: the sdm
+workbench and the page builder (`run-activity` callback action — app-triggered
+runs with the `callbackData` root, hook-written entry attributes, and
+`services.logger`).
 
 - Depends on `@fluxus/dsl` only. Hosts depend on this package and supply a
   `Store` implementation (or configure the bundled `LocalStorageAdapter`),

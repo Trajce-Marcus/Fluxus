@@ -40,7 +40,7 @@ function serializeFieldValue(value: unknown): unknown {
   return value;
 }
 
-function serializeFields(fields: Record<string, unknown>): Record<string, unknown> {
+export function serializeFields(fields: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
 }
 
@@ -125,6 +125,13 @@ export function buildRecordsHost(adapter: Store, config: ConfigRaw): RecordsHost
 
 export interface ScriptContext {
   attributes?: Record<string, unknown>;
+  /**
+   * When set, used directly (not copied) as the `attributes` root, so member
+   * assignments made by hook scripts (`attributes.crew = …`) are visible to
+   * the caller afterwards — how hook-written attributes land on the history
+   * entry. Values must already be normalised (no empty strings).
+   */
+  liveAttributes?: Record<string, unknown>;
   anchorRecord?: RecordInstance | null;
   activity?: { id: string; name: string };
   workflow?: { id: string; name: string };
@@ -174,9 +181,14 @@ export function buildEvalHost(
 ): EvalHost {
   // Empty-string form values read as null in scripts, so `attributes.city is not null`
   // behaves before anything is selected.
-  const attributes: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(script.attributes ?? {})) {
-    attributes[key] = value === '' ? null : value;
+  let attributes: Record<string, unknown>;
+  if (script.liveAttributes) {
+    attributes = script.liveAttributes;
+  } else {
+    attributes = {};
+    for (const [key, value] of Object.entries(script.attributes ?? {})) {
+      attributes[key] = value === '' ? null : value;
+    }
   }
 
   return {
