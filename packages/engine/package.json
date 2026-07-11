@@ -1,0 +1,19 @@
+{
+  "name": "@fluxus/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fluxus/dsl": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "vitest": "^3.0.0"
+  }
+}

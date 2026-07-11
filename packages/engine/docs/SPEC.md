@@ -1,0 +1,120 @@
+# @fluxus/engine — Living Spec
+
+The shared activity engine: the host-agnostic SDM core extracted from
+`@fluxus/sdm` at the Extraction milestone (July 2026). Everything here used to
+live inside the workbench; the pipeline semantics did not change in the move —
+per-step doctrine (gate fail-closed rules, warn soft stop, waivers,
+exact-key mapping, staged after-hook commits) is specified in the sdm SPEC's
+Hooks section and DSL_SPEC §5–§7, which remain the authority for behaviour.
+This SPEC covers what the engine *owns* and the contracts hosts program
+against.
+
+## Why a separate package (fork 1, decided 2026-07-11)
+
+- Dependency direction is `dsl` ← `engine` ← hosts (`sdm`, `page-builder`).
+  The engine *uses* the language; the language stays ignorant of records,
+  workflows, and history — that ignorance is load-bearing (scope-blindness).
+- Peer hosts must not depend on each other; the shared pipeline is a literal
+  artifact both import, not a pattern they imitate.
+- One Pipeline Invariant made structural: there is exactly one `runActivity`.
+
+## What the engine owns
+
+```
+src/types.ts       — SDM config + runtime types (ConfigRaw, RecordTypeDef,
+                     ActivityDef, RecordInstance, ActivityHistoryEntry, …)
+src/store.ts       — the Store contract (the persistence seam)
+src/localStorageAdapter.ts — reference Store impl, browser localStorage
+src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
+src/validateConfig.ts — config-save-time validation of every FluxScript script
+src/engine.ts      — createEngine: the runActivity pipeline + evaluation entry
+```
+
+What it deliberately does **not** own: UI of any kind, React, selection state,
+notification surfaces (`NotificationLog` stays in sdm), service module
+*implementations* (hosts supply them; the engine only carries them to the
+evaluator/validator), and the SDM config itself (config distribution is an
+open thread — see root ROADMAP).
+
+## The Engine object
+
+```ts
+const engine = createEngine({ store, config, services? });
+```
+
+One engine per host per SDM — a platform singleton created at bootstrap
+(fork 2), *not* inside any UI framework's state.
+
+- `engine.runActivity(activity, captured, anchorRecord, options?)` — the
+  pipeline: availability gate → before hook (read-only gate; warn = soft stop
+  returning `needs-confirmation`) → record_map mapping (CREATE/UPDATE/DELETE/
+  append) → history append → after hook (staged, atomic commit).
+  `options`: `acknowledgedWarnings`, `waived`.
+- `engine.activityAvailability(activity, anchorRecord)` /
+  `isActivityAvailable(...)` — the activity-level `show_condition` gate,
+  fail-closed. UIs use it to hide; `runActivity` re-checks it as the
+  enforcement point (headless callers skip the UI).
+- `engine.evaluate(source, scriptContext)` — expression evaluation (datasources,
+  show conditions) against the live store with the four roots injected.
+- `engine.validateConfig()` / `engine.reportConfigFindings()` — every
+  FluxScript surface in the config checked against the schema + service
+  registry; report goes to the console.
+- `engine.store` — the Store the engine was built with (host convenience).
+
+### RunActivityResult
+
+`{ status: 'done' | 'needs-confirmation', warnings, recordId? }`.
+`recordId` (added at extraction) is the record acted on — created, updated,
+appended to, or deleted; absent when nothing persisted (needs-confirmation, or
+a DELETE whose confirm text didn't match). Hosts use it to react (the
+workbench deselects a deleted record); fork 3's page-builder callback will
+lean on it.
+
+### Host-leak removals made during extraction
+
+- **CREATE target type is derived, not supplied.** The workbench used to pass
+  its UI selection ("currently selected record type"); the engine instead maps
+  each CREATE activity to the record type whose workflow declares it, at
+  `createEngine` time. Behaviour is identical for well-formed configs (an
+  activity belongs to one workflow; a record type points at its workflow);
+  configs where two record types share a workflow with a CREATE activity are
+  currently ambiguous (last mapping wins) — revisit if that ever becomes
+  legal.
+- **DELETE deselection moved to the host**, driven by `recordId`.
+- **After-hook warnings are returned, not printed.** Surfacing them is the
+  host's job; the engine has no UI channel. (The workbench keeps its console
+  channel; a toast slot may take over later.)
+
+### Host channels that remain engine defaults (deliberate, for now)
+
+- `context.user` is the demo stub (`{ id: 'demo', name: 'Demo User' }`) until
+  auth exists — set in `buildEvalHost`.
+- Async `queue` dispatch failures land on `console.warn` via the bridge's
+  `onQueuedFailure`. Both become host-supplied when a second host needs them
+  to differ.
+
+## The Store contract
+
+`src/store.ts` — unchanged from the sdm original: type/def/data reads, staged
+mutation halves (`buildRecord`/`insertRecord`, `validateUpdate`/apply),
+`appendActivity`, `subscribe`, FK display/reverse-ref resolution. It is the
+persistence seam: the backend (tRPC + Neon per root ARCHITECTURE.md) arrives
+as another Store implementation; scripts and hosts don't change.
+
+`LocalStorageAdapter` is the reference implementation, shared by both browser
+hosts and parameterised by key (fork 2): each host names its own
+`storageKey` (sdm: `fluxus:sdm:records`; page builder will use
+`fluxus:page-builder:records`) — separate data per host until the backend
+makes "one model, many apps" literal. `legacyStorageKey` supports one-time
+key renames (merge once, remove old key).
+
+## Bridge and validation
+
+`bridge.ts` translates between SDM shapes and the DSL's hosts: config →
+`DslSchema` (short type names, `rt_` stripped; service manifests in),
+Store → `RecordsHost` (queries, FK targets, reverse refs, the `mutate`
+staging surface), captured strings → typed script values (`coerceCaptured`),
+and `buildEvalHost` assembling the four roots + named functions.
+`validateConfig.ts` is the config-save-time check (DSL_SPEC §9) over every
+datasource, show condition, validation rule, hook, and named function.
+Both moved verbatim from sdm.

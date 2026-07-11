@@ -5,7 +5,7 @@ import { RelatedRecords } from './RelatedRecords';
 import { ActivityHistoryList } from './ActivityHistoryList';
 import { AvailableActivities } from './AvailableActivities';
 import { SchemaNavigator } from './SchemaNavigator';
-import type { RecordInstance, RecordTypeDef, WorkflowDef } from '../types';
+import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 type NavEntry = { typeId: string; recordId: string };
 

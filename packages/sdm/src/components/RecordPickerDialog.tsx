@@ -1,6 +1,6 @@
 import { Modal } from './Modal';
 import { RecordsGrid } from './RecordsGrid';
-import type { RecordInstance } from '../types';
+import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
   targetTypeId: string;

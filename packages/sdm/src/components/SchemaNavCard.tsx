@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import type { RecordTypeDef } from '../types';
+import type { RecordTypeDef } from '@fluxus/engine';
 
 interface Props {
   typeDef: RecordTypeDef;

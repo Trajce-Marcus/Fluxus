@@ -5,7 +5,7 @@ import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
 import { CsvImportModal } from './CsvImportModal';
 import { exportToCSV, exportToJSON } from '../utils/export';
-import type { RecordInstance } from '../types';
+import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
   typeId?: string;

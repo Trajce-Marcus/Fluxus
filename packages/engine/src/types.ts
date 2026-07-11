@@ -163,6 +163,12 @@ export interface ReverseRefEntry {
 export interface RunActivityResult {
   status: 'done' | 'needs-confirmation';
   warnings: string[];
+  /**
+   * The record the activity acted on (created, updated, appended to, or
+   * deleted). Absent when nothing persisted: needs-confirmation, or a DELETE
+   * whose confirm text didn't match.
+   */
+  recordId?: string;
 }
 
 // ── Runtime types (store reads/writes these) ──────────────────────────────────

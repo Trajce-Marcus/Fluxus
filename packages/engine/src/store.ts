@@ -1,4 +1,4 @@
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ReverseRefEntry } from '../types';
+import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ReverseRefEntry } from './types';
 
 export interface Store {
   listRecordTypes(): RecordTypeDef[];

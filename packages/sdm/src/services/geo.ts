@@ -3,8 +3,8 @@
 // when the backend (and the async evaluator) lands.
 
 import { FkPointer, type ServiceModuleDef } from '@fluxus/dsl';
-import type { Store } from '../store/interface';
-import { toDslRecord } from '../dsl/bridge';
+import type { Store } from '@fluxus/engine';
+import { toDslRecord } from '@fluxus/engine';
 
 export function buildGeoModule(adapter: Store): ServiceModuleDef {
   return {

@@ -1,25 +1,32 @@
 # Fluxus — Architecture
 
-How the three parts connect. Package-level detail lives in each package's `docs/SPEC.md`; this document covers only what spans packages.
+How the parts connect. Package-level detail lives in each package's `docs/SPEC.md`; this document covers only what spans packages.
 
-## The three parts
+## The four parts
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        @fluxus/dsl                              │
 │  grammar · interpreter · schema-aware validator                 │
 │  (expressions → queries → scripts; the one language)            │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ evaluated through
+┌────────────────────────────▼────────────────────────────────────┐
+│                       @fluxus/engine                            │
+│  the activity pipeline (runActivity) · Store contract ·         │
+│  DSL bridge · config validation · core SDM types                │
 └────────────┬───────────────────────┬────────────────────────────┘
-             │ evaluated by          │ evaluated by
+             │ hosted by             │ hosted by (Extraction stage 2)
 ┌────────────▼────────────┐  ┌───────▼─────────────────────────────┐
 │      @fluxus/sdm        │  │      @fluxus/page-builder           │
 │  SDM config (types,     │  │  layout editor · ComponentContainer │
 │  workflows, activities) │  │  wiring layer · reusable apps       │
-│  activity engine        │◄─┤  (calls activities; binds dynamic   │
-│  record store · history │  │   props via DSL queries)            │
-│  record workbench UI    │  └─────────────────────────────────────┘
-└─────────────────────────┘
+│  record workbench UI    │  │  (calls activities; binds dynamic   │
+│  notification centre    │  │   props via DSL queries)            │
+└─────────────────────────┘  └─────────────────────────────────────┘
 ```
+
+Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — the pipeline they share is a package they both import. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules.
 
 ## The SDM is the centre
 
@@ -44,11 +51,11 @@ The validator checks every script against the SDM at **config-save time** — un
 
 ## The activity engine has multiple hosts
 
-The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine with three front doors:
+The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine (`@fluxus/engine`, extracted from the sdm package July 2026) with three front doors:
 
-1. **SDM record workbench** — activity strip / CREATE launch on the grid.
-2. **Page builder apps** — a component callback wired to `run activity`; attribute capture, validation, hooks and history all identical.
-3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation.
+1. **SDM record workbench** — activity strip / CREATE launch on the grid. *(Live.)*
+2. **Page builder apps** — a component callback wired to `run activity`; attribute capture, validation, hooks and history all identical. *(Extraction stage 2 — next.)*
+3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation. *(DSL Phase 4 + backend.)*
 
 ## The ComponentContainer is the reuse seam
 
@@ -93,4 +100,4 @@ Records live in two stores with different jobs (CQRS):
 
 **v1 deployment: one Neon Postgres wearing both hats** — JSONB transactional tables plus projected relational schemas, projection synchronous in-transaction (no sync infrastructure while the platform is young). The two-layer *architecture* holds from day one; DynamoDB and async projection are deployment upgrades behind existing seams, not redesigns.
 
-The SDM package's `Store` interface (browser POC) and the DSL's `RecordsHost` are the seams all of this hides behind. Drizzle ORM over Neon for schema and queries; tRPC for the function-call API surface (no GET/POST distinction — pages and headless callers just call functions by name).
+The engine package's `Store` contract and the DSL's `RecordsHost` are the seams all of this hides behind. Drizzle ORM over Neon for schema and queries; tRPC for the function-call API surface (no GET/POST distinction — pages and headless callers just call functions by name).

@@ -26,7 +26,7 @@ The workbench executes FluxScript (see `packages/dsl`) for two attribute feature
 
 ## Hooks (DSL Phase 2)
 
-`runActivity` (AppContext) is the pipeline: **availability gate → before hook → record_map mapping → activity history append → after hook**.
+`runActivity` is the pipeline: **availability gate → before hook → record_map mapping → activity history append → after hook**. Since the Extraction milestone it lives in `@fluxus/engine` (`createEngine({ store, config, services })`); AppContext hosts the engine and wraps `runActivity` with the workbench's UI reactions (deselect a deleted record via the result's `recordId`, console the returned after-hook warnings). The behavioural doctrine below is unchanged by the move.
 
 - **Availability gate** — activity-level `show_condition` (on the activity def, e.g. `"context.record.status <> 'Completed'"` on `act_update_work_orders` / `act_complete_work_orders`): whether the activity is offered and invocable at all. Strict boolean — only `true` makes it available. Evaluated before capture, so `attributes` is banned (the validator rejects it at config load); `context.record` is the anchor, null for CREATE. The UI hides unavailable activities (record activity strip; the grid's New button and with it CSV import), but the check inside `runActivity` is the enforcement point — headless callers skip the UI. **Evaluation errors fail closed** (deliberately opposite to the attribute-level rule above): this is an access rule, and a broken gate must not wave the activity through. Availability ("does this activity apply to this record right now") is this gate's job; validating the captured payload is the before hook's. Role-style conditions on `context.user` work through the same mechanism, but a real permission model is a platform-tier concern — this complements it, it doesn't replace it. Server-authoritative re-check when the backend lands, same doctrine as the rest of the contract.
 - **Before hook** — the gate. Runs with the captured attributes (type-coerced) before anything persists, in read-only mode: mutations and `queue` are rejected statically and at run time. `fail('msg')` rejects the submission with that message in the form; a runtime error in the hook also blocks (a broken gate must not wave submissions through). `warn('msg')` is a **soft stop**: `runActivity` returns `needs-confirmation` with the messages and persists nothing; the form locks its fields, shows the warnings with **Continue anyway / Cancel**, and Continue re-submits the *frozen snapshot* that was validated (edited values can never ride through on an acknowledged submit). CSV bulk import acknowledges warnings up front; `fail` still rejects rows. **Acknowledged gate warnings are recorded on the activity history entry** (`warnings` field — "warned X, continued anyway" is audit), kept separate from `capturedAttributes`, which stays exactly what the user entered. When the backend lands, the same gate re-runs server-side authoritatively with the same protocol.
@@ -36,9 +36,7 @@ The workbench executes FluxScript (see `packages/dsl`) for two attribute feature
 
 Acceptance (in `test/dsl-wiring.test.ts`): `act_complete_work_orders` — the availability condition hides/blocks it once Completed, the before hook warns when never started, the after hook sets `status`/`completed_date` via the staged commit. ("Already completed" moved from a before-hook `fail` to the show_condition when the availability gate landed — it is applicability, not payload validation.)
 
-Plumbing (`src/dsl/`):
-- `bridge.ts` — `buildDslSchema(config, services)` (validator schema; short type names, `rt_` stripped; service manifests → `schema.services`), `buildRecordsHost(adapter, config)` (evaluator store adapter incl. FK targets, reverse refs, and the `mutate` staging surface), `buildEvalHost(adapter, config, script, services)` (the four roots + named functions + `onQueuedFailure`; `context.user` is a demo stub until auth), `joinScript`/`resolveFunctions` (array-of-lines → source).
-- `validateConfig.ts` — validates every datasource, show_condition (attribute-level, and activity-level with the `attributes` root banned), validation rule, hook (before hooks in gate mode), and named function against the schema at app start ("config-save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`.
+Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost` / `coerceCaptured` / `joinScript`) and `validateConfig` moved to `@fluxus/engine` at Extraction — see the engine SPEC. The workbench triggers the config-save-time check via `engine.reportConfigFindings()` at app start ("save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`.
 
 **Seeds:** an entity file may carry `seeds` (sample records); the adapter loads them only when the store has no records of that type. Cities/suburbs ship seeded so the location picker works out of the box.
 
@@ -95,17 +93,20 @@ Activity history is append-only and never edited, so **cancel can never mean del
 ```
 config/{attributes,functions}.json + config/entities/*.json
   └── config.ts (merges to one typed ConfigRaw)
-        └── store/LocalStorageAdapter (seeds defs; loads/persists records; pub/sub;
-              enforces field constraints on CREATE/UPDATE; key 'fluxus:sdm:records')
-              └── context/AppContext (singleton adapter; subscribe → tick → re-render;
-                    selection state; runActivity pipeline:
-                    before hook → record_map → history → after hook)
-                    └── components read via useAppContext()
+        └── @fluxus/engine LocalStorageAdapter (seeds defs; loads/persists records;
+              pub/sub; enforces field constraints on CREATE/UPDATE;
+              host-named key 'fluxus:sdm:records', legacy 'aber-poc-v1-records')
+              └── @fluxus/engine createEngine (runActivity pipeline, evaluate,
+                    config validation — see engine SPEC)
+                    └── context/AppContext (hosts the engine singletons; subscribe →
+                          tick → re-render; selection state; UI reactions around
+                          runActivity)
+                          └── components read via useAppContext()
 ```
 
-- `store/interface.ts` is the seam: swapping localStorage for the real backend (tRPC + Neon per root ARCHITECTURE.md) is a one-file adapter change.
+- The engine's `Store` contract is the seam: swapping localStorage for the real backend (tRPC + Neon per root ARCHITECTURE.md) is a one-adapter change. Since Extraction the interface, the `LocalStorageAdapter`, the DSL bridge, `validateConfig`, and the core types all live in `@fluxus/engine`; the sdm package keeps what is workbench-specific — config, UI, `NotificationLog`, and the two service module implementations (`src/services/`).
 - Two separate gets on type selection, kept separate for the future CQRS split: `getRecordTypeDef(typeId)` (def + workflow → grid columns, CREATE discovery, activity strip) and `getRecordTypeData(typeId)` (instances → grid rows).
-- `runActivity` is the embryo of the shared activity engine (see root ARCHITECTURE.md) — it will be extracted once the page builder also drives activities.
+- Extraction stage 1 (engine package, sdm repointed) is done; stage 2 (the page builder hosting a Store and the `run activity` callback action) is next — see root ROADMAP.
 
 ## UI
 

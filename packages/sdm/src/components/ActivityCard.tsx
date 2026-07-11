@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import type { ActivityHistoryEntry } from '../types';
+import type { ActivityHistoryEntry } from '@fluxus/engine';
 
 interface Props {
   entry: ActivityHistoryEntry;

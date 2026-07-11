@@ -1,29 +1,34 @@
-import type { Store } from './interface';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from '../types';
-import { joinScript } from '../dsl/bridge';
+import type { Store } from './store';
+import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from './types';
+import { joinScript } from './bridge';
 
-const STORAGE_KEY = 'fluxus:sdm:records';
-// Pre-rename key (aber-poc era). Data found here is merged in once, then the key is removed.
-const LEGACY_STORAGE_KEY = 'aber-poc-v1-records';
+// Each host names its own storage key (fork 2: hosts configure the shared
+// adapter, they don't reimplement it). legacyStorageKey covers one-time
+// renames: data found there is merged in once, then the key is removed.
+export interface LocalStorageAdapterOptions {
+  storageKey: string;
+  legacyStorageKey?: string;
+}
 
-function loadRecords(): Map<string, RecordInstance> {
+function loadRecords(options: LocalStorageAdapterOptions): Map<string, RecordInstance> {
   let records = new Map<string, RecordInstance>();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(options.storageKey);
     if (raw) records = new Map(JSON.parse(raw) as [string, RecordInstance][]);
   } catch {
     records = new Map();
   }
 
+  if (!options.legacyStorageKey) return records;
   try {
-    const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    const legacyRaw = localStorage.getItem(options.legacyStorageKey);
     if (legacyRaw) {
       const entries: [string, RecordInstance][] = JSON.parse(legacyRaw);
       for (const [id, record] of entries) {
         if (!records.has(id)) records.set(id, record);
       }
-      saveRecords(records);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      saveRecords(options.storageKey, records);
+      localStorage.removeItem(options.legacyStorageKey);
     }
   } catch {
     // unreadable legacy data — leave it in place, don't block loading
@@ -32,9 +37,9 @@ function loadRecords(): Map<string, RecordInstance> {
   return records;
 }
 
-function saveRecords(records: Map<string, RecordInstance>): void {
+function saveRecords(storageKey: string, records: Map<string, RecordInstance>): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...records.entries()]));
+    localStorage.setItem(storageKey, JSON.stringify([...records.entries()]));
   } catch {
     // quota exceeded or private browsing — silent
   }
@@ -46,8 +51,10 @@ export class LocalStorageAdapter implements Store {
   private records: Map<string, RecordInstance>;
   private listeners: Set<() => void> = new Set();
   private reverseIndex: Map<string, ReverseRefEntry[]>;
+  private storageKey: string;
 
-  constructor(config: ConfigRaw) {
+  constructor(config: ConfigRaw, options: LocalStorageAdapterOptions) {
+    this.storageKey = options.storageKey;
     this.recordTypes = config.recordTypes;
 
     // Build an attribute lookup keyed by attribute.key, then resolve each
@@ -92,7 +99,7 @@ export class LocalStorageAdapter implements Store {
       }
     }
 
-    this.records = loadRecords();
+    this.records = loadRecords(options);
     this.migrateNaturalIds();
     this.seedRecords(config);
   }
@@ -114,7 +121,7 @@ export class LocalStorageAdapter implements Store {
         seeded = true;
       }
     }
-    if (seeded) saveRecords(this.records);
+    if (seeded) saveRecords(this.storageKey, this.records);
   }
 
   // For record types with id_field set, rename any record whose stored id doesn't
@@ -156,7 +163,7 @@ export class LocalStorageAdapter implements Store {
       if (changed) record.customFields = newFields;
     }
 
-    saveRecords(this.records);
+    saveRecords(this.storageKey, this.records);
   }
 
   subscribe(cb: () => void): () => void {
@@ -228,7 +235,7 @@ export class LocalStorageAdapter implements Store {
 
   insertRecord(record: RecordInstance): void {
     this.records.set(record.id, record);
-    saveRecords(this.records);
+    saveRecords(this.storageKey, this.records);
     this.notify();
   }
 
@@ -261,14 +268,14 @@ export class LocalStorageAdapter implements Store {
     this.validateUpdate(recordId, fields);
     const r = this.records.get(recordId)!;
     r.customFields = { ...r.customFields, ...fields };
-    saveRecords(this.records);
+    saveRecords(this.storageKey, this.records);
     this.notify();
   }
 
   deleteRecord(recordId: string): void {
     if (!this.records.has(recordId)) throw new Error(`Record not found: ${recordId}`);
     this.records.delete(recordId);
-    saveRecords(this.records);
+    saveRecords(this.storageKey, this.records);
     this.notify();
   }
 
@@ -276,7 +283,7 @@ export class LocalStorageAdapter implements Store {
     const r = this.records.get(recordId);
     if (!r) throw new Error(`Record not found: ${recordId}`);
     r.activityHistory = [...r.activityHistory, entry];
-    saveRecords(this.records);
+    saveRecords(this.storageKey, this.records);
     this.notify();
   }
 

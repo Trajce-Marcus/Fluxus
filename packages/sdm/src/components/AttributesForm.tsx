@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
-import { coerceCaptured, coerceValue } from '../dsl/bridge';
-import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '../types';
+import { coerceCaptured, coerceValue } from '@fluxus/engine';
+import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 
 interface Props {
   activity: ActivityDef;

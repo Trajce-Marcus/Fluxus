@@ -29,8 +29,8 @@ describe('legacy localStorage migration', () => {
     localStorage.setItem(LEGACY_KEY, JSON.stringify([[legacyRecord.id, legacyRecord]]));
 
     const { config } = await import('../src/config');
-    const { LocalStorageAdapter } = await import('../src/store/LocalStorageAdapter');
-    const adapter = new LocalStorageAdapter(config);
+    const { LocalStorageAdapter } = await import('@fluxus/engine');
+    const adapter = new LocalStorageAdapter(config, { storageKey: NEW_KEY, legacyStorageKey: LEGACY_KEY });
 
     const workgroups = adapter.getRecordTypeData('rt_workgroups');
     expect(workgroups.map(r => r.id)).toContain('WG1');

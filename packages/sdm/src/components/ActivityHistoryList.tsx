@@ -1,5 +1,5 @@
 import { ActivityCard } from './ActivityCard';
-import type { RecordInstance } from '../types';
+import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
   record: RecordInstance;

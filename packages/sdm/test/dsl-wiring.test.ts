@@ -21,13 +21,13 @@ beforeAll(() => {
 
 async function setup() {
   const { config } = await import('../src/config');
-  const { LocalStorageAdapter } = await import('../src/store/LocalStorageAdapter');
+  const { LocalStorageAdapter } = await import('@fluxus/engine');
   const { NotificationLog } = await import('../src/store/NotificationLog');
   const { buildNotifyModule } = await import('../src/services/notify');
   const { buildGeoModule } = await import('../src/services/geo');
-  const { buildEvalHost: rawBuildEvalHost } = await import('../src/dsl/bridge');
-  const { validateConfig } = await import('../src/dsl/validateConfig');
-  const adapter = new LocalStorageAdapter(config);
+  const { buildEvalHost: rawBuildEvalHost } = await import('@fluxus/engine');
+  const { validateConfig } = await import('@fluxus/engine');
+  const adapter = new LocalStorageAdapter(config, { storageKey: 'fluxus:sdm:records', legacyStorageKey: 'aber-poc-v1-records' });
   const notifications = new NotificationLog();
   notifications.clear(); // the localStorage shim persists across tests in this file
   const services = [buildNotifyModule(notifications), buildGeoModule(adapter)];
@@ -78,7 +78,7 @@ describe('DSL ↔ SDM wiring', () => {
 
   it('attribute validation rule: completed_date must not be in the future', async () => {
     const { config, adapter, buildEvalHost } = await setup();
-    const { coerceValue } = await import('../src/dsl/bridge');
+    const { coerceValue } = await import('@fluxus/engine');
     const rule = 'value <= now()';
     const check = (raw: string) =>
       evaluateExpression(rule, buildEvalHost(adapter, config, {
@@ -292,7 +292,7 @@ describe('DSL Phase 3 — services through the SDM wiring', () => {
     ).toThrow(/has effects/);
     // config-save time: same rule, statically
     const { validateExpression } = await import('@fluxus/dsl');
-    const { buildDslSchema } = await import('../src/dsl/bridge');
+    const { buildDslSchema } = await import('@fluxus/engine');
     const diags = validateExpression("services.notify.user('hi')", buildDslSchema(config, services));
     expect(diags.map(d => d.message)).toEqual([
       "'services.notify.user' has effects — services with effects run in after hooks",

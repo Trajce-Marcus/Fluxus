@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Modal } from './Modal';
-import type { CustomFieldDef } from '../types';
+import type { CustomFieldDef } from '@fluxus/engine';
 
 interface Props {
   typeName: string;

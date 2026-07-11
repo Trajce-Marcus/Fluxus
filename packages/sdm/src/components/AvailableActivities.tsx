@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
-import type { ActivityDef, RecordInstance, WorkflowDef } from '../types';
+import type { ActivityDef, RecordInstance, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
   record: RecordInstance;

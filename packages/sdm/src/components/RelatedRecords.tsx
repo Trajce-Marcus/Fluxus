@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import type { RecordInstance, RecordTypeDef, WorkflowDef } from '../types';
+import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
   typeId: string;

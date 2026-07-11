@@ -5,10 +5,10 @@
 // diagnostics land on the console.
 
 import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ConfigRaw } from '../types';
+import type { ConfigRaw } from './types';
 import { buildDslSchema, joinScript, shortName } from './bridge';
 
-interface Finding {
+export interface Finding {
   where: string;
   diagnostic: Diagnostic;
 }

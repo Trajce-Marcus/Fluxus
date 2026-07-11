@@ -1,4 +1,4 @@
-import type { RecordInstance, CustomFieldDef } from '../types';
+import type { RecordInstance, CustomFieldDef } from '@fluxus/engine';
 
 function csvCell(value: string): string {
   return value.includes(',') || value.includes('"') || value.includes('\n')

@@ -4,8 +4,8 @@
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
 import { servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
-import type { AttributeDef, ConfigRaw, RecordInstance } from '../types';
-import type { Store } from '../store/interface';
+import type { AttributeDef, ConfigRaw, RecordInstance } from './types';
+import type { Store } from './store';
 
 export const shortName = (rtId: string): string => rtId.replace(/^rt_/, '');
 export const fullId = (short: string): string => `rt_${short}`;

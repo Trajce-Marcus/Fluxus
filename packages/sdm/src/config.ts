@@ -1,4 +1,4 @@
-import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef, SeedGroup } from './types';
+import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef, SeedGroup } from '@fluxus/engine';
 
 // The SDM is split for hand-editing: shared pools (attributes, functions) plus
 // one file per entity (record type + its workflow, always edited as a pair).

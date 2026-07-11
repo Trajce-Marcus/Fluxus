@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
-import type { RecordInstance, RecordTypeDef, WorkflowDef } from '../types';
+import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
   record: RecordInstance;

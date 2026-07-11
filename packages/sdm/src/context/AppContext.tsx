@@ -1,43 +1,28 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { evaluateExpression, executeScript, FluxFailError } from '@fluxus/dsl';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult } from '../types';
-import { LocalStorageAdapter } from '../store/LocalStorageAdapter';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createEngine, LocalStorageAdapter } from '@fluxus/engine';
+import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult, ScriptContext } from '@fluxus/engine';
 import { NotificationLog } from '../store/NotificationLog';
 import { config } from '../config';
-import { buildEvalHost, coerceCaptured, type ScriptContext } from '../dsl/bridge';
-import { reportConfigFindings } from '../dsl/validateConfig';
 import { buildNotifyModule } from '../services/notify';
 import { buildGeoModule } from '../services/geo';
 
-// Module-level singletons — one adapter, one notification log, one service
-// registry for the lifetime of the app.
-const adapter = new LocalStorageAdapter(config);
+// Module-level singletons — one adapter, one notification log, one engine for
+// the lifetime of the app. The engine owns the activity pipeline; this context
+// owns the workbench's UI state (selection) and channels (console warnings).
+const adapter = new LocalStorageAdapter(config, {
+  storageKey: 'fluxus:sdm:records',
+  // Pre-rename key (aber-poc era) — data found there is merged in once.
+  legacyStorageKey: 'aber-poc-v1-records',
+});
 export const notificationLog = new NotificationLog();
-const serviceModules = [buildNotifyModule(notificationLog), buildGeoModule(adapter)];
+const engine = createEngine({
+  store: adapter,
+  config,
+  services: [buildNotifyModule(notificationLog), buildGeoModule(adapter)],
+});
 
 // Config-save-time validation: with the SDM still file-edited, save time is app start.
-reportConfigFindings(config, serviceModules);
-
-// Activity-level show_condition — the availability gate. Strict boolean: only
-// `true` makes the activity available. Evaluation errors FAIL CLOSED (unlike
-// attribute show_conditions, which leave the input visible): this is an access
-// rule, and a broken gate must not wave the activity through.
-function activityAvailability(
-  activity: ActivityDef,
-  anchorRecord: RecordInstance | null
-): { available: boolean; error?: string } {
-  if (!activity.show_condition) return { available: true };
-  try {
-    const result = evaluateExpression(
-      activity.show_condition,
-      buildEvalHost(adapter, config, { anchorRecord, activity: { id: activity.id, name: activity.name } }, serviceModules)
-    );
-    return { available: result === true };
-  } catch (err) {
-    console.warn(`show_condition failed for activity '${activity.id}' — failing closed:`, err);
-    return { available: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
+engine.reportConfigFindings();
 
 interface AppContextValue {
   recordTypes: RecordTypeDef[];
@@ -74,10 +59,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [, setTick] = useState(0);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
-
-  // Ref keeps current typeId accessible in the stable runActivity callback
-  const selectedTypeIdRef = useRef(selectedTypeId);
-  selectedTypeIdRef.current = selectedTypeId;
 
   // Re-render whenever the adapter mutates (createRecord / appendActivity / updateRecord)
   useEffect(() => adapter.subscribe(() => setTick(t => t + 1)), []);
@@ -129,139 +110,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const dslEvaluate = useCallback(
-    (source: string, script: ScriptContext) =>
-      evaluateExpression(source, buildEvalHost(adapter, config, script, serviceModules)),
+    (source: string, script: ScriptContext) => engine.evaluate(source, script),
     []
   );
 
+  // Thin host wrapper over the engine pipeline: the engine runs the activity;
+  // the workbench reacts — deselect a deleted record, console the warnings
+  // (its channel until a toast slot exists).
   const runActivity = useCallback((
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
   ): RunActivityResult => {
-    // Availability gate — first step of the pipeline, before the before hook.
-    // The UI hides unavailable activities, but the gate is the enforcement
-    // point (headless callers skip the UI entirely).
-    const availability = activityAvailability(activity, anchorRecord);
-    if (!availability.available) {
-      throw new Error(
-        availability.error
-          ? `'${activity.name}' availability check failed — blocked: ${availability.error}`
-          : `'${activity.name}' is not available for this record`
-      );
+    const result = engine.runActivity(activity, captured, anchorRecord, options);
+    if (result.status === 'done') {
+      if (activity.record_map === 'DELETE' && result.recordId) {
+        const deletedId = result.recordId;
+        setSelectedRecordId(id => (id === deletedId ? null : id));
+      }
+      if (result.warnings.length > 0) console.warn(`[${activity.name}]`, result.warnings.join(' · '));
     }
-
-    const warnings: string[] = [];
-    // Attributes declared unavailable: scripts see them as null, they never
-    // write to record fields, and the waiver lands on the history entry.
-    const waived = options?.waived ?? {};
-
-    // Hooks see captured values coerced to their attribute's declared type (DSL_SPEC §5)
-    const stringValues = Object.fromEntries(
-      Object.entries(captured).map(([k, v]) => [k, String(v ?? '')])
-    );
-    const typedAttributes = coerceCaptured(activity.attributes, stringValues);
-    const scriptContext: ScriptContext = {
-      attributes: typedAttributes,
-      anchorRecord,
-      activity: { id: activity.id, name: activity.name },
-    };
-
-    // before hook = gate (DSL_SPEC §6): read-only; fail() rejects the activity
-    // before anything persists. A runtime error in the hook also blocks — a
-    // broken gate must not wave submissions through.
-    if (activity.before_hook) {
-      try {
-        const result = executeScript(activity.before_hook, buildEvalHost(adapter, config, scriptContext, serviceModules), { mode: 'read' });
-        warnings.push(...result.warnings);
-      } catch (err) {
-        if (err instanceof FluxFailError) throw new Error(err.message);
-        throw new Error(`Before hook error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      // Gate warnings are a soft stop: hand them back for the user to confirm.
-      // Nothing has persisted (the gate is read-only), so cancelling is free.
-      if (warnings.length > 0 && !options?.acknowledgedWarnings) {
-        return { status: 'needs-confirmation', warnings };
-      }
-    }
-
-    let targetRecordId: string;
-
-    if (activity.record_map === 'CREATE') {
-      const typeId = selectedTypeIdRef.current!;
-      // Exact-key matching: only attributes whose key matches a custom_field key are written.
-      // Unmatched attributes (e.g. 'raise_notes' on the sample Raise activity) are silently dropped.
-      // This is SDM §1.9.3 rule 2 — DO NOT treat it as a bug.
-      const cfKeys = new Set(
-        adapter.getRecordTypeDef(typeId).custom_fields.map(cf => cf.key)
-      );
-      const mappedFields: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(captured)) {
-        if (cfKeys.has(k) && !(k in waived)) mappedFields[k] = v; // waived: field seeds from default
-      }
-      const newRecord = adapter.createRecord(typeId, mappedFields);
-      targetRecordId = newRecord.id;
-    } else if (activity.record_map === 'UPDATE') {
-      // Exact-key matching against the anchor record's custom fields — SDM §1.9.5.
-      const cfKeys = new Set(
-        adapter.getRecordTypeDef(anchorRecord!.typeRef).custom_fields.map(cf => cf.key)
-      );
-      const mappedFields: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(captured)) {
-        // Waived = "can't provide it now" — it must never blank a value
-        // someone captured earlier
-        if (cfKeys.has(k) && !(k in waived)) mappedFields[k] = v;
-      }
-      adapter.updateRecord(anchorRecord!.id, mappedFields);
-      targetRecordId = anchorRecord!.id;
-    } else if (activity.record_map === 'DELETE') {
-      if (String(captured['confirm'] ?? '').trim() !== 'DELETE') return { status: 'done', warnings };
-      const recordId = anchorRecord!.id;
-      adapter.deleteRecord(recordId);
-      // deselect if this record was selected
-      setSelectedRecordId(id => (id === recordId ? null : id));
-      return { status: 'done', warnings };
-    } else {
-      // ordinary capture — append against the anchor record
-      targetRecordId = anchorRecord!.id;
-    }
-
-    // append an entry to the Record's activity history; acknowledged gate
-    // warnings are part of the submission's story (audit), captured separately
-    // from user input
-    adapter.appendActivity(targetRecordId, {
-      activityId: activity.id,
-      activityName: activity.name,
-      capturedAttributes: captured,
-      ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
-      ...(Object.keys(waived).length > 0 ? { waived: { ...waived } } : {}),
-      timestamp: new Date().toISOString(),
-    });
-
-    // after hook = effects (DSL_SPEC §6–§7): mutations stage during the run and
-    // commit atomically; queued service calls dispatch only after the commit.
-    // The activity itself has already persisted — a failing after hook applies
-    // no changes but does not un-record the activity.
-    if (activity.after_hook) {
-      try {
-        const result = executeScript(
-          activity.after_hook,
-          buildEvalHost(adapter, config, { ...scriptContext, anchorRecord: adapter.getRecord(targetRecordId) }, serviceModules),
-          { mode: 'mutate' },
-        );
-        warnings.push(...result.warnings);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`After hook failed — the activity was recorded but no changes were applied: ${message}`);
-      }
-    }
-
-    // After-hook warnings are informational (the commit already happened):
-    // console for now, until the workbench grows a toast slot.
-    if (warnings.length > 0) console.warn(`[${activity.name}]`, warnings.join(' · '));
-    return { status: 'done', warnings };
-  }, [setSelectedRecordId]);
+    return result;
+  }, []);
 
   // Derived from adapter on every render; forceUpdate (via setTick) keeps it fresh
   const rtDef = selectedTypeId
@@ -277,13 +148,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       recordTypes: adapter.listRecordTypes(),
       selectedRecordType: rtDef,
       selectedRecord,
-      selectRecordType,
       selectRecord,
+      selectRecordType,
       getRecordTypeData: (typeId) => adapter.getRecordTypeData(typeId),
       getRecordTypeDef,
       getRecordAndType,
       runActivity,
-      isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
+      isActivityAvailable: (activity, anchorRecord) => engine.isActivityAvailable(activity, anchorRecord),
       resolveDisplayLabel,
       resolveAttributeDisplayField,
       getReverseRefs,
