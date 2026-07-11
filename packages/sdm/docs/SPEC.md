@@ -53,6 +53,34 @@ Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.
 
 `validateConfig` passes the registry, so the shipped config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring").
 
+## The pipeline is the log (design direction, agreed July 2026 — not yet built)
+
+There is no logging subsystem and there will not be one. Warnings, notifications, service dispatches, and observability are all **ordinary history data in the one pipeline**. Agreed in discussion 2026-07-10; lands physically with the backend (Postgres history table); nothing here is implemented in the workbench yet.
+
+**The invariant.** All data operations happen via activities within workflows, and every workflow anchors to a record — no exceptions without prior discussion. The platform in one sentence: records have workflows; workflows have activities; activities are the only way anything happens; some record types are the system's own.
+
+**Class: `direct` vs `system`.** Record types are classed — *direct* (business truth: work orders) or *indirect/system* (apps, no-UI workflow anchors, notifications). History entries inherit class by a rule nobody applies per-entry:
+user-authored submissions on direct types = `direct`; engine-authored entries = `system`; everything on indirect types = `system`. Retention promise, precisely: **no entry of either class is ever edited; direct history is never trimmed; system history is retention-managed** by a visible governed policy (management tooling later — not MVP).
+
+**Recording what a run did.** A run that executes an after hook appends up to two entries to the record's history:
+
+1. *Submission entry* (`direct`, user-authored — exists today): `capturedAttributes` = exactly what the user entered; acknowledged gate warnings ride on it.
+2. *Execution entry* (`system`, engine-authored — the after-hook run recorded like a human's run): its attributes state plainly what the machinery did — "record XYZ created", "email sent", after-hook warnings. **Appended only when there is something to say.** This replaces both the "activity log stream" and the "outbox table" ideas — deleted from the vocabulary.
+
+No linking key between the two: every activity runs against a record, so both entries already sit on the same record's history. If real usage ever shows a tracing gap, a link can be added then — not before.
+
+**Notifications — OPEN, deliberately deferred (July 2026).** The candidate shape is "notifications are records on an indirect record type" (created through the pipeline; delivery outcomes appended as activities), but this is *not agreed*: what notifications the platform actually needs is unknown yet, and designing their storage before knowing their use is premature. What IS agreed: no bespoke store survives long-term — the workbench's current `NotificationLog` + bell is a disposable stand-in either way. Related deferred question, same discussion: history entries that need to **move/re-anchor from one record to another** (e.g. a notification arising on one record but belonging to another) — to be worked through against the never-edited promise (the archiving move-never-edit precedent is the likely key).
+
+**GET requests are logged light**, as system-class entries: params, caller, outcome, duration — **never the returned data**. (This deliberately supersedes the earlier "GET writes nothing": system-class + governed retention resolves the objection that killed logging then.)
+
+**Read service calls are not logged individually** (datasource-evaluation volume); they're subsumed by the activity/GET that triggered them. Effect dispatches are always recorded (execution entry + notification-style records).
+
+**`watch` is the single escalation valve** — a per-activity dial that captures more when needed: validation failures, individual read calls, payloads. One mechanism; no ad-hoc logging switches.
+
+**Not logged / parked (decisions, not accidents):** UI errors — not logged, accepted. Rejected submissions (gate `fail`) leave no trace — watchable when needed. SDM config edits live outside the pipeline — the platform-to-build-the-platform spiral is deliberately not entered.
+
+**Sequencing:** MVP-first — ride the pipeline, take the free wins (uniform audit, AI-legible stream, zero logging concepts for implementers), build retention tooling when real usage provides metrics.
+
 ## Cancelling a mistaken activity (doctrine, decided July 2026)
 
 Activity history is append-only and never edited, so **cancel can never mean delete — it means compensate**: post a new activity that reverses the effects and references the mistake, the way accounting posts a reversal instead of erasing a journal entry.

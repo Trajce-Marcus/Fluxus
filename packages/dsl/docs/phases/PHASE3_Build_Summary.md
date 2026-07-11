@@ -6,7 +6,7 @@
 
 The `services` root became a **registry of manifest-carrying modules**, with purity enforcement, registry-strict validation, and two live modules in the sdm workbench. 186 tests in `@fluxus/dsl` (up from 173), 21 wiring/acceptance tests in `@fluxus/sdm` (up from 16).
 
-**Async fork (user decision, this phase):** the evaluator stays synchronous; the async internal-await refactor is deferred to the backend phase. The registry API is async-shaped now (functions may return Promises) so nothing renames later — only evaluator internals change.
+**Async fork (Claude recommended deferral; user approved):** the evaluator stays synchronous; the async internal-await refactor is deferred to the backend phase. The registry API is async-shaped now (functions may return Promises) so nothing renames later — only evaluator internals change.
 
 ## What was built
 
@@ -29,7 +29,7 @@ The `services` root became a **registry of manifest-carrying modules**, with pur
 
 ## Deliberate simplifications (not bugs)
 
-- Sync evaluator; waiting async calls error until the backend-phase async refactor (user-confirmed deferral).
+- Sync evaluator; waiting async calls error until the backend-phase async refactor (deferral recommended by Claude, approved by the user).
 - `queue`ing a `read` function is allowed silently (pointless but harmless).
 - POC `notify` "sends" to the in-app notification centre only; `email` records, never delivers. A real gateway slots behind the same manifests.
 - Async `queue` dispatch failures go to the console via the bridge; a toast/banner slot may take over later.
