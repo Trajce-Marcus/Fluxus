@@ -1,0 +1,11 @@
+- when a create record is done via workbench need the new record to be selected and the record detail view show that record. tHe selected record should scroll into view
+- to aid uat, can the workbencj components be highlighted with their names, so that I dont have to reash their names, can be turned off later
+- the record grid header should be sticky at the top of the container, ditto record detail view
+- need a activity bar for the workbencb
+- add a workflow mamager (or ther suitable name) to the workbench.  Thus will list workflows, aloow to view definitions, as json objects, edit them, run activitys etc, this will need to be scoped
+- new attribute type that has editing component different from display component eg A Yes/No/NA list using radio buttons
+-important: activity level access control using show_condition eg on a wo records updsate activity, show_condition = record.status <> 'completed'. Again this condition must be checked at the server when received, hopefully that follows similar patterns as attribute validation.  Another example, re an asset 'status update', show_condition = ctx.user.roles.where(role = 'asset admin').  My syntax is illustrative only. 
+- important: do we allow a way to cancel activities in some cases eg when there was anobbious mistake.  Would this be built into the DSL or would ther be a seperate admin console
+- based on what we have so far how does the platform abide or not abide by essental 8 standard?
+- what will happen if in hooks u use variables? We probably need comprehensive doc arouns FluxScript
+- need way of updating config.ts, probably via tool
