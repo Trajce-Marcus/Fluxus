@@ -36,7 +36,13 @@ export const packCallbackData = (value: unknown, data: unknown): CallbackPayload
   data: data ?? null,
 });
 
-// ── services.page ─────────────────────────────────────────────────────────────
+// ── services.page + services.activities ──────────────────────────────────────
+// Two modules with one handler set. `page` is honestly UI-only; `activities`
+// is the host-neutral activity surface (ruled 2026-07-12): its manifest is
+// identical across hosts, each host supplies its own implementation — the
+// page host opens the capture form for UI activities, a headless host (Phase
+// 4) will take attributes directly. Scripts that only run activities are
+// therefore host-portable.
 
 /** What the rendering host (ComponentContainer) supplies per component instance. */
 export interface PageServiceHandlers {
@@ -52,35 +58,43 @@ export interface PageServiceHandlers {
   runActivity(activityId: string, record: unknown, data: unknown): void;
 }
 
-export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef {
-  return {
-    name: 'page',
-    description: 'UI-local effects only the page host provides',
-    functions: {
-      setContext: {
-        params: ['key', 'value'],
-        description: 'Set a page context key (context.page.<key>)',
-        kind: 'effect',
-        fn: (key, value) => handlers.setContext(String(key), value),
-      },
-      hideComponent: {
-        params: [],
-        description: 'Hide this component instance',
-        kind: 'effect',
-        fn: () => handlers.hideComponent(),
-      },
-      runActivity: {
-        params: ['activityId', 'record', 'data'],
-        description: 'Run an activity: the anchor record (id or null) and the callback data object',
-        kind: 'effect',
-        fn: (activityId, record, data) => handlers.runActivity(String(activityId), record, data),
+export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
+  return [
+    {
+      name: 'page',
+      description: 'UI-local effects only the page host provides',
+      functions: {
+        setContext: {
+          params: ['key', 'value'],
+          description: 'Set a page context key (context.page.<key>)',
+          kind: 'effect',
+          fn: (key, value) => handlers.setContext(String(key), value),
+        },
+        hideComponent: {
+          params: [],
+          description: 'Hide this component instance',
+          kind: 'effect',
+          fn: () => handlers.hideComponent(),
+        },
       },
     },
-  };
+    {
+      name: 'activities',
+      description: 'Run activities — the host-neutral mutation path',
+      functions: {
+        run: {
+          params: ['activityId', 'record', 'data'],
+          description: 'Run an activity: the anchor record (id or null) and the callback data object',
+          kind: 'effect',
+          fn: (activityId, record, data) => handlers.runActivity(String(activityId), record, data),
+        },
+      },
+    },
+  ];
 }
 
-/** Manifest-only module for validation — same schema, no live handlers. */
-export const pageServicesStub = (): ServiceModuleDef =>
+/** Manifest-only modules for validation — same schema, no live handlers. */
+export const pageServicesStub = (): ServiceModuleDef[] =>
   buildPageServices({ setContext: () => {}, hideComponent: () => {}, runActivity: () => {} });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────
@@ -147,14 +161,14 @@ export function runPageCallback(
       readonlyRecords: true,
       extras: { callbackData },
     },
-    [buildPageServices(handlers)],
+    buildPageServices(handlers),
   );
   executeScript(source, host, { mode: 'mutate' });
 }
 
 // ── Validation (shared by the editor dialog and validatePage) ─────────────────
 
-const pageSchema = () => buildDslSchema(config, [pageServicesStub()]);
+const pageSchema = () => buildDslSchema(config, pageServicesStub());
 
 const pageFunctions = () => functionSignatures(config);
 

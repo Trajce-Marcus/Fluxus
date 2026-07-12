@@ -165,10 +165,10 @@ describe('script validation — service registry in hooks', () => {
     expect(diag(`services.notify.sms('1', 'hi')`, callback)).toEqual([]);
     expect(diag(`queue services.notify.sms('1', 'hi')`, callback)).toEqual([]);
     expect(diag(`context.record.update({ status: 'x' })`, callback)).toEqual([
-      "error: update() is not allowed in callbacks — mutations flow through activities (services.page.runActivity)",
+      "error: update() is not allowed in callbacks — mutations flow through activities (services.activities.run)",
     ]);
     expect(diag(`records.wo_resources.create({ qty: 1 })`, callback)).toEqual([
-      "error: create() is not allowed in callbacks — mutations flow through activities (services.page.runActivity)",
+      "error: create() is not allowed in callbacks — mutations flow through activities (services.activities.run)",
     ]);
   });
 });

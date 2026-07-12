@@ -78,7 +78,7 @@ export function validatePage(def: PageDef): PageFinding[] {
 }
 
 /**
- * Resolve literal activity ids passed to services.page.runActivity against
+ * Resolve literal activity ids passed to services.activities.run against
  * the SDM. Non-literal first arguments are left to runtime — the reference
  * check is for the common, statically-knowable case.
  */
@@ -93,8 +93,8 @@ function checkActivityRefs(source: string): Diagnostic[] {
   walk(body, (call) => {
     const callee = call.callee;
     if (
-      callee.kind === 'member' && callee.name === 'runActivity' &&
-      callee.object.kind === 'member' && callee.object.name === 'page' &&
+      callee.kind === 'member' && callee.name === 'run' &&
+      callee.object.kind === 'member' && callee.object.name === 'activities' &&
       callee.object.object.kind === 'ident' && callee.object.object.name === 'services'
     ) {
       const first = call.args[0]?.value;

@@ -53,7 +53,7 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
     return true;
   }, []);
 
-  // services.page.runActivity — the callback contract stays (record, data):
+  // services.activities.run — the callback contract stays (record, data):
   // UI activity (has attributes) → standard capture form; non-UI → straight
   // to the hooks with the data object as the `callbackData` root.
   const launchActivity = useCallback((activityId: string, record: unknown, data: unknown) => {
@@ -69,8 +69,8 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
     }
   }, [runNow]);
 
-  // The services.page module for this component instance — UI-local effects
-  // only the page host can supply (PAGE_WIRING_DESIGN decision 5).
+  // Handlers behind services.page (UI-local effects) and services.activities
+  // (host-neutral activity runs) for this component instance.
   const serviceHandlers = useMemo<PageServiceHandlers>(() => ({
     setContext: onContextChange,
     hideComponent: () => setHidden(true),

@@ -7,11 +7,20 @@
 // bare textarea when unreachable.
 
 import * as monaco from 'monaco-editor';
+// The shell renders inside a shadow root, and document-head styles don't
+// pierce it — monaco's stylesheet must ride the shell's own css-injection
+// channel (a <style> inside the shadow root). Export the aggregate sheet as
+// a string; ExpressionDialog folds it into its exported css. Without this
+// the editor renders as a bare unstyled textarea (same symptom the CDN
+// loader showed — it appends styles to the document head too).
+import monacoCss from 'monaco-editor/min/vs/editor/editor.main.css?inline';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import { loader, type Monaco } from '@monaco-editor/react';
 
 self.MonacoEnvironment = { getWorker: () => new editorWorker() };
 loader.config({ monaco });
+
+export { monacoCss };
 
 export const FLUXSCRIPT = 'fluxscript';
 

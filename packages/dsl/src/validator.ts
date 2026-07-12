@@ -703,7 +703,7 @@ class Validator {
     } else if (this.mode === 'before') {
       this.error(expr, `Before hooks validate only — move ${method}() to the after hook`);
     } else if (this.mode === 'callback') {
-      this.error(expr, `${method}() is not allowed in callbacks — mutations flow through activities (services.page.runActivity)`);
+      this.error(expr, `${method}() is not allowed in callbacks — mutations flow through activities (services.activities.run)`);
     }
 
     const type =

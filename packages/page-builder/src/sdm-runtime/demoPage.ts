@@ -1,7 +1,7 @@
 // Seeds the demo page (once, only if absent): a WorkOrderList wired to the
 // sample SDM in FluxScript — workOrders from a records expression, onDispatch
 // to the non-UI dispatch activity, onReschedule to the form-based reschedule
-// activity (both via services.page.runActivity). Delete the page in the
+// activity (both via services.activities.run). Delete the page in the
 // explorer to get rid of it; it will reseed on next load only if the path is
 // free again.
 
@@ -36,8 +36,8 @@ const demoPage: PageDef = {
         workOrders: `records.work_orders`,
       },
       callbacks: {
-        onDispatch: `services.page.runActivity('act_dispatch_work_orders', callbackData.value, callbackData.data)`,
-        onReschedule: `services.page.runActivity('act_reschedule_work_orders', callbackData.value, callbackData.data)`,
+        onDispatch: `services.activities.run('act_dispatch_work_orders', callbackData.value, callbackData.data)`,
+        onReschedule: `services.activities.run('act_reschedule_work_orders', callbackData.value, callbackData.data)`,
       },
     },
   },

@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import type { Diagnostic } from '@fluxus/dsl';
-import { FLUXSCRIPT, registerFluxscript } from './fluxscriptLanguage';
+import { FLUXSCRIPT, registerFluxscript, monacoCss } from './fluxscriptLanguage';
 import { validatePageExpression, validatePageCallback } from './pageHost';
 
 export interface ExpressionDialogProps {
@@ -81,6 +81,8 @@ export function ExpressionDialog({ title, hint, kind, initialSource, onSave, onC
 }
 
 export const css = `
+  ${monacoCss}
+
   .xd-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
   .xd-dialog { width: 640px; max-width: 92vw; background: var(--color-sidebar, #252526); border: 1px solid var(--color-border, #3c3c3c); border-radius: 6px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
   .xd-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px; }

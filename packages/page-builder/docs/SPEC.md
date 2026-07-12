@@ -46,11 +46,10 @@ One language, one validator, every surface (PAGE_WIRING_DESIGN). The dropdown-bu
 
 **Callbacks are scripts.** `SlotConfig.callbacks` maps callbackName → FluxScript script source. Components emit `(value, data?)`; the host packs both under the **`callbackData` root** (`callbackData.value` / `callbackData.data`). Scripts run in `'mutate'` mode (service effects execute) against a read-only records host — direct record writes throw: **mutations flow only through activities**. The validator's `'callback'` mode enforces the same statically.
 
-**`services.page`** (pageHost.ts) — UI-local effects only this host injects; a page callback, a hook, and a future non-UI workflow differ only in which service modules their host provides:
+**`services.page` + `services.activities`** (pageHost.ts) — two modules, one handler set; a page callback, a hook, and a future non-UI workflow differ only in which service modules their host provides:
 
-- `setContext(key, value)` — write a `context.page` key.
-- `hideComponent()` — hide the invoking component instance.
-- `runActivity(activityId, record, data)` — the only mutation path from a page. The callback contract stays (record, one data object): UI activity (has attributes) → the standard capture form opens; non-UI → straight to the hooks with `data` as the hooks' `callbackData` root. One engine pipeline either way: availability gate, hooks, history. Warn soft-stops get the platform confirm dialog; errors land on the page's error surface; outcomes flow back by re-evaluating dynamic props after the run.
+- `services.page` — UI-local effects only this host injects: `setContext(key, value)` (write a `context.page` key), `hideComponent()` (hide the invoking component instance).
+- `services.activities.run(activityId, record, data)` — the host-neutral activity surface (ruled 2026-07-12: not on `page`, so activity-running scripts stay host-portable). The manifest is identical across hosts; each host supplies its own implementation. Here: the only mutation path from a page, callback contract (record, one data object) — UI activity (has attributes) → the standard capture form opens; non-UI → straight to the hooks with `data` as the hooks' `callbackData` root. One engine pipeline either way: availability gate, hooks, history. Warn soft-stops get the platform confirm dialog; errors land on the page's error surface; outcomes flow back by re-evaluating dynamic props after the run. A headless host (Phase 4) provides the same module taking attributes directly.
 
 The old `show-overlay` action and `OverlayConfig` were cut (stub with no consumer — ruled in the design doc: complete or cut).
 
@@ -65,7 +64,7 @@ Save-time validation of the whole page file against the model (ROADMAP item 5):
 - component names against the registry (`componentManifests`)
 - static config keys and binding names against the component's prop schema (wrong kind is an error; a required dynamic prop with no expression is a warning)
 - dynamic-prop expressions and callback scripts via the shared validators above
-- literal activity ids passed to `services.page.runActivity` against real activities (AST walk; non-literal ids are left to runtime)
+- literal activity ids passed to `services.activities.run` against real activities (AST walk; non-literal ids are left to runtime)
 
 Findings report to the console with `[page <path>]` prefixes, same voice as the engine's `reportConfigFindings`.
 
