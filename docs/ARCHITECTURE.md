@@ -55,7 +55,7 @@ The activity pipeline — resolve attributes → evaluate show conditions → va
 
 1. **SDM record workbench** — activity strip / CREATE launch on the grid. *(Live.)*
 2. **Page builder apps** — a component's named callback wired to `run-activity`; the callback contract is (record, one data object). UI activities open the standard capture form; non-UI activities pass straight to the hooks, which read the data object via the `callbackData` root. Same gate, hooks, history. *(Live — Extraction stage 2.)*
-3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation. *(DSL Phase 4 + backend.)*
+3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation. *(Live — `@fluxus/server`, backend stage 1, 2026-07-12: `activities.run` over tRPC; the server loads the scope's partition into an in-memory Store per request, runs the same sync engine, and writes back transactionally. Browser hosts still run on localStorage until backend stage 2 repoints them.)*
 
 ## The ComponentContainer is the reuse seam
 
@@ -100,6 +100,6 @@ Records live in two stores with different jobs (CQRS):
 | | Column store (e.g. ClickHouse, BigQuery) — only if analytics outgrow Postgres | A third projection from the same activity stream; nothing upstream changes. |
 | Compute | **Hono (local) / AWS Lambda (prod)** — agreed | Same tRPC router both sides; the DSL interpreter is one TypeScript implementation running in browser and server. |
 
-**v1 deployment: one Neon Postgres wearing both hats** — JSONB transactional tables plus projected relational schemas, projection synchronous in-transaction (no sync infrastructure while the platform is young). The two-layer *architecture* holds from day one; DynamoDB and async projection are deployment upgrades behind existing seams, not redesigns.
+**v1 deployment: one Neon Postgres wearing both hats** — JSONB transactional tables plus projected relational schemas, projection synchronous in-transaction (no sync infrastructure while the platform is young). The two-layer *architecture* holds from day one; DynamoDB and async projection are deployment upgrades behind existing seams, not redesigns. In development (no `DATABASE_URL`) the same Drizzle schema runs on **PGlite** — Postgres compiled to WASM, in-process — so dev/test needs no installed database; Neon is a connection string away.
 
-The engine package's `Store` contract and the DSL's `RecordsHost` are the seams all of this hides behind. Drizzle ORM over Neon for schema and queries; tRPC for the function-call API surface (no GET/POST distinction — pages and headless callers just call functions by name).
+The engine package's `Store` contract and the DSL's `RecordsHost` are the seams all of this hides behind. Drizzle ORM over Postgres for schema and queries; tRPC for the function-call API surface (no GET/POST distinction — pages and headless callers just call functions by name). One consequence of keeping the Store synchronous (ruled at Phase 4): the server does not talk to Postgres *through* a Store — it snapshots the scope's partition into the engine's in-memory Store per request and writes the diff back in one transaction, which is the partition-fetch model above made literal and is exactly what transactional-layer leanness guarantees stays cheap.

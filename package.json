@@ -8,6 +8,8 @@
     "dev": "npm run dev --workspace=@fluxus/sdm",
     "dev:sdm": "npm run dev --workspace=@fluxus/sdm",
     "dev:page-builder": "npm run dev --workspace=@fluxus/page-builder",
+    "dev:server": "npm run dev --workspace=@fluxus/server",
+    "seed:server": "npm run seed --workspace=@fluxus/server",
     "build:sdm": "npm run build --workspace=@fluxus/sdm",
     "build:page-builder": "npm run build --workspace=@fluxus/page-builder",
     "build": "npm run build --workspaces --if-present"

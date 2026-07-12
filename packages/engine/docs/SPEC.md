@@ -24,17 +24,26 @@ against.
 src/types.ts       — SDM config + runtime types (ConfigRaw, RecordTypeDef,
                      ActivityDef, RecordInstance, ActivityHistoryEntry, …)
 src/store.ts       — the Store contract (the persistence seam)
-src/localStorageAdapter.ts — reference Store impl, browser localStorage
+src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storage
+                     (extracted from LocalStorageAdapter at DSL Phase 4)
+src/localStorageAdapter.ts — MemoryAdapter + localStorage persistence (browser)
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
+src/validateSubmission.ts — headless payload validation (DSL Phase 4): the
+                     attribute trio + datasource membership as one check
+src/services/geo.ts — shared geo module (Store-backed, host-agnostic)
 src/engine.ts      — createEngine: the runActivity pipeline + evaluation entry
 ```
 
 What it deliberately does **not** own: UI of any kind, React, selection state,
 notification surfaces (`NotificationLog` stays in sdm), service module
-*implementations* (hosts supply them; the engine only carries them to the
-evaluator/validator), and the SDM config itself (config distribution is an
-open thread — see root ROADMAP).
+*implementations* with host-owned sinks (hosts supply them; the engine only
+carries them to the evaluator/validator — `notify` differs per host), and the
+SDM config itself (config distribution is an open thread — see root ROADMAP).
+Two service modules are engine-owned because their sink/source is engine
+state: `logger` (sink = the history entry) and, since DSL Phase 4, `geo`
+(source = Store reference data; moved from sdm so all three hosts share one
+implementation).
 
 ## The Engine object
 
@@ -130,15 +139,38 @@ record to the anchor and passes the object as `options.callbackData`.
 `src/store.ts` — unchanged from the sdm original: type/def/data reads, staged
 mutation halves (`buildRecord`/`insertRecord`, `validateUpdate`/apply),
 `appendActivity`, `subscribe`, FK display/reverse-ref resolution. It is the
-persistence seam: the backend (tRPC + Neon per root ARCHITECTURE.md) arrives
-as another Store implementation; scripts and hosts don't change.
+persistence seam — and it is deliberately **synchronous**: the backend host
+(@fluxus/server, DSL Phase 4) does not implement an async Store; it loads the
+scope's partition into a `MemoryAdapter` per request, runs the sync engine,
+and writes the diff back transactionally (root ARCHITECTURE.md
+"partition-fetch + filter"). The DSL's async-shaped API remains the seam if a
+truly async evaluator is ever needed.
 
-`LocalStorageAdapter` is the reference implementation, shared by both browser
-hosts and parameterised by key (fork 2): each host names its own
-`storageKey` (sdm: `fluxus:sdm:records`; page builder will use
-`fluxus:page-builder:records`) — separate data per host until the backend
-makes "one model, many apps" literal. `legacyStorageKey` supports one-time
-key renames (merge once, remove old key).
+`MemoryAdapter` (extracted at DSL Phase 4) is the reference implementation:
+workflow/attribute resolution, constraint checks, staged mutation halves,
+seeding, natural-id migration — with a protected `persist()` no-op hook and
+`allRecords()` for diffing hosts. `LocalStorageAdapter` subclasses it, shared
+by both browser hosts and parameterised by key (fork 2): each host names its
+own `storageKey` (sdm: `fluxus:sdm:records`; page builder:
+`fluxus:page-builder:records`) — separate data per host until the browser
+hosts repoint at the backend, making "one model, many apps" literal.
+`legacyStorageKey` supports one-time key renames (merge once, remove old
+key).
+
+### validateSubmission (DSL Phase 4)
+
+`validateSubmission(engine, activity, captured, anchorRecord, waived)` — the
+attribute trio applied as one payload check for callers with no capture form,
+per DSL_SPEC §5 ("in headless mode the datasource doubles as validation").
+Semantics mirror the workbench's AttributesForm: attribute show_conditions
+fail OPEN (the activity-level gate inside runActivity is the fail-closed
+one); hidden attributes are exempt from `required`; waivers need can_waive +
+a reason; validation rules run on non-empty values with typed `value`
+injected. Headless-strict additions the form guarantees by construction:
+unknown keys, values supplied for hidden attributes, list values outside
+their datasource (fail closed on datasource errors), and dangling references
+are all rejected. The workbench form keeps its interactive per-field checks;
+folding it onto this function is an open cleanup.
 
 ## Bridge and validation
 

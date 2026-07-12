@@ -1,10 +1,12 @@
-// services.geo — the workbench's read module (DSL Phase 3). Backed by the
-// seeded cities/suburbs data; a real geocoder slots behind the same manifest
-// when the backend (and the async evaluator) lands.
+// services.geo — read module over the cities/suburbs reference data (DSL
+// Phase 3). Moved from the sdm workbench at DSL Phase 4: it is built purely on
+// the Store contract, so every host (workbench, page builder, server) shares
+// one implementation — like `logger`, its sink/source is engine-owned state.
+// A real geocoder slots behind the same manifest when one is needed.
 
 import { FkPointer, type ServiceModuleDef } from '@fluxus/dsl';
-import type { Store } from '@fluxus/engine';
-import { toDslRecord } from '@fluxus/engine';
+import type { Store } from '../store';
+import { toDslRecord } from '../bridge';
 
 export function buildGeoModule(adapter: Store): ServiceModuleDef {
   return {

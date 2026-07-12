@@ -4,7 +4,7 @@ import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRe
 import { NotificationLog } from '../store/NotificationLog';
 import { config } from '../config';
 import { buildNotifyModule } from '../services/notify';
-import { buildGeoModule } from '../services/geo';
+import { buildGeoModule } from '@fluxus/engine';
 
 // Module-level singletons — one adapter, one notification log, one engine for
 // the lifetime of the app. The engine owns the activity pipeline; this context

@@ -8,8 +8,15 @@ export { createEngine } from './engine';
 export type { Engine, EngineOptions, ActivityAvailability, RunActivityOptions } from './engine';
 
 export type { Store } from './store';
+export { MemoryAdapter } from './memoryAdapter';
+export type { MemoryAdapterOptions } from './memoryAdapter';
 export { LocalStorageAdapter } from './localStorageAdapter';
 export type { LocalStorageAdapterOptions } from './localStorageAdapter';
+
+export { buildGeoModule } from './services/geo';
+
+export { validateSubmission } from './validateSubmission';
+export type { SubmissionIssue } from './validateSubmission';
 
 export {
   buildDslSchema,

@@ -24,7 +24,7 @@ async function setup() {
   const { LocalStorageAdapter } = await import('@fluxus/engine');
   const { NotificationLog } = await import('../src/store/NotificationLog');
   const { buildNotifyModule } = await import('../src/services/notify');
-  const { buildGeoModule } = await import('../src/services/geo');
+  const { buildGeoModule } = await import('@fluxus/engine');
   const { buildEvalHost: rawBuildEvalHost } = await import('@fluxus/engine');
   const { validateConfig } = await import('@fluxus/engine');
   const adapter = new LocalStorageAdapter(config, { storageKey: 'fluxus:sdm:records', legacyStorageKey: 'aber-poc-v1-records' });

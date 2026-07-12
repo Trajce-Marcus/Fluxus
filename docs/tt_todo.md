@@ -9,3 +9,5 @@
 - based on what we have so far how does the platform abide or not abide by essental 8 standard?
 - what will happen if in hooks u use variables? We probably need comprehensive doc arouns FluxScript
 - need way of updating config.ts, probably via tool
+- the GET attribute type is still a tRPC call right, or not?
+- are we using tRPC propoer? eg import { initTRPC } from '@trpc/server';
