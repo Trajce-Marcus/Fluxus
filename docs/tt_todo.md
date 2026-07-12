@@ -39,11 +39,12 @@ _(empty — add freely)_
   in hooks, the four roots, patterns). The mechanics already work (`let`
   bindings since DSL Phase 2); the doc doesn't exist. GRAMMAR.md + DSL_SPEC.md
   are spec, not tutorial.
-- [ ] **Config authoring flow** — partially superseded by Phase 4: the SDM
-  config is now a stored, save-time-validated artifact (`config.put`), but the
-  workbench still reads local `config.ts` until backend stage 2, and the
-  authoring tool/flow (AI-assisted editing against a running server) is the
-  still-open "config distribution" thread on the ROADMAP.
+- [ ] **Config authoring flow** — narrowed further by stage 2 (2026-07-12):
+  both hosts now read config from the server; local `config.ts` is only the
+  seed script's input (`npm run seed:server` = the interim authoring loop:
+  edit files → push up). The authoring tool/flow proper (AI-assisted editing
+  against a running server) is the still-open "config distribution" thread on
+  the ROADMAP.
 - [ ] **Offline capability?** — open question (added 2026-07-12). Worth noting
   when it's discussed: the browser hosts already run the full engine locally,
   and the dev database (PGlite) is Postgres compiled to WASM that also runs
