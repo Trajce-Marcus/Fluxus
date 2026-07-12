@@ -150,3 +150,12 @@ and `buildEvalHost` assembling the four roots + named functions.
 `validateConfig.ts` is the config-save-time check (DSL_SPEC §9) over every
 datasource, show condition, validation rule, hook, and named function.
 Both moved verbatim from sdm.
+
+Host knobs on `ScriptContext` (page wiring redesign, 2026-07-12):
+`contextExtras` merges extra members into the `context` root itself — how the
+page host injects `context.page` and `context.app` (page context IS the ctx
+root, not a parallel construct); `readonlyRecords` omits the records mutation
+surface, so record writes fail at runtime even in `mutate`-mode scripts — the
+page-callback posture (service effects allowed, direct writes never).
+`functionSignatures(config)` exposes the named-function signature map for
+hosts running their own `validate*` calls (validatePage in the page builder).

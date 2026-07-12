@@ -3,7 +3,7 @@
 // EvalHosts for script execution. Scripts use short type names (records.assets),
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
-import { servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
+import { parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
 import type { AttributeDef, ConfigRaw, RecordInstance } from './types';
 import type { Store } from './store';
 
@@ -22,6 +22,23 @@ export function joinScript(script: string | string[] | null | undefined): string
 /** Named function sources for the evaluator/validator (bodies joined). */
 export function resolveFunctions(config: ConfigRaw): string[] {
   return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? '');
+}
+
+/**
+ * Signature map for ValidateOptions.functions, parsed from the bodies.
+ * Unparseable bodies are skipped — validateConfig reports those.
+ */
+export function functionSignatures(config: ConfigRaw): Record<string, { params: string[] }> {
+  const out: Record<string, { params: string[] }> = {};
+  for (const fn of config.functions ?? []) {
+    try {
+      const decl = parseFunction(joinScript(fn.body) ?? '');
+      out[decl.name] = { params: decl.params };
+    } catch {
+      // reported by validateConfig
+    }
+  }
+  return out;
 }
 
 /**
@@ -137,6 +154,18 @@ export interface ScriptContext {
   workflow?: { id: string; name: string };
   /** Embedding-point extra roots, e.g. { value } for attribute validation rules. */
   extras?: Record<string, unknown>;
+  /**
+   * Extra members merged into the `context` root itself (not new roots) —
+   * how the page host injects `context.page` and `context.app` (page wiring
+   * redesign: page context IS the ctx root, not a parallel construct).
+   */
+  contextExtras?: Record<string, unknown>;
+  /**
+   * Omit the records mutation host, so record writes fail at runtime even in
+   * 'mutate'-mode scripts. Page callbacks run this way: service effects
+   * allowed, direct record writes never — mutations flow through activities.
+   */
+  readonlyRecords?: boolean;
 }
 
 /**
@@ -191,13 +220,17 @@ export function buildEvalHost(
     }
   }
 
+  const records = buildRecordsHost(adapter, config);
+  if (script.readonlyRecords) delete records.mutate;
+
   return {
-    records: buildRecordsHost(adapter, config),
+    records,
     context: {
       user: { id: 'demo', name: 'Demo User' },
       record: script.anchorRecord ? toDslRecord(script.anchorRecord) : null,
       activity: script.activity ?? null,
       workflow: script.workflow ?? null,
+      ...script.contextExtras,
     },
     attributes,
     services,

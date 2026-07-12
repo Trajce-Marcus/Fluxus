@@ -34,7 +34,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **Show condition** — DSL expression deciding applicability. On an attribute usage: whether the attribute is presented (UI) or accepted (headless); errors leave it visible. On an activity: whether the activity is offered/invocable at all — the **availability gate**, re-checked as the first step of the activity pipeline; `attributes` is unavailable (runs before capture) and errors fail closed.
 - **`queue`** — keyword marking a service call as fire-and-forget; dispatched only if the surrounding transaction commits (outbox pattern).
 - **Service module** — the unit behind the `services` root: manifest (name, description, functions with params + `kind`) plus implementation. `kind: read` = pure query, callable anywhere; `kind: effect` = changes the world, after hooks only, prefer `queue`. Manifests make service calls schema-validatable (existence, arity, purity) at config-save time.
-- **`callbackData`** — embedding-point extra root (like `value` in validation rules) carrying the one data object of an app-triggered run; `null` on direct runs. Untyped — its shape is the implementer's contract with their component.
+- **`callbackData`** — embedding-point extra root (like `value` in validation rules). In hooks: the one data object of an app-triggered run, `null` on direct runs. In page callback scripts: the packed component payload `{value, data}`. Untyped — its shape is the implementer's contract with their component.
 - **Scope-blind** — scripts never name their org, repo, or SDM; scope is injected. Locked invariant.
 - **Schema-aware validation** — every script checked against the SDM at config-save time (unknown types/fields/shapes fail before runtime).
 
@@ -43,7 +43,10 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **Page** — a layout of panels with slots, each slot wired to a component; defined declaratively, rendered by the page builder runtime.
 - **Component manifest** — a component's contract: name, version, prop schema (static-config, dynamic-data with item shapes, callbacks).
 - **ComponentContainer** — the runtime adapter between a slot's wiring config and the SDM-blind component; resolves dynamic props, wires callbacks.
-- **Wiring (slot config)** — the per-page adapter binding a component's ports to a specific SDM: DSL queries for dynamic props, actions (incl. `run activity`) for callbacks.
+- **Wiring (slot config)** — the per-page adapter binding a component's ports to a specific SDM, in FluxScript everywhere (2026-07-12): one expression per dynamic prop (datasource posture — reads only), one script per callback. The stored artifact is the source text; picker UIs merely write it.
+- **Callback (page)** — a component's named output port, bound to a FluxScript script receiving the payload as `callbackData` (`.value` / `.data`). "Callbacks", not "actions" (naming ruling): scripts effect UI via `services.page` and mutate only by requesting an activity run.
+- **`services.page`** — the page-host-only service module: `setContext`, `hideComponent`, `runActivity`. A page callback, a hook, and a future non-UI workflow differ only in which service modules their host provides.
+- **validatePage** — save-time validation of a page file against the model: component names vs the registry, bindings vs component schemas, expressions/scripts vs the SDM schema + declared roots, literal activity ids vs real activities. The page counterpart of `validateConfig`.
 - **App (module)** — a coarse-grained reusable component (e.g. calendar scheduler) shipped with a manifest; rewired per SDM through slot config, never rewritten.
 - **Activity spine** — the property that data + behaviour + audit share one backbone because every surface mutates only via activities.
 

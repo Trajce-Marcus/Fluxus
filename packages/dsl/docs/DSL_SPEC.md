@@ -37,7 +37,7 @@ The entire environment a script can touch, dependency-injected by the host at ca
 | `records` | the project-scoped SDM data graph: `records.<record_type>` for query and mutation |
 | `services` | global add-on modules: `services.notify.email(...)`, `services.geo.geocode(...)`, published functions |
 
-Additional roots may be injected per embedding point (e.g. `event` — the callback payload — in page-builder callback wiring). The converse also holds: an embedding point may **withhold** a standard root when it cannot exist there — activity availability conditions run before capture begins, so `attributes` is banned and the validator rejects a reference at config-save time.
+Additional roots may be injected per embedding point (e.g. `callbackData` — the callback payload — in page-builder callback wiring and the hooks of callback-triggered activity runs). The converse also holds: an embedding point may **withhold** a standard root when it cannot exist there — activity availability conditions run before capture begins, so `attributes` is banned and the validator rejects a reference at config-save time; page embedding points ban `attributes` for the same reason (no activity in flight).
 
 **Every script is a function.** Inline scripts (hooks, conditions, datasources) receive the four roots implicitly. Named functions (see §8) may declare explicit parameters and still receive the roots implicitly. Scripts never construct their environment; the host always hands it in — which is why the same script runs unchanged in the browser, in Lambda, and inside the page builder.
 
@@ -163,7 +163,7 @@ Waiting service calls with side effects inside after hooks are the documented no
 The `services` root is backed by a **registry of modules**, not an untyped bag. A module carries a manifest alongside its implementation (`ServiceModuleDef` in `host.ts`): name, description, and functions, each declaring `params`, a mandatory `description`, and a **`kind`**:
 
 - **`read`** — a pure query (`services.geo.suburbsOf(city)`). Callable from every tier: datasources, show conditions, before hooks, after hooks.
-- **`effect`** — does something to the world (`services.notify.email(…)`). After hooks only, and preferably `queue`d. A *waiting* effect call in an after hook is the §7 non-transactional exception — the validator lets it through with a **warning**; anywhere else it is an **error**, statically and at run time.
+- **`effect`** — does something to the world (`services.notify.email(…)`). After hooks only, and preferably `queue`d. A *waiting* effect call in an after hook is the §7 non-transactional exception — the validator lets it through with a **warning**; anywhere else it is an **error**, statically and at run time. One carve-out: the validator's **`callback` mode** (page-builder callback scripts, 2026-07-12) accepts waiting effect calls silently — UI effects like `services.page.setContext(…)` are the norm there — while record mutations stay errors: mutations flow only through activities. At run time callback hosts get the same posture by running `mutate` mode against a records host with no mutation surface.
 
 The manifest feeds the validator: `DslSchema.services` (derived via `servicesSchema(modules)`) makes unknown modules, unknown functions, and wrong arity **config-save-time errors**, and enforces the purity rules above. A schema without a registry keeps the old behaviour — `services.*` passes through untyped (for hosts that haven't adopted the registry).
 

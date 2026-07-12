@@ -17,6 +17,7 @@ export {
   buildRecordsHost,
   coerceCaptured,
   coerceValue,
+  functionSignatures,
   joinScript,
   resolveFunctions,
   shortName,

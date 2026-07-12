@@ -9,11 +9,9 @@ import {
   type PageComponentEntry,
   type ContextKeyDef,
   type SlotConfig,
-  type DynamicPropConfig,
-  type CallbackAction,
 } from './persistence';
 
-export type { PageComponentEntry, ContextKeyDef, SlotConfig, DynamicPropConfig, CallbackAction };
+export type { PageComponentEntry, ContextKeyDef, SlotConfig };
 
 export interface PageEditorState {
   mode: 'builder' | 'layout';
@@ -96,7 +94,7 @@ export function assignComponent(pagePath: string, slotId: string, componentName:
   getStore(pagePath).set((prev) => {
     const slotConfigs = {
       ...prev.slotConfigs,
-      [slotId]: { componentName, staticConfig: {}, dynamicProps: {}, callbackActions: {} },
+      [slotId]: { componentName, staticConfig: {}, dynamicProps: {}, callbacks: {} },
     };
     saveSlotConfigs(pagePath, slotConfigs);
     return { ...prev, slotConfigs, selectedSlotId: slotId, selectedComponentName: null };
@@ -124,27 +122,29 @@ export function setStaticConfig(pagePath: string, slotId: string, propName: stri
   });
 }
 
-export function setDynamicProp(pagePath: string, slotId: string, propName: string, config: DynamicPropConfig | null): void {
+/** Set (or clear, with null/blank) a dynamic prop's FluxScript expression. */
+export function setDynamicProp(pagePath: string, slotId: string, propName: string, source: string | null): void {
   getStore(pagePath).set((prev) => {
     const slot = prev.slotConfigs[slotId];
     if (!slot) return prev;
     const dynamicProps = { ...slot.dynamicProps };
-    if (config === null) delete dynamicProps[propName];
-    else dynamicProps[propName] = config;
+    if (source === null || source.trim() === '') delete dynamicProps[propName];
+    else dynamicProps[propName] = source;
     const slotConfigs = { ...prev.slotConfigs, [slotId]: { ...slot, dynamicProps } };
     saveSlotConfigs(pagePath, slotConfigs);
     return { ...prev, slotConfigs };
   });
 }
 
-export function setCallbackAction(pagePath: string, slotId: string, propName: string, action: CallbackAction | null): void {
+/** Set (or clear, with null/blank) a callback's FluxScript script. */
+export function setCallback(pagePath: string, slotId: string, callbackName: string, source: string | null): void {
   getStore(pagePath).set((prev) => {
     const slot = prev.slotConfigs[slotId];
     if (!slot) return prev;
-    const callbackActions = { ...slot.callbackActions };
-    if (action === null) delete callbackActions[propName];
-    else callbackActions[propName] = action;
-    const slotConfigs = { ...prev.slotConfigs, [slotId]: { ...slot, callbackActions } };
+    const callbacks = { ...slot.callbacks };
+    if (source === null || source.trim() === '') delete callbacks[callbackName];
+    else callbacks[callbackName] = source;
+    const slotConfigs = { ...prev.slotConfigs, [slotId]: { ...slot, callbacks } };
     saveSlotConfigs(pagePath, slotConfigs);
     return { ...prev, slotConfigs };
   });

@@ -69,8 +69,11 @@ export interface ScriptValidateOptions extends ValidateOptions {
   /**
    * 'before': the gate — mutations and `queue` are errors (DSL_SPEC §6).
    * 'after' (default): effects — mutations and `queue` allowed.
+   * 'callback': UI callback scripts — waiting effect calls are the norm (no
+   * queue-preference warning), but record mutations are errors: mutations
+   * flow only through activities.
    */
-  mode?: 'before' | 'after';
+  mode?: 'before' | 'after' | 'callback';
 }
 
 export interface Diagnostic {
@@ -203,7 +206,7 @@ type Shape =
 const UNKNOWN: Shape = { kind: 'unknown' };
 const SCALAR: Shape = { kind: 'scalar' };
 
-type Mode = 'expression' | 'before' | 'after';
+type Mode = 'expression' | 'before' | 'after' | 'callback';
 
 class Validator {
   readonly diagnostics: Diagnostic[] = [];
@@ -280,9 +283,10 @@ class Validator {
         this.error(at, `'${label}' has effects — services with effects run in after hooks`);
       } else if (this.mode === 'before') {
         this.error(at, `Before hooks validate only — queue '${label}' in the after hook`);
-      } else {
+      } else if (this.mode === 'after') {
         this.warning(at, `'${label}' has effects — a waiting call is non-transactional; prefer 'queue ${label}(…)'`);
       }
+      // 'callback': waiting effect calls are the norm (UI effects), no complaint.
     }
     return UNKNOWN;
   }
@@ -698,6 +702,8 @@ class Validator {
       this.error(expr, `${method}() is not allowed in expressions — mutations run in after hooks`);
     } else if (this.mode === 'before') {
       this.error(expr, `Before hooks validate only — move ${method}() to the after hook`);
+    } else if (this.mode === 'callback') {
+      this.error(expr, `${method}() is not allowed in callbacks — mutations flow through activities (services.page.runActivity)`);
     }
 
     const type =

@@ -159,6 +159,18 @@ describe('script validation — service registry in hooks', () => {
       "warning: 'services.notify.sms' has effects — a waiting call is non-transactional; prefer 'queue services.notify.sms(…)'",
     ]);
   });
+
+  it('callback mode: waiting effect calls pass silently; record mutations are errors', () => {
+    const callback: ScriptValidateOptions = { mode: 'callback' };
+    expect(diag(`services.notify.sms('1', 'hi')`, callback)).toEqual([]);
+    expect(diag(`queue services.notify.sms('1', 'hi')`, callback)).toEqual([]);
+    expect(diag(`context.record.update({ status: 'x' })`, callback)).toEqual([
+      "error: update() is not allowed in callbacks — mutations flow through activities (services.page.runActivity)",
+    ]);
+    expect(diag(`records.wo_resources.create({ qty: 1 })`, callback)).toEqual([
+      "error: create() is not allowed in callbacks — mutations flow through activities (services.page.runActivity)",
+    ]);
+  });
 });
 
 describe('script validation — named functions', () => {

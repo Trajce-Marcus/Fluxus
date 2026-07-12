@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
 import { loadPageLayout } from './persistence';
 import type { Panel } from './layout-editor/types';
-import type { SlotConfig, DynamicPropConfig, CallbackAction } from './persistence';
+import type { SlotConfig } from './persistence';
 import {
   selectComponent,
   selectSlot,
@@ -16,15 +16,15 @@ import {
   removeContextKey,
   setStaticConfig,
   setDynamicProp,
-  setCallbackAction,
+  setCallback,
   usePageEditorStore,
   type PageComponentEntry,
   type ContextKeyDef,
 } from './pageEditorStore';
 import { componentManifests } from './componentManifests';
-import { mockRegistry } from './mockFunctions';
 import { LayoutEditor, css as layoutEditorCss } from './layout-editor/LayoutEditor';
 import { PageRenderer, css as pageRendererCss } from './PageRenderer';
+import { ExpressionDialog, css as expressionDialogCss } from './ExpressionDialog';
 
 function collectLeafPanels(panel: Panel): Panel[] {
   if (panel.children.length === 0) return [panel];
@@ -152,7 +152,7 @@ function PageContextSection({ contextSchema, pagePath }: { contextSchema: Contex
     const key = newKey.trim();
     if (!key) { setError('Key name required'); return; }
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) { setError('Letters, numbers, _ only'); return; }
-    addContextKey(pagePath, { key, type: newType, source: 'page' });
+    addContextKey(pagePath, { key, type: newType });
     setNewKey(''); setNewType('string'); setAdding(false); setError('');
   }
 
@@ -228,148 +228,112 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
   );
 }
 
-// ── Dynamic data wiring ──────────────────────────────────────────────────────
+// ── FluxScript bindings (dynamic props + callbacks) ──────────────────────────
+// One expression per dynamic prop, one script per callback — the stored
+// artifact is the source text; this UI merely writes it (decision 2/6). The
+// button opens the Monaco expression dialog.
 
-const AVAILABLE_PROCEDURES = Object.keys(mockRegistry);
+interface EditingBinding {
+  kind: 'expression' | 'callback';
+  name: string;
+  hint?: string;
+}
 
-function DynamicDataSection({ slotId, config, contextSchema, pagePath }: { slotId: string; config: SlotConfig; contextSchema: ContextKeyDef[]; pagePath: string }) {
+function BindingRow({ name, typeLabel, typeClass, required, source, onEdit }: {
+  name: string;
+  typeLabel: string;
+  typeClass: string;
+  required?: boolean;
+  source: string | undefined;
+  onEdit: () => void;
+}) {
+  return (
+    <li className="pe-binding-row">
+      <div className="pe-binding-prop">
+        <span className="pe-binding-name">{name}</span>
+        <span className={`pe-binding-type pe-binding-type--${typeClass}`}>{typeLabel}</span>
+        {required && <span className="pe-binding-required">*</span>}
+      </div>
+      <button className={`pe-expr${source ? '' : ' pe-expr--empty'}`} title={source ?? 'Not bound'} onClick={onEdit}>
+        {source ?? '— not bound —'}
+      </button>
+    </li>
+  );
+}
+
+function DynamicDataSection({ slotId, config, pagePath }: { slotId: string; config: SlotConfig; pagePath: string }) {
+  const [editing, setEditing] = useState<EditingBinding | null>(null);
   const manifest = componentManifests[config.componentName];
   if (!manifest) return null;
   const dynamicProps = manifest.schema.filter((p) => p.kind === 'dynamic-data');
   if (dynamicProps.length === 0) return null;
 
-  const contextKeys = contextSchema.map((d) => d.key);
-
   return (
     <div className="pe-config-section pe-config-divider">
       <p className="pe-config-label">Data</p>
       <ul className="pe-bindings-list">
-        {dynamicProps.map((prop) => {
-          const dynConfig: DynamicPropConfig | undefined = config.dynamicProps[prop.name];
-          const currentSource = dynConfig?.source ?? '';
-
-          return (
-            <li key={prop.name} className="pe-binding-row">
-              <div className="pe-binding-prop">
-                <span className="pe-binding-name">{prop.name}</span>
-                <span className={`pe-binding-type pe-binding-type--${prop.type}`}>{prop.type}</span>
-                {prop.required && <span className="pe-binding-required">*</span>}
-              </div>
-
-              <select className="pe-binding-input"
-                value={currentSource}
-                onChange={(e) => {
-                  const src = e.target.value as 'context' | 'procedure' | '';
-                  if (!src) { setDynamicProp(pagePath, slotId, prop.name, null); return; }
-                  if (src === 'context') setDynamicProp(pagePath, slotId, prop.name, { source: 'context', contextKey: '' });
-                  else setDynamicProp(pagePath, slotId, prop.name, { source: 'procedure', procedureName: '', args: {} });
-                }}>
-                <option value="">— select source —</option>
-                <option value="context">From context</option>
-                <option value="procedure">From tRPC procedure</option>
-              </select>
-
-              {dynConfig?.source === 'context' && (
-                <select className="pe-binding-input pe-binding-input--sm"
-                  value={dynConfig.contextKey}
-                  onChange={(e) => setDynamicProp(pagePath, slotId, prop.name, { source: 'context', contextKey: e.target.value })}>
-                  <option value="">— context key —</option>
-                  {contextKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
-              )}
-
-              {dynConfig?.source === 'procedure' && (
-                <>
-                  <select className="pe-binding-input pe-binding-input--sm"
-                    value={dynConfig.procedureName}
-                    onChange={(e) => setDynamicProp(pagePath, slotId, prop.name, { source: 'procedure', procedureName: e.target.value, args: dynConfig.args })}>
-                    <option value="">— select procedure —</option>
-                    {AVAILABLE_PROCEDURES.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  {dynConfig.procedureName && (
-                    <div className="pe-arg-row">
-                      <span className="pe-arg-label">arg: id →</span>
-                      <select className="pe-binding-input pe-binding-input--sm"
-                        value={dynConfig.args['id']?.contextKey ?? ''}
-                        onChange={(e) => {
-                          const key = e.target.value;
-                          const args = key ? { ...dynConfig.args, id: { contextKey: key } } : (() => { const a = { ...dynConfig.args }; delete a['id']; return a; })();
-                          setDynamicProp(pagePath, slotId, prop.name, { ...dynConfig, args });
-                        }}>
-                        <option value="">— none —</option>
-                        {contextKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-                      </select>
-                    </div>
-                  )}
-                </>
-              )}
-            </li>
-          );
-        })}
+        {dynamicProps.map((prop) => (
+          <BindingRow
+            key={prop.name}
+            name={prop.name}
+            typeLabel={prop.type}
+            typeClass={prop.type}
+            required={prop.required}
+            source={config.dynamicProps[prop.name]}
+            onEdit={() => setEditing({ kind: 'expression', name: prop.name, hint: prop.description })}
+          />
+        ))}
       </ul>
+      {editing && (
+        <ExpressionDialog
+          title={`${config.componentName}.${editing.name} — expression`}
+          hint={editing.hint}
+          kind="expression"
+          initialSource={config.dynamicProps[editing.name] ?? ''}
+          onSave={(source) => { setDynamicProp(pagePath, slotId, editing.name, source); setEditing(null); }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }
 
-// ── Callback / action wiring ─────────────────────────────────────────────────
-
-const CALLBACK_ACTION_TYPES = [
-  { value: 'set-context',    label: 'Set context key' },
-  { value: 'hide-component', label: 'Hide this component' },
-  { value: 'show-overlay',   label: 'Show overlay' },
-] as const;
-
-function CallbacksSection({ slotId, config, contextSchema, pagePath }: { slotId: string; config: SlotConfig; contextSchema: ContextKeyDef[]; pagePath: string }) {
+function CallbacksSection({ slotId, config, pagePath }: { slotId: string; config: SlotConfig; pagePath: string }) {
+  const [editing, setEditing] = useState<EditingBinding | null>(null);
   const manifest = componentManifests[config.componentName];
   if (!manifest) return null;
   const callbacks = manifest.schema.filter((p) => p.kind === 'callback');
   if (callbacks.length === 0) return null;
 
-  const contextKeys = contextSchema.map((d) => d.key);
-
   return (
     <div className="pe-config-section pe-config-divider">
-      <p className="pe-config-label">Actions</p>
+      <p className="pe-config-label">Callbacks</p>
       <ul className="pe-bindings-list">
-        {callbacks.map((prop) => {
-          const action: CallbackAction | undefined = config.callbackActions[prop.name];
-          return (
-            <li key={prop.name} className="pe-binding-row">
-              <div className="pe-binding-prop">
-                <span className="pe-binding-name">{prop.name}</span>
-                <span className="pe-binding-type pe-binding-type--function">callback</span>
-              </div>
-              <select className="pe-binding-input"
-                value={action?.type ?? ''}
-                onChange={(e) => {
-                  const type = e.target.value as CallbackAction['type'] | '';
-                  if (!type) { setCallbackAction(pagePath, slotId, prop.name, null); return; }
-                  const next: CallbackAction =
-                    type === 'set-context'   ? { type, key: '' } :
-                    type === 'show-overlay'  ? { type, overlayId: '' } :
-                    { type: 'hide-component' };
-                  setCallbackAction(pagePath, slotId, prop.name, next);
-                }}>
-                <option value="">— select action —</option>
-                {CALLBACK_ACTION_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
-              {action?.type === 'set-context' && (
-                <select className="pe-binding-input pe-binding-input--sm"
-                  value={action.key}
-                  onChange={(e) => setCallbackAction(pagePath, slotId, prop.name, { type: 'set-context', key: e.target.value })}>
-                  <option value="">— context key —</option>
-                  {contextKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
-              )}
-              {action?.type === 'show-overlay' && (
-                <input className="pe-binding-input pe-binding-input--sm" placeholder="overlay id"
-                  value={action.overlayId}
-                  onChange={(e) => setCallbackAction(pagePath, slotId, prop.name, { type: 'show-overlay', overlayId: e.target.value })} />
-              )}
-            </li>
-          );
-        })}
+        {callbacks.map((prop) => (
+          <BindingRow
+            key={prop.name}
+            name={prop.name}
+            typeLabel="callback"
+            typeClass="function"
+            source={config.callbacks[prop.name]}
+            onEdit={() => setEditing({
+              kind: 'callback',
+              name: prop.name,
+              hint: `${prop.description ?? ''} — payload arrives as callbackData.value / callbackData.data`.replace(/^ — /, ''),
+            })}
+          />
+        ))}
       </ul>
+      {editing && (
+        <ExpressionDialog
+          title={`${config.componentName}.${editing.name} — callback script`}
+          hint={editing.hint}
+          kind="callback"
+          initialSource={config.callbacks[editing.name] ?? ''}
+          onSave={(source) => { setCallback(pagePath, slotId, editing.name, source); setEditing(null); }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }
@@ -399,8 +363,8 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pagePath }: 
               <p className="pe-config-value">{config.componentName}</p>
             </div>
             <StaticConfigSection slotId={selectedSlotId} config={config} pagePath={pagePath} />
-            <DynamicDataSection slotId={selectedSlotId} config={config} contextSchema={contextSchema} pagePath={pagePath} />
-            <CallbacksSection slotId={selectedSlotId} config={config} contextSchema={contextSchema} pagePath={pagePath} />
+            <DynamicDataSection slotId={selectedSlotId} config={config} pagePath={pagePath} />
+            <CallbacksSection slotId={selectedSlotId} config={config} pagePath={pagePath} />
           </>
         )}
 
@@ -480,6 +444,7 @@ function PageEditorComponent({ pagePath }: Props) {
 export const css = `
   ${layoutEditorCss}
   ${pageRendererCss}
+  ${expressionDialogCss}
 
   .pe-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--color-bg); }
   .pe-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 8px; height: 32px; flex-shrink: 0; background: var(--color-sidebar); border-bottom: 1px solid var(--color-border); }
@@ -573,8 +538,10 @@ export const css = `
   .pe-binding-input { width: 100%; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); font-size: 0.775rem; padding: 2px 6px; font-family: inherit; }
   .pe-binding-input:focus { border-color: var(--color-accent); outline: none; }
   .pe-binding-input--sm { width: auto; flex: 1; }
-  .pe-arg-row { display: flex; align-items: center; gap: 4px; padding-left: 8px; }
-  .pe-arg-label { font-size: 0.68rem; color: var(--color-text-muted); white-space: nowrap; }
+
+  .pe-expr { width: 100%; text-align: left; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); cursor: pointer; font-family: ui-monospace, monospace; font-size: 0.72rem; padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pe-expr:hover { border-color: var(--color-accent); }
+  .pe-expr--empty { color: var(--color-text-muted); font-style: italic; font-family: inherit; }
 
   .pe-preview-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; background: #fff; }
 `;

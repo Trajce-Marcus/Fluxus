@@ -1,16 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { loadPageLayout } from './persistence';
 import type { Panel } from './layout-editor/types';
 import type { SlotConfig, ContextKeyDef } from './persistence';
 import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
+import type { PageContext } from './pageHost';
 
-// ── Platform context ─────────────────────────────────────────────────────────
+// ── The ctx root ──────────────────────────────────────────────────────────────
+// Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
+// the platform supplies built-ins (context.user comes from the engine bridge;
+// context.app here; route params arrive with app-level navigation), and
+// page-local UI state lives under context.page — seeded from the page's
+// declared keys, written via services.page.setContext.
 
-const PLATFORM_CONTEXT: Record<string, unknown> = {
-  currentUser: 'Demo User',
-  appName: 'Fluxus',
-};
+const APP_CONTEXT = { name: 'Fluxus' };
 
 // ── Panel layout rendering ───────────────────────────────────────────────────
 
@@ -35,13 +38,12 @@ function panelStyle(panel: Panel): React.CSSProperties {
 interface PanelNodeProps {
   panel: Panel;
   slotConfigs: Record<string, SlotConfig | null>;
-  contextSchema: ContextKeyDef[];
-  context: Record<string, unknown>;
+  pageCtx: PageContext;
   onContextChange: (key: string, value: unknown) => void;
   onError: (error: Error, componentName: string) => void;
 }
 
-function PanelNode({ panel, slotConfigs, contextSchema, context, onContextChange, onError }: PanelNodeProps) {
+function PanelNode({ panel, slotConfigs, pageCtx, onContextChange, onError }: PanelNodeProps) {
   if (panel.children.length > 0) {
     return (
       <div style={panelStyle(panel)}>
@@ -50,8 +52,7 @@ function PanelNode({ panel, slotConfigs, contextSchema, context, onContextChange
             key={child.id}
             panel={child}
             slotConfigs={slotConfigs}
-            contextSchema={contextSchema}
-            context={context}
+            pageCtx={pageCtx}
             onContextChange={onContextChange}
             onError={onError}
           />
@@ -69,8 +70,7 @@ function PanelNode({ panel, slotConfigs, contextSchema, context, onContextChange
         <ComponentContainer
           manifest={manifest}
           config={config}
-          context={context}
-          contextSchema={contextSchema}
+          pageCtx={pageCtx}
           onContextChange={onContextChange}
           onError={onError}
         />
@@ -92,7 +92,7 @@ interface Props {
 }
 
 export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
-  const [context, setContext] = useState<Record<string, unknown>>({ ...PLATFORM_CONTEXT });
+  const [pageState, setPageState] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<{ componentName: string; message: string }[]>([]);
 
   const layout = loadPageLayout(pagePath);
@@ -100,13 +100,15 @@ export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
   useEffect(() => {
     const pageDefaults: Record<string, unknown> = {};
     for (const def of contextSchema) {
-      if (def.source === 'page') pageDefaults[def.key] = def.defaultValue ?? null;
+      pageDefaults[def.key] = def.defaultValue ?? null;
     }
-    setContext({ ...pageDefaults, ...PLATFORM_CONTEXT });
+    setPageState(pageDefaults);
   }, [pagePath, contextSchema]);
 
+  const pageCtx = useMemo<PageContext>(() => ({ app: APP_CONTEXT, page: pageState }), [pageState]);
+
   const handleContextChange = useCallback((key: string, value: unknown) => {
-    setContext((prev) => ({ ...prev, [key]: value }));
+    setPageState((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   const handleError = useCallback((error: Error, componentName: string) => {
@@ -123,8 +125,7 @@ export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
         <PanelNode
           panel={layout.root}
           slotConfigs={slotConfigs}
-          contextSchema={contextSchema}
-          context={context}
+          pageCtx={pageCtx}
           onContextChange={handleContextChange}
           onError={handleError}
         />
@@ -143,8 +144,8 @@ export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
 
       {(import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV && (
         <details className="pr-debug">
-          <summary>Context ({Object.keys(context).length} keys)</summary>
-          <pre>{JSON.stringify(context, null, 2)}</pre>
+          <summary>context.page ({Object.keys(pageState).length} keys)</summary>
+          <pre>{JSON.stringify(pageState, null, 2)}</pre>
         </details>
       )}
     </div>
