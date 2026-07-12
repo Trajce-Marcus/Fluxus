@@ -15,11 +15,12 @@ The package currently carries a sample asset-maintenance model ("Aber") in [conf
 ## Run
 
 ```bash
-npm run dev:sdm      # from repo root, or `npm run dev` in this package
-# → http://localhost:5173
+npm run dev          # from repo root: server + workbench + page builder together
+# or individually: npm run dev:server (required) + npm run dev:sdm
+# → http://localhost:5173 (server at :8787; seed the demo SDM once with npm run seed:server)
 ```
 
-Browser-only; records persist in localStorage (`fluxus:sdm:records`). After changing record type IDs in the config, clear once: `localStorage.removeItem('fluxus:sdm:records')`.
+Since backend stage 2 (2026-07-12) records live in `@fluxus/server` (Postgres): the workbench boots by fetching the scope's stored config + partition via `@fluxus/client` and runs every activity server-side — there is no localStorage fallback. Config changes under [config/](config/) reach the server via `npm run seed:server` (config.put upserts; seed records load only for empty types).
 
 ## Docs
 

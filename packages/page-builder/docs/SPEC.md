@@ -11,14 +11,15 @@ Two layers under `src/`:
 
 `src/components/` holds demo user components with prop schemas; `src/api.ts` exposes the `MyComponents` mount API (the original react-in-html mechanism for embedding registered components in arbitrary host pages).
 
-## SDM runtime (Extraction stage 2)
+## SDM runtime (Extraction stage 2; repointed at backend stage 2)
 
 `src/sdm-runtime/` makes the page builder the engine's second host:
 
-- **`engine.ts`** — the platform singletons, created at module load, never in React state (fork 2): `LocalStorageAdapter` on the host's own key `fluxus:page-builder:records`, plus `createEngine`. Config-save-time validation runs at boot, same posture as the workbench. Components never import these — they reach the SDM only through the FluxScript wiring (expressions in, callback scripts out).
-- **`config.ts`** — this host's own small sample SDM. Config distribution (one canonical config across hosts) is an open thread on the root ROADMAP; data is per-host until the backend makes "one model, many apps" literal.
-- **`ActivityFormModal.tsx`** — the minimal standard capture form for app-triggered UI activities (text/date + `required`). Deliberately a subset of the workbench's form: peer hosts can't share React components, and where a full shared form should live is an open discussion.
-- **`demoPage.ts`** — seeds `pages/work-orders-demo` (once, deletable): a `WorkOrderList` wired to the sample SDM in FluxScript, exercising every wiring mechanism.
+- **`engine.ts`** — the platform singletons (fork 2: never in React state), assigned by `initSdmRuntime()`, which `api.ts` — the real entry: index.html loads it and mounts `Shell` via `MyComponents.mount` (`src/main.tsx` is a dead POC leftover) — kicks off at module load; every `mount` awaits it before rendering, and demo-page seeding runs after it (savePage validates against the fetched config). Since backend stage 2 (2026-07-12) they are a **fetched snapshot**: `FluxusClient.connect()` loads the shared scope's stored config + record partition (`demo/sdm` — the same model the workbench edits) into the engine's `MemoryAdapter`; expressions keep evaluating locally and synchronously; every activity run round-trips the server and re-fetches the partition. No localStorage records, no local sample config, no fallback (hard-cutover ruling; the old private `config.ts` sample was merged into the sdm demo SDM — dispatch/reschedule + `crew` field). Components never import these — they reach the SDM only through the FluxScript wiring (expressions in, callback scripts out).
+- **`ActivityFormModal.tsx`** — the minimal standard capture form for app-triggered UI activities (text/date + `required`), async `onSubmit` since stage 2. Deliberately a subset of the workbench's form: peer hosts can't share React components, and where a full shared form should live is an open discussion.
+- **`demoPage.ts`** — seeds `pages/work-orders-demo` (once, deletable): a `WorkOrderList` wired to the shared SDM in FluxScript, exercising every wiring mechanism. The list is empty until work orders exist in the scope — create one in the workbench and it appears here (one model, many apps, observably).
+
+Pages and templates themselves stay in localStorage (`fluxus:page:*`) — they are page-builder artifacts, not SDM records.
 
 ## Page definition (persistence.ts)
 

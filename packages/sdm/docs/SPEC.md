@@ -38,7 +38,7 @@ Acceptance (in `test/dsl-wiring.test.ts`): `act_complete_work_orders` — the av
 
 Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost` / `coerceCaptured` / `joinScript`) and `validateConfig` moved to `@fluxus/engine` at Extraction — see the engine SPEC. The workbench triggers the config-save-time check via `engine.reportConfigFindings()` at app start ("save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`.
 
-**Seeds:** an entity file may carry `seeds` (sample records); the adapter loads them only when the store has no records of that type. Cities/suburbs ship seeded so the location picker works out of the box.
+**Seeds:** an entity file may carry `seeds` (sample records); they load only when the store has no records of that type. Cities/suburbs ship seeded so the location picker works out of the box. Since backend stage 2 seeding happens server-side at `config.put` (same semantics); `npm run seed:server` pushes this package's config up.
 
 ## Services (DSL Phase 3)
 
@@ -47,7 +47,7 @@ The workbench registers two service modules (DSL_SPEC §7a) with the evaluator a
 - **`notify`** (effect) — `user(message)` and `email(to, subject, body)`. In the POC "sending" means appending to the **notification centre**: `NotificationLog` (localStorage `fluxus:sdm:notifications`, capped at 200, subscribe pattern) rendered as the header bell with an unseen count and a newest-first panel. When a real gateway exists it slots behind the same manifest; scripts don't change.
 - **`geo`** (read) — `suburbsOf(city)`: suburb records for a city id, ordered by name, over the seeded reference data. Backs the suburb `List` datasource (`services.geo.suburbsOf(attributes.city)` — the query-chain version it replaced is noted in the attribute's description), so the city → suburb dependent picker now exercises a service call end to end. The implementation moved to `@fluxus/engine` at DSL Phase 4 (it is Store-backed and host-agnostic; the workbench imports `buildGeoModule` from the engine). `notify` stays workbench-owned — its sink (`src/services/notify.ts` → NotificationLog) is UI.
 
-Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification appears only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Async dispatch failures land on the console via the bridge's `onQueuedFailure` (the after-hook-warn toast slot may take this over later).
+Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification dispatches only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Since backend stage 2 the hook runs server-side, so the dispatch lands on the server's notify sink (process console), not the workbench bell — see the dormant-bell note under Store.
 
 `validateConfig` passes the registry, so the shipped config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring").
 
@@ -97,21 +97,21 @@ Activity history is append-only and never edited, so **cancel can never mean del
 
 ```
 config/{attributes,functions}.json + config/entities/*.json
-  └── config.ts (merges to one typed ConfigRaw)
-        └── @fluxus/engine LocalStorageAdapter (seeds defs; loads/persists records;
-              pub/sub; enforces field constraints on CREATE/UPDATE;
-              host-named key 'fluxus:sdm:records', legacy 'aber-poc-v1-records')
-              └── @fluxus/engine createEngine (runActivity pipeline, evaluate,
-                    config validation — see engine SPEC)
-                    └── context/AppContext (hosts the engine singletons; subscribe →
-                          tick → re-render; selection state; UI reactions around
-                          runActivity)
-                          └── components read via useAppContext()
+  └── config.ts (merges to one typed ConfigRaw — the seed script's input;
+        the running workbench reads config from the server)
+  src/host.ts (backend stage 2): FluxusClient.connect() → scope config +
+        partition snapshot in the engine's MemoryAdapter; createEngine over it
+        (notify + geo modules); main.tsx awaits initHost() before rendering
+        (server unreachable → boot error screen, no fallback)
+        └── context/AppContext (subscribe → tick → re-render; selection state;
+              UI reactions around runActivity, which now round-trips
+              client.runActivity → activities.run → snapshot refresh)
+              └── components read via useAppContext()
 ```
 
-- The engine's `Store` contract is the seam: swapping localStorage for the real backend (tRPC + Neon per root ARCHITECTURE.md) is a one-adapter change. Since Extraction the interface, the `LocalStorageAdapter`, the DSL bridge, `validateConfig`, and the core types all live in `@fluxus/engine`; the sdm package keeps what is workbench-specific — config, UI, `NotificationLog`, and the notify service implementation (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
+- The Store-contract seam paid off at backend stage 2 (2026-07-12): the workbench swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a partition re-fetch. `runActivity` (AppContext) is async now; `AttributesForm.onSubmit` awaits it, CSV import runs rows sequentially. The sdm package keeps what is workbench-specific — the demo config (as seed input), UI, `NotificationLog`, and the notify service implementation (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
+- **Notification bell is dormant since stage 2**: hooks (and their `queue services.notify.*`) execute server-side, where the sink is the process console. The bell + `NotificationLog` stay wired (manifest still validates) and come back to life with the unified-log design.
 - Two separate gets on type selection, kept separate for the future CQRS split: `getRecordTypeDef(typeId)` (def + workflow → grid columns, CREATE discovery, activity strip) and `getRecordTypeData(typeId)` (instances → grid rows).
-- Extraction stage 1 (engine package, sdm repointed) is done; stage 2 (the page builder hosting a Store and the `run activity` callback action) is next — see root ROADMAP.
 
 ## UI
 

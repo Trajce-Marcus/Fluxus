@@ -25,13 +25,22 @@ src/types.ts       — SDM config + runtime types (ConfigRaw, RecordTypeDef,
                      ActivityDef, RecordInstance, ActivityHistoryEntry, …)
 src/store.ts       — the Store contract (the persistence seam)
 src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storage
-                     (extracted from LocalStorageAdapter at DSL Phase 4)
-src/localStorageAdapter.ts — MemoryAdapter + localStorage persistence (browser)
+                     (extracted from LocalStorageAdapter at DSL Phase 4).
+                     replaceRecords() swaps the whole snapshot in place
+                     (identity stable, subscribers notified) — how client
+                     hosts refresh after a server-side run (backend stage 2)
+src/localStorageAdapter.ts — MemoryAdapter + localStorage persistence
+                     (no live host since backend stage 2; kept as the
+                     reference persistence subclass)
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
 src/validateSubmission.ts — headless payload validation (DSL Phase 4): the
                      attribute trio + datasource membership as one check
 src/services/geo.ts — shared geo module (Store-backed, host-agnostic)
+src/services/logger.ts — the engine-owned logger manifest (one builder:
+                     createEngine binds the live sink; validateConfig
+                     registers it with a no-op so configs using
+                     services.logger validate identically everywhere)
 src/engine.ts      — createEngine: the runActivity pipeline + evaluation entry
 ```
 

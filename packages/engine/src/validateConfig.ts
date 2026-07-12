@@ -7,6 +7,7 @@
 import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ConfigRaw } from './types';
 import { buildDslSchema, joinScript, shortName } from './bridge';
+import { buildLoggerModule } from './services/logger';
 
 export interface Finding {
   where: string;
@@ -14,7 +15,13 @@ export interface Finding {
 }
 
 export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] = []): Finding[] {
-  const schema = buildDslSchema(config, services);
+  // services.logger is engine-owned and part of every host's registry
+  // (createEngine appends it, name reserved) — validation must see the same
+  // registry the engine runs with, whoever is validating.
+  const registry = services.some((m) => m.name.toLowerCase() === 'logger')
+    ? services
+    : [...services, buildLoggerModule(() => {})];
+  const schema = buildDslSchema(config, registry);
   const findings: Finding[] = [];
 
   const note = (where: string, message: string) => {

@@ -53,8 +53,8 @@ export function AvailableActivities({ record, workflow }: Props) {
             activity={activeActivity}
             anchorRecord={record}
             recordTypeId={record.typeRef}
-            onSubmit={(captured, options) => {
-              const result = runActivity(activeActivity, captured, record, options);
+            onSubmit={async (captured, options) => {
+              const result = await runActivity(activeActivity, captured, record, options);
               if (result.status === 'done') setActiveActivity(null);
               return result;
             }}

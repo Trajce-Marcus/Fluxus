@@ -2,7 +2,7 @@ import { useState, useEffect, createElement, useCallback, useMemo } from 'react'
 import type { ActivityDef, RecordInstance } from '@fluxus/engine';
 import type { ComponentManifest } from './manifest';
 import type { SlotConfig } from './persistence';
-import { sdmEngine, sdmStore, findActivity } from '../../sdm-runtime/engine';
+import { sdmClient, sdmStore, findActivity } from '../../sdm-runtime/engine';
 import { ActivityFormModal } from '../../sdm-runtime/ActivityFormModal';
 import {
   evaluatePageExpression,
@@ -35,19 +35,26 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
   // activity outcomes flow back to the app (locked ROADMAP behaviour).
   const [refreshTick, setRefreshTick] = useState(0);
 
-  // Runs the engine pipeline for an app-triggered activity; the platform
-  // (not the component) owns the warn soft-stop confirmation.
-  const runNow = useCallback((
+  // Runs the pipeline server-side for an app-triggered activity (the client
+  // refreshes the snapshot after); the platform (not the component) owns the
+  // warn soft-stop confirmation.
+  const runNow = useCallback(async (
     activity: ActivityDef,
-    captured: Record<string, unknown>,
+    captured: Record<string, string>,
     anchorRecord: RecordInstance | null,
     callbackData: unknown,
-  ): boolean => {
-    let result = sdmEngine.runActivity(activity, captured, anchorRecord, { callbackData });
+  ): Promise<boolean> => {
+    const input = {
+      activityId: activity.id,
+      recordId: anchorRecord?.id,
+      attributes: captured,
+      callbackData,
+    };
+    let result = await sdmClient.runActivity(input);
     if (result.status === 'needs-confirmation') {
       const ok = window.confirm(`${result.warnings.join('\n')}\n\nContinue anyway?`);
       if (!ok) return false;
-      result = sdmEngine.runActivity(activity, captured, anchorRecord, { callbackData, acknowledgedWarnings: true });
+      result = await sdmClient.runActivity({ ...input, acknowledgedWarnings: true });
     }
     setRefreshTick((t) => t + 1);
     return true;
@@ -65,9 +72,13 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
     if (found.activity.attributes.length > 0) {
       setPendingForm({ activity: found.activity, anchorRecord, callbackData: data ?? null });
     } else {
-      runNow(found.activity, {}, anchorRecord, data ?? null);
+      // Async now (server round trip): the callback script has already
+      // returned, so failures surface through the host error channel.
+      runNow(found.activity, {}, anchorRecord, data ?? null).catch((err: unknown) => {
+        onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
+      });
     }
-  }, [runNow]);
+  }, [runNow, onError, manifest.name]);
 
   // Handlers behind services.page (UI-local effects) and services.activities
   // (host-neutral activity runs) for this component instance.

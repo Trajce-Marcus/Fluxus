@@ -7,11 +7,12 @@ The page/app builder: an IDE-style shell (activity bar, sidebar, tabs, console),
 ## Run
 
 ```bash
-npm run dev:page-builder   # from repo root, or `npm run dev` in this package
-# → http://localhost:5173
+npm run dev                # from repo root: server + workbench + page builder together
+# or individually: npm run dev:server (required) + npm run dev:page-builder
+# → http://localhost:5174 (server at :8787; seed the demo SDM once with npm run seed:server)
 ```
 
-Browser-only; pages persist in localStorage (`fluxus:page:*`).
+Since backend stage 2 (2026-07-12) SDM records live in `@fluxus/server`, shared with the workbench (scope `demo/sdm`); the app boots by fetching the config + partition via `@fluxus/client` and runs activities server-side. Pages/templates still persist in localStorage (`fluxus:page:*`) — they're page-builder artifacts, not SDM records.
 
 ## Docs
 

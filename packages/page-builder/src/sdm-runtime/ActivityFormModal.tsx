@@ -9,8 +9,8 @@ import type { ActivityDef, RecordInstance } from '@fluxus/engine';
 interface Props {
   activity: ActivityDef;
   anchorRecord: RecordInstance | null;
-  /** Runs the activity; returns true when done (modal closes), false when cancelled. */
-  onSubmit: (captured: Record<string, unknown>) => boolean;
+  /** Runs the activity; resolves true when done (modal closes), false when cancelled. */
+  onSubmit: (captured: Record<string, string>) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -18,7 +18,7 @@ export function ActivityFormModal({ activity, anchorRecord, onSubmit, onClose }:
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     for (const attr of activity.attributes) {
       if (attr.required && !(values[attr.key] ?? '').trim()) {
         setError(`${attr.label} is required`);
@@ -27,7 +27,7 @@ export function ActivityFormModal({ activity, anchorRecord, onSubmit, onClose }:
     }
     setError(null);
     try {
-      if (onSubmit(values)) onClose();
+      if (await onSubmit(values)) onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

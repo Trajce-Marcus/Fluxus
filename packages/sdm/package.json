@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fluxus/client": "0.1.0",
     "@fluxus/dsl": "0.1.0",
     "@fluxus/engine": "0.1.0",
     "react": "^18.2.0",

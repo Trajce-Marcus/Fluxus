@@ -69,6 +69,19 @@ export const appRouter = t.router({
   }),
 
   records: t.router({
+    // The whole scope partition in one round trip — what a browser host loads
+    // into its MemoryAdapter snapshot at bootstrap (and re-fetches after runs).
+    partition: t.procedure
+      .input(z.object({ scope: scopeInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.db.select().from(records).where(eq(records.scope, input.scope));
+        return rows.map((r) => ({
+          id: r.id,
+          typeRef: r.typeRef,
+          customFields: r.customFields,
+          activityHistory: r.activityHistory,
+        }));
+      }),
     list: t.procedure
       .input(z.object({ scope: scopeInput, typeId: z.string().min(1) }))
       .query(async ({ ctx, input }) => {

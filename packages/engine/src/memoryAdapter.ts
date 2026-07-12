@@ -142,6 +142,15 @@ export class MemoryAdapter implements Store {
     return [...this.records.values()];
   }
 
+  // Swap the whole snapshot and notify subscribers — how a client host
+  // refreshes after a server-side activity run without changing the adapter
+  // (or engine) identity its UI is wired to.
+  replaceRecords(records: Iterable<readonly [string, RecordInstance]>): void {
+    this.records = new Map(records);
+    this.persist();
+    this.notify();
+  }
+
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);

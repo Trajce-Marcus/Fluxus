@@ -299,8 +299,8 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
             activity={createActivity}
             anchorRecord={null}
             recordTypeId={typeDef.id}
-            onSubmit={(captured, options) => {
-              const result = runActivity(createActivity, captured, null, options);
+            onSubmit={async (captured, options) => {
+              const result = await runActivity(createActivity, captured, null, options);
               if (result.status === 'done') {
                 setShowCreateForm(false);
                 if (!pickerMode && result.recordId) {
@@ -321,10 +321,13 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
         <CsvImportModal
           typeName={typeDef.name}
           customFields={customFields}
-          onImport={(rows) => {
+          onImport={async (rows) => {
             // Bulk import acknowledges gate warnings up front (there's no one to
-            // confirm per row); fail() still rejects the row.
-            rows.forEach(row => runActivity(createActivity, row, null, { acknowledgedWarnings: true }));
+            // confirm per row); fail() still rejects the row. Sequential on
+            // purpose: each run round-trips the server and refreshes the snapshot.
+            for (const row of rows) {
+              await runActivity(createActivity, row, null, { acknowledgedWarnings: true });
+            }
             setShowImportCSV(false);
           }}
           onClose={() => setShowImportCSV(false)}

@@ -22,3 +22,6 @@ serve({ fetch: app.fetch, port });
 console.log(`@fluxus/server listening on http://localhost:${port} (tRPC at /trpc)`);
 
 export { app, db };
+// Type-only surface for @fluxus/client (erased at compile time — importing
+// the type never boots this entry).
+export type { AppRouter } from './router';

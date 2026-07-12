@@ -1,0 +1,19 @@
+{
+  "name": "@fluxus/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@fluxus/engine": "0.1.0",
+    "@trpc/client": "^11.4.3"
+  },
+  "devDependencies": {
+    "@fluxus/server": "0.1.0",
+    "typescript": "^5.3.3"
+  }
+}

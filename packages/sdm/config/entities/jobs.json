@@ -70,7 +70,15 @@
         "_comment": "record_map:CREATE — surfaced at the GRID level (no anchor). On submit, attributes whose key matches a custom_field key are written to the new Record. ACCEPTABLE BEHAVIOUR, DO NOT FIX: 'raise_notes' has no matching custom field, so it is captured then silently dropped on create — intended (SDM update 1.9.3 rule 2), not a bug; do not add a raise_notes field or error. ACCEPTABLE BEHAVIOUR, DO NOT FIX: 'status' is not captured here and no hook runs this cut, so it stays 'Raised' permanently — intended; do not add a non-activity write path to change it. See POC1_Runtime_UI_Scope.md §7a.",
         "attributes": [
           {
+            "attribute_ref": "id",
+            "required": true
+          },
+          {
             "attribute_ref": "job_no"
+          },
+          {
+            "attribute_ref": "job_type",
+            "required": true
           },
           {
             "attribute_ref": "contract_id"

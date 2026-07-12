@@ -1,9 +1,10 @@
 # @fluxus/server — Living Spec
 
-The backend host (DSL Phase 4, backend stage 1, built 2026-07-12): the third
-front door on the one activity pipeline. Where the workbench and the page
-builder drive `@fluxus/engine` in the browser, this package drives it on the
-server — headless invocation over HTTP, records in Postgres, and the
+The backend host (DSL Phase 4, built 2026-07-12): the third front door on
+the one activity pipeline — and since backend stage 2 (same day) the *only*
+door to persistence: the workbench and the page builder run their reads off
+a fetched partition snapshot (`@fluxus/client`) and their mutations through
+`activities.run`. Headless invocation over HTTP, records in Postgres, the
 reporting projection. Root ARCHITECTURE.md owns the cross-package data
 architecture; this SPEC covers what the server package owns.
 
@@ -65,12 +66,14 @@ ARCHITECTURE.md "Hosting options"):
   non-CREATE activities and is rejected on CREATE. Warn soft-stop returns
   `needs-confirmation` with nothing persisted; re-run with
   `acknowledgedWarnings`.
-- **`records.list`** `{ scope?, typeId }` / **`records.get`** `{ scope?,
-  recordId }` — the platform data channel (RecordInstance shape, history
-  embedded). This is what browser hosts will fetch partitions from when they
-  repoint (client-side expression evaluation stays local; scripts and
-  persistence are server-side). App-level reads become GET activities when
-  §5a lands — records.* is infrastructure, not the app API.
+- **`records.partition`** `{ scope? }` / **`records.list`** `{ scope?,
+  typeId }` / **`records.get`** `{ scope?, recordId }` — the platform data
+  channel (RecordInstance shape, history embedded). `partition` returns the
+  whole scope in one round trip — what `@fluxus/client` loads into the
+  browser hosts' `MemoryAdapter` snapshot at bootstrap and re-fetches after
+  every run (backend stage 2; client-side expression evaluation stays local,
+  scripts and persistence are server-side). App-level reads become GET
+  activities when §5a lands — records.* is infrastructure, not the app API.
 - **`config.get` / `config.put`** `{ scope?, config }` — the Phase 4 shift:
   the SDM config is a stored artifact and "config-save-time validation" is
   literal. `put` rejects on structural danglers (MemoryAdapter resolution) or
@@ -116,10 +119,8 @@ Pipeline Invariant).
 runtime never depends on a peer host. Config distribution proper (authoring
 against a running server) stays an open thread on the root ROADMAP.
 
-## Known gaps (deliberate, stage 2+)
+## Known gaps (deliberate)
 
-- Browser hosts still on localStorage; repointing them (fetch partition via
-  `records.*`, run activities via `activities.run`) is backend stage 2.
 - No auth: `context.user` is the demo stub; `author` in reporting likewise.
 - GET activities (DSL_SPEC §5a) not implemented — blocked on the unified-log
   design for their logging posture; `records.*` covers data needs meanwhile.

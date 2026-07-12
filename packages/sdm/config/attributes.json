@@ -135,6 +135,12 @@
     "type": "text"
   },
   {
+    "key": "job_type",
+    "label": "Job type",
+    "description": "What kind of job this is (e.g. Inspection, Repair).",
+    "type": "text"
+  },
+  {
     "key": "contract_id",
     "label": "Contract",
     "description": "The contract this job is raised against.",

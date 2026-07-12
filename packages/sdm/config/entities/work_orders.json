@@ -62,6 +62,11 @@
         "default": ""
       },
       {
+        "key": "crew",
+        "type": "text",
+        "default": ""
+      },
+      {
         "key": "workgroup_id",
         "type": "fk_ref",
         "default": "",
@@ -213,6 +218,41 @@
           "})",
           "queue services.notify.user('Work order ' + context.record.id + ' was completed')"
         ]
+      },
+      {
+        "id": "act_dispatch_work_orders",
+        "name": "Dispatch Work Order",
+        "description": "Dispatch this work order to a crew. Non-UI: no attributes, so an app trigger passes straight to the hooks with the crew in the callback data object (merged from the page-builder host sample at backend stage 2).",
+        "sort_order": 5,
+        "show_condition": "context.record.status <> 'Dispatched' and context.record.status <> 'Completed'",
+        "attributes": [],
+        "before_hook": [
+          "if callbackData.crew is null {",
+          "  fail('Dispatch needs a crew — trigger it from an app with callback data { crew: ... }')",
+          "}"
+        ],
+        "after_hook": [
+          "attributes.wo = context.record.id",
+          "attributes.crew = callbackData.crew",
+          "context.record.update({ status: 'Dispatched', crew: callbackData.crew })",
+          "services.logger.note('Dispatched ' + context.record.id + ' to ' + callbackData.crew)"
+        ]
+      },
+      {
+        "id": "act_reschedule_work_orders",
+        "name": "Reschedule Work Order",
+        "description": "Change the due date (app-triggered or workbench, standard capture form).",
+        "sort_order": 6,
+        "record_map": "UPDATE",
+        "show_condition": "context.record.status <> 'Completed'",
+        "attributes": [
+          {
+            "attribute_ref": "due_date",
+            "required": true
+          }
+        ],
+        "before_hook": null,
+        "after_hook": null
       }
     ]
   }

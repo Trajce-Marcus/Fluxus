@@ -7,9 +7,10 @@ two-layer data architecture from root [ARCHITECTURE.md](../../docs/ARCHITECTURE.
 transactional JSONB partitions plus the normalized reporting projection,
 written synchronously in-transaction.
 
-**Status:** backend stage 1 — headless invocation live with tests; browser
-hosts still run on localStorage (repoint is stage 2). Lambda entry exists but
-has not been deployed; Neon path untested until an account exists.
+**Status:** backend stage 2 — headless invocation live with tests, and both
+browser hosts repointed here via `@fluxus/client` (partition snapshot in,
+`activities.run` out; hooks + persistence server-side only). Lambda entry
+exists but has not been deployed; Neon path untested until an account exists.
 
 ## Run
 

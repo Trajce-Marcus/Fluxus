@@ -9,6 +9,7 @@ import type { ActivityDef, ConfigRaw, RecordInstance, RunActivityResult } from '
 import type { Store } from './store';
 import { buildEvalHost, coerceCaptured, serializeFields, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
+import { buildLoggerModule } from './services/logger';
 
 export interface EngineOptions {
   store: Store;
@@ -56,30 +57,17 @@ export interface Engine {
 }
 
 export function createEngine({ store, config, services: hostServices = [] }: EngineOptions): Engine {
-  // services.logger — engine-owned: its sink is the activity history entry
-  // (the pipeline is the log; no separate log store). Lines noted during a
-  // run land on the entry as the reserved `system_log` attribute — only if
-  // the run commits an entry (rejected submissions leave no trace, DELETEs
-  // have no entry). kind 'read' deliberately: logging is observability, legal
-  // in any hook; the buffer, not the world, changes.
+  // services.logger — engine-owned (see services/logger.ts): lines noted
+  // during a run land on the entry as the reserved `system_log` attribute —
+  // only if the run commits an entry (rejected submissions leave no trace,
+  // DELETEs have no entry).
   if (hostServices.some((m) => m.name.toLowerCase() === 'logger')) {
     throw new Error("Service module name 'logger' is reserved by the engine");
   }
   let runLog: string[] = [];
-  const loggerModule: ServiceModuleDef = {
-    name: 'logger',
-    description: 'System log: lines land on the running activity\'s history entry (system_log).',
-    functions: {
-      note: {
-        params: ['message'],
-        description: "Append a line to the run's system log.",
-        kind: 'read',
-        fn: (message) => {
-          runLog.push(String(message ?? ''));
-        },
-      },
-    },
-  };
+  const loggerModule = buildLoggerModule((line) => {
+    runLog.push(line);
+  });
   const services = [...hostServices, loggerModule];
 
   // A CREATE activity targets the record type whose workflow declares it —

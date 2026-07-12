@@ -1,28 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { createEngine, LocalStorageAdapter } from '@fluxus/engine';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult, ScriptContext } from '@fluxus/engine';
-import { NotificationLog } from '../store/NotificationLog';
-import { config } from '../config';
-import { buildNotifyModule } from '../services/notify';
-import { buildGeoModule } from '@fluxus/engine';
+import { adapter, client, engine, notificationLog } from '../host';
 
-// Module-level singletons — one adapter, one notification log, one engine for
-// the lifetime of the app. The engine owns the activity pipeline; this context
-// owns the workbench's UI state (selection) and channels (console warnings).
-const adapter = new LocalStorageAdapter(config, {
-  storageKey: 'fluxus:sdm:records',
-  // Pre-rename key (aber-poc era) — data found there is merged in once.
-  legacyStorageKey: 'aber-poc-v1-records',
-});
-export const notificationLog = new NotificationLog();
-const engine = createEngine({
-  store: adapter,
-  config,
-  services: [buildNotifyModule(notificationLog), buildGeoModule(adapter)],
-});
-
-// Config-save-time validation: with the SDM still file-edited, save time is app start.
-engine.reportConfigFindings();
+// Singletons live in ../host (assigned before render by initHost). The server
+// owns hooks and persistence; the local engine evaluates expressions against
+// the fetched snapshot; this context owns the workbench's UI state (selection)
+// and channels (console warnings).
+export { notificationLog };
 
 interface AppContextValue {
   recordTypes: RecordTypeDef[];
@@ -37,10 +21,10 @@ interface AppContextValue {
   getRecordAndType: (typeId: string, recordId: string) => { record: RecordInstance; typeDef: RecordTypeDef & { workflow: WorkflowDef } } | null;
   runActivity: (
     activity: ActivityDef,
-    captured: Record<string, unknown>,
+    captured: Record<string, string>,
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
-  ) => RunActivityResult;
+  ) => Promise<RunActivityResult>;
   // Activity-level show_condition (availability): drives UI visibility; the
   // same rule is re-checked inside runActivity as the pipeline gate.
   isActivityAvailable: (activity: ActivityDef, anchorRecord: RecordInstance | null) => boolean;
@@ -62,7 +46,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
-  // Re-render whenever the adapter mutates (createRecord / appendActivity / updateRecord)
+  // Re-render whenever the snapshot changes (partition refresh after each run)
   useEffect(() => adapter.subscribe(() => setTick(t => t + 1)), []);
 
   const selectRecordType = useCallback((type: RecordTypeDef) => {
@@ -120,16 +104,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Thin host wrapper over the engine pipeline: the engine runs the activity;
-  // the workbench reacts — deselect a deleted record, console the warnings
+  // Thin host wrapper over the server pipeline: the server runs the activity
+  // (gate, hooks, persistence) and the client refreshes the snapshot; the
+  // workbench reacts — deselect a deleted record, console the warnings
   // (its channel until a toast slot exists).
-  const runActivity = useCallback((
+  const runActivity = useCallback(async (
     activity: ActivityDef,
-    captured: Record<string, unknown>,
+    captured: Record<string, string>,
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
-  ): RunActivityResult => {
-    const result = engine.runActivity(activity, captured, anchorRecord, options);
+  ): Promise<RunActivityResult> => {
+    const result = await client.runActivity({
+      activityId: activity.id,
+      recordId: anchorRecord?.id,
+      attributes: captured,
+      waived: options?.waived,
+      acknowledgedWarnings: options?.acknowledgedWarnings,
+    });
     if (result.status === 'done') {
       if (activity.record_map === 'DELETE' && result.recordId) {
         const deletedId = result.recordId;

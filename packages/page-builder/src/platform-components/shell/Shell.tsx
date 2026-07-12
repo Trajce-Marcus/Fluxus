@@ -6,10 +6,10 @@ import { TabBar, css as tabBarCss } from './TabBar';
 import { ContentArea, css as contentAreaCss } from './ContentArea';
 import { ConsolePanel, css as consolePanelCss } from './ConsolePanel';
 import { css as pageEditorCss } from '../page-builder/PageEditor';
-import { ensureDemoPage } from '../../sdm-runtime/demoPage';
 
-// Extraction stage 2 demo content — seeded once, deletable in the explorer.
-ensureDemoPage();
+// Demo-page seeding moved to api.ts (backend stage 2): savePage validates
+// against the fetched SDM config, so it must run after initSdmRuntime — not
+// at module load.
 
 function ShellComponent() {
   const { activeActivityItem } = useShellState(['activeActivityItem']);

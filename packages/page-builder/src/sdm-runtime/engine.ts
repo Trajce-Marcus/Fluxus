@@ -1,21 +1,32 @@
-// The page builder's engine host (Extraction stage 2, fork 2 rulings):
-// one platform singleton created at module load — NOT inside React state —
-// with its own storage key. Components never import this; they reach the SDM
-// only through the declarative wiring layer (procedures in, run-activity
-// callbacks out).
+// The page builder's engine host (backend stage 2): records and activity runs
+// live on @fluxus/server; this module holds the fetched partition snapshot
+// and the local engine that evaluates page expressions synchronously. Both
+// hosts point at the same scope — one model, many apps, literally.
+//
+// Platform singletons as before — assigned by initSdmRuntime(), which
+// main.tsx awaits before rendering (live bindings: importers always see the
+// initialized values). Components never import this; they reach the SDM only
+// through the declarative wiring layer (dynamic props in, callbacks out).
 
-import { createEngine, LocalStorageAdapter } from '@fluxus/engine';
-import type { ActivityDef, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
-import { config } from './config';
+import { createEngine, buildGeoModule } from '@fluxus/engine';
+import type { ActivityDef, ConfigRaw, Engine, MemoryAdapter, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
+import { FluxusClient } from '@fluxus/client';
 
-export const sdmStore = new LocalStorageAdapter(config, {
-  storageKey: 'fluxus:page-builder:records',
-});
+export let sdmClient: FluxusClient;
+export let sdmStore: MemoryAdapter;
+export let sdmEngine: Engine;
+export let config: ConfigRaw;
 
-export const sdmEngine = createEngine({ store: sdmStore, config });
-
-// Config-save-time validation — same posture as the workbench host.
-sdmEngine.reportConfigFindings();
+export async function initSdmRuntime(): Promise<void> {
+  sdmClient = await FluxusClient.connect();
+  sdmStore = sdmClient.adapter;
+  config = sdmClient.config;
+  sdmEngine = createEngine({
+    store: sdmStore,
+    config,
+    services: [buildGeoModule(sdmStore)],
+  });
+}
 
 /** Resolve an activity id to its resolved def + owning record type. */
 export function findActivity(

@@ -18,7 +18,7 @@ interface Props {
   onSubmit: (
     captured: Record<string, string>,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
-  ) => RunActivityResult;
+  ) => Promise<RunActivityResult>;
   onClose: () => void;
 }
 
@@ -110,13 +110,13 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     return Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k)));
   };
 
-  const submit = (
+  const submit = async (
     captured: Record<string, string>,
     capturedWaived: Record<string, string>,
     options?: { acknowledgedWarnings?: boolean }
   ) => {
     try {
-      const result = onSubmit(captured, { ...options, waived: capturedWaived });
+      const result = await onSubmit(captured, { ...options, waived: capturedWaived });
       if (result.status === 'needs-confirmation') {
         setPending({ warnings: result.warnings, captured, waived: capturedWaived });
       } else {

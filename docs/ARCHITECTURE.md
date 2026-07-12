@@ -2,7 +2,7 @@
 
 How the parts connect. Package-level detail lives in each package's `docs/SPEC.md`; this document covers only what spans packages.
 
-## The four parts
+## The parts
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -15,18 +15,24 @@ How the parts connect. Package-level detail lives in each package's `docs/SPEC.m
 │                       @fluxus/engine                            │
 │  the activity pipeline (runActivity) · Store contract ·         │
 │  DSL bridge · config validation · core SDM types                │
-└────────────┬───────────────────────┬────────────────────────────┘
-             │ hosted by             │ hosted by
-┌────────────▼────────────┐  ┌───────▼─────────────────────────────┐
-│      @fluxus/sdm        │  │      @fluxus/page-builder           │
-│  SDM config (types,     │  │  layout editor · ComponentContainer │
-│  workflows, activities) │  │  wiring layer · reusable apps       │
-│  record workbench UI    │  │  (calls activities; binds dynamic   │
-│  notification centre    │  │   props via DSL queries)            │
-└─────────────────────────┘  └─────────────────────────────────────┘
+└──────┬──────────────────────┬──────────────────────┬────────────┘
+       │ hosted by            │ hosted by            │ hosted by
+┌──────▼──────────┐  ┌────────▼───────────┐  ┌───────▼────────────┐
+│  @fluxus/sdm    │  │ @fluxus/           │  │  @fluxus/server    │
+│  SDM workbench  │  │   page-builder     │  │  activities as the │
+│  UI, notify     │  │  layout editor ·   │  │  API surface (tRPC)│
+│  centre         │  │  wiring · apps     │  │  · Postgres        │
+└──────┬──────────┘  └────────┬───────────┘  └───────▲────────────┘
+       │      browser hosts talk to the server       │
+       └───────────────┬──────┘                      │
+               ┌───────▼────────────┐                │
+               │  @fluxus/client    │────────────────┘
+               │  config+partition  │   config.get · records.partition
+               │  snapshot · runs   │   · activities.run
+               └────────────────────┘
 ```
 
-Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — the pipeline they share is a package they both import. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules.
+Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — the pipeline they share is a package they both import. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only.
 
 ## The SDM is the centre
 
@@ -55,7 +61,7 @@ The activity pipeline — resolve attributes → evaluate show conditions → va
 
 1. **SDM record workbench** — activity strip / CREATE launch on the grid. *(Live.)*
 2. **Page builder apps** — a component's named callback wired to `run-activity`; the callback contract is (record, one data object). UI activities open the standard capture form; non-UI activities pass straight to the hooks, which read the data object via the `callbackData` root. Same gate, hooks, history. *(Live — Extraction stage 2.)*
-3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation. *(Live — `@fluxus/server`, backend stage 1, 2026-07-12: `activities.run` over tRPC; the server loads the scope's partition into an in-memory Store per request, runs the same sync engine, and writes back transactionally. Browser hosts still run on localStorage until backend stage 2 repoints them.)*
+3. **Headless invocation** — the activity's attribute list *is* its parameter signature; callers supply values in one payload; datasources double as validation. *(Live — `@fluxus/server`, backend stage 1, 2026-07-12: `activities.run` over tRPC; the server loads the scope's partition into an in-memory Store per request, runs the same sync engine, and writes back transactionally. Since backend stage 2 — same day — the browser hosts run through this same door via `@fluxus/client`: one model, many apps, literally.)*
 
 ## The ComponentContainer is the reuse seam
 

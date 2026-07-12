@@ -2,6 +2,18 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { pageContextStore, type PageContext } from './store/contextStore';
 import { registry } from './components';
+import { initSdmRuntime } from './sdm-runtime/engine';
+import { ensureDemoPage } from './sdm-runtime/demoPage';
+
+// THE entry point (index.html loads this module and mounts Shell) — so the
+// SDM runtime bootstraps here: fetch the scope's config + partition from
+// @fluxus/server before anything renders. Kicked off at module load; every
+// mount awaits it. Hard cutover by ruling: server unreachable → error text in
+// the mount element, no localStorage fallback. Demo-page seeding runs after
+// init because savePage validates against the fetched config.
+const sdmReady = initSdmRuntime().then(() => {
+  ensureDemoPage();
+});
 
 type PropsMap = Record<string, unknown>;
 
@@ -66,7 +78,19 @@ window.MyComponents = {
     const mountPoint = document.createElement('div');
     shadowRoot.appendChild(mountPoint);
 
-    createRoot(mountPoint).render(createElement(Component, props));
+    sdmReady
+      .then(() => {
+        createRoot(mountPoint).render(createElement(Component, props));
+      })
+      .catch((err: unknown) => {
+        mountPoint.style.cssText = 'font-family: system-ui, sans-serif; padding: 24px; max-width: 640px;';
+        mountPoint.innerHTML =
+          `<h2 style="margin:0 0 8px">Can't reach the Fluxus server</h2>` +
+          `<p style="color:#64748b">The page builder needs <code>@fluxus/server</code> running — start it with ` +
+          `<code>npm run dev:server</code> (and seed the demo SDM once with <code>npm run seed:server</code>).</p>` +
+          `<pre style="background:#f8fafc;padding:12px;border-radius:6px;white-space:pre-wrap"></pre>`;
+        mountPoint.querySelector('pre')!.textContent = err instanceof Error ? err.message : String(err);
+      });
   },
 
   load(components) {

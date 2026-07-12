@@ -5,7 +5,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=@fluxus/sdm",
+    "dev": "npm run dev:all",
+    "dev:all": "concurrently -n server,sdm,pages -c blue,green,magenta \"npm:dev:server\" \"npm:dev:sdm\" \"npm:dev:page-builder\"",
     "dev:sdm": "npm run dev --workspace=@fluxus/sdm",
     "dev:page-builder": "npm run dev --workspace=@fluxus/page-builder",
     "dev:server": "npm run dev --workspace=@fluxus/server",
@@ -15,6 +16,7 @@
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "typescript": "^5.3.3"
   }
 }

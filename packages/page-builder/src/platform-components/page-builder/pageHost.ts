@@ -18,8 +18,7 @@ import {
   type ServiceModuleDef,
 } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, functionSignatures } from '@fluxus/engine';
-import { config } from '../../sdm-runtime/config';
-import { sdmStore } from '../../sdm-runtime/engine';
+import { config, sdmStore } from '../../sdm-runtime/engine';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
 // Components emit (value, data?) — a selection value or anchor record id, plus
