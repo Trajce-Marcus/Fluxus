@@ -1,8 +1,17 @@
 // Registers the `fluxscript` language with Monaco (tokens + config) — the
 // DSL spec's authoring posture: expression dialogs speak the language by id.
 // Keyword list mirrors @fluxus/dsl tokens.ts (KEYWORDS).
+//
+// Monaco is bundled locally (monaco-editor + Vite `?worker`), not fetched
+// from @monaco-editor/react's default CDN loader — the CDN path renders a
+// bare textarea when unreachable.
 
-import type { Monaco } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import { loader, type Monaco } from '@monaco-editor/react';
+
+self.MonacoEnvironment = { getWorker: () => new editorWorker() };
+loader.config({ monaco });
 
 export const FLUXSCRIPT = 'fluxscript';
 

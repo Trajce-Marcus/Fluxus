@@ -56,7 +56,7 @@ The old `show-overlay` action and `OverlayConfig` were cut (stub with no consume
 
 ## Editor UI
 
-Bindings render as read-only expression previews; clicking opens the **expression dialog** (`ExpressionDialog.tsx`): a Monaco editor registered with language id `fluxscript` (`fluxscriptLanguage.ts` — Monarch tokenizer mirroring the DSL keyword set; Monaco loads via @monaco-editor/react's CDN loader for now). The dialog validates live — expressions via `validateExpression` (datasource posture, `attributes` banned), callbacks via `validateScript` in `'callback'` mode with `callbackData` as an extra root — and blocks Save on errors. Saving empty clears the binding. Richer affordances (jump-to-function, promote-to-function) are the agreed follow-up (design doc, crossover section).
+Bindings render as read-only expression previews; clicking opens the **expression dialog** (`ExpressionDialog.tsx`): a Monaco editor registered with language id `fluxscript` (`fluxscriptLanguage.ts` — Monarch tokenizer mirroring the DSL keyword set; Monaco is bundled locally via `loader.config({ monaco })` + a Vite `?worker` import — the CDN default rendered a bare textarea when unreachable. Cost: the bundle carries the full editor; code-splitting is a floated cleanup). The dialog validates live — expressions via `validateExpression` (datasource posture, `attributes` banned), callbacks via `validateScript` in `'callback'` mode with `callbackData` as an extra root — and blocks Save on errors. Saving empty clears the binding. Richer affordances (jump-to-function, promote-to-function) are the agreed follow-up (design doc, crossover section).
 
 ## validatePage (validatePage.ts)
 
