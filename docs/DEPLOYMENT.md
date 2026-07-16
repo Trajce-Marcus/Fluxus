@@ -124,6 +124,12 @@ Building locally sidesteps it entirely.
 - CORS: the server runs wide-open `cors()` — deliberate for the
   unauthenticated POC phase (origin checks add nothing without auth);
   preflight verified against the live server.
+- Verified e2e from a real browser (headless Chrome, 2026-07-17): both hosts
+  boot against the live API; a city created through the deployed workbench
+  landed in Neon `production` (and the `dev` branch stayed untouched). Note
+  for future probes: the page builder renders inside a **shadow root** on
+  `#shell-root` — `document.body.innerText` is blind to it; screenshot or
+  pierce the shadow DOM instead.
 
 ## How to deploy
 
