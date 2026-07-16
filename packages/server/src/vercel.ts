@@ -8,21 +8,45 @@
 // single ESM file) into api/index.mjs, which is what Vercel serves — Node's
 // strict ESM resolution can't follow the repo's extensionless imports, and
 // bundling also folds in the TS-source workspace deps (engine, dsl).
+//
+// Init is lazy (first request), not top-level: a module-init throw surfaces
+// only as Vercel's opaque FUNCTION_INVOCATION_FAILED page, while a request-
+// time failure can answer with the actual error — missing env var, Neon
+// unreachable, migrations folder absent — so a curl diagnoses the deployment.
 // migrationsFolder: the bundle lives in api/, so migrations/ is one level up
 // (createDb's own default resolves relative to src/db/, wrong from here).
 
 import { fileURLToPath } from 'node:url';
+import { Hono } from 'hono';
 import { handle } from 'hono/vercel';
 import { createDb } from './db/client';
 import { createApp } from './app';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('@fluxus/server on Vercel requires DATABASE_URL (Neon pooled connection string)');
+let appReady: Promise<Hono> | undefined;
+
+function getApp(): Promise<Hono> {
+  appReady ??= (async () => {
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL is not set (or empty) in this deployment\'s environment');
+    }
+    const db = await createDb({
+      migrationsFolder: fileURLToPath(new URL('../migrations', import.meta.url)),
+    });
+    return createApp({ db });
+  })();
+  // A failed init must not be cached as permanently broken — retry next request.
+  appReady.catch(() => { appReady = undefined; });
+  return appReady;
 }
 
-const db = await createDb({
-  migrationsFolder: fileURLToPath(new URL('../migrations', import.meta.url)),
+const outer = new Hono();
+outer.all('*', async (c) => {
+  try {
+    const app = await getApp();
+    return await app.fetch(c.req.raw);
+  } catch (err) {
+    return c.json({ error: 'server init failed', detail: String(err) }, 500);
+  }
 });
-const app = createApp({ db });
 
-export default handle(app);
+export default handle(outer);
