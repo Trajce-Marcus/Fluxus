@@ -36,8 +36,12 @@ plumbing we skipped, plus one URL + CORS change.
 1. Everything Vercel-specific lives in exactly two places:
    `packages/server/src/vercel.ts` (the entry) and
    `packages/server/vercel.json`. At deploy time `npm run build:vercel`
-   (esbuild) bundles the entry into a single ESM file, `api/index.mjs`
-   (generated, gitignored) — Vercel serves that. Bundling is not optional
+   (esbuild) bundles the entry into a single ESM file, `api/index.mjs` —
+   Vercel serves that. The file is **committed** even though it's generated:
+   Vercel discovers functions from the source checkout *before* the build
+   command runs, so it must exist in git; the build regenerates it on every
+   deploy, so the committed copy is only a discovery marker (stale content
+   never ships). Bundling is not optional
    polish: Node's strict ESM resolution can't follow the repo's extensionless
    imports, and the workspace packages (engine, dsl) are consumed as
    TypeScript source.

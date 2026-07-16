@@ -6,8 +6,6 @@ dist
 .env.local
 .data
 
-# generated Vercel function bundle (npm run build:vercel)
-packages/server/api/
 
 # empty Vercel output dir (created by build:vercel; API-only project)
 packages/server/public/
