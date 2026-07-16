@@ -1,7 +1,13 @@
 import type { LayoutDefinition } from './layout-editor/types';
 import { reportPageFindings } from './validatePage';
+import { sdmClient } from '../../sdm-runtime/engine';
 
-const KEY_PREFIX = 'fluxus:page:';
+// Pages live on @fluxus/server (config pipeline; no localStorage, hard
+// cutover like stage 2). The client snapshots the scope's page set at
+// connect, so reads here stay synchronous; writes update the snapshot and
+// round-trip in the background — a failed write logs loudly, same posture
+// as validatePage findings. Everything renders after initSdmRuntime()
+// resolves, so sdmClient is always assigned by the time these run.
 
 // ── Shared entry types ────────────────────────────────────────────────────────
 
@@ -59,50 +65,14 @@ export interface PageDef {
  * allowed to be broken, loudly.
  */
 export function savePage(path: string, def: PageDef): void {
-  localStorage.setItem(`${KEY_PREFIX}${path}`, JSON.stringify(def));
+  sdmClient.savePage(path, def).catch((err) => {
+    console.error(`savePage('${path}') failed to persist to the server`, err);
+  });
   reportPageFindings(path, def);
 }
 
-/**
- * Pages written before the wiring redesign stored dropdown-built config
- * objects (`{source: 'context', ...}` props, `callbackActions`, overlays,
- * platform context keys). Layout and component lists carry over; old wiring
- * is dropped — it has no expression equivalent and is re-authored.
- */
-function normalizePage(raw: Record<string, unknown>): PageDef {
-  const def: PageDef = raw as PageDef;
-
-  if (Array.isArray(def.contextSchema)) {
-    def.contextSchema = def.contextSchema
-      .filter((k) => (k as { source?: string }).source !== 'platform')
-      .map(({ key, type, defaultValue }) => ({ key, type, defaultValue }));
-  }
-
-  if (def.slotConfigs) {
-    for (const config of Object.values(def.slotConfigs)) {
-      if (!config) continue;
-      config.dynamicProps = Object.fromEntries(
-        Object.entries(config.dynamicProps ?? {}).filter(([, v]) => typeof v === 'string'),
-      );
-      config.callbacks = Object.fromEntries(
-        Object.entries(config.callbacks ?? {}).filter(([, v]) => typeof v === 'string'),
-      );
-      delete (config as unknown as Record<string, unknown>).callbackActions;
-    }
-  }
-
-  delete (raw as Record<string, unknown>).overlays;
-  return def;
-}
-
 export function loadPage(path: string): PageDef | null {
-  const raw = localStorage.getItem(`${KEY_PREFIX}${path}`);
-  if (!raw) return null;
-  try {
-    return normalizePage(JSON.parse(raw) as Record<string, unknown>);
-  } catch {
-    return null;
-  }
+  return (sdmClient.pages.get(path) as PageDef | undefined) ?? null;
 }
 
 export function savePageLayout(path: string, layout: LayoutDefinition): void {
@@ -142,18 +112,15 @@ export function saveSlotConfigs(path: string, slotConfigs: Record<string, SlotCo
 }
 
 export function listPagePaths(): string[] {
-  const paths: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(KEY_PREFIX)) paths.push(key.slice(KEY_PREFIX.length));
-  }
-  return paths.sort();
+  return [...sdmClient.pages.keys()].sort();
 }
 
 export function deletePage(path: string): void {
-  localStorage.removeItem(`${KEY_PREFIX}${path}`);
+  sdmClient.deletePage(path).catch((err) => {
+    console.error(`deletePage('${path}') failed to persist to the server`, err);
+  });
 }
 
 export function pageExists(path: string): boolean {
-  return localStorage.getItem(`${KEY_PREFIX}${path}`) !== null;
+  return sdmClient.pages.has(path);
 }

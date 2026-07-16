@@ -44,9 +44,12 @@ _(empty — add freely)_
 - [ ] **Config authoring flow** — narrowed further by stage 2 (2026-07-12):
   both hosts now read config from the server; local `config.ts` is only the
   seed script's input (`npm run seed:server` = the interim authoring loop:
-  edit files → push up). The authoring tool/flow proper (AI-assisted editing
-  against a running server) is the still-open "config distribution" thread on
-  the ROADMAP.
+  edit files → push up). Stage 3 (2026-07-16) added pages to the same loop:
+  `page-builder/pages/*.json` are deploy-input files the seed upserts
+  (deploying pages = deploying files); the page builder itself authors
+  straight against the server. The authoring tool/flow proper (AI-assisted
+  editing against a running server) is the still-open "config distribution"
+  thread on the ROADMAP.
 - [ ] **PII field flag → hashing** (much later; added 2026-07-14). In a record
   type def, flag a custom field as PII so its value is protected at rest.
   Feasibility: doable as a field flag, but "hashed" (one-way) only supports

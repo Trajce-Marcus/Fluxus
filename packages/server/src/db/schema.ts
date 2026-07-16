@@ -24,6 +24,21 @@ export const sdmConfigs = pgTable('sdm_configs', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Page definitions ride the config pipeline (ruled 2026-07-16): server is
+// runtime truth, repo page files are the deploy input (seed upserts them —
+// deploying pages = deploying files). One row per page so the page builder
+// saves a single page without touching the SDM config blob. `def` is opaque
+// jsonb here: PageDef and validatePage live in the page builder (a host);
+// the server never depends on a peer host.
+export const pages = pgTable('pages', {
+  scope: text('scope').notNull(),
+  path: text('path').notNull(),
+  def: jsonb('def').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.scope, t.path] }),
+]);
+
 export const records = pgTable('records', {
   scope: text('scope').notNull(),
   id: text('id').notNull(),

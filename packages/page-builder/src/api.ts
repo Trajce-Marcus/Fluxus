@@ -3,17 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { pageContextStore, type PageContext } from './store/contextStore';
 import { registry } from './components';
 import { initSdmRuntime } from './sdm-runtime/engine';
-import { ensureDemoPage } from './sdm-runtime/demoPage';
 
 // THE entry point (index.html loads this module and mounts Shell) — so the
-// SDM runtime bootstraps here: fetch the scope's config + partition from
-// @fluxus/server before anything renders. Kicked off at module load; every
-// mount awaits it. Hard cutover by ruling: server unreachable → error text in
-// the mount element, no localStorage fallback. Demo-page seeding runs after
-// init because savePage validates against the fetched config.
-const sdmReady = initSdmRuntime().then(() => {
-  ensureDemoPage();
-});
+// SDM runtime bootstraps here: fetch the scope's config + partition + pages
+// from @fluxus/server before anything renders. Kicked off at module load;
+// every mount awaits it. Hard cutover by ruling: server unreachable → error
+// text in the mount element, no localStorage fallback. The demo page is a
+// repo file (pages/work-orders-demo.json) pushed by the server seed script.
+const sdmReady = initSdmRuntime();
 
 type PropsMap = Record<string, unknown>;
 

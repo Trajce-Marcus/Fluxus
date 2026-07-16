@@ -64,6 +64,24 @@ describe('config storage', () => {
   });
 });
 
+describe('page storage (opaque defs on the config pipeline)', () => {
+  it('put/list/delete round-trips a page def, upsert included', async () => {
+    expect(await caller().pages.list({})).toEqual([]);
+    await caller().pages.put({ path: 'pages/a', def: { contextSchema: [] } });
+    await caller().pages.put({ path: 'pages/a', def: { contextSchema: [{ key: 'k', type: 'string' }] } });
+    await caller().pages.put({ path: 'pages/b', def: {} });
+    const listed = await caller().pages.list({});
+    expect(listed.map((p) => p.path).sort()).toEqual(['pages/a', 'pages/b']);
+    expect(listed.find((p) => p.path === 'pages/a')?.def).toEqual({ contextSchema: [{ key: 'k', type: 'string' }] });
+    await caller().pages.delete({ path: 'pages/b' });
+    expect((await caller().pages.list({})).map((p) => p.path)).toEqual(['pages/a']);
+  });
+
+  it('partitions pages by scope', async () => {
+    expect(await caller().pages.list({ scope: 'demo/other' })).toEqual([]);
+  });
+});
+
 describe('headless activity invocation', () => {
   const woId = 'WO-9001';
 

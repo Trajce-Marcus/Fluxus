@@ -15,15 +15,16 @@ Two layers under `src/`:
 
 `src/sdm-runtime/` makes the page builder the engine's second host:
 
-- **`engine.ts`** — the platform singletons (fork 2: never in React state), assigned by `initSdmRuntime()`, which `api.ts` — the real entry: index.html loads it and mounts `Shell` via `MyComponents.mount` (`src/main.tsx` is a dead POC leftover) — kicks off at module load; every `mount` awaits it before rendering, and demo-page seeding runs after it (savePage validates against the fetched config). Since backend stage 2 (2026-07-12) they are a **fetched snapshot**: `FluxusClient.connect()` loads the shared scope's stored config + record partition (`demo/sdm` — the same model the workbench edits) into the engine's `MemoryAdapter`; expressions keep evaluating locally and synchronously; every activity run round-trips the server and re-fetches the partition. No localStorage records, no local sample config, no fallback (hard-cutover ruling; the old private `config.ts` sample was merged into the sdm demo SDM — dispatch/reschedule + `crew` field). Components never import these — they reach the SDM only through the FluxScript wiring (expressions in, callback scripts out).
+- **`engine.ts`** — the platform singletons (fork 2: never in React state), assigned by `initSdmRuntime()`, which `api.ts` — the real entry: index.html loads it and mounts `Shell` via `MyComponents.mount` (`src/main.tsx` is a dead POC leftover) — kicks off at module load; every `mount` awaits it before rendering. Since backend stage 2 (2026-07-12) they are a **fetched snapshot**: `FluxusClient.connect()` loads the shared scope's stored config + record partition + page set (`demo/sdm` — the same model the workbench edits) into the engine's `MemoryAdapter`; expressions keep evaluating locally and synchronously; every activity run round-trips the server and re-fetches the partition. No localStorage records, no local sample config, no fallback (hard-cutover ruling; the old private `config.ts` sample was merged into the sdm demo SDM — dispatch/reschedule + `crew` field). Components never import these — they reach the SDM only through the FluxScript wiring (expressions in, callback scripts out).
 - **`ActivityFormModal.tsx`** — the minimal standard capture form for app-triggered UI activities (text/date + `required`), async `onSubmit` since stage 2. Deliberately a subset of the workbench's form: peer hosts can't share React components, and where a full shared form should live is an open discussion.
-- **`demoPage.ts`** — seeds `pages/work-orders-demo` (once, deletable): a `WorkOrderList` wired to the shared SDM in FluxScript, exercising every wiring mechanism. The list is empty until work orders exist in the scope — create one in the workbench and it appears here (one model, many apps, observably).
 
-Pages and templates themselves stay in localStorage (`fluxus:page:*`) — they are page-builder artifacts, not SDM records.
+The demo page (`pages/work-orders-demo`) is a repo file — `pages/work-orders-demo.json` in this package — pushed by the server seed script: a `WorkOrderList` wired to the shared SDM in FluxScript, exercising every wiring mechanism. The list is empty until work orders exist in the scope — create one in the workbench and it appears here (one model, many apps, observably).
 
 ## Page definition (persistence.ts)
 
-A page is declarative config, persisted under `fluxus:page:<path>`:
+Pages live on `@fluxus/server` (backend stage 3, 2026-07-16 — the `pages` table, one row per `(scope, path)`; no localStorage, hard cutover like stage 2). They ride the config pipeline: the server is runtime truth, repo files under this package's `pages/` are the deploy input (the seed script upserts every `*.json`, page path = file path minus extension prefixed `pages/` — **deploying pages = deploying files**, and a deploy overwrites live edits by design). The client snapshots the scope's page set at connect, so `persistence.ts` reads stay synchronous; writes update the snapshot and round-trip in the background, logging loudly on failure. Page defs are opaque jsonb to the server — `PageDef` and `validatePage` live here, so unlike the SDM config there is no server-side save-time validation.
+
+A page is declarative config:
 
 ```
 PageDef {
@@ -35,7 +36,7 @@ PageDef {
 }
 ```
 
-Every `savePage` runs `validatePage` and reports findings to the console — the page-file counterpart of the engine's config-save-time check. Findings never block the save; a page mid-edit may be broken, loudly. Pages written before the wiring redesign (dropdown-built config objects, overlays, platform context keys) load with layout and component lists intact; old wiring is dropped and re-authored.
+Every `savePage` runs `validatePage` and reports findings to the console — the page-file counterpart of the engine's config-save-time check. Findings never block the save; a page mid-edit may be broken, loudly. (The pre-wiring-redesign localStorage normalizer went with the localStorage store at stage 3 — the server never held old-format pages.)
 
 ## Page wiring — FluxScript everywhere (2026-07-12)
 

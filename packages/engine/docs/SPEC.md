@@ -25,13 +25,12 @@ src/types.ts       — SDM config + runtime types (ConfigRaw, RecordTypeDef,
                      ActivityDef, RecordInstance, ActivityHistoryEntry, …)
 src/store.ts       — the Store contract (the persistence seam)
 src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storage
-                     (extracted from LocalStorageAdapter at DSL Phase 4).
+                     (extracted from LocalStorageAdapter at DSL Phase 4;
+                     LocalStorageAdapter itself was deleted at backend
+                     stage 3 — no live host after the hard cutover).
                      replaceRecords() swaps the whole snapshot in place
                      (identity stable, subscribers notified) — how client
                      hosts refresh after a server-side run (backend stage 2)
-src/localStorageAdapter.ts — MemoryAdapter + localStorage persistence
-                     (no live host since backend stage 2; kept as the
-                     reference persistence subclass)
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
 src/validateSubmission.ts — headless payload validation (DSL Phase 4): the
@@ -155,16 +154,15 @@ and writes the diff back transactionally (root ARCHITECTURE.md
 "partition-fetch + filter"). The DSL's async-shaped API remains the seam if a
 truly async evaluator is ever needed.
 
-`MemoryAdapter` (extracted at DSL Phase 4) is the reference implementation:
-workflow/attribute resolution, constraint checks, staged mutation halves,
-seeding, natural-id migration — with a protected `persist()` no-op hook and
-`allRecords()` for diffing hosts. `LocalStorageAdapter` subclasses it, shared
-by both browser hosts and parameterised by key (fork 2): each host names its
-own `storageKey` (sdm: `fluxus:sdm:records`; page builder:
-`fluxus:page-builder:records`) — separate data per host until the browser
-hosts repoint at the backend, making "one model, many apps" literal.
-`legacyStorageKey` supports one-time key renames (merge once, remove old
-key).
+`MemoryAdapter` (extracted at DSL Phase 4) is THE Store: workflow/attribute
+resolution, constraint checks, staged mutation halves, seeding, natural-id
+migration — with a protected `persist()` no-op hook (for storage-backed
+subclasses, none currently live) and `allRecords()` for diffing hosts. Every
+host runs one: browser hosts fill it from `@fluxus/client`'s snapshot; the
+server host loads a scope's partition per request. `LocalStorageAdapter`
+(the localStorage-persisting subclass both browser hosts ran before backend
+stage 2) was deleted at backend stage 3 — the hard cutover left it without a
+host, and its remaining test consumers moved to `MemoryAdapter({seed:true})`.
 
 ### validateSubmission (DSL Phase 4)
 

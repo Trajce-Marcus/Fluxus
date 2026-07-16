@@ -6,17 +6,22 @@ record.
 
 ## Role
 
-One class, `FluxusClient`, owning the three movements every remote host makes:
+One class, `FluxusClient`, owning the movements every remote host makes:
 
-1. **`connect({url, scope})`** — fetch `config.get` + `records.partition`
-   for the scope and build a `MemoryAdapter` snapshot. The host creates its
-   engine over that adapter and wires UI subscriptions to it once.
+1. **`connect({url, scope})`** — fetch `config.get` + `records.partition` +
+   `pages.list` for the scope (in parallel) and build a `MemoryAdapter`
+   snapshot plus the `pages` map (path → def). The host creates its engine
+   over that adapter and wires UI subscriptions to it once.
 2. **`refresh()`** — re-fetch the partition into the *same* adapter via
    `MemoryAdapter.replaceRecords` (identity stable, subscribers notified).
-3. **`runActivity(input)`** — the only mutation path: `activities.run` on the
-   server (availability gate, hooks, persistence, reporting projection all
-   server-side), then `refresh()`. Refresh runs even when the call throws,
+3. **`runActivity(input)`** — the only record mutation path: `activities.run`
+   on the server (availability gate, hooks, persistence, reporting projection
+   all server-side), then `refresh()`. Refresh runs even when the call throws,
    because a failing after hook persists the entry by doctrine.
+4. **`savePage(path, def)` / `deletePage(path)`** (backend stage 3) — mutate
+   the local `pages` map first, then round-trip `pages.put`/`pages.delete`, so
+   host reads of the page set stay synchronous. Defs are opaque `unknown`
+   here: `PageDef` and its validation belong to the page builder.
 
 ## Contracts and postures
 

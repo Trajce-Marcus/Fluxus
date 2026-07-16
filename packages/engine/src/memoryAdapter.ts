@@ -2,15 +2,15 @@ import type { Store } from './store';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from './types';
 import { joinScript } from './bridge';
 
-// The in-memory Store: all reference-Store behaviour (workflow resolution,
-// constraint checks, staged mutation halves, seeding) with no storage attached.
-// Storage-backed adapters subclass it and override persist() — the browser's
-// LocalStorageAdapter saves to localStorage; the server host loads a scope's
-// partition into one of these per request, runs the sync engine against it,
-// and writes the diff back to Postgres (partition-fetch + filter made literal).
+// THE Store: all reference-Store behaviour (workflow resolution, constraint
+// checks, staged mutation halves, seeding) with no storage attached. Every
+// host runs one — browser hosts fill it from @fluxus/client's snapshot; the
+// server host loads a scope's partition into one per request, runs the sync
+// engine against it, and writes the diff back to Postgres (partition-fetch +
+// filter made literal). Storage-backed subclasses may override persist().
 export interface MemoryAdapterOptions {
   initialRecords?: Iterable<readonly [string, RecordInstance]>;
-  /** Load config seed records for types that have none yet (as LocalStorageAdapter always did). */
+  /** Load config seed records for types that have none yet. */
   seed?: boolean;
 }
 

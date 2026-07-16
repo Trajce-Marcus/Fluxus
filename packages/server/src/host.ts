@@ -19,7 +19,7 @@ import {
   type RecordInstance,
 } from '@fluxus/engine';
 import type { Db } from './db/client';
-import { records, rptActivities, rptAttributes, sdmConfigs } from './db/schema';
+import { pages, records, rptActivities, rptAttributes, sdmConfigs } from './db/schema';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 
 export interface ScopeHost {
@@ -181,6 +181,29 @@ export async function writeBack(db: Db, host: ScopeHost): Promise<void> {
   });
 }
 
+// ── Page storage ──────────────────────────────────────────────────────────────
+// Pages ride the config pipeline (server = runtime truth, repo files = deploy
+// input) but stay opaque jsonb: PageDef and validatePage belong to the page
+// builder, and the server never depends on a peer host — so unlike putConfig
+// there is no save-time validation here. put is an unconditional upsert:
+// a deploy overwrites the stored page, which is the files-win semantics.
+
+export async function listPages(db: Db, scope: string): Promise<{ path: string; def: unknown }[]> {
+  const rows = await db.select().from(pages).where(eq(pages.scope, scope));
+  return rows.map((r) => ({ path: r.path, def: r.def }));
+}
+
+export async function putPage(db: Db, scope: string, path: string, def: unknown): Promise<void> {
+  await db
+    .insert(pages)
+    .values({ scope, path, def, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: [pages.scope, pages.path], set: { def, updatedAt: new Date() } });
+}
+
+export async function deletePage(db: Db, scope: string, path: string): Promise<void> {
+  await db.delete(pages).where(and(eq(pages.scope, scope), eq(pages.path, path)));
+}
+
 // ── Config storage ────────────────────────────────────────────────────────────
 
 export class ConfigValidationError extends Error {
@@ -195,7 +218,7 @@ export class ConfigValidationError extends Error {
  * server rejects an invalid SDM at save, for humans and AI alike (same
  * guardrail posture as validatePage in the page builder).
  *
- * Seeds follow LocalStorageAdapter semantics: each seed group loads only if
+ * Seed semantics: each seed group loads only if
  * the scope has no records of that type yet — user data is never touched.
  */
 export async function putConfig(db: Db, scope: string, config: ConfigRaw, sink: NotifySink = consoleNotifySink): Promise<void> {

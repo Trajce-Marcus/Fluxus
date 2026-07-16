@@ -10,8 +10,6 @@ export type { Engine, EngineOptions, ActivityAvailability, RunActivityOptions } 
 export type { Store } from './store';
 export { MemoryAdapter } from './memoryAdapter';
 export type { MemoryAdapterOptions } from './memoryAdapter';
-export { LocalStorageAdapter } from './localStorageAdapter';
-export type { LocalStorageAdapterOptions } from './localStorageAdapter';
 
 export { buildGeoModule } from './services/geo';
 

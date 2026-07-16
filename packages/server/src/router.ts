@@ -14,10 +14,13 @@ import { records } from './db/schema';
 import {
   ConfigValidationError,
   ScopeNotFoundError,
+  deletePage,
   findActivity,
   getScopeConfig,
+  listPages,
   loadScopeHost,
   putConfig,
+  putPage,
   writeBack,
 } from './host';
 import type { NotifySink } from './services/notify';
@@ -65,6 +68,27 @@ export const appRouter = t.router({
         } catch (err) {
           rethrow(err);
         }
+      }),
+  }),
+
+  // Page definitions on the config pipeline: defs are opaque jsonb (PageDef +
+  // validatePage live in the page builder), list returns the scope's full set
+  // (a host snapshots pages at connect exactly like the record partition).
+  pages: t.router({
+    list: t.procedure
+      .input(z.object({ scope: scopeInput }).default({}))
+      .query(async ({ ctx, input }) => listPages(ctx.db, input.scope)),
+    put: t.procedure
+      .input(z.object({ scope: scopeInput, path: z.string().min(1), def: z.unknown() }))
+      .mutation(async ({ ctx, input }) => {
+        await putPage(ctx.db, input.scope, input.path, input.def ?? {});
+        return { ok: true as const };
+      }),
+    delete: t.procedure
+      .input(z.object({ scope: scopeInput, path: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        await deletePage(ctx.db, input.scope, input.path);
+        return { ok: true as const };
       }),
   }),
 

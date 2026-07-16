@@ -1,0 +1,33 @@
+{
+  "layout": {
+    "root": {
+      "id": "root",
+      "direction": "vertical",
+      "size": { "type": "flex", "value": 1 },
+      "children": [
+        {
+          "id": "slot-main",
+          "direction": "vertical",
+          "size": { "type": "flex", "value": 1 },
+          "background": "#ffffff",
+          "children": []
+        }
+      ]
+    }
+  },
+  "componentDependencies": [{ "name": "WorkOrderList", "version": "1.0.0" }],
+  "contextSchema": [],
+  "slotConfigs": {
+    "slot-main": {
+      "componentName": "WorkOrderList",
+      "staticConfig": {},
+      "dynamicProps": {
+        "workOrders": "records.work_orders"
+      },
+      "callbacks": {
+        "onDispatch": "services.activities.run('act_dispatch_work_orders', callbackData.value, callbackData.data)",
+        "onReschedule": "services.activities.run('act_reschedule_work_orders', callbackData.value, callbackData.data)"
+      }
+    }
+  }
+}

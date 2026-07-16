@@ -7,10 +7,13 @@ two-layer data architecture from root [ARCHITECTURE.md](../../docs/ARCHITECTURE.
 transactional JSONB partitions plus the normalized reporting projection,
 written synchronously in-transaction.
 
-**Status:** backend stage 2 — headless invocation live with tests, and both
+**Status:** backend stage 3 — headless invocation live with tests, both
 browser hosts repointed here via `@fluxus/client` (partition snapshot in,
-`activities.run` out; hooks + persistence server-side only). Lambda entry
-exists but has not been deployed; Neon path untested until an account exists.
+`activities.run` out; hooks + persistence server-side only), and page
+definitions stored here too (`pages` table on the config pipeline; the seed
+script pushes the page files under `page-builder/pages/`). Neon is live
+(schema via drizzle-kit migrations; local dev reads `.env` for
+`DATABASE_URL`); the Lambda entry exists but has not been deployed.
 
 ## Run
 

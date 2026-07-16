@@ -78,7 +78,16 @@ ARCHITECTURE.md "Hosting options"):
   the SDM config is a stored artifact and "config-save-time validation" is
   literal. `put` rejects on structural danglers (MemoryAdapter resolution) or
   any error-severity `validateConfig` finding, then loads seed records for
-  types with none (LocalStorageAdapter semantics: user data never touched).
+  types with none (user data never touched).
+- **`pages.list` / `pages.put` / `pages.delete`** `{ scope?, path, def }`
+  (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
+  Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
+  builder, and the server never depends on a peer host, so unlike `config.put`
+  there is no save-time validation here. `put` is an unconditional upsert —
+  the seed script pushes every `*.json` under `page-builder/pages/`, so
+  deploying pages = deploying files and files win over live edits; unlike
+  record seeds, pages are never user data. `list` returns the scope's full
+  set — `@fluxus/client` snapshots it at connect like the record partition.
 
 `scope` is an opaque path string, default `demo/sdm` — the partition key of
 the transactional layer. Org-defined repo/folder levels arrive later as data
@@ -89,6 +98,9 @@ GitHub-style).
 
 - `records` — `(scope, id)` PK, `custom_fields` + `activity_history` JSONB:
   the RecordInstance shape verbatim. SDM edits never touch physical schema.
+- `pages` — `(scope, path)` PK, opaque `def` JSONB (backend stage 3): page
+  definitions on the config pipeline, one row per page so the page builder
+  saves a single page without touching the SDM config blob.
 - `rpt_activities` / `rpt_attributes` — the normalized projection (agreed
   2026-07-12): one activities row per run (author is the `demo` stub until
   auth); one attributes row per attribute, single text `value`; a waived

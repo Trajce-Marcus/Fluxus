@@ -1,12 +1,12 @@
 // Headless acceptance tests for the DSL ↔ SDM wiring:
-// real config, real LocalStorageAdapter (localStorage shimmed), real evaluator.
+// real config, real MemoryAdapter (config-seeded), real evaluator.
 // Phase 1: the city → suburb dependent datasource.
 // Phase 2: the Complete Work Order hook pair (before gate, after effects).
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { evaluateExpression, executeScript, FluxFailError } from '@fluxus/dsl';
 
-// LocalStorageAdapter touches localStorage at construction — shim before import
+// NotificationLog touches localStorage at construction — shim before import
 beforeAll(() => {
   const bag = new Map<string, string>();
   globalThis.localStorage = {
@@ -21,13 +21,13 @@ beforeAll(() => {
 
 async function setup() {
   const { config } = await import('../src/config');
-  const { LocalStorageAdapter } = await import('@fluxus/engine');
+  const { MemoryAdapter } = await import('@fluxus/engine');
   const { NotificationLog } = await import('../src/store/NotificationLog');
   const { buildNotifyModule } = await import('../src/services/notify');
   const { buildGeoModule } = await import('@fluxus/engine');
   const { buildEvalHost: rawBuildEvalHost } = await import('@fluxus/engine');
   const { validateConfig } = await import('@fluxus/engine');
-  const adapter = new LocalStorageAdapter(config, { storageKey: 'fluxus:sdm:records', legacyStorageKey: 'aber-poc-v1-records' });
+  const adapter = new MemoryAdapter(config, { seed: true });
   const notifications = new NotificationLog();
   notifications.clear(); // the localStorage shim persists across tests in this file
   const services = [buildNotifyModule(notifications), buildGeoModule(adapter)];

@@ -28,11 +28,12 @@ How the parts connect. Package-level detail lives in each package's `docs/SPEC.m
                ┌───────▼────────────┐                │
                │  @fluxus/client    │────────────────┘
                │  config+partition  │   config.get · records.partition
-               │  snapshot · runs   │   · activities.run
+               │  +pages snapshot   │   · pages.* · activities.run
+               │  · runs            │
                └────────────────────┘
 ```
 
-Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — the pipeline they share is a package they both import. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only.
+Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — the pipeline they share is a package they both import. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only. Page definitions ride the same pipeline (backend stage 3, 2026-07-16): stored per `(scope, path)` on the server as opaque jsonb, snapshotted at connect, authored in the page builder — and deployed as repo files by the seed script, so deploying pages = deploying files.
 
 ## The SDM is the centre
 

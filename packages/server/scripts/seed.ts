@@ -5,8 +5,10 @@
 // thread (root ROADMAP) and this script is its stopgap.
 
 import { fileURLToPath } from 'node:url';
-import { createDb } from '../src/db/client';
-import { putConfig } from '../src/host';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { closeDb, createDb } from '../src/db/client';
+import { putConfig, putPage } from '../src/host';
 import { DEFAULT_SCOPE } from '../src/router';
 import { config } from '../../sdm/src/config';
 
@@ -20,5 +22,19 @@ const scope = process.argv[2] ?? DEFAULT_SCOPE;
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
 
 await putConfig(db, scope, config);
-console.log(`Seeded SDM config (+ seed records for empty types) into scope '${scope}'.`);
+
+// Page files ride the same deploy: every *.json under page-builder/pages/ is
+// upserted, its page path = the file's path relative to packages/page-builder
+// minus the extension (pages/work-orders-demo.json → 'pages/work-orders-demo').
+// Unconditional upsert by design — deploying pages = deploying files, so the
+// files win over live edits; unlike record seeds, pages are never user data.
+const pagesDir = fileURLToPath(new URL('../../page-builder/pages', import.meta.url));
+const pageFiles = readdirSync(pagesDir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'));
+for (const file of pageFiles) {
+  const pagePath = `pages/${file.slice(0, -'.json'.length)}`;
+  await putPage(db, scope, pagePath, JSON.parse(readFileSync(join(pagesDir, file), 'utf8')));
+}
+
+console.log(`Seeded SDM config (+ seed records for empty types) and ${pageFiles.length} page(s) into scope '${scope}'.`);
+await closeDb(db);
 process.exit(0);

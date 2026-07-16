@@ -350,12 +350,11 @@ merged; a single implementer doing full stack doesn't need the split):
 2. **Running against an unreadable anchor is blocked** — `not-found`, checked
    before the gate (§6).
 3. **Page enforcement is client-only until pages move server-side** — accepted
-   interim. ("Server-side" means: pages live in browser localStorage
-   (`fluxus:page:*`) today, not Postgres, so the server can't see or enforce
-   `open`; when "pages as SDM citizens" lands — page-builder SPEC planned
-   upgrade 4 — pages move into the backend store and `open` becomes
-   server-enforced like the other two.) Not pulling that upgrade forward: page
-   access is UX, the security boundary is record reads + activity gates (§3).
+   interim. (Update 2026-07-16: pages now DO live server-side — backend
+   stage 3 put them in the `pages` table — so the storage precondition is
+   met; `open` enforcement can move into `pages.list` when RBAC lands. Page
+   access remains UX, the security boundary is record reads + activity
+   gates (§3).)
 4. **Role definitions stay in the SDM config** — created as needed, validated at
    save time, travel with the model. (If a role ever needs to span modules, the
    home can move to an org registry with the same declaration shape — but not

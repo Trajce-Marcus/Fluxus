@@ -48,3 +48,13 @@ export async function createDb(options: CreateDbOptions = {}): Promise<Db> {
   await migrate(db, { migrationsFolder });
   return db;
 }
+
+/**
+ * Close the underlying connection (PGlite instance or node-postgres pool).
+ * Scripts call this before exiting so shutdown is orderly on both drivers.
+ */
+export async function closeDb(db: Db): Promise<void> {
+  const client = (db as unknown as { $client: { close?: () => Promise<void>; end?: () => Promise<void> } }).$client;
+  if (client.close) await client.close();
+  else if (client.end) await client.end();
+}
