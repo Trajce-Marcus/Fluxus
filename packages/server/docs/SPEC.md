@@ -44,7 +44,11 @@ src/router.ts          — the tRPC router: config.get/put, records.list/get,
                          activities.run; DEFAULT_SCOPE
 src/app.ts             — Hono app; tRPC mounted via the fetch adapter
 src/index.ts           — local entry (Node, @hono/node-server, PGlite at .data/)
-src/lambda.ts          — prod entry (hono/aws-lambda; requires DATABASE_URL)
+src/lambda.ts          — raw-AWS entry (hono/aws-lambda) — the kept-warm exit
+                         path per docs/DEPLOYMENT.md, not the deploy target
+api/index.ts           — prod entry (hono/vercel; requires DATABASE_URL);
+                         Vercel config in vercel.json — the only two
+                         Vercel-specific files by ruling
 src/services/notify.ts — server notify module (manifest identical to the
                          workbench's; pluggable NotifySink, console default)
 scripts/seed.ts        — dev tooling: demo SDM → putConfig (see below)
@@ -118,8 +122,8 @@ idempotently at connect on both drivers, and `npm run db:migrate` runs the
 same step explicitly against `DATABASE_URL` at deploy time. Driver selection
 is the connection string: `DATABASE_URL` set → node-postgres (Neon/RDS/local),
 unset → PGlite (dev/tests, no Postgres install needed); `packages/server/.env`
-supplies it for local dev (loaded by the dev server and scripts, never by
-`lambda.ts`).
+supplies it for local dev (loaded by the dev server and scripts, never by the
+deployed entries — `api/index.ts` and `lambda.ts` read the real environment).
 
 ## Services
 
@@ -142,7 +146,7 @@ against a running server) stays an open thread on the root ROADMAP.
 - No auth: `context.user` is the demo stub; `author` in reporting likewise.
 - GET activities (DSL_SPEC §5a) not implemented — blocked on the unified-log
   design for their logging posture; `records.*` covers data needs meanwhile.
-- Lambda entry unexercised; Neon untested until an account exists (driver is
-  standard node-postgres, so risk is config, not code).
+- Lambda entry unexercised by design — it is the raw-AWS exit path, kept
+  compiling; the deploy target is Vercel (`api/index.ts`, docs/DEPLOYMENT.md).
 - Multi-value (`selection: multi`) datasource membership validates array
   values element-wise but the capture form doesn't produce them yet.

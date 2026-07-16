@@ -51,6 +51,11 @@ DSL Phase 4 (headless invocation)                                ✅ done
      the config pipeline, repo page files as the deploy input    (2026-07-16)
      (deploying pages = deploying files); LocalStorageAdapter
      deleted — no localStorage left outside per-device UI prefs
+
+Prod deploy (Vercel + Neon)                                      ◐ in progress
+  └─ ruling 2026-07-16: Vercel now, raw Lambda stays the warm
+     exit path (decision record: docs/DEPLOYMENT.md); then point
+     hosts at the deployed URL, e2e verify
 ```
 
 ## Sequence
@@ -64,5 +69,7 @@ DSL Phase 4 (headless invocation)                                ✅ done
 7. **Backend stage 2 — hosts repoint** ✅ (2026-07-12) — the workbench and page builder swapped localStorage for the backend (build record: `packages/server/docs/phases/PHASE4_STAGE2_Build_Summary.md`). New `@fluxus/client` package (bootstrap snapshot: `config.get` + new `records.partition` into the engine's `MemoryAdapter`; re-fetch after every run; `@fluxus/server` type-only); both hosts share one scope (`demo/sdm`) and one stored config — "one model, many apps" literal. Rulings: bootstrap-snapshot + refetch (no async Store), server config with one shared scope, shared client package, hard cutover (no localStorage fallback; page builder's pages/templates stay local — they're not SDM records). The page-builder host sample's dispatch/reschedule activities merged into the sdm demo SDM (dispatch gains a `callbackData.crew is null` before-hook guard so a direct workbench run fails cleanly). Known consequence: the workbench notification bell is dormant — hooks (and their `notify`) run server-side; returns with the unified-log design. Still open: Neon account + first Lambda deploy, drizzle-kit migrations, GET activities, auth.
 
 8. **Backend stage 3 — pages repoint** ✅ (2026-07-16) — page definitions move from browser localStorage to the server on the config pipeline: new `pages` table (`(scope, path)` PK, opaque jsonb def — `PageDef`/`validatePage` stay in the page builder, no server-side validation by construction), `pages.list/put/delete` tRPC procedures, `@fluxus/client` snapshots the page set at connect and writes through (`savePage`/`deletePage`), the page builder's `persistence.ts` keeps its synchronous API over that snapshot. Deploy story ruled with it: repo files under `page-builder/pages/` are the deploy input — the seed script upserts every `*.json` (file path = page path), so **deploying pages = deploying files** and deploys overwrite live edits; the demo page became the first such file. `LocalStorageAdapter` deleted from the engine (no host after the hard cutover; git history keeps it) — localStorage now holds only per-device UI preferences (UAT labels, notification last-seen) by ruling. PGlite stays as the dev/test driver by ruling (prod ignores it; the offline-question building block).
+
+9. **Prod deploy — Vercel** ◐ (started 2026-07-16) — the server goes live on a public URL. **Ruling: Vercel now, raw AWS Lambda later if needed** — full rationale, seam rules (Vercel-specifics confined to `api/` + `vercel.json`, `lambda.ts` kept compiling as the exit, no Vercel-proprietary services without a ruling) and the environments posture (no formal dev/test/prod yet; local dev splits onto its own Neon branch from the first deploy) in `docs/DEPLOYMENT.md`. Remaining: hosts point at the deployed URL (`FluxusClient.connect()` endpoint config + CORS), e2e from the browser. Auth/RBAC still explicitly deferred (`docs/RBAC_DESIGN.md`).
 
 Parked (deliberately, with invariants locked now): org → operation → project hierarchy; SDM import/replication between projects; one-way workflow visualisation; named-function governance constraints.

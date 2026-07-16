@@ -105,7 +105,7 @@ Records live in two stores with different jobs (CQRS):
 | | **DynamoDB single-table** — the scale option | On-demand pricing, effectively unbounded throughput, Streams as the built-in change feed. Key-based access only — depends on lean partitions (which retention guarantees). Swap-in later behind `RecordsHost`; no script or SDM changes. |
 | Reporting | **Neon Postgres (relational schemas)** — v1 and likely long-term | Org-scoped schemas, projected per-type tables, standard SQL for BI tools. |
 | | Column store (e.g. ClickHouse, BigQuery) — only if analytics outgrow Postgres | A third projection from the same activity stream; nothing upstream changes. |
-| Compute | **Hono (local) / AWS Lambda (prod)** — agreed | Same tRPC router both sides; the DSL interpreter is one TypeScript implementation running in browser and server. |
+| Compute | **Hono (local) / Vercel functions (prod — Lambda underneath)** — ruled 2026-07-16, see [DEPLOYMENT.md](DEPLOYMENT.md) | Same tRPC router both sides; the DSL interpreter is one TypeScript implementation running in browser and server. Raw AWS Lambda (`src/lambda.ts`) stays the kept-warm exit path. |
 
 **v1 deployment: one Neon Postgres wearing both hats** — JSONB transactional tables plus projected relational schemas, projection synchronous in-transaction (no sync infrastructure while the platform is young). The two-layer *architecture* holds from day one; DynamoDB and async projection are deployment upgrades behind existing seams, not redesigns. In development (no `DATABASE_URL`) the same Drizzle schema runs on **PGlite** — Postgres compiled to WASM, in-process — so dev/test needs no installed database; Neon is a connection string away.
 
