@@ -39,6 +39,7 @@ prod path).
 | `@vitejs/plugin-react` | ^4.2 | React plugin for Vite | 🟢 Established |
 | `tsx` | ^4.20 | Run TS directly (server dev/seed) | 🟢 Established |
 | `drizzle-kit` | ^0.31 | Generate/apply DB migrations (server) | 🟡 Modern — pairs with `drizzle-orm`; dev-only |
+| `esbuild` | ^0.25 | Bundle the Vercel function (`build:vercel`) | 🟢 Established — Vite's own transform engine; decade-stable `0.x` scheme |
 | `concurrently` | ^9.1 | Run the three dev servers together | 🟢 Established |
 | `@types/*` | — | Type definitions (node, react, pg) | 🟢 Bedrock |
 

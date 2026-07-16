@@ -46,9 +46,10 @@ src/app.ts             — Hono app; tRPC mounted via the fetch adapter
 src/index.ts           — local entry (Node, @hono/node-server, PGlite at .data/)
 src/lambda.ts          — raw-AWS entry (hono/aws-lambda) — the kept-warm exit
                          path per docs/DEPLOYMENT.md, not the deploy target
-api/index.ts           — prod entry (hono/vercel; requires DATABASE_URL);
-                         Vercel config in vercel.json — the only two
-                         Vercel-specific files by ruling
+src/vercel.ts          — prod entry (hono/vercel; requires DATABASE_URL);
+                         `npm run build:vercel` bundles it (esbuild, one ESM
+                         file) to api/index.mjs (generated, gitignored) —
+                         with vercel.json the only Vercel-specifics by ruling
 src/services/notify.ts — server notify module (manifest identical to the
                          workbench's; pluggable NotifySink, console default)
 scripts/seed.ts        — dev tooling: demo SDM → putConfig (see below)

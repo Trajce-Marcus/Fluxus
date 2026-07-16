@@ -5,3 +5,6 @@ dist
 .env
 .env.local
 .data
+
+# generated Vercel function bundle (npm run build:vercel)
+packages/server/api/

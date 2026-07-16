@@ -34,7 +34,13 @@ plumbing we skipped, plus one URL + CORS change.
 **Seam rules (binding):**
 
 1. Everything Vercel-specific lives in exactly two places:
-   `packages/server/api/` (the entry) and `packages/server/vercel.json`.
+   `packages/server/src/vercel.ts` (the entry) and
+   `packages/server/vercel.json`. At deploy time `npm run build:vercel`
+   (esbuild) bundles the entry into a single ESM file, `api/index.mjs`
+   (generated, gitignored) — Vercel serves that. Bundling is not optional
+   polish: Node's strict ESM resolution can't follow the repo's extensionless
+   imports, and the workspace packages (engine, dsl) are consumed as
+   TypeScript source.
 2. `src/lambda.ts` is kept compiling — it is the exit, not dead code.
 3. No Vercel-proprietary services (KV, cron, queues, edge middleware, blob)
    without an explicit ruling first — each is a new lock-in decision, same
@@ -76,8 +82,11 @@ story.
 ## How to deploy
 
 Vercel Git integration on the GitHub repo, project root `packages/server`
-(npm-workspace aware — install runs at the repo root). Push to main → deploy.
-`DATABASE_URL` (Neon **pooled** connection string) is set in the Vercel
-project's environment variables. Region `syd1` and function config live in
-`vercel.json`. Seeding (`npm run seed:server`) runs from a dev machine against
-the same `DATABASE_URL` — the interim config-authoring loop is unchanged.
+(npm-workspace aware — install runs at the repo root). Push to main → deploy:
+the build command (`npm run build:vercel`, set in `vercel.json`) produces
+`api/index.mjs`, the one serverless function, with `migrations/` bundled
+alongside so `createDb()` can migrate at cold start. `DATABASE_URL` (Neon
+**pooled** connection string) is set in the Vercel project's environment
+variables. Region `syd1` lives in `vercel.json`. Seeding
+(`npm run seed:server`) runs from a dev machine against the same
+`DATABASE_URL` — the interim config-authoring loop is unchanged.

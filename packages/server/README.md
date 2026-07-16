@@ -13,9 +13,9 @@ browser hosts repointed here via `@fluxus/client` (partition snapshot in,
 definitions stored here too (`pages` table on the config pipeline; the seed
 script pushes the page files under `page-builder/pages/`). Neon is live
 (schema via drizzle-kit migrations; local dev reads `.env` for
-`DATABASE_URL`). Deploy target is **Vercel** (`api/index.ts` + `vercel.json`;
-decision + seam rules in root `docs/DEPLOYMENT.md`); `src/lambda.ts` is the
-kept-warm raw-AWS exit path.
+`DATABASE_URL`). Deploy target is **Vercel** (`src/vercel.ts` bundled by
+`npm run build:vercel` + `vercel.json`; decision + seam rules in root
+`docs/DEPLOYMENT.md`); `src/lambda.ts` is the kept-warm raw-AWS exit path.
 
 ## Run
 

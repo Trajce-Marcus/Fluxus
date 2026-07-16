@@ -24,11 +24,14 @@ export interface CreateDbOptions {
   databaseUrl?: string;
   /** PGlite data directory (e.g. '.data/fluxus'); omit for in-memory (tests). */
   dataDir?: string;
+  /** Override the migrations directory — needed when this module is bundled
+   *  (the default resolves relative to the source file's location). */
+  migrationsFolder?: string;
 }
 
-const migrationsFolder = fileURLToPath(new URL('../../migrations', import.meta.url));
-
 export async function createDb(options: CreateDbOptions = {}): Promise<Db> {
+  const migrationsFolder =
+    options.migrationsFolder ?? fileURLToPath(new URL('../../migrations', import.meta.url));
   const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
   if (databaseUrl) {
     const { default: pg } = await import('pg');
