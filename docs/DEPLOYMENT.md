@@ -83,6 +83,14 @@ The trigger for formalising more than that: the first POC holding data that
 can't be trashed. Until then, one deployed instance + local dev is the whole
 story.
 
+**Live since 2026-07-17:** https://fluxus-server.vercel.app (health at
+`/health`, tRPC at `/trpc`). First-deploy lessons that are now baked into the
+setup and must not be "cleaned up": `framework: null` (Vercel auto-detects
+Hono and hijacks the build otherwise), the **committed** `api/index.mjs`
+(function discovery runs pre-build), the non-empty `public/`, and the
+`@hono/node-server/vercel` adapter (`hono/vercel` is Edge-only and hangs on
+the Node runtime).
+
 ## How to deploy
 
 Vercel Git integration on the GitHub repo, project root `packages/server`
