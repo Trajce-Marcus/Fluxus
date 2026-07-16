@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "build:vercel": "esbuild src/vercel.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/index.mjs --external:pg --external:@electric-sql/pglite",
+    "build:vercel": "esbuild src/vercel.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/index.mjs --external:pg --external:@electric-sql/pglite && mkdir -p public",
     "test": "vitest run",
     "seed": "tsx scripts/seed.ts",
     "db:generate": "drizzle-kit generate",
