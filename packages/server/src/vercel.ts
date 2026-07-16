@@ -17,7 +17,10 @@
 // `npm run db:migrate` from a dev machine against DATABASE_URL first.
 
 import { Hono } from 'hono';
-import { handle } from 'hono/vercel';
+// Node-runtime adapter (IncomingMessage/ServerResponse bridge) — hono/vercel
+// is the Edge-runtime one; on the Node runtime its returned Response is
+// ignored and every request hangs.
+import { handle } from '@hono/node-server/vercel';
 import { createDb } from './db/client';
 import { createApp } from './app';
 
