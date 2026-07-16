@@ -11,8 +11,8 @@ var __export = (target, all) => {
 // ../../node_modules/drizzle-orm/migrator.js
 import crypto3 from "node:crypto";
 import fs from "node:fs";
-function readMigrationFiles(config) {
-  const migrationFolderTo = config.migrationsFolder;
+function readMigrationFiles(config2) {
+  const migrationFolderTo = config2.migrationsFolder;
   const migrationQueries = [];
   const journalPath = `${migrationFolderTo}/meta/_journal.json`;
   if (!fs.existsSync(journalPath)) {
@@ -49,9 +49,9 @@ var migrator_exports = {};
 __export(migrator_exports, {
   migrate: () => migrate
 });
-async function migrate(db, config) {
-  const migrations = readMigrationFiles(config);
-  await db.dialect.migrate(migrations, db.session, config);
+async function migrate(db, config2) {
+  const migrations = readMigrationFiles(config2);
+  await db.dialect.migrate(migrations, db.session, config2);
 }
 var init_migrator2 = __esm({
   "../../node_modules/drizzle-orm/node-postgres/migrator.js"() {
@@ -64,9 +64,9 @@ var migrator_exports2 = {};
 __export(migrator_exports2, {
   migrate: () => migrate2
 });
-async function migrate2(db, config) {
-  const migrations = readMigrationFiles(config);
-  await db.dialect.migrate(migrations, db.session, config);
+async function migrate2(db, config2) {
+  const migrations = readMigrationFiles(config2);
+  await db.dialect.migrate(migrations, db.session, config2);
 }
 var init_migrator3 = __esm({
   "../../node_modules/drizzle-orm/pglite/migrator.js"() {
@@ -2842,8 +2842,8 @@ var ConsoleLogWriter = class {
 var DefaultLogger = class {
   static [entityKind] = "DefaultLogger";
   writer;
-  constructor(config) {
-    this.writer = config?.writer ?? new ConsoleLogWriter();
+  constructor(config2) {
+    this.writer = config2?.writer ?? new ConsoleLogWriter();
   }
   logQuery(query, params) {
     const stringifiedParams = params.map((p) => {
@@ -2889,24 +2889,24 @@ var QueryPromise = class {
 
 // ../../node_modules/drizzle-orm/column.js
 var Column = class {
-  constructor(table, config) {
+  constructor(table, config2) {
     this.table = table;
-    this.config = config;
-    this.name = config.name;
-    this.keyAsName = config.keyAsName;
-    this.notNull = config.notNull;
-    this.default = config.default;
-    this.defaultFn = config.defaultFn;
-    this.onUpdateFn = config.onUpdateFn;
-    this.hasDefault = config.hasDefault;
-    this.primary = config.primaryKey;
-    this.isUnique = config.isUnique;
-    this.uniqueName = config.uniqueName;
-    this.uniqueType = config.uniqueType;
-    this.dataType = config.dataType;
-    this.columnType = config.columnType;
-    this.generated = config.generated;
-    this.generatedIdentity = config.generatedIdentity;
+    this.config = config2;
+    this.name = config2.name;
+    this.keyAsName = config2.keyAsName;
+    this.notNull = config2.notNull;
+    this.default = config2.default;
+    this.defaultFn = config2.defaultFn;
+    this.onUpdateFn = config2.onUpdateFn;
+    this.hasDefault = config2.hasDefault;
+    this.primary = config2.primaryKey;
+    this.isUnique = config2.isUnique;
+    this.uniqueName = config2.uniqueName;
+    this.uniqueType = config2.uniqueType;
+    this.dataType = config2.dataType;
+    this.columnType = config2.columnType;
+    this.generated = config2.generated;
+    this.generatedIdentity = config2.generatedIdentity;
   }
   static [entityKind] = "Column";
   name;
@@ -3053,9 +3053,9 @@ var ForeignKeyBuilder = class {
   _onUpdate = "no action";
   /** @internal */
   _onDelete = "no action";
-  constructor(config, actions) {
+  constructor(config2, actions) {
     this.reference = () => {
-      const { name, columns, foreignColumns } = config();
+      const { name, columns, foreignColumns } = config2();
       return { name, columns, foreignTable: foreignColumns[0].table, foreignColumns };
     };
     if (actions) {
@@ -3243,10 +3243,10 @@ var PgColumnBuilder = class extends ColumnBuilder {
     this.foreignKeyConfigs.push({ ref, actions });
     return this;
   }
-  unique(name, config) {
+  unique(name, config2) {
     this.config.isUnique = true;
     this.config.uniqueName = name;
-    this.config.uniqueType = config?.nulls;
+    this.config.uniqueType = config2?.nulls;
     return this;
   }
   generatedAlwaysAs(as) {
@@ -3285,11 +3285,11 @@ var PgColumnBuilder = class extends ColumnBuilder {
   }
 };
 var PgColumn = class extends Column {
-  constructor(table, config) {
-    if (!config.uniqueName) {
-      config.uniqueName = uniqueKeyName(table, [config.name]);
+  constructor(table, config2) {
+    if (!config2.uniqueName) {
+      config2.uniqueName = uniqueKeyName(table, [config2.name]);
     }
-    super(table, config);
+    super(table, config2);
     this.table = table;
   }
   static [entityKind] = "PgColumn";
@@ -3390,11 +3390,11 @@ var PgArrayBuilder = class extends PgColumnBuilder {
   }
 };
 var PgArray = class _PgArray extends PgColumn {
-  constructor(table, config, baseColumn, range) {
-    super(table, config);
+  constructor(table, config2, baseColumn, range) {
+    super(table, config2);
     this.baseColumn = baseColumn;
     this.range = range;
-    this.size = config.size;
+    this.size = config2.size;
   }
   size;
   static [entityKind] = "PgArray";
@@ -3435,9 +3435,9 @@ var PgEnumObjectColumn = class extends PgColumn {
   static [entityKind] = "PgEnumObjectColumn";
   enum;
   enumValues = this.config.enum.enumValues;
-  constructor(table, config) {
-    super(table, config);
-    this.enum = config.enum;
+  constructor(table, config2) {
+    super(table, config2);
+    this.enum = config2.enum;
   }
   getSQLType() {
     return this.enum.enumName;
@@ -3465,9 +3465,9 @@ var PgEnumColumn = class extends PgColumn {
   static [entityKind] = "PgEnumColumn";
   enum = this.config.enum;
   enumValues = this.config.enum.enumValues;
-  constructor(table, config) {
-    super(table, config);
-    this.enum = config.enum;
+  constructor(table, config2) {
+    super(table, config2);
+    this.enum = config2.enum;
   }
   getSQLType() {
     return this.enum.enumName;
@@ -3651,9 +3651,9 @@ var SQL = class _SQL {
     this.queryChunks.push(...query.queryChunks);
     return this;
   }
-  toQuery(config) {
+  toQuery(config2) {
     return tracer.startActiveSpan("drizzle.buildSQL", (span) => {
-      const query = this.buildQueryFromSourceParams(this.queryChunks, config);
+      const query = this.buildQueryFromSourceParams(this.queryChunks, config2);
       span?.setAttributes({
         "drizzle.query.text": query.sql,
         "drizzle.query.params": JSON.stringify(query.params)
@@ -3662,7 +3662,7 @@ var SQL = class _SQL {
     });
   }
   buildQueryFromSourceParams(chunks, _config) {
-    const config = Object.assign({}, _config, {
+    const config2 = Object.assign({}, _config, {
       inlineParams: _config.inlineParams || this.shouldInlineParams,
       paramStartIndex: _config.paramStartIndex || { value: 0 }
     });
@@ -3673,7 +3673,7 @@ var SQL = class _SQL {
       prepareTyping,
       inlineParams,
       paramStartIndex
-    } = config;
+    } = config2;
     return mergeQueries(chunks.map((chunk) => {
       if (is(chunk, StringChunk)) {
         return { sql: chunk.value.join(""), params: [] };
@@ -3693,11 +3693,11 @@ var SQL = class _SQL {
           }
         }
         result.push(new StringChunk(")"));
-        return this.buildQueryFromSourceParams(result, config);
+        return this.buildQueryFromSourceParams(result, config2);
       }
       if (is(chunk, _SQL)) {
         return this.buildQueryFromSourceParams(chunk.queryChunks, {
-          ...config,
+          ...config2,
           inlineParams: inlineParams || chunk.shouldInlineParams
         });
       }
@@ -3734,10 +3734,10 @@ var SQL = class _SQL {
         }
         const mappedValue = chunk.value === null ? null : chunk.encoder.mapToDriverValue(chunk.value);
         if (is(mappedValue, _SQL)) {
-          return this.buildQueryFromSourceParams([mappedValue], config);
+          return this.buildQueryFromSourceParams([mappedValue], config2);
         }
         if (inlineParams) {
-          return { sql: this.mapInlineParam(mappedValue, config), params: [] };
+          return { sql: this.mapInlineParam(mappedValue, config2), params: [] };
         }
         let typings = ["none"];
         if (prepareTyping) {
@@ -3760,7 +3760,7 @@ var SQL = class _SQL {
           chunk._.sql,
           new StringChunk(") "),
           new Name(chunk._.alias)
-        ], config);
+        ], config2);
       }
       if (isPgEnum(chunk)) {
         if (chunk.schema) {
@@ -3770,16 +3770,16 @@ var SQL = class _SQL {
       }
       if (isSQLWrapper(chunk)) {
         if (chunk.shouldOmitSQLParens?.()) {
-          return this.buildQueryFromSourceParams([chunk.getSQL()], config);
+          return this.buildQueryFromSourceParams([chunk.getSQL()], config2);
         }
         return this.buildQueryFromSourceParams([
           new StringChunk("("),
           chunk.getSQL(),
           new StringChunk(")")
-        ], config);
+        ], config2);
       }
       if (inlineParams) {
-        return { sql: this.mapInlineParam(chunk, config), params: [] };
+        return { sql: this.mapInlineParam(chunk, config2), params: [] };
       }
       return { sql: escapeParam(paramStartIndex.value++, chunk), params: [chunk], typings: ["none"] };
     }));
@@ -4092,8 +4092,8 @@ function mapColumnsInSQLToAlias(query, alias) {
 var SelectionProxyHandler = class _SelectionProxyHandler {
   static [entityKind] = "SelectionProxyHandler";
   config;
-  constructor(config) {
-    this.config = { ...config };
+  constructor(config2) {
+    this.config = { ...config2 };
   }
   get(subquery, prop) {
     if (prop === "_") {
@@ -4391,8 +4391,8 @@ var PgBigInt64 = class extends PgColumn {
   }
 };
 function bigint(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (config.mode === "number") {
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (config2.mode === "number") {
     return new PgBigInt53Builder(name);
   }
   return new PgBigInt64Builder(name);
@@ -4451,8 +4451,8 @@ var PgBigSerial64 = class extends PgColumn {
   }
 };
 function bigserial(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (config.mode === "number") {
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (config2.mode === "number") {
     return new PgBigSerial53Builder(name);
   }
   return new PgBigSerial64Builder(name);
@@ -4482,10 +4482,10 @@ function boolean(name) {
 // ../../node_modules/drizzle-orm/pg-core/columns/char.js
 var PgCharBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgCharBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "string", "PgChar");
-    this.config.length = config.length;
-    this.config.enumValues = config.enum;
+    this.config.length = config2.length;
+    this.config.enumValues = config2.enum;
   }
   /** @internal */
   build(table) {
@@ -4504,8 +4504,8 @@ var PgChar = class extends PgColumn {
   }
 };
 function char(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgCharBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgCharBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/cidr.js
@@ -4550,11 +4550,11 @@ var PgCustomColumn = class extends PgColumn {
   sqlName;
   mapTo;
   mapFrom;
-  constructor(table, config) {
-    super(table, config);
-    this.sqlName = config.customTypeParams.dataType(config.fieldConfig);
-    this.mapTo = config.customTypeParams.toDriver;
-    this.mapFrom = config.customTypeParams.fromDriver;
+  constructor(table, config2) {
+    super(table, config2);
+    this.sqlName = config2.customTypeParams.dataType(config2.fieldConfig);
+    this.mapTo = config2.customTypeParams.toDriver;
+    this.mapFrom = config2.customTypeParams.fromDriver;
   }
   getSQLType() {
     return this.sqlName;
@@ -4568,8 +4568,8 @@ var PgCustomColumn = class extends PgColumn {
 };
 function customType(customTypeParams) {
   return (a, b) => {
-    const { name, config } = getColumnNameAndConfig(a, b);
-    return new PgCustomColumnBuilder(name, config, customTypeParams);
+    const { name, config: config2 } = getColumnNameAndConfig(a, b);
+    return new PgCustomColumnBuilder(name, config2, customTypeParams);
   };
 }
 
@@ -4624,8 +4624,8 @@ var PgDateString = class extends PgColumn {
   }
 };
 function date(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (config?.mode === "date") {
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (config2?.mode === "date") {
     return new PgDateBuilder(name);
   }
   return new PgDateStringBuilder(name);
@@ -4732,8 +4732,8 @@ var PgInterval = class extends PgColumn {
   }
 };
 function interval(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgIntervalBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgIntervalBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/json.js
@@ -4749,8 +4749,8 @@ var PgJsonBuilder = class extends PgColumnBuilder {
 };
 var PgJson = class extends PgColumn {
   static [entityKind] = "PgJson";
-  constructor(table, config) {
-    super(table, config);
+  constructor(table, config2) {
+    super(table, config2);
   }
   getSQLType() {
     return "json";
@@ -4786,8 +4786,8 @@ var PgJsonbBuilder = class extends PgColumnBuilder {
 };
 var PgJsonb = class extends PgColumn {
   static [entityKind] = "PgJsonb";
-  constructor(table, config) {
-    super(table, config);
+  constructor(table, config2) {
+    super(table, config2);
   }
   getSQLType() {
     return "jsonb";
@@ -4864,8 +4864,8 @@ var PgLineABC = class extends PgColumn {
   }
 };
 function line(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (!config?.mode || config.mode === "tuple") {
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (!config2?.mode || config2.mode === "tuple") {
     return new PgLineBuilder(name);
   }
   return new PgLineABCBuilder(name);
@@ -4930,10 +4930,10 @@ var PgNumeric = class extends PgColumn {
   static [entityKind] = "PgNumeric";
   precision;
   scale;
-  constructor(table, config) {
-    super(table, config);
-    this.precision = config.precision;
-    this.scale = config.scale;
+  constructor(table, config2) {
+    super(table, config2);
+    this.precision = config2.precision;
+    this.scale = config2.scale;
   }
   mapFromDriverValue(value) {
     if (typeof value === "string") return value;
@@ -4968,10 +4968,10 @@ var PgNumericNumber = class extends PgColumn {
   static [entityKind] = "PgNumericNumber";
   precision;
   scale;
-  constructor(table, config) {
-    super(table, config);
-    this.precision = config.precision;
-    this.scale = config.scale;
+  constructor(table, config2) {
+    super(table, config2);
+    this.precision = config2.precision;
+    this.scale = config2.scale;
   }
   mapFromDriverValue(value) {
     if (typeof value === "number") return value;
@@ -5007,10 +5007,10 @@ var PgNumericBigInt = class extends PgColumn {
   static [entityKind] = "PgNumericBigInt";
   precision;
   scale;
-  constructor(table, config) {
-    super(table, config);
-    this.precision = config.precision;
-    this.scale = config.scale;
+  constructor(table, config2) {
+    super(table, config2);
+    this.precision = config2.precision;
+    this.scale = config2.scale;
   }
   mapFromDriverValue = BigInt;
   mapToDriverValue = String;
@@ -5025,9 +5025,9 @@ var PgNumericBigInt = class extends PgColumn {
   }
 };
 function numeric(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  const mode = config?.mode;
-  return mode === "number" ? new PgNumericNumberBuilder(name, config?.precision, config?.scale) : mode === "bigint" ? new PgNumericBigIntBuilder(name, config?.precision, config?.scale) : new PgNumericBuilder(name, config?.precision, config?.scale);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  const mode = config2?.mode;
+  return mode === "number" ? new PgNumericNumberBuilder(name, config2?.precision, config2?.scale) : mode === "bigint" ? new PgNumericBigIntBuilder(name, config2?.precision, config2?.scale) : new PgNumericBuilder(name, config2?.precision, config2?.scale);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/point.js
@@ -5090,8 +5090,8 @@ var PgPointObject = class extends PgColumn {
   }
 };
 function point(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (!config?.mode || config.mode === "tuple") {
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (!config2?.mode || config2.mode === "tuple") {
     return new PgPointTupleBuilder(name);
   }
   return new PgPointObjectBuilder(name);
@@ -5189,8 +5189,8 @@ var PgGeometryObject = class extends PgColumn {
   }
 };
 function geometry(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (!config?.mode || config.mode === "tuple") {
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (!config2?.mode || config2.mode === "tuple") {
     return new PgGeometryBuilder(name);
   }
   return new PgGeometryObjectBuilder(name);
@@ -5210,8 +5210,8 @@ var PgRealBuilder = class extends PgColumnBuilder {
 };
 var PgReal = class extends PgColumn {
   static [entityKind] = "PgReal";
-  constructor(table, config) {
-    super(table, config);
+  constructor(table, config2) {
+    super(table, config2);
   }
   getSQLType() {
     return "real";
@@ -5306,9 +5306,9 @@ function smallserial(name) {
 // ../../node_modules/drizzle-orm/pg-core/columns/text.js
 var PgTextBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgTextBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "string", "PgText");
-    this.config.enumValues = config.enum;
+    this.config.enumValues = config2.enum;
   }
   /** @internal */
   build(table) {
@@ -5323,8 +5323,8 @@ var PgText = class extends PgColumn {
   }
 };
 function text(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgTextBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgTextBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/time.js
@@ -5346,10 +5346,10 @@ var PgTime = class extends PgColumn {
   static [entityKind] = "PgTime";
   withTimezone;
   precision;
-  constructor(table, config) {
-    super(table, config);
-    this.withTimezone = config.withTimezone;
-    this.precision = config.precision;
+  constructor(table, config2) {
+    super(table, config2);
+    this.withTimezone = config2.withTimezone;
+    this.precision = config2.precision;
   }
   getSQLType() {
     const precision = this.precision === void 0 ? "" : `(${this.precision})`;
@@ -5357,8 +5357,8 @@ var PgTime = class extends PgColumn {
   }
 };
 function time(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgTimeBuilder(name, config.withTimezone ?? false, config.precision);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgTimeBuilder(name, config2.withTimezone ?? false, config2.precision);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/timestamp.js
@@ -5378,10 +5378,10 @@ var PgTimestamp = class extends PgColumn {
   static [entityKind] = "PgTimestamp";
   withTimezone;
   precision;
-  constructor(table, config) {
-    super(table, config);
-    this.withTimezone = config.withTimezone;
-    this.precision = config.precision;
+  constructor(table, config2) {
+    super(table, config2);
+    this.withTimezone = config2.withTimezone;
+    this.precision = config2.precision;
   }
   getSQLType() {
     const precision = this.precision === void 0 ? "" : ` (${this.precision})`;
@@ -5413,10 +5413,10 @@ var PgTimestampString = class extends PgColumn {
   static [entityKind] = "PgTimestampString";
   withTimezone;
   precision;
-  constructor(table, config) {
-    super(table, config);
-    this.withTimezone = config.withTimezone;
-    this.precision = config.precision;
+  constructor(table, config2) {
+    super(table, config2);
+    this.withTimezone = config2.withTimezone;
+    this.precision = config2.precision;
   }
   getSQLType() {
     const precision = this.precision === void 0 ? "" : `(${this.precision})`;
@@ -5424,11 +5424,11 @@ var PgTimestampString = class extends PgColumn {
   }
 };
 function timestamp(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (config?.mode === "string") {
-    return new PgTimestampStringBuilder(name, config.withTimezone ?? false, config.precision);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  if (config2?.mode === "string") {
+    return new PgTimestampStringBuilder(name, config2.withTimezone ?? false, config2.precision);
   }
-  return new PgTimestampBuilder(name, config?.withTimezone ?? false, config?.precision);
+  return new PgTimestampBuilder(name, config2?.withTimezone ?? false, config2?.precision);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/uuid.js
@@ -5461,10 +5461,10 @@ function uuid(name) {
 // ../../node_modules/drizzle-orm/pg-core/columns/varchar.js
 var PgVarcharBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgVarcharBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "string", "PgVarchar");
-    this.config.length = config.length;
-    this.config.enumValues = config.enum;
+    this.config.length = config2.length;
+    this.config.enumValues = config2.enum;
   }
   /** @internal */
   build(table) {
@@ -5483,16 +5483,16 @@ var PgVarchar = class extends PgColumn {
   }
 };
 function varchar(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgVarcharBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgVarcharBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/vector_extension/bit.js
 var PgBinaryVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgBinaryVectorBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "string", "PgBinaryVector");
-    this.config.dimensions = config.dimensions;
+    this.config.dimensions = config2.dimensions;
   }
   /** @internal */
   build(table) {
@@ -5510,16 +5510,16 @@ var PgBinaryVector = class extends PgColumn {
   }
 };
 function bit(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgBinaryVectorBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgBinaryVectorBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/vector_extension/halfvec.js
 var PgHalfVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgHalfVectorBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "array", "PgHalfVector");
-    this.config.dimensions = config.dimensions;
+    this.config.dimensions = config2.dimensions;
   }
   /** @internal */
   build(table) {
@@ -5543,16 +5543,16 @@ var PgHalfVector = class extends PgColumn {
   }
 };
 function halfvec(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgHalfVectorBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgHalfVectorBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/vector_extension/sparsevec.js
 var PgSparseVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgSparseVectorBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "string", "PgSparseVector");
-    this.config.dimensions = config.dimensions;
+    this.config.dimensions = config2.dimensions;
   }
   /** @internal */
   build(table) {
@@ -5570,16 +5570,16 @@ var PgSparseVector = class extends PgColumn {
   }
 };
 function sparsevec(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgSparseVectorBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgSparseVectorBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/vector_extension/vector.js
 var PgVectorBuilder = class extends PgColumnBuilder {
   static [entityKind] = "PgVectorBuilder";
-  constructor(name, config) {
+  constructor(name, config2) {
     super(name, "array", "PgVector");
-    this.config.dimensions = config.dimensions;
+    this.config.dimensions = config2.dimensions;
   }
   /** @internal */
   build(table) {
@@ -5603,8 +5603,8 @@ var PgVector = class extends PgColumn {
   }
 };
 function vector(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  return new PgVectorBuilder(name, config);
+  const { name, config: config2 } = getColumnNameAndConfig(a, b);
+  return new PgVectorBuilder(name, config2);
 }
 
 // ../../node_modules/drizzle-orm/pg-core/columns/all.js
@@ -5802,8 +5802,8 @@ var IndexBuilder = class {
 var Index = class {
   static [entityKind] = "PgIndex";
   config;
-  constructor(config, table) {
-    this.config = { ...config, table };
+  constructor(config2, table) {
+    this.config = { ...config2, table };
   }
 };
 function index(name) {
@@ -5811,11 +5811,11 @@ function index(name) {
 }
 
 // ../../node_modules/drizzle-orm/pg-core/primary-keys.js
-function primaryKey(...config) {
-  if (config[0].columns) {
-    return new PrimaryKeyBuilder(config[0].columns, config[0].name);
+function primaryKey(...config2) {
+  if (config2[0].columns) {
+    return new PrimaryKeyBuilder(config2[0].columns, config2[0].name);
   }
-  return new PrimaryKeyBuilder(config);
+  return new PrimaryKeyBuilder(config2);
 }
 var PrimaryKeyBuilder = class {
   static [entityKind] = "PgPrimaryKeyBuilder";
@@ -6061,16 +6061,16 @@ var Relation = class {
   fieldName;
 };
 var Relations = class {
-  constructor(table, config) {
+  constructor(table, config2) {
     this.table = table;
-    this.config = config;
+    this.config = config2;
   }
   static [entityKind] = "Relations";
 };
 var One = class _One extends Relation {
-  constructor(sourceTable, referencedTable, config, isNullable) {
-    super(sourceTable, referencedTable, config?.relationName);
-    this.config = config;
+  constructor(sourceTable, referencedTable, config2, isNullable) {
+    super(sourceTable, referencedTable, config2?.relationName);
+    this.config = config2;
     this.isNullable = isNullable;
   }
   static [entityKind] = "One";
@@ -6086,9 +6086,9 @@ var One = class _One extends Relation {
   }
 };
 var Many = class _Many extends Relation {
-  constructor(sourceTable, referencedTable, config) {
-    super(sourceTable, referencedTable, config?.relationName);
-    this.config = config;
+  constructor(sourceTable, referencedTable, config2) {
+    super(sourceTable, referencedTable, config2?.relationName);
+    this.config = config2;
   }
   static [entityKind] = "Many";
   withFieldName(fieldName) {
@@ -6198,18 +6198,18 @@ function extractTablesRelationalConfig(schema, configHelpers) {
   return { tables: tablesConfig, tableNamesMap };
 }
 function createOne(sourceTable) {
-  return function one(table, config) {
+  return function one(table, config2) {
     return new One(
       sourceTable,
       table,
-      config,
-      config?.fields.reduce((res, f) => res && f.notNull, true) ?? false
+      config2,
+      config2?.fields.reduce((res, f) => res && f.notNull, true) ?? false
     );
   };
 }
 function createMany(sourceTable) {
-  return function many(referencedTable, config) {
-    return new Many(sourceTable, referencedTable, config);
+  return function many(referencedTable, config2) {
+    return new Many(sourceTable, referencedTable, config2);
   };
 }
 function normalizeRelation(schema, tableNamesMap, relation) {
@@ -6319,12 +6319,12 @@ var PgDialect = class {
   static [entityKind] = "PgDialect";
   /** @internal */
   casing;
-  constructor(config) {
-    this.casing = new CasingCache(config?.casing);
+  constructor(config2) {
+    this.casing = new CasingCache(config2?.casing);
   }
-  async migrate(migrations, session, config) {
-    const migrationsTable = typeof config === "string" ? "__drizzle_migrations" : config.migrationsTable ?? "__drizzle_migrations";
-    const migrationsSchema = typeof config === "string" ? "drizzle" : config.migrationsSchema ?? "drizzle";
+  async migrate(migrations, session, config2) {
+    const migrationsTable = typeof config2 === "string" ? "__drizzle_migrations" : config2.migrationsTable ?? "__drizzle_migrations";
+    const migrationsSchema = typeof config2 === "string" ? "drizzle" : config2.migrationsSchema ?? "drizzle";
     const migrationTableCreate = sql`
 			CREATE TABLE IF NOT EXISTS ${sql.identifier(migrationsSchema)}.${sql.identifier(migrationsTable)} (
 				id SERIAL PRIMARY KEY,
@@ -7192,7 +7192,7 @@ var PgDialect = class {
     tableNamesMap,
     table,
     tableConfig,
-    queryConfig: config,
+    queryConfig: config2,
     tableAlias,
     nestedQueryRelation,
     joinOn
@@ -7200,7 +7200,7 @@ var PgDialect = class {
     let selection = [];
     let limit, offset, orderBy = [], where;
     const joins = [];
-    if (config === true) {
+    if (config2 === true) {
       const selectionEntries = Object.entries(tableConfig.columns);
       selection = selectionEntries.map(([key, value]) => ({
         dbKey: value.name,
@@ -7214,15 +7214,15 @@ var PgDialect = class {
       const aliasedColumns = Object.fromEntries(
         Object.entries(tableConfig.columns).map(([key, value]) => [key, aliasedTableColumn(value, tableAlias)])
       );
-      if (config.where) {
-        const whereSql = typeof config.where === "function" ? config.where(aliasedColumns, getOperators()) : config.where;
+      if (config2.where) {
+        const whereSql = typeof config2.where === "function" ? config2.where(aliasedColumns, getOperators()) : config2.where;
         where = whereSql && mapColumnsInSQLToAlias(whereSql, tableAlias);
       }
       const fieldsSelection = [];
       let selectedColumns = [];
-      if (config.columns) {
+      if (config2.columns) {
         let isIncludeMode = false;
-        for (const [field, value] of Object.entries(config.columns)) {
+        for (const [field, value] of Object.entries(config2.columns)) {
           if (value === void 0) {
             continue;
           }
@@ -7234,7 +7234,7 @@ var PgDialect = class {
           }
         }
         if (selectedColumns.length > 0) {
-          selectedColumns = isIncludeMode ? selectedColumns.filter((c) => config.columns?.[c] === true) : Object.keys(tableConfig.columns).filter((key) => !selectedColumns.includes(key));
+          selectedColumns = isIncludeMode ? selectedColumns.filter((c) => config2.columns?.[c] === true) : Object.keys(tableConfig.columns).filter((key) => !selectedColumns.includes(key));
         }
       } else {
         selectedColumns = Object.keys(tableConfig.columns);
@@ -7244,12 +7244,12 @@ var PgDialect = class {
         fieldsSelection.push({ tsKey: field, value: column });
       }
       let selectedRelations = [];
-      if (config.with) {
-        selectedRelations = Object.entries(config.with).filter((entry) => !!entry[1]).map(([tsKey, queryConfig]) => ({ tsKey, queryConfig, relation: tableConfig.relations[tsKey] }));
+      if (config2.with) {
+        selectedRelations = Object.entries(config2.with).filter((entry) => !!entry[1]).map(([tsKey, queryConfig]) => ({ tsKey, queryConfig, relation: tableConfig.relations[tsKey] }));
       }
       let extras;
-      if (config.extras) {
-        extras = typeof config.extras === "function" ? config.extras(aliasedColumns, { sql }) : config.extras;
+      if (config2.extras) {
+        extras = typeof config2.extras === "function" ? config2.extras(aliasedColumns, { sql }) : config2.extras;
         for (const [tsKey, value] of Object.entries(extras)) {
           fieldsSelection.push({
             tsKey,
@@ -7267,7 +7267,7 @@ var PgDialect = class {
           selection: []
         });
       }
-      let orderByOrig = typeof config.orderBy === "function" ? config.orderBy(aliasedColumns, getOrderByOperators()) : config.orderBy ?? [];
+      let orderByOrig = typeof config2.orderBy === "function" ? config2.orderBy(aliasedColumns, getOrderByOperators()) : config2.orderBy ?? [];
       if (!Array.isArray(orderByOrig)) {
         orderByOrig = [orderByOrig];
       }
@@ -7277,8 +7277,8 @@ var PgDialect = class {
         }
         return mapColumnsInSQLToAlias(orderByValue, tableAlias);
       });
-      limit = config.limit;
-      offset = config.offset;
+      limit = config2.limit;
+      offset = config2.offset;
       for (const {
         tsKey: selectedRelationTsKey,
         queryConfig: selectedRelationConfigValue,
@@ -7425,14 +7425,14 @@ var PgSelectBuilder = class {
   dialect;
   withList = [];
   distinct;
-  constructor(config) {
-    this.fields = config.fields;
-    this.session = config.session;
-    this.dialect = config.dialect;
-    if (config.withList) {
-      this.withList = config.withList;
+  constructor(config2) {
+    this.fields = config2.fields;
+    this.session = config2.session;
+    this.dialect = config2.dialect;
+    if (config2.withList) {
+      this.withList = config2.withList;
     }
-    this.distinct = config.distinct;
+    this.distinct = config2.distinct;
   }
   authToken;
   /** @internal */
@@ -8121,8 +8121,8 @@ var PgSelectQueryBuilderBase = class extends TypedQueryBuilder {
    * @param strength the lock strength.
    * @param config the lock configuration.
    */
-  for(strength, config = {}) {
-    this.config.lockingClause = { strength, config };
+  for(strength, config2 = {}) {
+    this.config.lockingClause = { strength, config: config2 };
     return this;
   }
   /** @internal */
@@ -8154,8 +8154,8 @@ var PgSelectQueryBuilderBase = class extends TypedQueryBuilder {
   $dynamic() {
     return this;
   }
-  $withCache(config) {
-    this.cacheConfig = config === void 0 ? { config: {}, enable: true, autoInvalidate: true } : config === false ? { enable: false } : { enable: true, autoInvalidate: true, ...config };
+  $withCache(config2) {
+    this.cacheConfig = config2 === void 0 ? { config: {}, enable: true, autoInvalidate: true } : config2 === false ? { enable: false } : { enable: true, autoInvalidate: true, ...config2 };
     return this;
   }
 };
@@ -8163,11 +8163,11 @@ var PgSelectBase = class extends PgSelectQueryBuilderBase {
   static [entityKind] = "PgSelect";
   /** @internal */
   _prepare(name) {
-    const { session, config, dialect, joinsNotNullableMap, authToken, cacheConfig, usedTables } = this;
+    const { session, config: config2, dialect, joinsNotNullableMap, authToken, cacheConfig, usedTables } = this;
     if (!session) {
       throw new Error("Cannot execute a query on a query builder. Please use a database instance instead.");
     }
-    const { fields } = config;
+    const { fields } = config2;
     return tracer.startActiveSpan("drizzle.prepareQuery", () => {
       const fieldsList = orderSelectedFields(fields);
       const query = session.prepareQuery(dialect.sqlToQuery(this.getSQL()), fieldsList, name, true, void 0, {
@@ -8521,13 +8521,13 @@ var PgInsertBase = class extends QueryPromise {
    *   .onConflictDoNothing({ target: cars.id });
    * ```
    */
-  onConflictDoNothing(config = {}) {
-    if (config.target === void 0) {
+  onConflictDoNothing(config2 = {}) {
+    if (config2.target === void 0) {
       this.config.onConflict = sql`do nothing`;
     } else {
       let targetColumn = "";
-      targetColumn = Array.isArray(config.target) ? config.target.map((it) => this.dialect.escapeName(this.dialect.casing.getColumnCasing(it))).join(",") : this.dialect.escapeName(this.dialect.casing.getColumnCasing(config.target));
-      const whereSql = config.where ? sql` where ${config.where}` : void 0;
+      targetColumn = Array.isArray(config2.target) ? config2.target.map((it) => this.dialect.escapeName(this.dialect.casing.getColumnCasing(it))).join(",") : this.dialect.escapeName(this.dialect.casing.getColumnCasing(config2.target));
+      const whereSql = config2.where ? sql` where ${config2.where}` : void 0;
       this.config.onConflict = sql`(${sql.raw(targetColumn)})${whereSql} do nothing`;
     }
     return this;
@@ -8561,18 +8561,18 @@ var PgInsertBase = class extends QueryPromise {
    *   });
    * ```
    */
-  onConflictDoUpdate(config) {
-    if (config.where && (config.targetWhere || config.setWhere)) {
+  onConflictDoUpdate(config2) {
+    if (config2.where && (config2.targetWhere || config2.setWhere)) {
       throw new Error(
         'You cannot use both "where" and "targetWhere"/"setWhere" at the same time - "where" is deprecated, use "targetWhere" or "setWhere" instead.'
       );
     }
-    const whereSql = config.where ? sql` where ${config.where}` : void 0;
-    const targetWhereSql = config.targetWhere ? sql` where ${config.targetWhere}` : void 0;
-    const setWhereSql = config.setWhere ? sql` where ${config.setWhere}` : void 0;
-    const setSql = this.dialect.buildUpdateSet(this.config.table, mapUpdateSet(this.config.table, config.set));
+    const whereSql = config2.where ? sql` where ${config2.where}` : void 0;
+    const targetWhereSql = config2.targetWhere ? sql` where ${config2.targetWhere}` : void 0;
+    const setWhereSql = config2.setWhere ? sql` where ${config2.setWhere}` : void 0;
+    const setSql = this.dialect.buildUpdateSet(this.config.table, mapUpdateSet(this.config.table, config2.set));
     let targetColumn = "";
-    targetColumn = Array.isArray(config.target) ? config.target.map((it) => this.dialect.escapeName(this.dialect.casing.getColumnCasing(it))).join(",") : this.dialect.escapeName(this.dialect.casing.getColumnCasing(config.target));
+    targetColumn = Array.isArray(config2.target) ? config2.target.map((it) => this.dialect.escapeName(this.dialect.casing.getColumnCasing(it))).join(",") : this.dialect.escapeName(this.dialect.casing.getColumnCasing(config2.target));
     this.config.onConflict = sql`(${sql.raw(targetColumn)})${targetWhereSql} do update set ${setSql}${whereSql}${setWhereSql}`;
     return this;
   }
@@ -8952,7 +8952,7 @@ var RelationalQueryBuilder = class {
     this.session = session;
   }
   static [entityKind] = "PgRelationalQueryBuilder";
-  findMany(config) {
+  findMany(config2) {
     return new PgRelationalQuery(
       this.fullSchema,
       this.schema,
@@ -8961,11 +8961,11 @@ var RelationalQueryBuilder = class {
       this.tableConfig,
       this.dialect,
       this.session,
-      config ? config : {},
+      config2 ? config2 : {},
       "many"
     );
   }
-  findFirst(config) {
+  findFirst(config2) {
     return new PgRelationalQuery(
       this.fullSchema,
       this.schema,
@@ -8974,13 +8974,13 @@ var RelationalQueryBuilder = class {
       this.tableConfig,
       this.dialect,
       this.session,
-      config ? { ...config, limit: 1 } : { limit: 1 },
+      config2 ? { ...config2, limit: 1 } : { limit: 1 },
       "first"
     );
   }
 };
 var PgRelationalQuery = class extends QueryPromise {
-  constructor(fullSchema, schema, tableNamesMap, table, tableConfig, dialect, session, config, mode) {
+  constructor(fullSchema, schema, tableNamesMap, table, tableConfig, dialect, session, config2, mode) {
     super();
     this.fullSchema = fullSchema;
     this.schema = schema;
@@ -8989,7 +8989,7 @@ var PgRelationalQuery = class extends QueryPromise {
     this.tableConfig = tableConfig;
     this.dialect = dialect;
     this.session = session;
-    this.config = config;
+    this.config = config2;
     this.mode = mode;
   }
   static [entityKind] = "PgRelationalQuery";
@@ -9356,8 +9356,8 @@ var PgDatabase = class {
       (result) => prepared.mapResult(result, true)
     );
   }
-  transaction(transaction, config) {
-    return this.session.transaction(transaction, config);
+  transaction(transaction, config2) {
+    return this.session.transaction(transaction, config2);
   }
 };
 
@@ -9530,21 +9530,21 @@ var PgTransaction = class extends PgDatabase {
     throw new TransactionRollbackError();
   }
   /** @internal */
-  getTransactionConfigSQL(config) {
+  getTransactionConfigSQL(config2) {
     const chunks = [];
-    if (config.isolationLevel) {
-      chunks.push(`isolation level ${config.isolationLevel}`);
+    if (config2.isolationLevel) {
+      chunks.push(`isolation level ${config2.isolationLevel}`);
     }
-    if (config.accessMode) {
-      chunks.push(config.accessMode);
+    if (config2.accessMode) {
+      chunks.push(config2.accessMode);
     }
-    if (typeof config.deferrable === "boolean") {
-      chunks.push(config.deferrable ? "deferrable" : "not deferrable");
+    if (typeof config2.deferrable === "boolean") {
+      chunks.push(config2.deferrable ? "deferrable" : "not deferrable");
     }
     return sql.raw(chunks.join(" "));
   }
-  setTransaction(config) {
-    return this.session.execute(sql`set transaction ${this.getTransactionConfigSQL(config)}`);
+  setTransaction(config2) {
+    return this.session.execute(sql`set transaction ${this.getTransactionConfigSQL(config2)}`);
   }
 };
 
@@ -9655,7 +9655,7 @@ var PgliteSession = class _PgliteSession extends PgSession {
       customResultMapper
     );
   }
-  async transaction(transaction, config) {
+  async transaction(transaction, config2) {
     return this.client.transaction(async (client) => {
       const session = new _PgliteSession(
         client,
@@ -9664,8 +9664,8 @@ var PgliteSession = class _PgliteSession extends PgSession {
         this.options
       );
       const tx = new PgliteTransaction(this.dialect, session, this.schema);
-      if (config) {
-        await tx.setTransaction(config);
+      if (config2) {
+        await tx.setTransaction(config2);
       }
       return transaction(tx);
     });
@@ -9717,33 +9717,33 @@ var PgliteDriver = class {
 var PgliteDatabase = class extends PgDatabase {
   static [entityKind] = "PgliteDatabase";
 };
-function construct(client, config = {}) {
-  const dialect = new PgDialect({ casing: config.casing });
+function construct(client, config2 = {}) {
+  const dialect = new PgDialect({ casing: config2.casing });
   let logger;
-  if (config.logger === true) {
+  if (config2.logger === true) {
     logger = new DefaultLogger();
-  } else if (config.logger !== false) {
-    logger = config.logger;
+  } else if (config2.logger !== false) {
+    logger = config2.logger;
   }
   let schema;
-  if (config.schema) {
+  if (config2.schema) {
     const tablesConfig = extractTablesRelationalConfig(
-      config.schema,
+      config2.schema,
       createTableRelationsHelpers
     );
     schema = {
-      fullSchema: config.schema,
+      fullSchema: config2.schema,
       schema: tablesConfig.tables,
       tableNamesMap: tablesConfig.tableNamesMap
     };
   }
-  const driver = new PgliteDriver(client, dialect, { logger, cache: config.cache });
+  const driver = new PgliteDriver(client, dialect, { logger, cache: config2.cache });
   const session = driver.createSession(schema);
   const db = new PgliteDatabase(dialect, session, schema);
   db.$client = client;
-  db.$cache = config.cache;
+  db.$cache = config2.cache;
   if (db.$cache) {
-    db.$cache["invalidate"] = config.cache?.onMutate;
+    db.$cache["invalidate"] = config2.cache?.onMutate;
   }
   return db;
 }
@@ -9766,8 +9766,8 @@ function drizzle(...params) {
   return construct(params[0], params[1]);
 }
 ((drizzle22) => {
-  function mock(config) {
-    return construct({}, config);
+  function mock(config2) {
+    return construct({}, config2);
   }
   drizzle22.mock = mock;
 })(drizzle || (drizzle = {}));
@@ -9947,10 +9947,10 @@ var NodePgSession = class _NodePgSession extends PgSession {
       customResultMapper
     );
   }
-  async transaction(transaction, config) {
+  async transaction(transaction, config2) {
     const session = this.client instanceof Pool ? new _NodePgSession(await this.client.connect(), this.dialect, this.schema, this.options) : this;
     const tx = new NodePgTransaction(this.dialect, session, this.schema);
-    await tx.execute(sql`begin${config ? sql` ${tx.getTransactionConfigSQL(config)}` : void 0}`);
+    await tx.execute(sql`begin${config2 ? sql` ${tx.getTransactionConfigSQL(config2)}` : void 0}`);
     try {
       const result = await transaction(tx);
       await tx.execute(sql`commit`);
@@ -10011,33 +10011,33 @@ var NodePgDriver = class {
 var NodePgDatabase = class extends PgDatabase {
   static [entityKind] = "NodePgDatabase";
 };
-function construct2(client, config = {}) {
-  const dialect = new PgDialect({ casing: config.casing });
+function construct2(client, config2 = {}) {
+  const dialect = new PgDialect({ casing: config2.casing });
   let logger;
-  if (config.logger === true) {
+  if (config2.logger === true) {
     logger = new DefaultLogger();
-  } else if (config.logger !== false) {
-    logger = config.logger;
+  } else if (config2.logger !== false) {
+    logger = config2.logger;
   }
   let schema;
-  if (config.schema) {
+  if (config2.schema) {
     const tablesConfig = extractTablesRelationalConfig(
-      config.schema,
+      config2.schema,
       createTableRelationsHelpers
     );
     schema = {
-      fullSchema: config.schema,
+      fullSchema: config2.schema,
       schema: tablesConfig.tables,
       tableNamesMap: tablesConfig.tableNamesMap
     };
   }
-  const driver = new NodePgDriver(client, dialect, { logger, cache: config.cache });
+  const driver = new NodePgDriver(client, dialect, { logger, cache: config2.cache });
   const session = driver.createSession(schema);
   const db = new NodePgDatabase(dialect, session, schema);
   db.$client = client;
-  db.$cache = config.cache;
+  db.$cache = config2.cache;
   if (db.$cache) {
-    db.$cache["invalidate"] = config.cache?.onMutate;
+    db.$cache["invalidate"] = config2.cache?.onMutate;
   }
   return db;
 }
@@ -10059,8 +10059,8 @@ function drizzle2(...params) {
   return construct2(params[0], params[1]);
 }
 ((drizzle22) => {
-  function mock(config) {
-    return construct2({}, config);
+  function mock(config2) {
+    return construct2({}, config2);
   }
   drizzle22.mock = mock;
 })(drizzle2 || (drizzle2 = {}));
@@ -10506,7 +10506,7 @@ var require_objectSpread2 = __commonJS({ "../../node_modules/.pnpm/@oxc-project+
 } });
 var import_objectSpread2 = __toESM(require_objectSpread2(), 1);
 function getErrorShape(opts) {
-  const { path, error, config } = opts;
+  const { path, error, config: config2 } = opts;
   const { code } = opts.error;
   const shape = {
     message: error.message,
@@ -10516,9 +10516,9 @@ function getErrorShape(opts) {
       httpStatus: getHTTPStatusCodeFromError(error)
     }
   };
-  if (config.isDev && typeof opts.error.stack === "string") shape.data.stack = opts.error.stack;
+  if (config2.isDev && typeof opts.error.stack === "string") shape.data.stack = opts.error.stack;
   if (typeof path === "string") shape.data.path = path;
-  return config.errorFormatter((0, import_objectSpread2.default)((0, import_objectSpread2.default)({}, opts), {}, { shape }));
+  return config2.errorFormatter((0, import_objectSpread2.default)((0, import_objectSpread2.default)({}, opts), {}, { shape }));
 }
 
 // ../../node_modules/@trpc/server/dist/tracked-DWInO6EQ.mjs
@@ -10585,13 +10585,13 @@ var defaultTransformer = {
     deserialize: (obj) => obj
   }
 };
-function transformTRPCResponseItem(config, item) {
-  if ("error" in item) return (0, import_objectSpread2$1.default)((0, import_objectSpread2$1.default)({}, item), {}, { error: config.transformer.output.serialize(item.error) });
-  if ("data" in item.result) return (0, import_objectSpread2$1.default)((0, import_objectSpread2$1.default)({}, item), {}, { result: (0, import_objectSpread2$1.default)((0, import_objectSpread2$1.default)({}, item.result), {}, { data: config.transformer.output.serialize(item.result.data) }) });
+function transformTRPCResponseItem(config2, item) {
+  if ("error" in item) return (0, import_objectSpread2$1.default)((0, import_objectSpread2$1.default)({}, item), {}, { error: config2.transformer.output.serialize(item.error) });
+  if ("data" in item.result) return (0, import_objectSpread2$1.default)((0, import_objectSpread2$1.default)({}, item), {}, { result: (0, import_objectSpread2$1.default)((0, import_objectSpread2$1.default)({}, item.result), {}, { data: config2.transformer.output.serialize(item.result.data) }) });
   return item;
 }
-function transformTRPCResponse(config, itemOrItems) {
-  return Array.isArray(itemOrItems) ? itemOrItems.map((item) => transformTRPCResponseItem(config, item)) : transformTRPCResponseItem(config, itemOrItems);
+function transformTRPCResponse(config2, itemOrItems) {
+  return Array.isArray(itemOrItems) ? itemOrItems.map((item) => transformTRPCResponseItem(config2, item)) : transformTRPCResponseItem(config2, itemOrItems);
 }
 var import_objectSpread22 = __toESM(require_objectSpread2(), 1);
 var lazyMarker = "lazyMarker";
@@ -10624,7 +10624,7 @@ var reservedWords = [
   "call",
   "apply"
 ];
-function createRouterFactory(config) {
+function createRouterFactory(config2) {
   function createRouterInner(input) {
     const reservedWordsUsed = new Set(Object.keys(input).filter((v) => reservedWords.includes(v)));
     if (reservedWordsUsed.size > 0) throw new Error("Reserved words used in `router({})` call: " + Array.from(reservedWordsUsed).join(", "));
@@ -10680,7 +10680,7 @@ function createRouterFactory(config) {
     }
     const record = step(input);
     const _def = (0, import_objectSpread22.default)((0, import_objectSpread22.default)({
-      _config: config,
+      _config: config2,
       router: true,
       procedures,
       lazy: lazy$1
@@ -12167,7 +12167,7 @@ async function resolveResponse(opts) {
   var _ref, _opts$allowBatching, _opts$batching, _opts$allowMethodOver, _config$sse$enabled, _config$sse;
   const { router, req } = opts;
   const headers = new Headers([["vary", "trpc-accept, accept"]]);
-  const config = router._def._config;
+  const config2 = router._def._config;
   const url = new URL(req.url);
   if (req.method === "HEAD") return new Response(null, { status: 204 });
   const allowBatching = (_ref = (_opts$allowBatching = opts.allowBatching) !== null && _opts$allowBatching !== void 0 ? _opts$allowBatching : (_opts$batching = opts.batching) === null || _opts$batching === void 0 ? void 0 : _opts$batching.enabled) !== null && _ref !== void 0 ? _ref : true;
@@ -12212,7 +12212,7 @@ async function resolveResponse(opts) {
   });
   const methodMapper = allowMethodOverride ? TYPE_ACCEPTED_METHOD_MAP_WITH_METHOD_OVERRIDE : TYPE_ACCEPTED_METHOD_MAP;
   const isStreamCall = getAcceptHeader(req.headers) === "application/jsonl";
-  const experimentalSSE = (_config$sse$enabled = (_config$sse = config.sse) === null || _config$sse === void 0 ? void 0 : _config$sse.enabled) !== null && _config$sse$enabled !== void 0 ? _config$sse$enabled : true;
+  const experimentalSSE = (_config$sse$enabled = (_config$sse = config2.sse) === null || _config$sse === void 0 ? void 0 : _config$sse.enabled) !== null && _config$sse$enabled !== void 0 ? _config$sse$enabled : true;
   try {
     const [infoError, info] = infoTuple;
     if (infoError) throw infoError;
@@ -12244,13 +12244,13 @@ async function resolveResponse(opts) {
             code: "BAD_REQUEST",
             message: `Cannot batch subscription calls`
           });
-          if ((_config$sse2 = config.sse) === null || _config$sse2 === void 0 ? void 0 : _config$sse2.maxDurationMs) {
+          if ((_config$sse2 = config2.sse) === null || _config$sse2 === void 0 ? void 0 : _config$sse2.maxDurationMs) {
             let cleanup = function() {
               clearTimeout(timer);
               combinedAbort.signal.removeEventListener("abort", cleanup);
               combinedAbort.controller.abort();
             };
-            const timer = setTimeout(cleanup, config.sse.maxDurationMs);
+            const timer = setTimeout(cleanup, config2.sse.maxDurationMs);
             combinedAbort.signal.addEventListener("abort", cleanup);
           }
         }
@@ -12294,7 +12294,7 @@ async function resolveResponse(opts) {
             message: "Cannot use stream-like response in non-streaming request - use httpBatchStreamLink"
           });
           const res = error ? { error: getErrorShape({
-            config,
+            config: config2,
             ctx: ctxManager.valueOrUndefined(),
             error,
             input: call.result(),
@@ -12309,7 +12309,7 @@ async function resolveResponse(opts) {
             headers,
             untransformedJSON: [res]
           });
-          return new Response(JSON.stringify(transformTRPCResponse(config, res)), {
+          return new Response(JSON.stringify(transformTRPCResponse(config2, res)), {
             status: headResponse$1.status,
             headers
           });
@@ -12328,9 +12328,9 @@ async function resolveResponse(opts) {
             const dataAsIterable = isObservable(result.data) ? observableToAsyncIterable(result.data, opts.req.signal) : result.data;
             return dataAsIterable;
           });
-          const stream = sseStreamProducer((0, import_objectSpread23.default)((0, import_objectSpread23.default)({}, config.sse), {}, {
+          const stream = sseStreamProducer((0, import_objectSpread23.default)((0, import_objectSpread23.default)({}, config2.sse), {}, {
             data: iterable,
-            serialize: (v) => config.transformer.output.serialize(v),
+            serialize: (v) => config2.transformer.output.serialize(v),
             formatError(errorOpts) {
               var _call$procedure$_def$2, _call$procedure3, _opts$onError2;
               const error$1 = getTRPCErrorFromUnknown(errorOpts.error);
@@ -12346,7 +12346,7 @@ async function resolveResponse(opts) {
                 type
               });
               const shape = getErrorShape({
-                config,
+                config: config2,
                 ctx: ctxManager.valueOrUndefined(),
                 error: error$1,
                 input,
@@ -12404,7 +12404,7 @@ async function resolveResponse(opts) {
         headers,
         untransformedJSON: null
       });
-      const stream = jsonlStreamProducer((0, import_objectSpread23.default)((0, import_objectSpread23.default)({}, config.jsonl), {}, {
+      const stream = jsonlStreamProducer((0, import_objectSpread23.default)((0, import_objectSpread23.default)({}, config2.jsonl), {}, {
         maxDepth: Infinity,
         data: rpcCalls.map(async (res, index2) => {
           const [error, result] = await res;
@@ -12412,7 +12412,7 @@ async function resolveResponse(opts) {
           if (error) {
             var _procedure$_def$type, _procedure;
             return { error: getErrorShape({
-              config,
+              config: config2,
               ctx: ctxManager.valueOrUndefined(),
               error,
               input: call.result(),
@@ -12423,7 +12423,7 @@ async function resolveResponse(opts) {
           const iterable = isObservable(result.data) ? observableToAsyncIterable(result.data, opts.req.signal) : Promise.resolve(result.data);
           return { result: Promise.resolve({ data: iterable }) };
         }),
-        serialize: (data) => config.transformer.output.serialize(data),
+        serialize: (data) => config2.transformer.output.serialize(data),
         onError: (cause) => {
           var _opts$onError3, _info$type;
           (_opts$onError3 = opts.onError) === null || _opts$onError3 === void 0 || _opts$onError3.call(opts, {
@@ -12443,7 +12443,7 @@ async function resolveResponse(opts) {
           const path = call === null || call === void 0 ? void 0 : call.path;
           const type = (_call$procedure$_def$3 = call === null || call === void 0 || (_call$procedure4 = call.procedure) === null || _call$procedure4 === void 0 ? void 0 : _call$procedure4._def.type) !== null && _call$procedure$_def$3 !== void 0 ? _call$procedure$_def$3 : "unknown";
           const shape = getErrorShape({
-            config,
+            config: config2,
             ctx: ctxManager.valueOrUndefined(),
             error,
             input,
@@ -12473,7 +12473,7 @@ async function resolveResponse(opts) {
       if (error) {
         var _call$procedure$_def$4, _call$procedure5;
         return { error: getErrorShape({
-          config,
+          config: config2,
           ctx: ctxManager.valueOrUndefined(),
           error,
           input: call.result(),
@@ -12492,7 +12492,7 @@ async function resolveResponse(opts) {
       errors,
       headers
     });
-    return new Response(JSON.stringify(transformTRPCResponse(config, resultAsRPCResponse)), {
+    return new Response(JSON.stringify(transformTRPCResponse(config2, resultAsRPCResponse)), {
       status: headResponse.status,
       headers
     });
@@ -12848,7 +12848,7 @@ var TRPCBuilder = class TRPCBuilder2 {
   */
   create(opts) {
     var _opts$transformer, _opts$isDev, _globalThis$process$1, _opts$allowOutsideOfS, _opts$errorFormatter, _opts$isServer;
-    const config = (0, import_objectSpread25.default)((0, import_objectSpread25.default)({}, opts), {}, {
+    const config2 = (0, import_objectSpread25.default)((0, import_objectSpread25.default)({}, opts), {}, {
       transformer: getDataTransformer((_opts$transformer = opts === null || opts === void 0 ? void 0 : opts.transformer) !== null && _opts$transformer !== void 0 ? _opts$transformer : defaultTransformer),
       isDev: (_opts$isDev = opts === null || opts === void 0 ? void 0 : opts.isDev) !== null && _opts$isDev !== void 0 ? _opts$isDev : ((_globalThis$process$1 = globalThis.process) === null || _globalThis$process$1 === void 0 ? void 0 : _globalThis$process$1.env["NODE_ENV"]) !== "production",
       allowOutsideOfServer: (_opts$allowOutsideOfS = opts === null || opts === void 0 ? void 0 : opts.allowOutsideOfServer) !== null && _opts$allowOutsideOfS !== void 0 ? _opts$allowOutsideOfS : false,
@@ -12862,10 +12862,10 @@ var TRPCBuilder = class TRPCBuilder2 {
       if (!isServer && (opts === null || opts === void 0 ? void 0 : opts.allowOutsideOfServer) !== true) throw new Error(`You're trying to use @trpc/server in a non-server environment. This is not supported by default.`);
     }
     return {
-      _config: config,
+      _config: config2,
       procedure: createBuilder({ meta: opts === null || opts === void 0 ? void 0 : opts.defaultMeta }),
       middleware: createMiddlewareFactory(),
-      router: createRouterFactory(config),
+      router: createRouterFactory(config2),
       mergeRouters,
       createCallerFactory: createCallerFactory()
     };
@@ -19286,8 +19286,8 @@ function joinScript(script) {
   if (script === null || script === void 0) return null;
   return Array.isArray(script) ? script.join("\n") : script;
 }
-function resolveFunctions(config) {
-  return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? "");
+function resolveFunctions(config2) {
+  return (config2.functions ?? []).map((fn) => joinScript(fn.body) ?? "");
 }
 function serializeFieldValue(value) {
   if (value instanceof Date) {
@@ -19303,9 +19303,9 @@ function serializeFieldValue(value) {
 function serializeFields(fields) {
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
 }
-function buildDslSchema(config, services = []) {
+function buildDslSchema(config2, services = []) {
   const types3 = {};
-  for (const rt of config.recordTypes) {
+  for (const rt of config2.recordTypes) {
     const fields = {};
     for (const cf of rt.custom_fields) {
       fields[cf.key] = {
@@ -19320,8 +19320,8 @@ function buildDslSchema(config, services = []) {
 function toDslRecord(record) {
   return { id: record.id, type: shortName(record.typeRef), fields: record.customFields };
 }
-function buildRecordsHost(adapter, config) {
-  const byShortName = new Map(config.recordTypes.map((rt) => [shortName(rt.id), rt]));
+function buildRecordsHost(adapter, config2) {
+  const byShortName = new Map(config2.recordTypes.map((rt) => [shortName(rt.id), rt]));
   return {
     hasType: (type) => byShortName.has(type),
     getAll: (type) => {
@@ -19402,7 +19402,7 @@ function coerceValue(type, raw2) {
       return raw2;
   }
 }
-function buildEvalHost(adapter, config, script, services = []) {
+function buildEvalHost(adapter, config2, script, services = []) {
   let attributes;
   if (script.liveAttributes) {
     attributes = script.liveAttributes;
@@ -19412,7 +19412,7 @@ function buildEvalHost(adapter, config, script, services = []) {
       attributes[key] = value === "" ? null : value;
     }
   }
-  const records2 = buildRecordsHost(adapter, config);
+  const records2 = buildRecordsHost(adapter, config2);
   if (script.readonlyRecords) delete records2.mutate;
   return {
     records: records2,
@@ -19425,7 +19425,7 @@ function buildEvalHost(adapter, config, script, services = []) {
     },
     attributes,
     services,
-    functions: resolveFunctions(config),
+    functions: resolveFunctions(config2),
     // Async queue dispatch failures land after the script returned — console
     // is the workbench's channel for them (a toast slot may take over later).
     onQueuedFailure: (label, message) => console.warn(`[queued ${label}] failed: ${message}`),
@@ -19452,16 +19452,16 @@ function buildLoggerModule(sink) {
 }
 
 // ../engine/src/validateConfig.ts
-function validateConfig(config, services = []) {
+function validateConfig(config2, services = []) {
   const registry = services.some((m) => m.name.toLowerCase() === "logger") ? services : [...services, buildLoggerModule(() => {
   })];
-  const schema = buildDslSchema(config, registry);
+  const schema = buildDslSchema(config2, registry);
   const findings = [];
   const note = (where, message) => {
     findings.push({ where, diagnostic: { severity: "error", message, line: 1, col: 1 } });
   };
   const functions = {};
-  for (const fn of config.functions ?? []) {
+  for (const fn of config2.functions ?? []) {
     const where = `function '${fn.name}'`;
     if (!fn.description?.trim()) note(where, "description is mandatory for named functions");
     try {
@@ -19476,7 +19476,7 @@ function validateConfig(config, services = []) {
     } catch {
     }
   }
-  for (const fn of config.functions ?? []) {
+  for (const fn of config2.functions ?? []) {
     for (const diagnostic of validateFunction(joinScript(fn.body) ?? "", schema, { functions })) {
       findings.push({ where: `function '${fn.name}'`, diagnostic });
     }
@@ -19489,14 +19489,14 @@ function validateConfig(config, services = []) {
   for (const diagnostic of lintSchema(schema)) {
     findings.push({ where: "schema", diagnostic });
   }
-  const attrByKey = new Map(config.attributes.map((a) => [a.key, a]));
-  const rtByWorkflow = new Map(config.recordTypes.map((rt) => [rt.workflow_ref, rt]));
-  for (const attr of config.attributes) {
+  const attrByKey = new Map(config2.attributes.map((a) => [a.key, a]));
+  const rtByWorkflow = new Map(config2.recordTypes.map((rt) => [rt.workflow_ref, rt]));
+  for (const attr of config2.attributes) {
     if (attr.type_config?.datasource) {
       collect(`attribute '${attr.key}' datasource`, attr.type_config.datasource);
     }
   }
-  for (const workflow of config.workflows) {
+  for (const workflow of config2.workflows) {
     const anchorType = rtByWorkflow.has(workflow.id) ? shortName(rtByWorkflow.get(workflow.id).id) : void 0;
     for (const activity of workflow.activities) {
       if (activity.show_condition) {
@@ -19526,8 +19526,8 @@ function validateConfig(config, services = []) {
   }
   return findings;
 }
-function reportConfigFindings(config, services = []) {
-  const findings = validateConfig(config, services);
+function reportConfigFindings(config2, services = []) {
+  const findings = validateConfig(config2, services);
   for (const { where, diagnostic } of findings) {
     const log = diagnostic.severity === "error" ? console.error : console.warn;
     log(`[SDM config ${diagnostic.severity}] ${where}: ${diagnostic.message}`);
@@ -19538,7 +19538,7 @@ function reportConfigFindings(config, services = []) {
 }
 
 // ../engine/src/engine.ts
-function createEngine({ store, config, services: hostServices = [] }) {
+function createEngine({ store, config: config2, services: hostServices = [] }) {
   if (hostServices.some((m) => m.name.toLowerCase() === "logger")) {
     throw new Error("Service module name 'logger' is reserved by the engine");
   }
@@ -19548,8 +19548,8 @@ function createEngine({ store, config, services: hostServices = [] }) {
   });
   const services = [...hostServices, loggerModule];
   const createTypeByActivity = /* @__PURE__ */ new Map();
-  for (const rt of config.recordTypes) {
-    const wf = config.workflows.find((w) => w.id === rt.workflow_ref);
+  for (const rt of config2.recordTypes) {
+    const wf = config2.workflows.find((w) => w.id === rt.workflow_ref);
     for (const act of wf?.activities ?? []) {
       if (act.record_map === "CREATE") createTypeByActivity.set(act.id, rt.id);
     }
@@ -19559,7 +19559,7 @@ function createEngine({ store, config, services: hostServices = [] }) {
     try {
       const result = evaluateExpression(
         activity.show_condition,
-        buildEvalHost(store, config, { anchorRecord, activity: { id: activity.id, name: activity.name } }, services)
+        buildEvalHost(store, config2, { anchorRecord, activity: { id: activity.id, name: activity.name } }, services)
       );
       return { available: result === true };
     } catch (err) {
@@ -19591,7 +19591,7 @@ function createEngine({ store, config, services: hostServices = [] }) {
     };
     if (activity.before_hook) {
       try {
-        const result = executeScript(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: "read" });
+        const result = executeScript(activity.before_hook, buildEvalHost(store, config2, scriptContext, services), { mode: "read" });
         warnings.push(...result.warnings);
       } catch (err) {
         if (err instanceof FluxFailError) throw new Error(err.message);
@@ -19638,7 +19638,7 @@ function createEngine({ store, config, services: hostServices = [] }) {
       try {
         const result = executeScript(
           activity.after_hook,
-          buildEvalHost(store, config, { ...scriptContext, anchorRecord: store.getRecord(targetRecordId) }, services),
+          buildEvalHost(store, config2, { ...scriptContext, anchorRecord: store.getRecord(targetRecordId) }, services),
           { mode: "mutate" }
         );
         warnings.push(...result.warnings);
@@ -19672,9 +19672,9 @@ function createEngine({ store, config, services: hostServices = [] }) {
     activityAvailability,
     isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
     runActivity,
-    evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, script, services)),
-    validateConfig: () => validateConfig(config, services),
-    reportConfigFindings: () => reportConfigFindings(config, services)
+    evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config2, script, services)),
+    validateConfig: () => validateConfig(config2, services),
+    reportConfigFindings: () => reportConfigFindings(config2, services)
   };
 }
 
@@ -19685,10 +19685,10 @@ var MemoryAdapter = class {
   records;
   listeners = /* @__PURE__ */ new Set();
   reverseIndex;
-  constructor(config, options = {}) {
-    this.recordTypes = config.recordTypes;
-    const attrMap = new Map(config.attributes.map((a) => [a.key, a]));
-    this.workflows = new Map(config.workflows.map((wf) => [
+  constructor(config2, options = {}) {
+    this.recordTypes = config2.recordTypes;
+    const attrMap = new Map(config2.attributes.map((a) => [a.key, a]));
+    this.workflows = new Map(config2.workflows.map((wf) => [
       wf.id,
       {
         ...wf,
@@ -19723,16 +19723,16 @@ var MemoryAdapter = class {
       }
     }
     this.records = new Map(options.initialRecords ?? []);
-    if (options.seed) this.seedRecords(config);
+    if (options.seed) this.seedRecords(config2);
   }
   /** Persistence hook, called after every mutation — no-op in memory. */
   persist() {
   }
   // Load an entity file's sample records, but only for types that have no
   // records yet — user data is never touched or duplicated.
-  seedRecords(config) {
+  seedRecords(config2) {
     let seeded = false;
-    for (const group of config.seeds ?? []) {
+    for (const group of config2.seeds ?? []) {
       const hasAny = [...this.records.values()].some((r) => r.typeRef === group.typeId);
       if (hasAny) continue;
       for (const seed of group.records) {
@@ -20102,22 +20102,22 @@ async function getScopeConfig(db, scope) {
   return rows[0].config;
 }
 async function loadScopeHost(db, scope, sink = consoleNotifySink) {
-  const config = await getScopeConfig(db, scope);
+  const config2 = await getScopeConfig(db, scope);
   const rows = await db.select().from(records).where(eq(records.scope, scope));
   const initial = rows.map((r) => [
     r.id,
     { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory }
   ]);
-  const adapter = new MemoryAdapter(config, { initialRecords: initial });
+  const adapter = new MemoryAdapter(config2, { initialRecords: initial });
   const engine = createEngine({
     store: adapter,
-    config,
+    config: config2,
     services: [buildNotifyModule(sink), buildGeoModule(adapter)]
   });
   const baseline = new Map(
     initial.map(([id, rec]) => [id, { json: JSON.stringify(rec), historyLen: rec.activityHistory.length }])
   );
-  return { scope, config, adapter, engine, baseline };
+  return { scope, config: config2, adapter, engine, baseline };
 }
 function findActivity(host, activityId) {
   for (const rt of host.adapter.listRecordTypes()) {
@@ -20220,12 +20220,12 @@ ${findings.join("\n")}`);
     this.findings = findings;
   }
 };
-async function putConfig(db, scope, config, sink = consoleNotifySink) {
-  const adapter = new MemoryAdapter(config);
-  for (const rt of config.recordTypes) adapter.getRecordTypeDef(rt.id);
+async function putConfig(db, scope, config2, sink = consoleNotifySink) {
+  const adapter = new MemoryAdapter(config2);
+  for (const rt of config2.recordTypes) adapter.getRecordTypeDef(rt.id);
   const engine = createEngine({
     store: adapter,
-    config,
+    config: config2,
     services: [buildNotifyModule(sink), buildGeoModule(adapter)]
   });
   const errors = engine.validateConfig().filter((f) => f.diagnostic.severity === "error");
@@ -20233,8 +20233,8 @@ async function putConfig(db, scope, config, sink = consoleNotifySink) {
     throw new ConfigValidationError(errors.map((f) => `${f.where}: ${f.diagnostic.message}`));
   }
   await db.transaction(async (tx) => {
-    await tx.insert(sdmConfigs).values({ scope, config, updatedAt: /* @__PURE__ */ new Date() }).onConflictDoUpdate({ target: sdmConfigs.scope, set: { config, updatedAt: /* @__PURE__ */ new Date() } });
-    for (const group of config.seeds ?? []) {
+    await tx.insert(sdmConfigs).values({ scope, config: config2, updatedAt: /* @__PURE__ */ new Date() }).onConflictDoUpdate({ target: sdmConfigs.scope, set: { config: config2, updatedAt: /* @__PURE__ */ new Date() } });
+    for (const group of config2.seeds ?? []) {
       const existing = await tx.select({ id: records.id }).from(records).where(and(eq(records.scope, scope), eq(records.typeRef, group.typeId))).limit(1);
       if (existing.length > 0) continue;
       if (group.records.length === 0) continue;
@@ -20420,8 +20420,10 @@ outer.all("*", async (c) => {
     return c.json({ error: "server init failed", detail: String(err) }, 500);
   }
 });
+var config = { api: { bodyParser: false } };
 var vercel_default = handle(outer);
 export {
+  config,
   vercel_default as default
 };
 /*! Bundled license information:

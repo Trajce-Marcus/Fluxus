@@ -49,4 +49,8 @@ outer.all('*', async (c) => {
   }
 });
 
+// Vercel's Node runtime pre-parses request bodies by default, consuming the
+// stream before the adapter reads it — POSTs then hang forever. Turn it off.
+export const config = { api: { bodyParser: false } };
+
 export default handle(outer);
