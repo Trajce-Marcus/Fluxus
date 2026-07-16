@@ -79,6 +79,12 @@ the deployed instance.** Neon branching makes this a one-command split — the
 deployed app keeps the current data (main), local `.env` repoints to a `dev`
 branch.
 
+**Done 2026-07-17:** Neon branch `dev` created from `production`
+(copy-on-write snapshot, all tables + data). Local
+`packages/server/.env` points at the `dev` branch's pooled endpoint; the
+production connection string lives only in Vercel's env vars. Manage branches
+with `npx neonctl` (browser OAuth).
+
 The trigger for formalising more than that: the first POC holding data that
 can't be trashed. Until then, one deployed instance + local dev is the whole
 story.
@@ -93,6 +99,31 @@ discovery runs pre-build), the non-empty `public/`, and the **hand-rolled
 hang on this runtime (`hono/vercel` is Edge-only; `@hono/node-server/vercel`
 waits on a body stream Vercel's pre-parsing already consumed, and
 `api.bodyParser: false` is not honored).
+
+## The hosts (workbench + page builder)
+
+**Live since 2026-07-17:** https://fluxus-sdm.vercel.app and
+https://fluxus-page-builder.vercel.app — Vercel projects `fluxus-sdm` and
+`fluxus-page-builder`.
+
+The hosts are **static CLI deploys of the locally built `dist`**, not Git
+integration: their workspace deps (engine, dsl, client) are consumed as
+TypeScript source, so a Vercel cloud build would need the whole monorepo +
+root install — the exact per-project plumbing the server already fought.
+Building locally sidesteps it entirely.
+
+- The API URL is baked at build time via `VITE_FLUXUS_API_URL`
+  (`https://fluxus-server.vercel.app/trpc`); unset (local dev) the hosts fall
+  back to `http://localhost:8787/trpc` — the dev workflow is untouched.
+- To redeploy a host: build with the env var set, copy `dist/` to a directory
+  **outside the repo** (the CLI walks up to the nearest package.json/git root
+  and would upload package source instead of the bundle), add the static
+  `vercel.json` (`framework: null`, empty install/build commands,
+  `outputDirectory: "."`), then `npx vercel link --yes --project <name>` +
+  `npx vercel deploy --prod --yes` from that directory.
+- CORS: the server runs wide-open `cors()` — deliberate for the
+  unauthenticated POC phase (origin checks add nothing without auth);
+  preflight verified against the live server.
 
 ## How to deploy
 

@@ -18,7 +18,9 @@ export let sdmEngine: Engine;
 export let config: ConfigRaw;
 
 export async function initSdmRuntime(): Promise<void> {
-  sdmClient = await FluxusClient.connect();
+  // Deployed builds bake in the live server URL; local dev (var unset) falls
+  // back to the client's localhost default.
+  sdmClient = await FluxusClient.connect({ url: import.meta.env.VITE_FLUXUS_API_URL });
   sdmStore = sdmClient.adapter;
   config = sdmClient.config;
   sdmEngine = createEngine({

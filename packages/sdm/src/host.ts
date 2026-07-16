@@ -24,7 +24,9 @@ export let adapter: MemoryAdapter;
 export let engine: Engine;
 
 export async function initHost(): Promise<void> {
-  client = await FluxusClient.connect();
+  // Deployed builds bake in the live server URL; local dev (var unset) falls
+  // back to the client's localhost default.
+  client = await FluxusClient.connect({ url: import.meta.env.VITE_FLUXUS_API_URL });
   adapter = client.adapter;
   engine = createEngine({
     store: adapter,
