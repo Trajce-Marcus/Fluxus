@@ -84,8 +84,11 @@ story.
 Vercel Git integration on the GitHub repo, project root `packages/server`
 (npm-workspace aware — install runs at the repo root). Push to main → deploy:
 the build command (`npm run build:vercel`, set in `vercel.json`) produces
-`api/index.mjs`, the one serverless function, with `migrations/` bundled
-alongside so `createDb()` can migrate at cold start. `DATABASE_URL` (Neon
+`api/index.mjs`, the one serverless function. The function does **not**
+migrate at cold start (`applyMigrations: false` — no migrations/ on disk next
+to the bundle): schema changes are applied from a dev machine with
+`npm run db:migrate` **before** pushing code that needs them. `DATABASE_URL`
+(Neon
 **pooled** connection string) is set in the Vercel project's environment
 variables. Region `syd1` lives in `vercel.json`. Seeding
 (`npm run seed:server`) runs from a dev machine against the same

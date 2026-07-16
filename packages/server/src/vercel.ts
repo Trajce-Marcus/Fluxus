@@ -12,11 +12,10 @@
 // Init is lazy (first request), not top-level: a module-init throw surfaces
 // only as Vercel's opaque FUNCTION_INVOCATION_FAILED page, while a request-
 // time failure can answer with the actual error — missing env var, Neon
-// unreachable, migrations folder absent — so a curl diagnoses the deployment.
-// migrationsFolder: the bundle lives in api/, so migrations/ is one level up
-// (createDb's own default resolves relative to src/db/, wrong from here).
+// unreachable — so a curl diagnoses the deployment. Migrations are NOT
+// applied here (no migrations/ on disk next to the bundle): deploys run
+// `npm run db:migrate` from a dev machine against DATABASE_URL first.
 
-import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { handle } from 'hono/vercel';
 import { createDb } from './db/client';
@@ -29,9 +28,7 @@ function getApp(): Promise<Hono> {
     if (!process.env.DATABASE_URL) {
       throw new Error('DATABASE_URL is not set (or empty) in this deployment\'s environment');
     }
-    const db = await createDb({
-      migrationsFolder: fileURLToPath(new URL('../migrations', import.meta.url)),
-    });
+    const db = await createDb({ applyMigrations: false });
     return createApp({ db });
   })();
   // A failed init must not be cached as permanently broken — retry next request.

@@ -119,8 +119,10 @@ GitHub-style).
 
 DDL is drizzle-kit migrations (`migrations/`, generated from `schema.ts` via
 `npm run db:generate`): `createDb()` applies outstanding migrations
-idempotently at connect on both drivers, and `npm run db:migrate` runs the
-same step explicitly against `DATABASE_URL` at deploy time. Driver selection
+idempotently at connect on both drivers (unless `applyMigrations: false` —
+the Vercel entry, where the bundle ships without migrations/ on disk), and
+`npm run db:migrate` runs the same step explicitly against `DATABASE_URL` —
+the required pre-deploy step for schema changes. Driver selection
 is the connection string: `DATABASE_URL` set → node-postgres (Neon/RDS/local),
 unset → PGlite (dev/tests, no Postgres install needed); `packages/server/.env`
 supplies it for local dev (loaded by the dev server and scripts, never by the

@@ -3,10 +3,5 @@
   "framework": null,
   "regions": ["syd1"],
   "buildCommand": "npm run build:vercel",
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
-  "functions": {
-    "api/index.mjs": {
-      "includeFiles": "migrations/**"
-    }
-  }
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
 }

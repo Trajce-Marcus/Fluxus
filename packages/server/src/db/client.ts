@@ -24,21 +24,24 @@ export interface CreateDbOptions {
   databaseUrl?: string;
   /** PGlite data directory (e.g. '.data/fluxus'); omit for in-memory (tests). */
   dataDir?: string;
-  /** Override the migrations directory — needed when this module is bundled
-   *  (the default resolves relative to the source file's location). */
-  migrationsFolder?: string;
+  /** Set false to skip applying migrations at connect — the Vercel entry does
+   *  (bundled code has no migrations/ on disk; deploys run `npm run db:migrate`
+   *  from a dev machine instead). */
+  applyMigrations?: boolean;
 }
 
 export async function createDb(options: CreateDbOptions = {}): Promise<Db> {
-  const migrationsFolder =
-    options.migrationsFolder ?? fileURLToPath(new URL('../../migrations', import.meta.url));
+  const applyMigrations = options.applyMigrations ?? true;
+  const migrationsFolder = fileURLToPath(new URL('../../migrations', import.meta.url));
   const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
   if (databaseUrl) {
     const { default: pg } = await import('pg');
     const pool = new pg.Pool({ connectionString: databaseUrl });
     const db = drizzlePg(pool, { schema });
-    const { migrate } = await import('drizzle-orm/node-postgres/migrator');
-    await migrate(db, { migrationsFolder });
+    if (applyMigrations) {
+      const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+      await migrate(db, { migrationsFolder });
+    }
     return db as unknown as Db;
   }
   const { PGlite } = await import('@electric-sql/pglite');
@@ -47,8 +50,10 @@ export async function createDb(options: CreateDbOptions = {}): Promise<Db> {
     mkdirSync(options.dataDir, { recursive: true }); // PGlite won't create parents
   }
   const db = drizzlePglite(new PGlite(options.dataDir), { schema });
-  const { migrate } = await import('drizzle-orm/pglite/migrator');
-  await migrate(db, { migrationsFolder });
+  if (applyMigrations) {
+    const { migrate } = await import('drizzle-orm/pglite/migrator');
+    await migrate(db, { migrationsFolder });
+  }
   return db;
 }
 
