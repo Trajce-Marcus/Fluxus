@@ -9,7 +9,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "test": "vitest run",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.4",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^24",
     "@types/pg": "^8.15.0",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.20.0",
     "typescript": "^5.3.3",
     "vitest": "^3.0.0"

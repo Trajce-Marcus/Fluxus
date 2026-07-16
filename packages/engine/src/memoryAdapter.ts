@@ -210,6 +210,17 @@ export class MemoryAdapter implements Store {
       id = `r_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     }
 
+    // Record identity is (scope, id): an id must be unique across ALL record
+    // types in the scope, not just its own type — storage keys on it. Guard
+    // here so a colliding id fails loudly instead of silently overwriting a
+    // record of another type.
+    const clashingId = this.records.get(id);
+    if (clashingId) {
+      throw new Error(
+        `Record id "${id}" already exists as ${clashingId.typeRef} — ids must be unique across all record types`,
+      );
+    }
+
     return {
       id,
       typeRef: typeId,

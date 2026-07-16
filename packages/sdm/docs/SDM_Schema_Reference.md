@@ -39,7 +39,7 @@ The central, universal object. Every piece of business data is a Record of some 
 | `name` | text | |
 | `description` | text | |
 | `workflow_ref` | reference → Workflow | Exactly one. The Record's process. |
-| `id_field` | identifier? | Optional. When set, the named custom field's value is used as the Record instance's id instead of an auto-generated one. The field should carry `required: true`, `unique: true`, and `immutable: true`. |
+| `id_field` | identifier? | Optional. When set, the named custom field's value is used as the Record instance's id instead of an auto-generated one. The field should carry `required: true`, `unique: true`, and `immutable: true`. A Record instance's id is the storage key `(scope, id)`, so it must be **unique across every record type in the scope**, not just its own type — creating a Record with an id already used by any type (e.g. reusing a Job's id for a Work Order) is rejected with an error, never silently overwritten. |
 | `custom_fields` | list of CustomField | The Record's own data — typed key-values (see 1.4). |
 | `states` | *(deferred)* | The set of states an instance can be in (e.g. Raised, Complete). Definition deferred. |
 

@@ -11,16 +11,18 @@ _(empty — add freely)_
 
 ## Outstanding
 
-- [ ] **RBAC** (record level + activity level) — big open design. Strict default
-  floated: no access unless specified. Open questions: who sets access and the
-  change-management process around it (review → approve → publish, "cooked in");
-  write-time + runtime checking + auditing; org/domain-based, possibly a
-  review-body model for sensitive record types (like PII classifications by
-  regulators/standards bodies) with domain-specific rules alongside. Goal: a
-  single implementer can do full stack. Groundwork that already exists: the
-  activity-level availability gate (fail-closed, server-enforced since Phase 4)
-  is the enforcement point role rules will plug into; blocked on auth
-  (`context.user` is still the demo stub).
+- [ ] **RBAC** (record level + activity level) — big open design. **Design
+  draft under review: [docs/RBAC_DESIGN.md](RBAC_DESIGN.md)** (rev 2, 2026-07-14).
+  Shape so far: three surfaces (record type `read` role-list / activity access =
+  the availability gate expression / page `open` role-list); strict-by-default
+  for record types + pages, open-by-default for activities; implementer plane =
+  read/write/admin; roles declared in config, assignments via an admin tool;
+  row-level read conditions deferred. Still open in the draft: gate double-duty,
+  anchor-readability, page client-only enforcement interim, role registry home.
+  Blocked on auth (`context.user` is still the demo stub). Original notes: who
+  sets access and change-management (review → approve → publish, "cooked in");
+  write-time + runtime checking + auditing; a possible review-body model for
+  sensitive record types (PII classifications by regulators/standards bodies).
 - [ ] **External integrations** — not yet designed. Inbound largely exists now:
   headless `activities.run` (Phase 4) is exactly how an external system would
   deliver a new work order. Outbound (sending completed-WO info) has the
@@ -45,11 +47,23 @@ _(empty — add freely)_
   edit files → push up). The authoring tool/flow proper (AI-assisted editing
   against a running server) is the still-open "config distribution" thread on
   the ROADMAP.
+- [ ] **PII field flag → hashing** (much later; added 2026-07-14). In a record
+  type def, flag a custom field as PII so its value is protected at rest.
+  Feasibility: doable as a field flag, but "hashed" (one-way) only supports
+  *match*, not display or retrieval — if the value must ever be shown/read back
+  it's **encryption** (reversible) or **tokenisation**, not hashing; the choice
+  is per use-case. Interacts with the reporting projection (the single text
+  `value` column), with search/filtering (can't `where` on a plaintext you
+  don't store), and with any future row-level read conditions. Distinct from
+  RBAC's row/type access (that hides whole rows; this protects a column's
+  contents even from those who can read the row). Park until the access model
+  and reporting layer are further along.
 - [ ] **Offline capability?** — open question (added 2026-07-12). Worth noting
   when it's discussed: the browser hosts already run the full engine locally,
   and the dev database (PGlite) is Postgres compiled to WASM that also runs
   in-browser — the pieces for an offline-first client with sync exist, but
   sync/conflict semantics against the activity stream would be the real design.
+  - [ ] **PDF'd reports and emailing** — there will be need to send email and sms and pdf's reports.  Initially I thought reports would be external to fluxus but could we reuse the page builder as a report builder and have a report building capability, integrated, and also a wf (non ui to create and email pdfs).  for discussion
 
 ## Done / answered
 

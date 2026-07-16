@@ -100,8 +100,14 @@ GitHub-style).
   its callers. Rebuild-by-re-projection is possible by construction (the
   entries live on the records) but no rebuild tool exists yet.
 
-DDL is boot-time idempotent SQL kept in step with `schema.ts` by hand;
-drizzle-kit migrations take over when Neon deployments begin.
+DDL is drizzle-kit migrations (`migrations/`, generated from `schema.ts` via
+`npm run db:generate`): `createDb()` applies outstanding migrations
+idempotently at connect on both drivers, and `npm run db:migrate` runs the
+same step explicitly against `DATABASE_URL` at deploy time. Driver selection
+is the connection string: `DATABASE_URL` set → node-postgres (Neon/RDS/local),
+unset → PGlite (dev/tests, no Postgres install needed); `packages/server/.env`
+supplies it for local dev (loaded by the dev server and scripts, never by
+`lambda.ts`).
 
 ## Services
 
