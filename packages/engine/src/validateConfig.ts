@@ -68,9 +68,45 @@ export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] =
   const attrByKey = new Map(config.attributes.map((a) => [a.key, a]));
   const rtByWorkflow = new Map(config.recordTypes.map((rt) => [rt.workflow_ref, rt]));
 
+  // '.' is reserved as the composite cell path separator (attr.item.column) —
+  // ban it from every key namespace so a dotted path is always unambiguous.
+  const checkKey = (where: string, key: string) => {
+    if (key.includes('.')) note(where, `key '${key}' contains '.' — reserved as the composite path separator`);
+  };
+  for (const rt of config.recordTypes) {
+    for (const cf of rt.custom_fields) checkKey(`record type '${rt.id}'`, cf.key);
+  }
+
   for (const attr of config.attributes) {
+    checkKey(`attribute '${attr.key}'`, attr.key);
     if (attr.type_config?.datasource) {
       collect(`attribute '${attr.key}' datasource`, attr.type_config.datasource);
+    }
+    if (attr.type !== 'composite') continue;
+
+    // Composite structure: sub-usages pointing at real pool attributes (the
+    // same wrapper shape an activity uses) — reuse, not inline definitions.
+    const where = `composite attribute '${attr.key}'`;
+    const subs = attr.type_config?.attributes ?? [];
+    if (subs.length === 0) note(where, 'a composite needs at least one sub-attribute (type_config.attributes)');
+    const seenSubs = new Set<string>();
+    for (const sub of subs) {
+      const target = attrByKey.get(sub.attribute_ref);
+      if (!target) {
+        note(where, `sub-attribute '${sub.attribute_ref}' not found in the attribute pool`);
+        continue;
+      }
+      if (seenSubs.has(sub.attribute_ref)) note(where, `duplicate sub-attribute '${sub.attribute_ref}'`);
+      seenSubs.add(sub.attribute_ref);
+      if (target.type === 'composite') note(where, `sub-attribute '${sub.attribute_ref}': composites cannot nest`);
+      if (target.type === 'reference') note(where, `sub-attribute '${sub.attribute_ref}': reference sub-attributes are not supported yet`);
+      if (sub.show_condition) {
+        collect(`${where} → '${sub.attribute_ref}' show_condition`, sub.show_condition);
+      }
+      const validation = sub.validation ?? target.validation;
+      if (validation) {
+        collect(`${where} → '${sub.attribute_ref}' validation`, validation, undefined, ['value']);
+      }
     }
   }
 
@@ -82,6 +118,11 @@ export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] =
         collect(`${activity.id} show_condition`, activity.show_condition, anchorType, undefined, ['attributes']);
       }
       for (const usage of activity.attributes) {
+        // Section markers are presentation-only entries — no ref to validate.
+        if (!('attribute_ref' in usage)) {
+          if (!usage.section?.trim()) note(`${activity.id} section marker`, 'a section marker needs a non-empty label');
+          continue;
+        }
         if (usage.show_condition) {
           collect(`${activity.id} → '${usage.attribute_ref}' show_condition`, usage.show_condition, anchorType);
         }

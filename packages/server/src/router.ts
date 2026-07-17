@@ -142,8 +142,12 @@ export const appRouter = t.router({
           scope: scopeInput,
           activityId: z.string().min(1),
           recordId: z.string().min(1).optional(),
-          /** Attribute payload — string values, exactly as the capture form submits. */
-          attributes: z.record(z.string(), z.string()).default({}),
+          /** Attribute payload — string values, exactly as the capture form
+           *  submits. A composite attribute's cells may come flat under dotted
+           *  keys ('access_permission.ok') or nested (attr → sub). */
+          attributes: z
+            .record(z.string(), z.union([z.string(), z.record(z.string(), z.string())]))
+            .default({}),
           waived: z.record(z.string(), z.string()).optional(),
           acknowledgedWarnings: z.boolean().optional(),
           callbackData: z.unknown().optional(),

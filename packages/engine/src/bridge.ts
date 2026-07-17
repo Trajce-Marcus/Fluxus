@@ -54,6 +54,11 @@ function serializeFieldValue(value: unknown): unknown {
     }
     return value.toISOString();
   }
+  if (Array.isArray(value)) return value.map(serializeFieldValue);
+  if (value !== null && typeof value === 'object') {
+    // Nested bags (composite attribute values) — serialize each cell
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, serializeFieldValue(v)]));
+  }
   return value;
 }
 
@@ -168,17 +173,88 @@ export interface ScriptContext {
   readonlyRecords?: boolean;
 }
 
+// ── Composite attributes (one question's row of sub-fields) ──────────────────
+// One capture value per sub-attribute, addressed by the dotted path
+// `attr.sub` ('.' is reserved in keys for exactly this). Hosts and payloads
+// carry cells FLAT (dotted string keys); scripts and the history entry see
+// the composite NESTED (attr → sub). The helpers below own that translation.
+
+/** The resolved sub-attributes of a composite; null for other types. */
+export function compositeSubs(def: AttributeDef | undefined): AttributeDef[] | null {
+  if (def?.type !== 'composite') return null;
+  return def.sub_attributes ?? [];
+}
+
+/**
+ * Normalise a captured payload to flat string values: scalar attributes as-is,
+ * composite cells as dotted keys — whether the caller sent them nested
+ * (`{ access_permission: { ok: 'TT' } }`) or already dotted
+ * (`{ 'access_permission.ok': 'TT' }`). Unknown keys pass through untouched so
+ * the payload checks downstream still see them.
+ */
+export function flattenCaptured(defs: AttributeDef[], captured: Record<string, unknown>): Record<string, string> {
+  const byKey = new Map(defs.map((d) => [d.key, d]));
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(captured)) {
+    if (compositeSubs(byKey.get(key)) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [subKey, cell] of Object.entries(value as Record<string, unknown>)) {
+        out[`${key}.${subKey}`] = String(cell ?? '');
+      }
+    } else {
+      out[key] = String(value ?? '');
+    }
+  }
+  return out;
+}
+
+/**
+ * The nested raw-string form of a composite's cells from a flat value bag —
+ * what the history entry stores. Only non-empty, non-waived cells appear.
+ */
+export function nestComposite(
+  attrKey: string,
+  subs: AttributeDef[],
+  flat: Record<string, string>,
+  waived: Record<string, string> = {},
+): Record<string, string> {
+  const nested: Record<string, string> = {};
+  for (const sub of subs) {
+    const path = `${attrKey}.${sub.key}`;
+    const raw = flat[path] ?? '';
+    if (raw === '' || path in waived) continue;
+    nested[sub.key] = raw;
+  }
+  return nested;
+}
+
 /**
  * Coerce captured form values (strings) into typed script values using each
  * attribute's declared type — so `value <= now()` works on a date attribute.
  * Empty strings become null; unparseable values stay as the raw string so the
  * rule fails visibly rather than silently.
+ *
+ * Composite cells arrive as dotted flat keys and come out NESTED under the
+ * attribute key, with every declared sub-attribute present (empty → null) so
+ * script access like `attributes.access_permission.ok` is total. Section
+ * pseudo-defs carry no value and are skipped.
  */
 export function coerceCaptured(defs: AttributeDef[], values: Record<string, string>): Record<string, unknown> {
   const byKey = new Map(defs.map((d) => [d.key, d]));
   const out: Record<string, unknown> = {};
+  for (const def of defs) {
+    const subs = compositeSubs(def);
+    if (!subs) continue;
+    const row: Record<string, unknown> = {};
+    for (const sub of subs) {
+      row[sub.key] = coerceValue(sub.type, values[`${def.key}.${sub.key}`] ?? '');
+    }
+    out[def.key] = row;
+  }
   for (const [key, raw] of Object.entries(values)) {
-    out[key] = coerceValue(byKey.get(key)?.type, raw);
+    if (key.includes('.')) continue; // composite cells — handled above
+    const def = byKey.get(key);
+    if (def?.type === 'section') continue;
+    out[key] = coerceValue(def?.type, raw);
   }
   return out;
 }

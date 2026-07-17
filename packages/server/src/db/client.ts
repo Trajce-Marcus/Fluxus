@@ -37,6 +37,13 @@ export async function createDb(options: CreateDbOptions = {}): Promise<Db> {
   if (databaseUrl) {
     const { default: pg } = await import('pg');
     const pool = new pg.Pool({ connectionString: databaseUrl });
+    // Neon closes idle connections server-side; the dropped socket surfaces as
+    // an 'error' on the idle client, which without a listener crashes the
+    // process. Handling it lets pg-pool discard the dead client and open a
+    // fresh one on next query.
+    pool.on('error', (err) => {
+      console.warn(`[db] idle client error (connection will be replaced): ${err.message}`);
+    });
     const db = drizzlePg(pool, { schema });
     if (applyMigrations) {
       const { migrate } = await import('drizzle-orm/node-postgres/migrator');

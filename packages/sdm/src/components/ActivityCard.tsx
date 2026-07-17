@@ -1,15 +1,71 @@
 import { Fragment } from 'react';
-import type { ActivityHistoryEntry } from '@fluxus/engine';
+import { compositeSubs } from '@fluxus/engine';
+import type { ActivityDef, ActivityHistoryEntry } from '@fluxus/engine';
+import { useAppContext } from '../context/AppContext';
 
 interface Props {
   entry: ActivityHistoryEntry;
 }
 
+/**
+ * Display rows for an entry's captured attributes, in the activity
+ * DEFINITION order (= the order the form captured them): the stored entry is
+ * jsonb, which does not preserve key order, so the definition is the ordering
+ * truth. Composite values flatten to one row per cell under the dotted
+ * `attr.sub` key, cells in sub-attribute order. Keys the definition doesn't
+ * know (system_log, hook-written extras, older-config entries) follow in
+ * entry order.
+ */
+function displayRows(entry: ActivityHistoryEntry, activity: ActivityDef | undefined): [string, unknown][] {
+  const attrs = entry.capturedAttributes;
+  const waived = entry.waived ?? {};
+  const rows: [string, unknown][] = [];
+  const pushFlat = (key: string, value: unknown) => {
+    if (key in waived) return; // shown in the waived block with the reason
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
+        pushFlat(`${key}.${subKey}`, subValue);
+      }
+      return;
+    }
+    rows.push([key, value]);
+  };
+
+  const seen = new Set<string>();
+  for (const attr of activity?.attributes ?? []) {
+    if (attr.type === 'section') continue;
+    seen.add(attr.key);
+    if (!(attr.key in attrs)) continue;
+    const subs = compositeSubs(attr);
+    const value = attrs[attr.key];
+    if (subs && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const cells = value as Record<string, unknown>;
+      const cellSeen = new Set<string>();
+      for (const sub of subs) {
+        if (sub.key in cells) {
+          pushFlat(`${attr.key}.${sub.key}`, cells[sub.key]);
+          cellSeen.add(sub.key);
+        }
+      }
+      for (const [cellKey, cellValue] of Object.entries(cells)) {
+        if (!cellSeen.has(cellKey)) pushFlat(`${attr.key}.${cellKey}`, cellValue);
+      }
+    } else {
+      pushFlat(attr.key, value);
+    }
+  }
+  for (const [key, value] of Object.entries(attrs)) {
+    if (!seen.has(key)) pushFlat(key, value);
+  }
+  return rows;
+}
+
 export function ActivityCard({ entry }: Props) {
+  const { selectedRecordType } = useAppContext();
+  const activity = selectedRecordType?.workflow.activities.find(a => a.id === entry.activityId);
   const ts = new Date(entry.timestamp).toLocaleString();
   const waived = entry.waived ?? {};
-  // Waived attributes show in their own block with the reason, not as empty values
-  const attrs = Object.entries(entry.capturedAttributes).filter(([k]) => !(k in waived));
+  const attrs = displayRows(entry, activity);
 
   return (
     <div style={{

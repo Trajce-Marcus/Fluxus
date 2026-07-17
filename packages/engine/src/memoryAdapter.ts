@@ -1,5 +1,5 @@
 import type { Store } from './store';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from './types';
+import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from './types';
 import { joinScript } from './bridge';
 
 // THE Store: all reference-Store behaviour (workflow resolution, constraint
@@ -26,7 +26,29 @@ export class MemoryAdapter implements Store {
 
     // Build an attribute lookup keyed by attribute.key, then resolve each
     // activity's attribute_ref wrappers into full AttributeDef objects.
+    // Section markers resolve to pseudo-defs of type 'section' (presentation
+    // only — no key to capture against). A composite def's
+    // type_config.attributes (sub-usages) resolve through the same merge into
+    // `sub_attributes` — a composite is a mini-form over pool attributes.
     const attrMap = new Map(config.attributes.map(a => [a.key, a]));
+    const resolveUsage = (usage: AttributeUsageDef): AttributeDef => {
+      const def = attrMap.get(usage.attribute_ref);
+      if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
+      // Carry usage-level settings onto the resolved attribute
+      const merged = usage.show_condition || usage.required || usage.validation || usage.can_waive
+        ? {
+            ...def,
+            show_condition: usage.show_condition ?? def.show_condition,
+            required: usage.required,
+            validation: usage.validation ?? def.validation,
+            validation_message: usage.validation_message ?? def.validation_message,
+            can_waive: usage.can_waive ?? def.can_waive,
+          }
+        : def;
+      if (merged.type !== 'composite') return merged;
+      return { ...merged, sub_attributes: (merged.type_config?.attributes ?? []).map(resolveUsage) };
+    };
+    let sectionSeq = 0;
     this.workflows = new Map(config.workflows.map(wf => [
       wf.id,
       {
@@ -36,21 +58,16 @@ export class MemoryAdapter implements Store {
           // Hooks may be written as arrays of lines in the JSON — joined here
           before_hook: joinScript(act.before_hook),
           after_hook: joinScript(act.after_hook),
-          attributes: act.attributes.map(usage => {
-            const def = attrMap.get(usage.attribute_ref);
-            if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
-            // Carry usage-level settings onto the resolved attribute
-            return usage.show_condition || usage.required || usage.validation || usage.can_waive
-              ? {
-                  ...def,
-                  show_condition: usage.show_condition ?? def.show_condition,
-                  required: usage.required,
-                  validation: usage.validation ?? def.validation,
-                  validation_message: usage.validation_message ?? def.validation_message,
-                  can_waive: usage.can_waive ?? def.can_waive,
+          attributes: act.attributes.map(entry =>
+            'attribute_ref' in entry
+              ? resolveUsage(entry)
+              : {
+                  key: `_section_${++sectionSeq}`,
+                  label: entry.section,
+                  description: entry.description ?? '',
+                  type: 'section',
                 }
-              : def;
-          }),
+          ),
         })),
       },
     ]));

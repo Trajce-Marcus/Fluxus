@@ -45,7 +45,7 @@ describe('DSL ↔ SDM wiring', () => {
     const { config, adapter } = await setup();
     expect(adapter.getRecordTypeData('rt_cities').length).toBe(3);
     expect(adapter.getRecordTypeData('rt_suburbs').length).toBe(6);
-    expect(config.seeds?.length).toBe(2);
+    expect(config.seeds?.length).toBe(3); // cities, suburbs, inspection checklists
   });
 
   it('city datasource lists all cities ordered by name', async () => {
