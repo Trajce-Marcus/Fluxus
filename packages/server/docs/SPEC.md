@@ -111,7 +111,12 @@ GitHub-style).
   auth); one attributes row per attribute, single text `value`; a waived
   attribute is the same row with `value` null + `waive_desc`; acknowledged
   gate warnings project as a `system_warnings` row; `system_log` arrives as
-  an ordinary captured attribute. Rejected gates and un-acknowledged
+  an ordinary captured attribute. Plain-object entry values (composite
+  attributes, nested attr → item → column) flatten to one row per leaf cell
+  keyed by the dotted path (`prelim_activities.access_permission.ok`) — `'.'`
+  is reserved in keys for this, so cell queries stay uniform on the single
+  text `value` column (waived cells are dotted-key waive rows like any
+  other). Rejected gates and un-acknowledged
   soft-stops leave no rows (no entry committed). Projection is synchronous
   in-transaction; the outbox/async upgrade replaces `writeBack`'s body, not
   its callers. Rebuild-by-re-projection is possible by construction (the
@@ -127,6 +132,9 @@ is the connection string: `DATABASE_URL` set → node-postgres (Neon/RDS/local),
 unset → PGlite (dev/tests, no Postgres install needed); `packages/server/.env`
 supplies it for local dev (loaded by the dev server and scripts, never by the
 deployed entries — `api/index.ts` and `lambda.ts` read the real environment).
+The node-postgres pool handles idle-client `'error'` events (logged, client
+discarded and replaced on next query) — Neon reaps idle connections
+server-side, and an unhandled error event would crash the process.
 
 ## Services
 

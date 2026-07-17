@@ -22,6 +22,7 @@ import woResources from '../config/entities/wo_resources.json';
 import woAssets from '../config/entities/wo_assets.json';
 import cities from '../config/entities/cities.json';
 import suburbs from '../config/entities/suburbs.json';
+import inspectionChecklists from '../config/entities/inspection_checklists.json';
 
 interface EntityFile {
   recordType: RecordTypeDef;
@@ -44,6 +45,7 @@ const entities = [
   woAssets,
   cities,
   suburbs,
+  inspectionChecklists,
 ] as unknown as EntityFile[];
 
 const seeds: SeedGroup[] = entities

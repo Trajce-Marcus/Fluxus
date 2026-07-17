@@ -7,7 +7,7 @@
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ActivityDef, ConfigRaw, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
-import { buildEvalHost, coerceCaptured, serializeFields, type ScriptContext } from './bridge';
+import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
 
@@ -54,6 +54,12 @@ export interface Engine {
   validateConfig(): Finding[];
   /** validateConfig with diagnostics reported to the console. */
   reportConfigFindings(): void;
+}
+
+/** Drop null cells from a composite's live value. */
+function stripNullCells(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== null));
 }
 
 export function createEngine({ store, config, services: hostServices = [] }: EngineOptions): Engine {
@@ -131,11 +137,17 @@ export function createEngine({ store, config, services: hostServices = [] }: Eng
     // The live bag is shared across both hooks WITHOUT copying: hooks may write
     // attributes (`attributes.crew = …`) and the writes land on the history
     // entry below. coerceCaptured already maps empty strings to null.
-    const stringValues = Object.fromEntries(
-      Object.entries(captured).map(([k, v]) => [k, String(v ?? '')])
-    );
+    // Composite cells are normalised first: payloads may carry them nested or
+    // as dotted flat keys; scripts always see them nested under the attribute.
+    const stringValues = flattenCaptured(activity.attributes, captured);
     const liveAttributes = { ...coerceCaptured(activity.attributes, stringValues) };
     const initialAttributes = { ...liveAttributes };
+    // Composite values are objects, so reference identity can't detect hook
+    // writes into their cells — snapshot their JSON instead.
+    const initialCompositeJson = new Map<string, string>();
+    for (const attr of activity.attributes) {
+      if (compositeSubs(attr)) initialCompositeJson.set(attr.key, JSON.stringify(liveAttributes[attr.key]));
+    }
     const scriptContext: ScriptContext = {
       liveAttributes,
       anchorRecord,
@@ -232,10 +244,32 @@ export function createEngine({ store, config, services: hostServices = [] }: Eng
     const hookWritten: Record<string, unknown> = {};
     if (afterHookError === null) {
       for (const [k, v] of Object.entries(liveAttributes)) {
-        if (!(k in initialAttributes) || initialAttributes[k] !== v) hookWritten[k] = v;
+        const compositeBefore = initialCompositeJson.get(k);
+        if (compositeBefore !== undefined) {
+          // Composite: JSON compare (cells mutate in place); store without null cells
+          if (compositeBefore !== JSON.stringify(v)) hookWritten[k] = stripNullCells(v);
+        } else if (!(k in initialAttributes) || initialAttributes[k] !== v) {
+          hookWritten[k] = v;
+        }
       }
     }
-    const entryAttributes = { ...captured, ...serializeFields(hookWritten) };
+    // Entry shape: scalar attributes raw as captured; composite attributes
+    // nested attr → sub with only non-empty, non-waived cells (their flat
+    // dotted / nested raw forms never appear alongside).
+    const compositeKeys = new Set(initialCompositeJson.keys());
+    const scalarCaptured = Object.fromEntries(
+      Object.entries(captured).filter(
+        ([k]) => !compositeKeys.has(k) && !(k.includes('.') && compositeKeys.has(k.split('.')[0]))
+      )
+    );
+    const entryAttributes: Record<string, unknown> = { ...scalarCaptured };
+    for (const attr of activity.attributes) {
+      const subs = compositeSubs(attr);
+      if (!subs) continue;
+      const nested = nestComposite(attr.key, subs, stringValues, waived);
+      if (Object.keys(nested).length > 0) entryAttributes[attr.key] = nested;
+    }
+    Object.assign(entryAttributes, serializeFields(hookWritten));
     if (runLog.length > 0) entryAttributes['system_log'] = [...runLog];
 
     store.appendActivity(targetRecordId, {

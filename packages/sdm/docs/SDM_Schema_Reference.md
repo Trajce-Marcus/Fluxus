@@ -100,6 +100,8 @@ A single typed field captured by an activity. Attributes are the form a user fil
 | `fk_display_field` | identifier? | The `key` of the custom field on the referenced Record type used as the display label in the picker. Requires `fk_record_type`. |
 | `show_condition` | Expression? | *(deferred)* Conditional visibility, e.g. show B if A = "yes". |
 
+> **Composite attributes and sections (2026-07-18, revised same day).** `type: "composite"` expresses one question's row of answer slots — a paper form's Item + OK / Reference / Comments — as a single attribute whose `type_config.attributes` is a list of **usage wrappers pointing at real pool attributes** (same shape as an activity's attribute list; `required` / `can_waive` / `validation` / `show_condition` per cell). The question itself stays an ordinary attribute usage in the activity, so **attribute-level show_conditions between questions are preserved** — this is why the first cut (a whole grid as one attribute) was reworked. Sub-attributes may be any type except `composite` (no nesting) and `reference` (parked). Grouping is presentation only: a **section marker** `{ "section": "…", "description": "…" }` in the activity's attribute list renders as a heading and is ignored by capture and headless callers. A cell is addressed `attr.sub`; `'.'` is **reserved** in every key namespace. Captured cells live nested (attr → sub) on the history entry, flatten to one reporting row per cell under the dotted key, and render **stacked** (question → inputs beneath), never as the paper form's sideways layout. Composite keys match no custom field — rows live in history. See the engine SPEC for the full translation contract.
+
 ### 1.6 Hook
 Logic attached to an activity lifecycle moment. An activity has at most one `before` and one `after` hook.
 
@@ -312,7 +314,7 @@ Parked deliberately, with a noted home in the schema:
 4. **Record states** — defining the set of states an Record instance can occupy.
 5. **Record-map shortcut** — `CREATE`, `UPDATE`, and `DELETE` are all implemented. Default custom-field seeding (§1.9.3 rule 3) and field constraints (`required`, `unique`, `immutable`, `indexed`) are implemented on `CustomField`.
 6. **Access control** — role + state based, on activities.
-7. **Attribute types** beyond `text`.
+7. **Attribute types** beyond `text` — `date`, `reference`, `list` (DSL-datasource picker), and `composite` (question grids, §1.5) are implemented; `signature`, photo, and richer choice renderings remain open.
 8. **Grouping / hierarchy** — for records and workflows (currently flat lists).
 9. **Links / relationships** — lightweight FK references (`fk_record_type` / `fk_display_field` on CustomField and Attribute) are implemented: a CustomField storing a Record id gets display-label resolution at runtime; an Attribute with the same flags renders a record picker in the form. A **first-class relationship primitive** with referential integrity constraints is deliberately not required — data is managed entirely by the platform, so no DB-enforced referential constraints are needed. Links are simply fields holding Record ids. *Future consideration* if cross-record querying or integrity guarantees beyond the app layer are ever needed.
 10. **Temporal trigger (POC2)** — a way to start a workflow on a schedule (CRON / countdown) without a user. Scheduled jobs are records with workflows like any other; they need only this trigger added. Scoped to POC2.

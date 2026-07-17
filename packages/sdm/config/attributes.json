@@ -65,7 +65,7 @@
   {
     "key": "raise_notes",
     "label": "Raise Notes",
-    "description": "Free notes at raise time \u2014 not stored on the Record (no matching custom field).",
+    "description": "Free notes at raise time — not stored on the Record (no matching custom field).",
     "type": "text"
   },
   {
@@ -315,6 +315,444 @@
       "selection": "single",
       "key_field": "id",
       "display_field": "name"
+    }
+  },
+  {
+    "key": "checklist_no",
+    "label": "Checklist Number",
+    "description": "Unique number of this checklist.",
+    "type": "text"
+  },
+  {
+    "key": "work_area",
+    "label": "Work Area",
+    "description": "Work area this checklist covers.",
+    "type": "text"
+  },
+  {
+    "key": "site_location",
+    "label": "Site Location",
+    "description": "Where the work is carried out.",
+    "type": "text"
+  },
+  {
+    "key": "client",
+    "label": "Client",
+    "description": "Client for the contract/project.",
+    "type": "text"
+  },
+  {
+    "key": "signoff_name",
+    "label": "Name",
+    "description": "Person attesting the stage conforms to the contract specification/documents.",
+    "type": "text"
+  },
+  {
+    "key": "signoff_signature",
+    "label": "Signature",
+    "description": "Signature (text placeholder until a signature type exists).",
+    "type": "text"
+  },
+  {
+    "key": "signoff_date",
+    "label": "Date",
+    "description": "Date of the attestation.",
+    "type": "date"
+  },
+  {
+    "key": "ok",
+    "label": "Initialled/OK",
+    "description": "Initial to confirm this item is verified.",
+    "type": "text"
+  },
+  {
+    "key": "ref",
+    "label": "Reference",
+    "description": "Reference (drawing, spec clause, document).",
+    "type": "text"
+  },
+  {
+    "key": "comment",
+    "label": "Comments",
+    "description": "Comments against this item.",
+    "type": "text"
+  },
+  {
+    "key": "access_permission",
+    "label": "Access permission obtained",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "access_obtained",
+    "label": "Access obtained",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "equip_scaffold",
+    "label": "Equipment approved/on site — scaffold/ladders",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "equip_signage",
+    "label": "Equipment approved/on site — signage/barricades",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "equip_other",
+    "label": "Equipment approved/on site — other",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "materials_approved",
+    "label": "Materials approved/on site",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "fixtures_removed",
+    "label": "Fixtures removed",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "prestart_protection",
+    "label": "Protective measures in place",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "temp_power_installed",
+    "label": "Temporary power installed (where necessary)",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "safety_procedures",
+    "label": "Safety procedures applied at all stages",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "work_protection",
+    "label": "Protective measures maintained",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "work_to_spec",
+    "label": "Work as per specification, AS 3000 and relevant codes",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "testing_checks",
+    "label": "All testing and safety checks carried out",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "power_restored",
+    "label": "Power restored to all isolated circuits",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "temp_power_removed",
+    "label": "Temporary power supply removed",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "protection_removed",
+    "label": "Protective measures removed",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "final_inspection",
+    "label": "Final inspection confirms conforming",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
+  },
+  {
+    "key": "site_cleanup",
+    "label": "Scaffold/ladders removed, site cleaned up",
+    "description": "",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
     }
   }
 ]

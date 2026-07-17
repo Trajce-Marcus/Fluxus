@@ -179,6 +179,46 @@ their datasource (fail closed on datasource errors), and dangling references
 are all rejected. The workbench form keeps its interactive per-field checks;
 folding it onto this function is an open cleanup.
 
+### Composite attributes and section markers
+
+`type: "composite"` packs one question's row of sub-fields — a paper form's
+Item + OK/Reference/Comments answer slots — into a single attribute.
+`type_config.attributes` is a list of **usage wrappers pointing at real pool
+attributes** (the same `attribute_ref` + overrides shape an activity's list
+uses — reuse over inline definitions, redesign ruled 2026-07-18 after the
+first grid-level cut lost item show_conditions). Sub-attributes may be any
+type except `composite` (no nesting) and `reference` (parked until cell
+pickers exist); usage-level `required` / `can_waive` / `validation` /
+`show_condition` apply per cell. The adapter resolves sub-usages into
+`AttributeDef.sub_attributes` at load, exactly like activity usages.
+
+Grouping is a separate, presentation-only construct: a **section marker**
+(`{ "section": "…", "description": "…" }`) in an activity's attribute list,
+resolved to a pseudo-AttributeDef of `type: 'section'` (key `_section_<n>`).
+It renders as a heading, captures nothing, and headless callers ignore it —
+supplying a value for one is rejected.
+
+One value per cell, addressed by the dotted path `attr.sub` — `'.'` is
+reserved in every key namespace for this (enforced by validateConfig). The
+translation contract (owned by `bridge.ts`):
+
+- **Payloads** carry cells flat under dotted keys or nested (attr → sub);
+  `flattenCaptured` normalises to flat.
+- **Scripts** always see the composite NESTED under the attribute key, every
+  declared cell present (empty → null), so
+  `attributes.access_permission.ok` is total.
+- **History entries** store the nested raw-string form with only non-empty,
+  non-waived cells (`nestComposite`); hook writes into cells are detected by
+  JSON snapshot (object identity can't see them).
+- **Waivers** are per cell: the entry's `waived` map keys are dotted paths.
+- **Custom-field mapping**: a composite key matches no custom field and is
+  intentionally dropped — rows live in history, not on the record.
+
+`validateSubmission` applies the same per-cell semantics headless (required,
+waive rules, validation with typed cell `value`, list sub-attribute datasource
+membership, sub show_conditions fail-open). Reporting hosts flatten the nested
+entry value back to one row per cell under the dotted key (see server SPEC).
+
 ## Bridge and validation
 
 `bridge.ts` translates between SDM shapes and the DSL's hosts: config →

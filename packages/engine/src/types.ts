@@ -25,14 +25,29 @@ export interface AttributeTypeConfig {
   /** Field shown to the user (default 'name'). */
   display_field?: string;
   columns?: string[];
+  // ── 'composite' attributes (one question's row of sub-fields) ──
+  /**
+   * The sub-attributes of a composite: usage wrappers pointing at REAL pool
+   * attributes (same shape an activity's attribute list uses, overrides
+   * included) — reuse over inline definitions (ruled 2026-07-18). Any type
+   * except 'composite' (no nesting) and 'reference' (parked). A captured cell
+   * is addressed `attr.sub` — one dot.
+   */
+  attributes?: AttributeUsageDef[];
 }
 
 export interface AttributeDef {
   key: string;
   label: string;
   description: string;
-  type: string; // "text" | "reference" | "list" | ...
+  type: string; // "text" | "reference" | "list" | "composite" | "section" (resolved marker) | ...
   type_config?: AttributeTypeConfig;
+  /**
+   * Resolved sub-attributes of a composite (pool defs merged with the usage
+   * overrides from type_config.attributes). Populated at resolution time by
+   * the adapter; absent on raw pool defs and non-composite types.
+   */
+  sub_attributes?: AttributeDef[];
   /** FluxScript expression; carried over from the usage wrapper during resolution. */
   show_condition?: string;
   /** Must be captured before the activity can submit; carried over from the usage wrapper. */
@@ -48,6 +63,17 @@ export interface AttributeDef {
    * is never written. Carried over from the usage wrapper.
    */
   can_waive?: boolean;
+}
+
+/**
+ * Presentation-only marker in an activity's attribute list: renders as a
+ * section heading over the usages that follow it. No key, no value, no
+ * storage — headless callers ignore it. Resolved to a pseudo-AttributeDef of
+ * type 'section' so the ordered list keeps one shape.
+ */
+export interface SectionMarkerDef {
+  section: string;
+  description?: string;
 }
 
 // Usage wrapper in a raw activity — resolved to AttributeDef at runtime by the adapter
@@ -82,7 +108,8 @@ export interface ActivityRawDef {
    * rule must not wave the activity through.
    */
   show_condition?: string;
-  attributes: AttributeUsageDef[];
+  /** Ordered capture list: attribute usages plus presentation section markers. */
+  attributes: (AttributeUsageDef | SectionMarkerDef)[];
   /** FluxScript, validate-only: may fail()/warn(), never mutates (DSL_SPEC §6). */
   before_hook: string | string[] | null;
   /** FluxScript, effects: mutations staged and committed atomically (DSL_SPEC §7). */

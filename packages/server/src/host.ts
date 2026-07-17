@@ -91,14 +91,24 @@ function attributeValue(value: unknown): string | null {
  * normalized"): one rpt_activities row per run; one rpt_attributes row per
  * attribute. A waived attribute is the SAME row with value null and
  * waive_desc set; system-produced attributes (system_log, system_warnings)
- * are ordinary rows.
+ * are ordinary rows. Plain-object values (composite attributes: attr → item →
+ * column) flatten to one row per leaf, keyed by the dotted path
+ * (`prelim_activities.access_permission.ok`) — '.' is reserved in keys for
+ * this, so queries stay uniform on the single text value column.
  */
 function projectionAttributeRows(entry: ActivityHistoryEntry): { key: string; value: string | null; waiveDesc: string | null }[] {
   const waived = entry.waived ?? {};
   const rows: { key: string; value: string | null; waiveDesc: string | null }[] = [];
-  for (const [key, value] of Object.entries(entry.capturedAttributes)) {
-    if (key in waived) continue; // emitted below as the waived row
+  const push = (key: string, value: unknown) => {
+    if (key in waived) return; // emitted below as the waived row
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) push(`${key}.${k}`, v);
+      return;
+    }
     rows.push({ key, value: attributeValue(value), waiveDesc: null });
+  };
+  for (const [key, value] of Object.entries(entry.capturedAttributes)) {
+    push(key, value);
   }
   for (const [key, reason] of Object.entries(waived)) {
     rows.push({ key, value: null, waiveDesc: reason });

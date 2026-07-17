@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
 import { ComponentLabel } from '../context/UatLabels';
-import { coerceCaptured, coerceValue } from '@fluxus/engine';
+import { coerceCaptured, coerceValue, compositeSubs } from '@fluxus/engine';
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 
 interface Props {
@@ -25,16 +25,24 @@ interface Props {
 export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
   const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate } = useAppContext();
 
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      activity.attributes.map(a => {
-        const seed = activity.record_map === 'UPDATE' && anchorRecord
-          ? String(anchorRecord.customFields[a.key] ?? '')
-          : '';
-        return [a.key, seed];
-      })
-    )
-  );
+  // Form state is FLAT: composite attributes contribute one entry per cell
+  // under the dotted path `attr.sub` — the engine nests them again. Section
+  // markers carry no value.
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const a of activity.attributes) {
+      if (a.type === 'section') continue;
+      const subs = compositeSubs(a);
+      if (subs) {
+        for (const sub of subs) out[`${a.key}.${sub.key}`] = '';
+        continue;
+      }
+      out[a.key] = activity.record_map === 'UPDATE' && anchorRecord
+        ? String(anchorRecord.customFields[a.key] ?? '')
+        : '';
+    }
+    return out;
+  });
 
   // Display labels for reference fields — separate from the stored IDs
   const [displayLabels, setDisplayLabels] = useState<Record<string, string>>(() => {
@@ -104,9 +112,52 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
 
   const visibleAttributes = activity.attributes.filter(isVisible);
 
+  // One "capture unit" per input the user can fill: a scalar attribute, or one
+  // cell of a composite (dotted key, per-cell required/waive/validation from
+  // the column definition). The submit checks below run over units so both
+  // shapes share the same semantics.
+  interface CaptureUnit {
+    key: string;
+    label: string;
+    required?: boolean;
+    can_waive?: boolean;
+    validation?: string;
+    validation_message?: string;
+    typed: () => unknown;
+  }
+  const captureUnits: CaptureUnit[] = visibleAttributes.flatMap((attr): CaptureUnit[] => {
+    if (attr.type === 'section') return [];
+    const subs = compositeSubs(attr);
+    if (!subs) {
+      return [{
+        key: attr.key,
+        label: attr.label,
+        required: attr.required,
+        can_waive: attr.can_waive,
+        validation: attr.validation,
+        validation_message: attr.validation_message,
+        typed: () => typedValues[attr.key],
+      }];
+    }
+    // Sub-attribute show_conditions apply within the row (fail open, like
+    // attribute-level ones) — hidden cells are exempt from checks and payload.
+    return subs.filter(isVisible).map(sub => {
+      const key = `${attr.key}.${sub.key}`;
+      return {
+        key,
+        label: `${attr.label} — ${sub.label}`,
+        required: sub.required,
+        can_waive: sub.can_waive,
+        validation: sub.validation,
+        validation_message: sub.validation_message,
+        typed: () => coerceValue(sub.type, values[key] ?? ''),
+      };
+    });
+  });
+
   // The submission payload: hidden attributes are not part of it
   const capturedForSubmit = () => {
-    const visibleKeys = new Set(visibleAttributes.map(a => a.key));
+    const visibleKeys = new Set(captureUnits.map(u => u.key));
     return Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k)));
   };
 
@@ -133,34 +184,34 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const isWaived = (key: string) => key in waived;
-    // Required attributes must be captured (hidden ones are exempt by
+    // Required units must be captured (hidden ones are exempt by
     // construction; waived ones trade the value for a mandatory reason)
-    const missing = visibleAttributes.filter(
-      a => a.required && !isWaived(a.key) && !String(values[a.key] ?? '').trim()
+    const missing = captureUnits.filter(
+      u => u.required && !isWaived(u.key) && !String(values[u.key] ?? '').trim()
     );
     if (missing.length > 0) {
-      setSubmitError(`Required: ${missing.map(a => a.label).join(', ')}`);
+      setSubmitError(`Required: ${missing.map(u => u.label).join(', ')}`);
       return;
     }
-    const reasonless = visibleAttributes.filter(a => isWaived(a.key) && !waived[a.key].trim());
+    const reasonless = captureUnits.filter(u => isWaived(u.key) && !waived[u.key].trim());
     if (reasonless.length > 0) {
-      setSubmitError(`A reason is needed for: ${reasonless.map(a => a.label).join(', ')}`);
+      setSubmitError(`A reason is needed for: ${reasonless.map(u => u.label).join(', ')}`);
       return;
     }
-    // Attribute-level validation rules (FluxScript; the captured value is `value`)
+    // Validation rules (FluxScript; the captured value is `value`)
     const failures: string[] = [];
-    for (const attr of visibleAttributes) {
-      if (!attr.validation || !String(values[attr.key] ?? '').trim()) continue; // empties are required's job
+    for (const unit of captureUnits) {
+      if (!unit.validation || !String(values[unit.key] ?? '').trim()) continue; // empties are required's job
       try {
-        const ok = dslEvaluate(attr.validation, {
+        const ok = dslEvaluate(unit.validation, {
           attributes: typedValues,
           anchorRecord,
           activity: { id: activity.id, name: activity.name },
-          extras: { value: typedValues[attr.key] },
+          extras: { value: unit.typed() },
         });
-        if (ok !== true) failures.push(attr.validation_message ?? `${attr.label} is invalid`);
+        if (ok !== true) failures.push(unit.validation_message ?? `${unit.label} is invalid`);
       } catch (err) {
-        failures.push(`${attr.label}: ${err instanceof Error ? err.message : String(err)}`);
+        failures.push(`${unit.label}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     if (failures.length > 0) {
@@ -168,8 +219,8 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
       return;
     }
     setSubmitError(null);
-    // Only visible attributes can be waived in this submission
-    const visibleKeys = new Set(visibleAttributes.map(a => a.key));
+    // Only visible units can be waived in this submission
+    const visibleKeys = new Set(captureUnits.map(u => u.key));
     const capturedWaived = Object.fromEntries(
       Object.entries(waived).filter(([k]) => visibleKeys.has(k)).map(([k, r]) => [k, r.trim()])
     );
@@ -183,7 +234,29 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
         {/* Fields lock while a warning decision is pending — the snapshot that
             was validated is what Continue submits, so editing must wait. */}
         <fieldset disabled={pending !== null} style={{ border: 'none', padding: 0, margin: 0, minInlineSize: 'auto', opacity: pending ? 0.6 : 1 }}>
-        {visibleAttributes.map(attr => (
+        {visibleAttributes.map(attr => attr.type === 'section' ? (
+          <div key={attr.key} style={{ margin: '16px 0 10px' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: 4 }}>
+              {attr.label}
+            </div>
+            {attr.description && (
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{attr.description}</div>
+            )}
+          </div>
+        ) : attr.type === 'composite' ? (
+          <CompositeField
+            key={attr.key}
+            attr={attr}
+            values={values}
+            waived={waived}
+            anchorRecord={anchorRecord}
+            activity={activity}
+            isSubVisible={isVisible}
+            onValue={(key, val) => setValues(v => ({ ...v, [key]: val }))}
+            onToggleWaive={toggleWaive}
+            onWaiveReason={(key, reason) => setWaived(w => ({ ...w, [key]: reason }))}
+          />
+        ) : (
           <div key={attr.key} style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
               <label style={{ fontSize: 13, color: '#374151' }}>
@@ -460,6 +533,99 @@ function ListField({ attr, value, allValues, anchorRecord, activity, onChange }:
         <option key={o.value} value={o.value}>{o.label}</option>
       ))}
     </select>
+  );
+}
+
+// ── Composite attribute (one question's row of sub-fields, rendered stacked) ──
+// Deliberately NOT the paper form's sideways layout: the attribute label reads
+// as the question and its sub-attribute inputs stack beneath — the layout that
+// works on small screens (design ruled 2026-07-18). Sub-attributes are real
+// pool attributes resolved through usage wrappers; cell state lives in the
+// parent's flat `values` bag under dotted `attr.sub` keys.
+
+interface CompositeFieldProps {
+  attr: AttributeDef;
+  values: Record<string, string>;
+  waived: Record<string, string>;
+  anchorRecord: RecordInstance | null;
+  activity: ActivityDef;
+  isSubVisible: (sub: AttributeDef) => boolean;
+  onValue: (key: string, value: string) => void;
+  onToggleWaive: (key: string, on: boolean) => void;
+  onWaiveReason: (key: string, reason: string) => void;
+}
+
+function CompositeField({ attr, values, waived, anchorRecord, activity, isSubVisible, onValue, onToggleWaive, onWaiveReason }: CompositeFieldProps) {
+  const subs = compositeSubs(attr);
+  if (!subs) return null;
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '6px 10px',
+    border: '1px solid #d1d5db',
+    borderRadius: 4,
+    fontSize: 14,
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ margin: '10px 0 14px', paddingLeft: 10, borderLeft: '2px solid #e2e8f0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', marginBottom: 6 }}>{attr.label}</div>
+      {attr.description && (
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>{attr.description}</div>
+      )}
+      {subs.filter(isSubVisible).map(sub => {
+        const key = `${attr.key}.${sub.key}`;
+        return (
+          <div key={sub.key} style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+              <label style={{ fontSize: 12, color: '#374151' }}>
+                {sub.label}
+                {sub.required && <span style={{ color: '#b91c1c' }}> *</span>}
+              </label>
+              {sub.can_waive && (
+                <label style={{ fontSize: 12, color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={key in waived}
+                    onChange={e => onToggleWaive(key, e.target.checked)}
+                    style={{ verticalAlign: 'middle', marginRight: 4 }}
+                  />
+                  Can't provide
+                </label>
+              )}
+            </div>
+            {key in waived ? (
+              <input
+                type="text"
+                value={waived[key]}
+                onChange={e => onWaiveReason(key, e.target.value)}
+                placeholder="Why can't this be provided?"
+                style={{ ...inputStyle, border: '1px solid #fde68a', background: '#fffbeb' }}
+              />
+            ) : sub.type === 'list' ? (
+              <ListField
+                attr={{ ...sub, key }}
+                value={values[key] ?? ''}
+                allValues={values}
+                anchorRecord={anchorRecord}
+                activity={activity}
+                onChange={val => onValue(key, val)}
+              />
+            ) : (
+              <input
+                type={sub.type === 'date' ? 'date' : 'text'}
+                value={values[key] ?? ''}
+                onChange={e => onValue(key, e.target.value)}
+                placeholder={sub.description}
+                style={inputStyle}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -214,6 +214,104 @@ describe('headless activity invocation', () => {
   });
 });
 
+describe('composite attributes (MR014 checklist, staged)', () => {
+  const clId = 'etp_001'; // seeded with status 'Raised'
+
+  it('enforces stage order: pre-start is unavailable while status is Raised', async () => {
+    // Payload is valid (validateSubmission passes) — the availability gate
+    // inside runActivity is what rejects the out-of-order stage.
+    await expect(
+      caller().activities.run({
+        activityId: 'act_complete_prestart_inspection_checklists',
+        recordId: clId,
+        attributes: {
+          'fixtures_removed.ok': 'TT',
+          'prestart_protection.ok': 'TT',
+          'temp_power_installed.ok': 'TT',
+          signoff_name: 'T',
+          signoff_signature: 'T',
+          signoff_date: '2026-07-18',
+        },
+      }),
+    ).rejects.toThrow(/not available/);
+  });
+
+  it('rejects a missing required cell, an unknown cell path, and a value for a section marker', async () => {
+    await expect(
+      caller().activities.run({
+        activityId: 'act_complete_preliminaries_inspection_checklists',
+        recordId: clId,
+        attributes: { signoff_name: 'T', signoff_signature: 'T', signoff_date: '2026-07-18' },
+      }),
+    ).rejects.toThrow(/Access permission obtained — Initialled\/OK is required/);
+
+    await expect(
+      caller().activities.run({
+        activityId: 'act_complete_preliminaries_inspection_checklists',
+        recordId: clId,
+        attributes: { 'access_permission.bogus': 'x' },
+      }),
+    ).rejects.toThrow(/Unknown attribute 'access_permission.bogus'/);
+  });
+
+  it('accepts nested cells with a per-cell waiver; entry nests, status advances', async () => {
+    const result = await caller().activities.run({
+      activityId: 'act_complete_preliminaries_inspection_checklists',
+      recordId: clId,
+      attributes: {
+        access_permission: { ok: 'TT', ref: 'SWMS-04' },
+        access_obtained: { ok: 'TT' },
+        equip_scaffold: { ok: 'TT' },
+        equip_signage: { ok: 'TT' },
+        materials_approved: { ok: 'TT', comment: 'All on site' },
+        signoff_name: 'T. Tosevski',
+        signoff_signature: 'TT',
+        signoff_date: '2026-07-18',
+      },
+      waived: { 'equip_other.ok': 'No other equipment required' },
+    });
+    expect(result.status).toBe('done');
+
+    const stored = await caller().records.get({ recordId: clId });
+    expect(stored.customFields.status).toBe('Preliminaries Complete');
+    const entry = stored.activityHistory.at(-1)!;
+    expect(entry.capturedAttributes.access_permission).toEqual({ ok: 'TT', ref: 'SWMS-04' });
+    expect(entry.capturedAttributes.equip_other).toBeUndefined(); // waived cell, no others captured
+    expect(entry.waived).toEqual({ 'equip_other.ok': 'No other equipment required' });
+  });
+
+  it('accepts dotted-flat cells too, and projects one rpt row per cell', async () => {
+    const result = await caller().activities.run({
+      activityId: 'act_complete_prestart_inspection_checklists',
+      recordId: clId,
+      attributes: {
+        'fixtures_removed.ok': 'TT',
+        'prestart_protection.ok': 'TT',
+        signoff_name: 'T. Tosevski',
+        signoff_signature: 'TT',
+        signoff_date: '2026-07-18',
+      },
+      waived: { 'temp_power_installed.ok': 'No temporary power needed' },
+    });
+    expect(result.status).toBe('done');
+
+    const runs = await db
+      .select()
+      .from(rptActivities)
+      .where(and(eq(rptActivities.scope, DEFAULT_SCOPE), eq(rptActivities.recordId, clId)));
+    const prelim = runs.find((r) => r.activityId === 'act_complete_preliminaries_inspection_checklists')!;
+    const attrs = await db.select().from(rptAttributes).where(eq(rptAttributes.activityRowId, prelim.id));
+    const byKey = new Map(attrs.map((a) => [a.key, a]));
+    // One row per cell, dotted path key, uniform text value column.
+    expect(byKey.get('access_permission.ok')?.value).toBe('TT');
+    expect(byKey.get('materials_approved.comment')?.value).toBe('All on site');
+    // The waived cell is the same-shaped row: value null + waive_desc.
+    const waivedRow = byKey.get('equip_other.ok')!;
+    expect(waivedRow.value).toBeNull();
+    expect(waivedRow.waiveDesc).toBe('No other equipment required');
+  });
+});
+
 describe('reporting projection (synchronous, normalized)', () => {
   it('wrote one rpt_activities row per committed run with rpt_attributes rows', async () => {
     const runs = await db

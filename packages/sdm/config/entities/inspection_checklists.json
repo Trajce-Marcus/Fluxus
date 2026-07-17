@@ -1,0 +1,221 @@
+{
+  "_comment": "MR014 Electrical Inspection & Test Plan Checklist — trial of expressing a real multi-stage paper form in the SDM. Each form stage is an activity gated by status via show_condition; the stage's attestation block advances status in the after hook. Each checklist question is a ROW-LEVEL composite attribute (sub-usages over the shared ok/ref/comment pool atoms), grouped under presentation-only section markers — so questions keep attribute-level show_conditions between them (redesign ruled 2026-07-18). Cells land nested in activity history and flatten to dotted keys (attr.sub) in rpt_attributes. Signature is a text attribute until a signature type exists.",
+  "recordType": {
+    "id": "rt_inspection_checklists",
+    "name": "Inspection Checklists",
+    "description": "Electrical inspection and test plan checklist for a work area (MR014).",
+    "workflow_ref": "wf_inspection_checklists",
+    "id_field": "id",
+    "custom_fields": [
+      {
+        "key": "id",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "unique": true,
+        "immutable": true,
+        "indexed": true
+      },
+      {
+        "key": "checklist_no",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "indexed": true
+      },
+      {
+        "key": "work_area",
+        "type": "text",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "site_location",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "client",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "contract_id",
+        "type": "fk_ref",
+        "default": "",
+        "indexed": true,
+        "fk_record_type": "rt_contracts",
+        "fk_display_field": "name"
+      },
+      {
+        "key": "status",
+        "type": "text",
+        "default": "Raised",
+        "indexed": true
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_inspection_checklists",
+    "name": "Inspection Checklist Workflows",
+    "description": "Staged completion of the electrical inspection and test plan checklist: preliminaries → pre-start → carry out work → pre-handover → final sign-off, each stage closed by an attestation.",
+    "activities": [
+      {
+        "id": "act_raise_inspection_checklists",
+        "name": "Raise Checklist",
+        "description": "Open a checklist for a work area and capture its header (the form's identification block).",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "attributes": [
+          { "attribute_ref": "id", "required": true },
+          { "attribute_ref": "checklist_no", "required": true },
+          { "attribute_ref": "work_area", "required": true },
+          { "attribute_ref": "site_location" },
+          { "attribute_ref": "client" },
+          { "attribute_ref": "contract_id" }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_complete_preliminaries_inspection_checklists",
+        "name": "Complete Preliminary Activities",
+        "description": "Verify the preliminary items (access, equipment, materials) and attest the stage. Initials are required per item with can_waive: a not-applicable item is waived with a reason instead of faking an initial.",
+        "sort_order": 1,
+        "show_condition": "context.record.status = 'Raised'",
+        "attributes": [
+          { "section": "Preliminary Activities", "description": "Items/activities to be verified before work starts." },
+          { "attribute_ref": "access_permission" },
+          { "attribute_ref": "access_obtained" },
+          { "attribute_ref": "equip_scaffold" },
+          { "attribute_ref": "equip_signage" },
+          { "attribute_ref": "equip_other" },
+          { "attribute_ref": "materials_approved" },
+          { "section": "Attestation", "description": "I have carried out all necessary inspections and verify that the above items/activities conform to the contract specification/documents." },
+          { "attribute_ref": "signoff_name", "required": true },
+          { "attribute_ref": "signoff_signature", "required": true },
+          {
+            "attribute_ref": "signoff_date",
+            "required": true,
+            "validation": "value <= now()",
+            "validation_message": "Attestation date cannot be in the future"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": ["context.record.update({ status: 'Preliminaries Complete' })"]
+      },
+      {
+        "id": "act_complete_prestart_inspection_checklists",
+        "name": "Complete Pre-Start",
+        "description": "Verify the pre-start items and attest the stage.",
+        "sort_order": 2,
+        "show_condition": "context.record.status = 'Preliminaries Complete'",
+        "attributes": [
+          { "section": "Pre-Start", "description": "Items to be verified immediately before work starts." },
+          { "attribute_ref": "fixtures_removed" },
+          { "attribute_ref": "prestart_protection" },
+          { "attribute_ref": "temp_power_installed" },
+          { "section": "Attestation", "description": "I have carried out all necessary inspections and verify that the above items/activities conform to the contract specification/documents." },
+          { "attribute_ref": "signoff_name", "required": true },
+          { "attribute_ref": "signoff_signature", "required": true },
+          {
+            "attribute_ref": "signoff_date",
+            "required": true,
+            "validation": "value <= now()",
+            "validation_message": "Attestation date cannot be in the future"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": ["context.record.update({ status: 'Pre-Start Complete' })"]
+      },
+      {
+        "id": "act_complete_works_inspection_checklists",
+        "name": "Complete Carry Out Work",
+        "description": "Verify the carry-out-work items and attest the stage.",
+        "sort_order": 3,
+        "show_condition": "context.record.status = 'Pre-Start Complete'",
+        "attributes": [
+          { "section": "Carry Out Work", "description": "Items to be verified while the work is carried out." },
+          { "attribute_ref": "safety_procedures" },
+          { "attribute_ref": "work_protection" },
+          { "attribute_ref": "work_to_spec" },
+          { "section": "Attestation", "description": "I have carried out all necessary inspections and verify that the above items/activities conform to the contract specification/documents." },
+          { "attribute_ref": "signoff_name", "required": true },
+          { "attribute_ref": "signoff_signature", "required": true },
+          {
+            "attribute_ref": "signoff_date",
+            "required": true,
+            "validation": "value <= now()",
+            "validation_message": "Attestation date cannot be in the future"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": ["context.record.update({ status: 'Work Complete' })"]
+      },
+      {
+        "id": "act_complete_prehandover_inspection_checklists",
+        "name": "Complete Pre-Handover",
+        "description": "Verify the pre-handover items (testing, power restoration, clean-up) and attest the stage.",
+        "sort_order": 4,
+        "show_condition": "context.record.status = 'Work Complete'",
+        "attributes": [
+          { "section": "Pre-Handover Activities", "description": "Items to be verified before handover of the work area." },
+          { "attribute_ref": "testing_checks" },
+          { "attribute_ref": "power_restored" },
+          { "attribute_ref": "temp_power_removed" },
+          { "attribute_ref": "protection_removed" },
+          { "attribute_ref": "final_inspection" },
+          { "attribute_ref": "site_cleanup" },
+          { "section": "Attestation", "description": "I have carried out all necessary inspections and verify that the above items/activities conform to the contract specification/documents." },
+          { "attribute_ref": "signoff_name", "required": true },
+          { "attribute_ref": "signoff_signature", "required": true },
+          {
+            "attribute_ref": "signoff_date",
+            "required": true,
+            "validation": "value <= now()",
+            "validation_message": "Attestation date cannot be in the future"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": ["context.record.update({ status: 'Pre-Handover Complete' })"]
+      },
+      {
+        "id": "act_sign_off_inspection_checklists",
+        "name": "Final Sign-Off",
+        "description": "Attest that all work for this work area has been completed and conforms to the contract specification/documents.",
+        "sort_order": 5,
+        "show_condition": "context.record.status = 'Pre-Handover Complete'",
+        "attributes": [
+          { "section": "Final Sign-Off", "description": "I have carried out all necessary inspections and verify that the above work for this work area has been completed and conforms to the contract specification/documents." },
+          { "attribute_ref": "signoff_name", "required": true },
+          { "attribute_ref": "signoff_signature", "required": true },
+          {
+            "attribute_ref": "signoff_date",
+            "required": true,
+            "validation": "value <= now()",
+            "validation_message": "Attestation date cannot be in the future"
+          }
+        ],
+        "before_hook": null,
+        "after_hook": [
+          "context.record.update({ status: 'Signed Off' })",
+          "queue services.notify.user('Checklist ' + context.record.id + ' signed off for work area ' + context.record.work_area)"
+        ]
+      }
+    ]
+  },
+  "seeds": [
+    {
+      "id": "etp_001",
+      "fields": {
+        "id": "etp_001",
+        "checklist_no": "ETP-001",
+        "work_area": "Switchroom — Level 1",
+        "site_location": "12 Harbour St, Sydney",
+        "client": "Acme Constructions",
+        "contract_id": "",
+        "status": "Raised"
+      }
+    }
+  ]
+}

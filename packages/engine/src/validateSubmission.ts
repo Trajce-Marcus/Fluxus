@@ -21,7 +21,7 @@
 
 import type { Engine } from './engine';
 import type { ActivityDef, AttributeDef, RecordInstance } from './types';
-import { coerceCaptured, fullId, shortName } from './bridge';
+import { coerceCaptured, coerceValue, compositeSubs, flattenCaptured, fullId, shortName } from './bridge';
 
 export interface SubmissionIssue {
   /** The attribute at fault; null for payload-shape issues. */
@@ -43,23 +43,42 @@ function optionValue(item: unknown, keyField: string): string {
 export function validateSubmission(
   engine: Engine,
   activity: ActivityDef,
-  captured: Record<string, string>,
+  captured: Record<string, unknown>,
   anchorRecord: RecordInstance | null,
   waived: Record<string, string> = {},
 ): SubmissionIssue[] {
   const issues: SubmissionIssue[] = [];
   const byKey = new Map(activity.attributes.map(a => [a.key, a]));
 
+  // Composite cells may arrive nested or as dotted flat keys — normalise to
+  // flat, then a valid key is a scalar attribute or a declared cell path.
+  const flat = flattenCaptured(activity.attributes, captured);
+  const isCellPath = (key: string): boolean => {
+    const [head, subKey, ...rest] = key.split('.');
+    const subs = compositeSubs(byKey.get(head));
+    if (!subs || rest.length > 0 || !subKey) return false;
+    return subs.some(s => s.key === subKey);
+  };
+
   // Payload shape first — unknown keys mean the caller misread the signature.
-  for (const key of Object.keys(captured)) {
-    if (!byKey.has(key)) issues.push({ attribute: key, message: `Unknown attribute '${key}' for activity '${activity.id}'` });
+  // Section pseudo-attributes carry no value; a captured one is unknown.
+  for (const key of Object.keys(flat)) {
+    if (byKey.get(key)?.type === 'section') {
+      issues.push({ attribute: key, message: `'${key}' is a section marker — it takes no value` });
+    } else if (byKey.has(key) && compositeSubs(byKey.get(key))) {
+      issues.push({ attribute: key, message: `'${key}' is a composite — send its cells as an object of sub-attributes, not a single value` });
+    } else if (!byKey.has(key) && !isCellPath(key)) {
+      issues.push({ attribute: key, message: `Unknown attribute '${key}' for activity '${activity.id}'` });
+    }
   }
   for (const key of Object.keys(waived)) {
-    if (!byKey.has(key)) issues.push({ attribute: key, message: `Unknown waived attribute '${key}' for activity '${activity.id}'` });
+    if (!byKey.has(key) && !isCellPath(key)) {
+      issues.push({ attribute: key, message: `Unknown waived attribute '${key}' for activity '${activity.id}'` });
+    }
   }
   if (issues.length > 0) return issues;
 
-  const typed = coerceCaptured(activity.attributes, captured);
+  const typed = coerceCaptured(activity.attributes, flat);
   const scriptBase = {
     liveAttributes: typed,
     anchorRecord,
@@ -75,8 +94,80 @@ export function validateSubmission(
     }
   };
 
+  const checkListMembership = (label: string, key: string, datasource: string, keyField: string, submitted: string[]) => {
+    try {
+      const result = engine.evaluate(datasource, scriptBase);
+      if (!Array.isArray(result)) {
+        issues.push({ attribute: key, message: `'${key}' datasource did not return a list` });
+        return;
+      }
+      const allowed = new Set(result.map(item => optionValue(item, keyField)));
+      for (const value of submitted) {
+        if (!allowed.has(value)) issues.push({ attribute: key, message: `'${value}' is not in the datasource for '${label}'` });
+      }
+    } catch (err) {
+      issues.push({ attribute: key, message: `'${key}' datasource failed: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  };
+
   for (const attr of activity.attributes) {
-    const raw = String(captured[attr.key] ?? '').trim();
+    // Section markers are presentation-only.
+    if (attr.type === 'section') continue;
+
+    // Composite: the same required / waive / validation semantics, per cell.
+    const subs = compositeSubs(attr);
+    if (subs) {
+      if (!isVisible(attr)) {
+        for (const k of Object.keys(flat)) {
+          if (k.startsWith(`${attr.key}.`) && String(flat[k] ?? '').trim()) {
+            issues.push({ attribute: k, message: `'${k}' is not applicable for this submission` });
+          }
+        }
+        for (const k of Object.keys(waived)) {
+          if (k.startsWith(`${attr.key}.`)) issues.push({ attribute: k, message: `'${k}' is not applicable and cannot be waived` });
+        }
+        continue;
+      }
+      for (const sub of subs) {
+        const path = `${attr.key}.${sub.key}`;
+        const cellLabel = `${attr.label} — ${sub.label}`;
+        const cellRaw = String(flat[path] ?? '').trim();
+        if (!isVisible(sub)) {
+          if (cellRaw) issues.push({ attribute: path, message: `'${path}' is not applicable for this submission` });
+          if (path in waived) issues.push({ attribute: path, message: `'${path}' is not applicable and cannot be waived` });
+          continue;
+        }
+        if (path in waived) {
+          if (!sub.can_waive) {
+            issues.push({ attribute: path, message: `'${path}' cannot be waived` });
+            continue;
+          }
+          if (cellRaw) issues.push({ attribute: path, message: `'${path}' is waived — it must not also carry a value` });
+          if (!String(waived[path] ?? '').trim()) issues.push({ attribute: path, message: `A reason is needed for '${cellLabel}'` });
+          continue;
+        }
+        if (!cellRaw) {
+          if (sub.required) issues.push({ attribute: path, message: `${cellLabel} is required` });
+          continue;
+        }
+        if (sub.validation) {
+          try {
+            const ok = engine.evaluate(sub.validation, { ...scriptBase, extras: { value: coerceValue(sub.type, cellRaw) } });
+            if (ok !== true) issues.push({ attribute: path, message: sub.validation_message ?? `${cellLabel} is invalid` });
+          } catch (err) {
+            issues.push({ attribute: path, message: `${cellLabel}: ${err instanceof Error ? err.message : String(err)}` });
+          }
+        }
+        if (sub.type === 'list') {
+          const datasource = sub.type_config?.datasource;
+          if (!datasource) issues.push({ attribute: path, message: `'${path}' has no datasource` });
+          else checkListMembership(cellLabel, path, datasource, sub.type_config?.key_field ?? 'id', [cellRaw]);
+        }
+      }
+      continue;
+    }
+
+    const raw = String(flat[attr.key] ?? '').trim();
     const isWaived = attr.key in waived;
 
     if (!isVisible(attr)) {
