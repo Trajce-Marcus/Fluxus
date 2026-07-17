@@ -100,6 +100,13 @@ hang on this runtime (`hono/vercel` is Edge-only; `@hono/node-server/vercel`
 waits on a body stream Vercel's pre-parsing already consumed, and
 `api.bodyParser: false` is not honored).
 
+## Where everything lives on Vercel
+
+Team `trajce-marcus-projects`, three projects: `fluxus-server` (git
+integration on the GitHub repo), `fluxus-sdm` and `fluxus-page-builder`
+(static CLI deploys, no git integration). CLI access: `npx vercel login`
+(browser device auth).
+
 ## The hosts (workbench + page builder)
 
 **Live since 2026-07-17:** https://fluxus-sdm.vercel.app and
