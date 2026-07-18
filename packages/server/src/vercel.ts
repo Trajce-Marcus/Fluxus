@@ -28,6 +28,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Hono } from 'hono';
 import { createDb } from './db/client';
 import { createApp } from './app';
+import { createBlobStore } from './services/blob';
 
 let appReady: Promise<Hono> | undefined;
 
@@ -37,7 +38,7 @@ function getApp(): Promise<Hono> {
       throw new Error('DATABASE_URL is not set (or empty) in this deployment\'s environment');
     }
     const db = await createDb({ applyMigrations: false });
-    return createApp({ db });
+    return createApp({ db, blob: createBlobStore() });
   })();
   // A failed init must not be cached as permanently broken — retry next request.
   appReady.catch(() => { appReady = undefined; });

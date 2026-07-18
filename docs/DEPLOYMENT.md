@@ -152,3 +152,51 @@ to the bundle): schema changes are applied from a dev machine with
 variables. Region `syd1` lives in `vercel.json`. Seeding
 (`npm run seed:server`) runs from a dev machine against the same
 `DATABASE_URL` — the interim config-authoring loop is unchanged.
+
+## Blob storage — Cloudflare R2 (files & photos)
+
+File/photo attributes store their bytes in an S3-compatible bucket, reached
+only through presigned URLs (`packages/server/src/services/blob.ts`). R2 on the
+free tier: 10 GB storage / 1M writes / 10M reads per month, permanent, zero
+egress — comfortably POC-sized. The only activation friction is a payment
+method on file. Until the env vars are set the server runs with blob uploads
+disabled (`files.*` return a clean "not configured" error) — nothing else is
+blocked.
+
+**One private bucket per environment** (mirrors the Neon dev/prod split).
+Setup, per environment:
+
+1. Cloudflare dashboard → **R2** → *Create bucket* (private; never enable
+   public access). Suggested names: `fluxus-blobs-dev`, `fluxus-blobs-prod`.
+2. **R2 → Manage R2 API Tokens → Create API token**, permission *Object Read &
+   Write*, scoped to that one bucket. Copy the **Access Key ID** and **Secret
+   Access Key** (shown once).
+3. Note your **Account ID** (R2 overview page / bucket S3 endpoint
+   `https://<accountid>.r2.cloudflarestorage.com`).
+4. (Optional, recommended) **Billing → Notifications**: add a spend/usage alert
+   as the backstop cost cap — R2 has no native hard spend limit, so the
+   platform's own fuse (per-file 20 MB ceiling + 8 GB environment fuse) is the
+   primary guard.
+
+**Env vars** (all four required to activate; set per environment):
+
+| var | value |
+| :-- | :-- |
+| `FLUXUS_R2_ACCOUNT_ID` | Cloudflare account id |
+| `FLUXUS_R2_ACCESS_KEY_ID` | the API token's access key id |
+| `FLUXUS_R2_SECRET_ACCESS_KEY` | the API token's secret |
+| `FLUXUS_R2_BUCKET` | bucket name for this environment |
+
+- **Local dev**: add them to `packages/server/.env` (gitignored, alongside
+  `DATABASE_URL`); the dev server loads it. Point at the **dev** bucket.
+- **Vercel (prod)**: set them in the `fluxus-server` project's environment
+  variables. Point at the **prod** bucket.
+
+**CORS** on each bucket must allow the host origins to `PUT` (upload) and `GET`
+(display) directly. In the bucket's *Settings → CORS policy*, allow the
+workbench/page-builder origins (e.g. `http://localhost:5173` for dev and the
+Vercel host URLs for prod) with methods `PUT, GET`, `AllowedHeaders: *`.
+
+Applying the ledger table: migration `0002_*` adds `attachments`. Run
+`npm run db:migrate` against each `DATABASE_URL` before deploying code that
+uploads — the same pre-deploy step as any schema change.

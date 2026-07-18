@@ -15,6 +15,13 @@
       "when": 1784164863631,
       "tag": "0001_clumsy_mother_askani",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784344838557,
+      "tag": "0002_nervous_sir_ram",
+      "breakpoints": true
     }
   ]
 }

@@ -36,12 +36,17 @@ because the entry append and record_map change preceded the hook.
 
 ```
 src/db/schema.ts       — Drizzle schema: sdm_configs, records (transactional),
-                         rpt_activities + rpt_attributes (reporting)
+                         rpt_activities + rpt_attributes (reporting),
+                         attachments (blob ledger)
 src/db/client.ts       — driver selection (DATABASE_URL → node-postgres/Neon;
                          else PGlite) + boot-time idempotent DDL
 src/host.ts            — loadScopeHost / writeBack (diff + projection) / putConfig
 src/router.ts          — the tRPC router: config.get/put, records.list/get,
-                         activities.run; DEFAULT_SCOPE
+                         activities.run, files.presignUpload/presignGet;
+                         DEFAULT_SCOPE
+src/services/blob.ts   — the blob-store seam (R2): the ONLY module touching the
+                         S3 client; presign helpers, key generation, cost
+                         constants. Unconfigured when FLUXUS_R2_* is unset
 src/app.ts             — Hono app; tRPC mounted via the fetch adapter
 src/index.ts           — local entry (Node, @hono/node-server, PGlite at .data/)
 src/lambda.ts          — raw-AWS entry (hono/aws-lambda) — the kept-warm exit
@@ -67,10 +72,24 @@ ARCHITECTURE.md "Hosting options"):
   conditions (hidden ⇒ exempt from required, but supplying a hidden value is
   an error), required, validation rules — plus datasource membership and
   reference existence, which the form guarantees by construction. Attribute
-  values are strings, exactly as the capture form submits. `recordId` anchors
-  non-CREATE activities and is rejected on CREATE. Warn soft-stop returns
-  `needs-confirmation` with nothing persisted; re-run with
+  values transit as arbitrary JSON — scalars are strings as the form submits,
+  file/photo descriptors are objects, multi values are arrays;
+  `validateSubmission` does the authoritative per-type shape check. `recordId`
+  anchors non-CREATE activities and is rejected on CREATE. Warn soft-stop
+  returns `needs-confirmation` with nothing persisted; re-run with
   `acknowledgedWarnings`.
+- **`files.presignUpload`** `{ scope?, attributeKey, name, mime, size, hash?,
+  photo metadata? }` → `{ storageKey, uploadUrl, thumbKey?, thumbUploadUrl? }`
+  / **`files.presignGet`** `{ scope?, key }` → `{ url }` — the blob upload/read
+  door (ATTRIBUTE_TYPES_FILES_SCALARS §6). Bytes never transit the server: the
+  browser PUTs straight to R2 with the returned URL. `presignUpload` is the
+  cost chokepoint (§7), enforced BEFORE any bytes move: the platform per-file
+  ceiling (20 MB), the attribute's `max_size_mb`, the `file` `accept` filter
+  (photos are images), and the environment storage fuse (ledger SUM(size) vs
+  8 GB). It inserts the `pending` ledger row and, for photos, a second
+  presigned PUT for the thumbnail. `max_count` is enforced at submit
+  (`validateSubmission`). Both procedures answer a clean error when
+  FLUXUS_R2_* is unset.
 - **`records.partition`** `{ scope? }` / **`records.list`** `{ scope?,
   typeId }` / **`records.get`** `{ scope?, recordId }` — the platform data
   channel (RecordInstance shape, history embedded). `partition` returns the
@@ -116,11 +135,25 @@ GitHub-style).
   keyed by the dotted path (`prelim_activities.access_permission.ok`) — `'.'`
   is reserved in keys for this, so cell queries stay uniform on the single
   text `value` column (waived cells are dotted-key waive rows like any
-  other). Rejected gates and un-acknowledged
+  other). File/photo **descriptors** flatten the same way (one row per leaf:
+  `before_photo.hash`); **multi** values (arrays) flatten with positional
+  segments (`site_photos.0.hash`, `tags.0`) — the one projection extension in
+  this build (ATTRIBUTE_TYPES_FILES_SCALARS §9), which also closed the same
+  latent gap for multi-select lists. Rejected gates and un-acknowledged
   soft-stops leave no rows (no entry committed). Projection is synchronous
   in-transaction; the outbox/async upgrade replaces `writeBack`'s body, not
   its callers. Rebuild-by-re-projection is possible by construction (the
   entries live on the records) but no rebuild tool exists yet.
+- `attachments` — the blob ledger (ATTRIBUTE_TYPES_FILES_SCALARS §8): one row
+  per uploaded object (`storage_key`, `size`, `mime`, `hash`, photo metadata,
+  `status: pending → committed`, `created_at`). Inserted `pending` at presign;
+  `writeBack` flips every `storage_key` a new entry references to `committed`
+  in the same transaction. It is **not the source of truth and nothing
+  references its rows** — pipeline values stay by-value, so a GC bug can never
+  corrupt history. It exists for the bucket-side questions the pipeline is bad
+  at: the quota fuse (`SUM(size)`, no Cloudflare usage API), duplicate/
+  integrity queries (same `hash`, EXIF geo/time off), and trivial deferred GC
+  (stale `pending` rows). Rebuildable from a bucket listing + history.
 
 DDL is drizzle-kit migrations (`migrations/`, generated from `schema.ts` via
 `npm run db:generate`): `createDb()` applies outstanding migrations
@@ -144,6 +177,23 @@ portability across hosts is the Phase 3 doctrine) and the engine's shared
 process log: real delivery/storage is deliberately deferred to the open
 unified-log/notification design — no notifications table was added (One
 Pipeline Invariant).
+
+## Blob storage (R2)
+
+`src/services/blob.ts` is the only module that touches the S3 client — the
+provider never leaks past it. One **private** bucket per environment (mirrors
+the Neon dev/prod split); all access is short-TTL presigned URLs, no public
+URLs. Keys are `<yyyy>/<mm>/<uuid>/<sanitised-name>`, thumbnails
+`…/<uuid>/thumb.jpg`. Env vars: `FLUXUS_R2_ACCOUNT_ID`,
+`FLUXUS_R2_ACCESS_KEY_ID`, `FLUXUS_R2_SECRET_ACCESS_KEY`, `FLUXUS_R2_BUCKET`
+(per environment; see docs/DEPLOYMENT.md). Missing any of them → the store is
+`configured: false` and `files.*` answer a clean error, so the platform builds
+and runs against the seam before R2 is provisioned. The client (`@aws-sdk/*`)
+speaks the genuine S3 API, so the code is byte-portable to AWS S3 / Backblaze
+B2. Cost enforcement is ours (R2 has no hard spend cap): the per-file platform
+ceiling and per-attribute `max_size_mb`/`accept` at presign, the environment
+fuse (ledger `SUM(size)`), and a Cloudflare billing notification as backstop.
+Read ops (thumb fetches) are unreachable at POC scale against the free tier.
 
 ## Config distribution (interim)
 

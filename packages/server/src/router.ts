@@ -8,7 +8,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { validateSubmission, type ConfigRaw, type RunActivityResult } from '@fluxus/engine';
+import { isDescriptorType, validateSubmission, type ConfigRaw, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -17,14 +17,17 @@ import {
   deletePage,
   findActivity,
   getScopeConfig,
+  insertPendingAttachment,
   listPages,
   loadScopeHost,
   putConfig,
   putPage,
+  usedStorageBytes,
   writeBack,
 } from './host';
 import type { NotifySink } from './services/notify';
 import { consoleNotifySink } from './services/notify';
+import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
 
 /** Scope is an opaque path string — org-defined levels arrive as data later. */
 export const DEFAULT_SCOPE = 'demo/sdm';
@@ -32,11 +35,30 @@ export const DEFAULT_SCOPE = 'demo/sdm';
 export interface AppContext {
   db: Db;
   sink?: NotifySink;
+  /** The blob store (R2) for `files` presigns; unconfigured when FLUXUS_R2_* is unset. */
+  blob?: BlobStore;
+}
+
+/** Whether a file's mime/extension satisfies a `file` attribute's `accept` list. */
+function matchesAccept(accept: string[], mime: string, name: string): boolean {
+  const ext = name.includes('.') ? '.' + name.split('.').pop()!.toLowerCase() : '';
+  const m = mime.toLowerCase();
+  return accept.some((entry) => {
+    const t = entry.trim().toLowerCase();
+    if (t.startsWith('.')) return t === ext;
+    if (t.endsWith('/*')) return m.startsWith(t.slice(0, -1));
+    return t === m;
+  });
 }
 
 const t = initTRPC.context<AppContext>().create();
 
 const scopeInput = z.string().min(1).default(DEFAULT_SCOPE);
+
+/** Arbitrary JSON — the activity payload's transport; the engine types it. */
+const jsonValue: z.ZodType<unknown> = z.lazy(() =>
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(jsonValue), z.record(z.string(), jsonValue)]),
+);
 
 function rethrow(err: unknown): never {
   if (err instanceof ScopeNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
@@ -92,6 +114,102 @@ export const appRouter = t.router({
       }),
   }),
 
+  // Blob uploads (ATTRIBUTE_TYPES_FILES_SCALARS §6): the presign chokepoint.
+  // Bytes never transit here — the browser PUTs straight to R2 with the URL
+  // this returns. presignUpload is where every cost safeguard is enforced
+  // BEFORE any bytes move (§7): the platform ceiling, the per-attribute
+  // max_size_mb, the file `accept` filter, and the environment storage fuse.
+  files: t.router({
+    presignUpload: t.procedure
+      .input(
+        z.object({
+          scope: scopeInput,
+          /** The pool attribute this upload is for — its type_config gates the presign. */
+          attributeKey: z.string().min(1),
+          name: z.string().min(1),
+          mime: z.string().min(1),
+          size: z.number().int().nonnegative(),
+          hash: z.string().optional(),
+          // Photo metadata the client computed pre-upload — ledgered for the
+          // integrity/duplicate story (§8); the descriptor carries them too.
+          width: z.number().int().optional(),
+          height: z.number().int().optional(),
+          lat: z.number().optional(),
+          lng: z.number().optional(),
+          taken_at: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const blob = ctx.blob;
+          if (!blob?.configured) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
+          }
+          const config = await getScopeConfig(ctx.db, input.scope);
+          const attr = config.attributes.find((a) => a.key === input.attributeKey);
+          if (!attr) throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown attribute '${input.attributeKey}'` });
+          if (!isDescriptorType(attr.type)) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.attributeKey}' is not a file/photo attribute` });
+          }
+          const cfg = attr.type_config ?? {};
+
+          // Size: platform ceiling first (a config typo can't open the door),
+          // then the per-attribute cap.
+          if (input.size > PLATFORM_MAX_BYTES) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `File exceeds the ${PLATFORM_MAX_BYTES / (1024 * 1024)} MB platform limit` });
+          }
+          if (typeof cfg.max_size_mb === 'number' && input.size > cfg.max_size_mb * 1024 * 1024) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `File exceeds the ${cfg.max_size_mb} MB limit for '${attr.label}'` });
+          }
+          // MIME: photos are images; files honour the accept filter.
+          if (attr.type === 'photo' && !input.mime.toLowerCase().startsWith('image/')) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${attr.label}' takes images only` });
+          }
+          if (attr.type === 'file' && cfg.accept && cfg.accept.length > 0 && !matchesAccept(cfg.accept, input.mime, input.name)) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.name}' is not an accepted type for '${attr.label}'` });
+          }
+          // Environment fuse: refuse once the ledger footprint would pass the
+          // threshold — a "storage limit reached", not a surprise bill (§7 #3).
+          if ((await usedStorageBytes(ctx.db)) + input.size > ENV_FUSE_BYTES) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Storage limit reached — uploads are temporarily disabled' });
+          }
+
+          const { storageKey, thumbKey } = makeStorageKey(input.name);
+          await insertPendingAttachment(ctx.db, {
+            storageKey,
+            size: input.size,
+            mime: input.mime,
+            hash: input.hash,
+            width: input.width,
+            height: input.height,
+            lat: input.lat,
+            lng: input.lng,
+            takenAt: input.taken_at ? new Date(input.taken_at) : null,
+          });
+          const uploadUrl = await blob.presignUpload(storageKey, input.mime);
+          // Photos carry a thumbnail object (§6): a second presigned PUT the
+          // client fills with the canvas thumb. thumb_key is derived, not
+          // separately ledgered (small, GC'd with its folder).
+          if (attr.type === 'photo') {
+            const thumbUploadUrl = await blob.presignUpload(thumbKey, 'image/jpeg');
+            return { storageKey, uploadUrl, thumbKey, thumbUploadUrl };
+          }
+          return { storageKey, uploadUrl };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    presignGet: t.procedure
+      .input(z.object({ scope: scopeInput, key: z.string().min(1) }))
+      .query(async ({ ctx, input }) => {
+        const blob = ctx.blob;
+        if (!blob?.configured) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
+        }
+        return { url: await blob.presignGet(input.key) };
+      }),
+  }),
+
   records: t.router({
     // The whole scope partition in one round trip — what a browser host loads
     // into its MemoryAdapter snapshot at bootstrap (and re-fetches after runs).
@@ -142,12 +260,13 @@ export const appRouter = t.router({
           scope: scopeInput,
           activityId: z.string().min(1),
           recordId: z.string().min(1).optional(),
-          /** Attribute payload — string values, exactly as the capture form
-           *  submits. A composite attribute's cells may come flat under dotted
-           *  keys ('access_permission.ok') or nested (attr → sub). */
-          attributes: z
-            .record(z.string(), z.union([z.string(), z.record(z.string(), z.string())]))
-            .default({}),
+          /** Attribute payload. Scalars are strings, as the capture form
+           *  submits; composite cells come flat under dotted keys
+           *  ('access_permission.ok') or nested (attr → sub); file/photo
+           *  descriptors are objects and multi values are arrays. Transport is
+           *  arbitrary JSON — validateSubmission does the authoritative shape
+           *  check per the attribute's type. */
+          attributes: z.record(z.string(), jsonValue).default({}),
           waived: z.record(z.string(), z.string()).optional(),
           acknowledgedWarnings: z.boolean().optional(),
           callbackData: z.unknown().optional(),
