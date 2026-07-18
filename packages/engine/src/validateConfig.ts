@@ -6,6 +6,7 @@
 
 import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ConfigRaw } from './types';
+import { attributeTypeSpec } from './attributeTypes';
 import { buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
 
@@ -79,6 +80,20 @@ export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] =
 
   for (const attr of config.attributes) {
     checkKey(`attribute '${attr.key}'`, attr.key);
+    // type_config keys are a closed, per-type set (registry §5, §3): reject
+    // unknown keys and `multi` where it is not legal (composite, §11). Types
+    // absent from the registry (custom/experimental) are left unchecked.
+    const spec = attributeTypeSpec(attr.type);
+    if (spec && attr.type_config) {
+      for (const cfgKey of Object.keys(attr.type_config)) {
+        if (attr.type_config[cfgKey as keyof typeof attr.type_config] === undefined) continue;
+        if (cfgKey === 'multi') {
+          if (!spec.multi) note(`attribute '${attr.key}'`, `'${attr.type}' attributes cannot be multi`);
+        } else if (!spec.configKeys.includes(cfgKey)) {
+          note(`attribute '${attr.key}'`, `unknown type_config key '${cfgKey}' for type '${attr.type}'`);
+        }
+      }
+    }
     if (attr.type_config?.datasource) {
       collect(`attribute '${attr.key}' datasource`, attr.type_config.datasource);
     }

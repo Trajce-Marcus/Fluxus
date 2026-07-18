@@ -300,7 +300,6 @@
     "type": "list",
     "type_config": {
       "datasource": "records.cities.orderBy(name).top(50)",
-      "selection": "single",
       "key_field": "id",
       "display_field": "name"
     }
@@ -312,7 +311,6 @@
     "type": "list",
     "type_config": {
       "datasource": "services.geo.suburbsOf(attributes.city)",
-      "selection": "single",
       "key_field": "id",
       "display_field": "name"
     }

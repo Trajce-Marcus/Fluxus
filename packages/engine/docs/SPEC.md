@@ -31,6 +31,10 @@ src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storag
                      replaceRecords() swaps the whole snapshot in place
                      (identity stable, subscribers notified) — how client
                      hosts refresh after a server-side run (backend stage 2)
+src/attributeTypes.ts — the attribute type registry (files, photos, scalars):
+                     per-type descriptor field schemas + accepted type_config
+                     keys, read by the client uploader, validateSubmission, and
+                     validateConfig
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
 src/validateSubmission.ts — headless payload validation (DSL Phase 4): the
@@ -218,6 +222,56 @@ translation contract (owned by `bridge.ts`):
 waive rules, validation with typed cell `value`, list sub-attribute datasource
 membership, sub show_conditions fail-open). Reporting hosts flatten the nested
 entry value back to one row per cell under the dotted key (see server SPEC).
+
+## Attribute types: files, photos & scalars
+
+The type registry (`attributeTypes.ts`, ATTRIBUTE_TYPES_FILES_SCALARS §5) is
+one entry per attribute type declared in engine code — the companion the SDM
+baseline asked for once `type_config` shapes stopped self-documenting as table
+columns. Each entry declares its **descriptor** sub-fields (photo/file only),
+the **type_config keys** it accepts, and whether **multi** is legal. Three
+consumers read it: the client upload core (what descriptor fields to write),
+`validateSubmission` (server-authoritative descriptor shape check), and
+`validateConfig` (config-key / multi rules). It is *not* wired into the DSL
+validator — descriptor dot-access (`attrs.before_photo.taken_at`,
+`value.size`) stays permissive/untyped, as all attribute-value access already
+is; typed dot-paths in hooks/validations are a later, additive step.
+
+- **Types this build**: `photo`, `file`, `datetime`, `time`, `int`, `decimal`;
+  `text` gains `multiline`. GIS types are direction-only (not built).
+- **Descriptor value** (`photo`/`file`, §4): a by-value bag
+  (`storage_key`/`name`/`mime`/`size`/`hash`; photo adds
+  `width`/`height`/`thumb_key` and optional EXIF `lat`/`lng`/`taken_at`).
+  Stored by-value in the pipeline exactly like a composite — history entries
+  stay self-contained; bytes never enter the pipeline. `isDescriptorType` /
+  `descriptorFields` / `descriptorShapeIssues` expose the schema and the shape
+  check.
+- **Cardinality** is one flag, `type_config.multi: true` (§2): the value is
+  then always an array and `required` means ≥ 1 item. Legal on every type
+  except `composite` (repeating composites deferred). Replaces the former
+  `list`-only `selection` key — deleted, one spelling of cardinality
+  platform-wide.
+- **Config vs validation** (§3): `type_config` holds only capture-shaping keys
+  that must act before a value exists (`accept`, `max_size_mb`, `max_count`,
+  `multi`, `multiline`, `decimal_places`) — a closed set per type, no format
+  mini-language. Every judgement about a value stays in FluxScript
+  `validation` with descriptor dot-access (`value.size <= 20000000`).
+- **Coercion** (`coerceValue`): `datetime` parses to a `Date` (the raw
+  offset-bearing ISO string is what persists, so the entry keeps the
+  wall-clock the user saw); `decimal`/`int` to numbers; `time` stays a string
+  (`HH:MM`, zone-less, lexical comparison). `coerceCapturedValue` maps multi
+  arrays element-wise and passes descriptor bags through by-value.
+- **Structured threading**: `flattenCaptured` / `nestComposite` /
+  `coerceCaptured` keep descriptor objects and multi arrays by-value instead of
+  stringifying them; `isBlank` is the shared emptiness test (empty string /
+  empty array blank; a descriptor bag present).
+- **validateConfig** rejects `multi` on `composite` and any `type_config` key
+  not in a type's registry entry. Types absent from the registry
+  (custom/experimental) are left unchecked.
+- **validateSubmission** re-checks, server-authoritatively: descriptor shape
+  (missing required field, wrong scalar kind, non-object), single-vs-array
+  cardinality, `max_count`, and per-file `max_size_mb` (the presign gate is the
+  first check; this is the re-check at submit).
 
 ## Bridge and validation
 

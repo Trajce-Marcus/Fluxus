@@ -21,10 +21,12 @@ export {
   buildEvalHost,
   buildRecordsHost,
   coerceCaptured,
+  coerceCapturedValue,
   coerceValue,
   compositeSubs,
   flattenCaptured,
   functionSignatures,
+  isBlank,
   joinScript,
   nestComposite,
   resolveFunctions,
@@ -33,6 +35,15 @@ export {
   toDslRecord,
 } from './bridge';
 export type { ScriptContext } from './bridge';
+
+export {
+  ATTRIBUTE_TYPES,
+  attributeTypeSpec,
+  descriptorFields,
+  descriptorShapeIssues,
+  isDescriptorType,
+} from './attributeTypes';
+export type { AttributeTypeSpec, DescriptorField, DescriptorFieldType } from './attributeTypes';
 
 export { validateConfig, reportConfigFindings } from './validateConfig';
 export type { Finding } from './validateConfig';
