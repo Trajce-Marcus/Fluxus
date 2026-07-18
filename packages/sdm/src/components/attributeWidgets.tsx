@@ -100,6 +100,8 @@ export function toLocalInput(iso: string): string {
 // ── file / photo capture ─────────────────────────────────────────────────────
 
 interface UploadState {
+  /** Stable identity — progress updates replace the object, so we can't use it. */
+  id: string;
   name: string;
   progress: number;
   error?: string;
@@ -135,18 +137,18 @@ function usePicker({ value, onChange, attributeKey, config, uploads }: CapturePr
     const chosen = multi ? Array.from(files) : [files[0]];
     for (const file of chosen) {
       if (multi && typeof config?.max_count === 'number' && latest.current.length >= config.max_count) break;
-      const slot: UploadState = { name: file.name, progress: 0 };
-      setUploading((u) => [...u, slot]);
+      const id = globalThis.crypto.randomUUID();
+      setUploading((u) => [...u, { id, name: file.name, progress: 0 }]);
       try {
         const descriptor = await uploads.upload(attributeKey, file, (fraction) => {
-          setUploading((u) => u.map((s) => (s === slot ? { ...s, progress: fraction } : s)));
+          setUploading((u) => u.map((s) => (s.id === id ? { ...s, progress: fraction } : s)));
         });
         emit(multi ? [...latest.current, descriptor] : [descriptor]);
       } catch (err) {
-        setUploading((u) => u.map((s) => (s === slot ? { ...s, error: err instanceof Error ? err.message : String(err) } : s)));
+        setUploading((u) => u.map((s) => (s.id === id ? { ...s, error: err instanceof Error ? err.message : String(err) } : s)));
         continue;
       }
-      setUploading((u) => u.filter((s) => s !== slot));
+      setUploading((u) => u.filter((s) => s.id !== id));
     }
   };
 
@@ -168,8 +170,8 @@ export function PhotoInput(props: CaptureProps) {
           <Thumb key={`${d.storage_key}-${i}`} descriptor={d as PhotoDescriptor} uploads={props.uploads}
             onRemove={props.disabled ? undefined : () => remove(i)} />
         ))}
-        {uploading.map((u, i) => (
-          <div key={`up-${i}`} style={tileStyle}>
+        {uploading.map((u) => (
+          <div key={u.id} style={tileStyle}>
             <div style={{ fontSize: 10, color: u.error ? '#b91c1c' : '#64748b', textAlign: 'center', padding: 4 }}>
               {u.error ? '⚠' : `${Math.round(u.progress * 100)}%`}
             </div>
@@ -200,8 +202,8 @@ export function FileInput(props: CaptureProps) {
         <FileRow key={`${d.storage_key}-${i}`} descriptor={d} uploads={props.uploads}
           onRemove={props.disabled ? undefined : () => remove(i)} />
       ))}
-      {uploading.map((u, i) => (
-        <div key={`up-${i}`} style={{ fontSize: 12, color: u.error ? '#b91c1c' : '#64748b', padding: '4px 0' }}>
+      {uploading.map((u) => (
+        <div key={u.id} style={{ fontSize: 12, color: u.error ? '#b91c1c' : '#64748b', padding: '4px 0' }}>
           {u.error ? `⚠ ${u.name}: ${u.error}` : `↑ ${u.name} — ${Math.round(u.progress * 100)}%`}
         </div>
       ))}
