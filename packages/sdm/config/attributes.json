@@ -93,6 +93,17 @@
     "type": "text"
   },
   {
+    "key": "site_photos",
+    "label": "Site Photos",
+    "description": "Photos of the work site (camera or gallery).",
+    "type": "photo",
+    "type_config": {
+      "multi": true,
+      "max_count": 6,
+      "max_size_mb": 10
+    }
+  },
+  {
     "key": "type",
     "label": "Type",
     "description": "Category of resource (e.g. lab, plant, vehicle, employee).",

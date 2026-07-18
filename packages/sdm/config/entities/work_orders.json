@@ -151,6 +151,9 @@
           },
           {
             "attribute_ref": "workgroup_id"
+          },
+          {
+            "attribute_ref": "site_photos"
           }
         ],
         "before_hook": null,
