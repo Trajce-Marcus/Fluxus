@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult, ScriptContext } from '@fluxus/engine';
+import type { UploadService } from '@fluxus/client';
 import { adapter, client, engine, notificationLog } from '../host';
 
 // Singletons live in ../host (assigned before render by initHost). The server
@@ -21,10 +22,13 @@ interface AppContextValue {
   getRecordAndType: (typeId: string, recordId: string) => { record: RecordInstance; typeDef: RecordTypeDef & { workflow: WorkflowDef } } | null;
   runActivity: (
     activity: ActivityDef,
-    captured: Record<string, string>,
+    captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
   ) => Promise<RunActivityResult>;
+  /** File/photo upload surface (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the
+   *  client's UploadService, scope pre-bound; injected into capture widgets. */
+  uploads: UploadService;
   // Activity-level show_condition (availability): drives UI visibility; the
   // same rule is re-checked inside runActivity as the pipeline gate.
   isActivityAvailable: (activity: ActivityDef, anchorRecord: RecordInstance | null) => boolean;
@@ -104,13 +108,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // client.uploads mints a fresh object per access; hold one stable instance so
+  // widget effects keyed on it don't re-run every render.
+  const uploads = useMemo(() => client.uploads, []);
+
   // Thin host wrapper over the server pipeline: the server runs the activity
   // (gate, hooks, persistence) and the client refreshes the snapshot; the
   // workbench reacts — deselect a deleted record, console the warnings
   // (its channel until a toast slot exists).
   const runActivity = useCallback(async (
     activity: ActivityDef,
-    captured: Record<string, string>,
+    captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
   ): Promise<RunActivityResult> => {
@@ -158,6 +166,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getReverseRefs,
       getRecordsByField,
       dslEvaluate,
+      uploads,
     }}>
       {children}
     </Ctx.Provider>

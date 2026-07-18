@@ -16,15 +16,34 @@ export interface AttributeTypeConfig {
   fk_record_type?: string;
   values?: string[];
   expression?: unknown;
+  /**
+   * Cardinality flag (ATTRIBUTE_TYPES_FILES_SCALARS §2): when true the captured
+   * value is always an array and `required` means ≥ 1 item. Legal on every type
+   * except composite (repeating composites deferred, §11). Replaces the former
+   * `list`-only `selection: 'multi'` — one spelling of cardinality platform-wide.
+   */
+  multi?: boolean;
   // ── 'list' attributes (DSL-driven) ──
   /** FluxScript expression yielding a list: literal, records query, or service call. */
   datasource?: string;
-  selection?: 'single' | 'multi';
   /** Field used as the stored value (default 'id' for record datasources). */
   key_field?: string;
   /** Field shown to the user (default 'name'). */
   display_field?: string;
   columns?: string[];
+  // ── 'text' attributes ──
+  /** Render as a textarea — one value with many lines (§1); NOT the multi mechanism. */
+  multiline?: boolean;
+  // ── 'decimal' attributes ──
+  /** Input step + display rounding — presentation only, like `multiline` (§1). */
+  decimal_places?: number;
+  // ── 'photo' / 'file' attributes (§1) ──
+  /** Per-attribute file-count ceiling for a multi value; enforced at presign + submit. */
+  max_count?: number;
+  /** Per-attribute byte ceiling (MB); enforced at presign, re-checked at submit. */
+  max_size_mb?: number;
+  /** 'file' only: file-dialog filter — a list of extensions/MIME types. */
+  accept?: string[];
   // ── 'composite' attributes (one question's row of sub-fields) ──
   /**
    * The sub-attributes of a composite: usage wrappers pointing at REAL pool

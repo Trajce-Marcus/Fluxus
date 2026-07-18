@@ -8,6 +8,7 @@ import { createDb } from './db/client';
 import { createApp } from './app';
 import { getScopeConfig } from './host';
 import { DEFAULT_SCOPE } from './router';
+import { createBlobStore } from './services/blob';
 
 // Local dev convenience: load packages/server/.env if present so `npm run dev`
 // targets the DATABASE_URL (Neon) declared there. Absent → PGlite fallback.
@@ -17,7 +18,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
-const app = createApp({ db });
+const app = createApp({ db, blob: createBlobStore() });
 
 try {
   await getScopeConfig(db, DEFAULT_SCOPE);

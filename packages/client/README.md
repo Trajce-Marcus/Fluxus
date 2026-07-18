@@ -15,6 +15,11 @@ and the page builder; a future host (CLI, mobile) starts here.
 - No UI, no React, no fallback storage: if the server is unreachable the
   host's boot fails loudly (hard-cutover ruling).
 
-Run checks: `npm run build` (typecheck).
+Also hosts the **upload core** (`src/upload.ts`): browser-only file/photo
+capture logic — SHA-256, EXIF, canvas thumbnails, direct-to-R2 PUT with
+progress — behind the injected `UploadService`, so a host's widgets stay pure
+controlled components.
+
+Run checks: `npm run build` (typecheck), `npm test` (pure-helper unit tests).
 
 Docs: [docs/SPEC.md](docs/SPEC.md) — the living design truth.

@@ -93,6 +93,17 @@
     "type": "text"
   },
   {
+    "key": "site_photos",
+    "label": "Site Photos",
+    "description": "Photos of the work site (camera or gallery).",
+    "type": "photo",
+    "type_config": {
+      "multi": true,
+      "max_count": 6,
+      "max_size_mb": 10
+    }
+  },
+  {
     "key": "type",
     "label": "Type",
     "description": "Category of resource (e.g. lab, plant, vehicle, employee).",
@@ -300,7 +311,6 @@
     "type": "list",
     "type_config": {
       "datasource": "records.cities.orderBy(name).top(50)",
-      "selection": "single",
       "key_field": "id",
       "display_field": "name"
     }
@@ -312,7 +322,6 @@
     "type": "list",
     "type_config": {
       "datasource": "services.geo.suburbsOf(attributes.city)",
-      "selection": "single",
       "key_field": "id",
       "display_field": "name"
     }

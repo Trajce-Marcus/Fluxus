@@ -10,6 +10,18 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
 import type { ConfigRaw, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { AppRouter } from '@fluxus/server';
+import { runUpload, type Descriptor, type PresignRequest, type Presigned, type UploadService } from './upload';
+
+export type {
+  Descriptor,
+  FileDescriptor,
+  PhotoDescriptor,
+  PresignRequest,
+  Presigned,
+  UploadService,
+  Exif,
+} from './upload';
+export { sha256Hex, readExif, dmsToDecimal, runUpload } from './upload';
 
 function createTrpc(url: string) {
   return createTRPCClient<AppRouter>({ links: [httpBatchLink({ url })] });
@@ -30,8 +42,12 @@ export interface RunInput {
   activityId: string;
   /** Anchor record id — omit for CREATE activities. */
   recordId?: string;
-  /** Attribute payload — string values, exactly as the capture form submits. */
-  attributes?: Record<string, string>;
+  /**
+   * Attribute payload. Scalars are strings as the capture form submits;
+   * file/photo attributes carry descriptor objects and multi values arrays —
+   * arbitrary JSON, typed server-side by validateSubmission.
+   */
+  attributes?: Record<string, unknown>;
   waived?: Record<string, string>;
   acknowledgedWarnings?: boolean;
   callbackData?: unknown;
@@ -82,6 +98,22 @@ export class FluxusClient {
   async deletePage(path: string): Promise<void> {
     this.pages.delete(path);
     await this.trpc.pages.delete.mutate({ scope: this.scope, path });
+  }
+
+  /**
+   * The upload surface capture widgets inject (ATTRIBUTE_TYPES_FILES_SCALARS
+   * §10): `upload` runs the full hash → EXIF → thumbnail → presign → direct-
+   * to-R2 PUT flow and resolves to a stored descriptor; `resolveUrl` presigns a
+   * GET for display. Scope is bound here so widgets stay scope-blind.
+   */
+  get uploads(): UploadService {
+    const presign = (req: PresignRequest): Promise<Presigned> =>
+      this.trpc.files.presignUpload.mutate({ scope: this.scope, ...req }) as Promise<Presigned>;
+    return {
+      upload: (attributeKey, file, onProgress) => runUpload(attributeKey, file, presign, onProgress),
+      resolveUrl: async (storageKey) =>
+        (await this.trpc.files.presignGet.query({ scope: this.scope, key: storageKey })).url,
+    };
   }
 
   /** Re-fetch the partition into the same adapter; subscribers re-render. */

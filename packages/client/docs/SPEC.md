@@ -22,6 +22,24 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    the local `pages` map first, then round-trip `pages.put`/`pages.delete`, so
    host reads of the page set stay synchronous. Defs are opaque `unknown`
    here: `PageDef` and its validation belong to the page builder.
+5. **`uploads`** (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the upload surface
+   capture widgets inject: `upload(attributeKey, file, onProgress?)` and
+   `resolveUrl(storageKey)`. Scope is bound here so widgets stay scope-blind.
+
+## Upload core (`src/upload.ts`)
+
+Plain browser logic, no React — the reusable half of file/photo capture, kept
+here (the door both hosts stand on) so a host's widgets are pure controlled
+components that only call the injected `UploadService`. `runUpload` orchestrates
+one file: read bytes → **SHA-256** (Web Crypto) → for images, **EXIF**
+(`lat`/`lng`/`taken_at`, a focused hand-rolled JPEG APP1 reader — no dep, `{}`
+on anything unexpected) + a **canvas thumbnail** (~320 px long edge, JPEG) →
+`files.presignUpload` → **direct PUT to R2** (XMLHttpRequest, upload progress;
+fetch can't report it) → the thumbnail PUT for photos → return the descriptor
+(`FileDescriptor` / `PhotoDescriptor`, §4). Bytes never transit our server. The
+descriptor types are exported here and reused by the widgets. The `presign`
+step is injected into `runUpload`, so the core is transport-agnostic;
+`FluxusClient` binds it to its tRPC client + scope.
 
 ## Contracts and postures
 
@@ -31,8 +49,9 @@ One class, `FluxusClient`, owning the movements every remote host makes:
   size demands it.
 - **Hard cutover** (stage 2 ruling): no localStorage fallback. Connect
   failures propagate to the host's boot error surface.
-- **Attributes are strings** — exactly what the capture form submits; the
-  server's zod input enforces it.
+- **Attributes are arbitrary JSON** — scalars are strings as the capture form
+  submits; file/photo attributes carry descriptor objects and multi values
+  arrays. The server types them authoritatively (`validateSubmission`).
 - **`@fluxus/server` is type-only** (`import type { AppRouter }`): erased at
   compile time, so no server code (pg, PGlite, Hono) enters a browser bundle.
   It lives in devDependencies to say so.

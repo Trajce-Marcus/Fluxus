@@ -186,42 +186,68 @@ export function compositeSubs(def: AttributeDef | undefined): AttributeDef[] | n
 }
 
 /**
- * Normalise a captured payload to flat string values: scalar attributes as-is,
- * composite cells as dotted keys — whether the caller sent them nested
+ * Whether a captured value counts as "not provided". Scalars: empty/whitespace
+ * string. Multi: empty array. Descriptor bags (photo/file, §4) and any other
+ * object are present. Shared by the emptiness/required checks across the
+ * capture pipeline so structured values aren't mistaken for filled scalars.
+ */
+export function isBlank(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim() === '';
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+/**
+ * One captured leaf → its flat form. Structured values (descriptor bags and
+ * multi arrays, §2/§4) pass through by-value — they must never be stringified
+ * to "[object Object]". Primitives become strings, matching the form's inputs.
+ */
+function normalizeCaptured(value: unknown): unknown {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return value; // descriptor bag or array — by-value
+  return String(value);
+}
+
+/**
+ * Normalise a captured payload to flat values: scalar attributes as strings,
+ * descriptor/multi attributes as by-value objects/arrays, composite cells as
+ * dotted keys — whether the caller sent a composite nested
  * (`{ access_permission: { ok: 'TT' } }`) or already dotted
  * (`{ 'access_permission.ok': 'TT' }`). Unknown keys pass through untouched so
  * the payload checks downstream still see them.
  */
-export function flattenCaptured(defs: AttributeDef[], captured: Record<string, unknown>): Record<string, string> {
+export function flattenCaptured(defs: AttributeDef[], captured: Record<string, unknown>): Record<string, unknown> {
   const byKey = new Map(defs.map((d) => [d.key, d]));
-  const out: Record<string, string> = {};
+  const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(captured)) {
     if (compositeSubs(byKey.get(key)) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
       for (const [subKey, cell] of Object.entries(value as Record<string, unknown>)) {
-        out[`${key}.${subKey}`] = String(cell ?? '');
+        out[`${key}.${subKey}`] = normalizeCaptured(cell);
       }
     } else {
-      out[key] = String(value ?? '');
+      out[key] = normalizeCaptured(value);
     }
   }
   return out;
 }
 
 /**
- * The nested raw-string form of a composite's cells from a flat value bag —
- * what the history entry stores. Only non-empty, non-waived cells appear.
+ * The nested raw form of a composite's cells from a flat value bag — what the
+ * history entry stores. Only non-blank, non-waived cells appear; descriptor
+ * cells are kept by-value.
  */
 export function nestComposite(
   attrKey: string,
   subs: AttributeDef[],
-  flat: Record<string, string>,
+  flat: Record<string, unknown>,
   waived: Record<string, string> = {},
-): Record<string, string> {
-  const nested: Record<string, string> = {};
+): Record<string, unknown> {
+  const nested: Record<string, unknown> = {};
   for (const sub of subs) {
     const path = `${attrKey}.${sub.key}`;
-    const raw = flat[path] ?? '';
-    if (raw === '' || path in waived) continue;
+    const raw = flat[path];
+    if (isBlank(raw) || path in waived) continue;
     nested[sub.key] = raw;
   }
   return nested;
@@ -238,7 +264,7 @@ export function nestComposite(
  * script access like `attributes.access_permission.ok` is total. Section
  * pseudo-defs carry no value and are skipped.
  */
-export function coerceCaptured(defs: AttributeDef[], values: Record<string, string>): Record<string, unknown> {
+export function coerceCaptured(defs: AttributeDef[], values: Record<string, unknown>): Record<string, unknown> {
   const byKey = new Map(defs.map((d) => [d.key, d]));
   const out: Record<string, unknown> = {};
   for (const def of defs) {
@@ -246,7 +272,7 @@ export function coerceCaptured(defs: AttributeDef[], values: Record<string, stri
     if (!subs) continue;
     const row: Record<string, unknown> = {};
     for (const sub of subs) {
-      row[sub.key] = coerceValue(sub.type, values[`${def.key}.${sub.key}`] ?? '');
+      row[sub.key] = coerceCapturedValue(sub.type, values[`${def.key}.${sub.key}`]);
     }
     out[def.key] = row;
   }
@@ -254,25 +280,42 @@ export function coerceCaptured(defs: AttributeDef[], values: Record<string, stri
     if (key.includes('.')) continue; // composite cells — handled above
     const def = byKey.get(key);
     if (def?.type === 'section') continue;
-    out[key] = coerceValue(def?.type, raw);
+    out[key] = coerceCapturedValue(def?.type, raw);
   }
   return out;
+}
+
+/**
+ * Coerce one captured value by its attribute's type. Multi values (arrays) map
+ * element-wise; descriptor bags (photo/file, §4) are typed JSON already and
+ * pass through by-value. Everything else falls to coerceValue on its string.
+ */
+export function coerceCapturedValue(type: string | undefined, value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => coerceCapturedValue(type, item));
+  if (value !== null && value !== undefined && typeof value === 'object') return value;
+  return coerceValue(type, value === null || value === undefined ? '' : String(value));
 }
 
 export function coerceValue(type: string | undefined, raw: string): unknown {
   if (raw === '') return null;
   switch (type) {
-    case 'date': {
+    case 'date':
+    case 'datetime': {
+      // datetime carries a local offset (§1); Date preserves the instant so
+      // `value <= now()` works. The raw ISO string is what persists — the entry
+      // and record field keep the wall-clock the user saw (offset intact).
       const parsed = new Date(raw.length === 10 ? `${raw}T00:00:00` : raw);
       return Number.isNaN(parsed.getTime()) ? raw : parsed;
     }
     case 'int':
+    case 'decimal':
     case 'number': {
       const n = Number(raw);
       return Number.isNaN(n) ? raw : n;
     }
     case 'bool':
       return raw === 'true';
+    // 'time' ('HH:MM', zone-less) stays a string — comparisons are lexical.
     default:
       return raw;
   }

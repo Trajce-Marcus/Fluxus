@@ -15,6 +15,8 @@
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1090.0",
+    "@aws-sdk/s3-request-presigner": "^3.1090.0",
     "@electric-sql/pglite": "^0.3.4",
     "@fluxus/dsl": "0.1.0",
     "@fluxus/engine": "0.1.0",

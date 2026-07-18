@@ -5,12 +5,13 @@
 import { handle } from 'hono/aws-lambda';
 import { createDb } from './db/client';
 import { createApp } from './app';
+import { createBlobStore } from './services/blob';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('@fluxus/server on Lambda requires DATABASE_URL (Neon connection string)');
 }
 
 const db = await createDb();
-const app = createApp({ db });
+const app = createApp({ db, blob: createBlobStore() });
 
 export const handler = handle(app);

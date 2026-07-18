@@ -21,7 +21,8 @@
 
 import type { Engine } from './engine';
 import type { ActivityDef, AttributeDef, RecordInstance } from './types';
-import { coerceCaptured, coerceValue, compositeSubs, flattenCaptured, fullId, shortName } from './bridge';
+import { coerceCaptured, coerceCapturedValue, compositeSubs, flattenCaptured, fullId, isBlank, shortName } from './bridge';
+import { descriptorShapeIssues, isDescriptorType } from './attributeTypes';
 
 export interface SubmissionIssue {
   /** The attribute at fault; null for payload-shape issues. */
@@ -119,7 +120,7 @@ export function validateSubmission(
     if (subs) {
       if (!isVisible(attr)) {
         for (const k of Object.keys(flat)) {
-          if (k.startsWith(`${attr.key}.`) && String(flat[k] ?? '').trim()) {
+          if (k.startsWith(`${attr.key}.`) && !isBlank(flat[k])) {
             issues.push({ attribute: k, message: `'${k}' is not applicable for this submission` });
           }
         }
@@ -131,9 +132,11 @@ export function validateSubmission(
       for (const sub of subs) {
         const path = `${attr.key}.${sub.key}`;
         const cellLabel = `${attr.label} — ${sub.label}`;
-        const cellRaw = String(flat[path] ?? '').trim();
+        const cellVal = flat[path];
+        const cellFilled = !isBlank(cellVal);
+        const cellStr = typeof cellVal === 'string' ? cellVal.trim() : '';
         if (!isVisible(sub)) {
-          if (cellRaw) issues.push({ attribute: path, message: `'${path}' is not applicable for this submission` });
+          if (cellFilled) issues.push({ attribute: path, message: `'${path}' is not applicable for this submission` });
           if (path in waived) issues.push({ attribute: path, message: `'${path}' is not applicable and cannot be waived` });
           continue;
         }
@@ -142,17 +145,18 @@ export function validateSubmission(
             issues.push({ attribute: path, message: `'${path}' cannot be waived` });
             continue;
           }
-          if (cellRaw) issues.push({ attribute: path, message: `'${path}' is waived — it must not also carry a value` });
+          if (cellFilled) issues.push({ attribute: path, message: `'${path}' is waived — it must not also carry a value` });
           if (!String(waived[path] ?? '').trim()) issues.push({ attribute: path, message: `A reason is needed for '${cellLabel}'` });
           continue;
         }
-        if (!cellRaw) {
+        if (!cellFilled) {
           if (sub.required) issues.push({ attribute: path, message: `${cellLabel} is required` });
           continue;
         }
+        for (const m of descriptorShapeIssues(sub.type, cellVal, cellLabel)) issues.push({ attribute: path, message: m });
         if (sub.validation) {
           try {
-            const ok = engine.evaluate(sub.validation, { ...scriptBase, extras: { value: coerceValue(sub.type, cellRaw) } });
+            const ok = engine.evaluate(sub.validation, { ...scriptBase, extras: { value: coerceCapturedValue(sub.type, cellVal) } });
             if (ok !== true) issues.push({ attribute: path, message: sub.validation_message ?? `${cellLabel} is invalid` });
           } catch (err) {
             issues.push({ attribute: path, message: `${cellLabel}: ${err instanceof Error ? err.message : String(err)}` });
@@ -161,17 +165,19 @@ export function validateSubmission(
         if (sub.type === 'list') {
           const datasource = sub.type_config?.datasource;
           if (!datasource) issues.push({ attribute: path, message: `'${path}' has no datasource` });
-          else checkListMembership(cellLabel, path, datasource, sub.type_config?.key_field ?? 'id', [cellRaw]);
+          else checkListMembership(cellLabel, path, datasource, sub.type_config?.key_field ?? 'id', [cellStr]);
         }
       }
       continue;
     }
 
-    const raw = String(flat[attr.key] ?? '').trim();
+    const value = flat[attr.key];
+    const filled = !isBlank(value);
+    const raw = typeof value === 'string' ? value.trim() : '';
     const isWaived = attr.key in waived;
 
     if (!isVisible(attr)) {
-      if (raw) issues.push({ attribute: attr.key, message: `'${attr.key}' is not applicable for this submission` });
+      if (filled) issues.push({ attribute: attr.key, message: `'${attr.key}' is not applicable for this submission` });
       if (isWaived) issues.push({ attribute: attr.key, message: `'${attr.key}' is not applicable and cannot be waived` });
       continue;
     }
@@ -181,14 +187,38 @@ export function validateSubmission(
         issues.push({ attribute: attr.key, message: `'${attr.key}' cannot be waived` });
         continue;
       }
-      if (raw) issues.push({ attribute: attr.key, message: `'${attr.key}' is waived — it must not also carry a value` });
+      if (filled) issues.push({ attribute: attr.key, message: `'${attr.key}' is waived — it must not also carry a value` });
       if (!String(waived[attr.key] ?? '').trim()) issues.push({ attribute: attr.key, message: `A reason is needed for '${attr.label}'` });
       continue;
     }
 
-    if (!raw) {
+    if (!filled) {
       if (attr.required) issues.push({ attribute: attr.key, message: `${attr.label} is required` });
       continue;
+    }
+
+    // Photo/file: server-authoritative descriptor shape, count, and per-file
+    // size (§5/§7). A single-valued attribute must not carry an array; a multi
+    // one is length-checked against max_count; each descriptor is shape- and
+    // size-checked (max_size_mb re-checked here after the presign gate).
+    if (isDescriptorType(attr.type)) {
+      const cfg = attr.type_config ?? {};
+      const isMulti = cfg.multi === true;
+      const items = Array.isArray(value) ? value : [value];
+      if (!isMulti && Array.isArray(value)) {
+        issues.push({ attribute: attr.key, message: `${attr.label} takes a single ${attr.type}` });
+      }
+      if (isMulti && typeof cfg.max_count === 'number' && items.length > cfg.max_count) {
+        issues.push({ attribute: attr.key, message: `${attr.label}: at most ${cfg.max_count} allowed` });
+      }
+      items.forEach((item, i) => {
+        const lbl = isMulti ? `${attr.label} #${i + 1}` : attr.label;
+        for (const m of descriptorShapeIssues(attr.type, item, lbl)) issues.push({ attribute: attr.key, message: m });
+        const size = item && typeof item === 'object' ? (item as Record<string, unknown>).size : undefined;
+        if (typeof cfg.max_size_mb === 'number' && typeof size === 'number' && size > cfg.max_size_mb * 1024 * 1024) {
+          issues.push({ attribute: attr.key, message: `${lbl} exceeds ${cfg.max_size_mb} MB` });
+        }
+      });
     }
 
     // Attribute-level validation rule (FluxScript; the captured value is `value`)

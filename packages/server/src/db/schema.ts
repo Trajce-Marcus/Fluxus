@@ -15,7 +15,7 @@
 // `scope` is the partition key: an opaque path string (today 'demo/sdm';
 // org-defined repo/folder levels slot in later as data, not as schema).
 
-import { pgTable, text, jsonb, timestamp, bigserial, bigint, index, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrecision, index, primaryKey } from 'drizzle-orm/pg-core';
 import type { ActivityHistoryEntry, ConfigRaw } from '@fluxus/engine';
 
 export const sdmConfigs = pgTable('sdm_configs', {
@@ -64,6 +64,36 @@ export const rptActivities = pgTable('rpt_activities', {
 }, (t) => [
   index('rpt_activities_scope_record').on(t.scope, t.recordId),
   index('rpt_activities_scope_activity').on(t.scope, t.activityId),
+]);
+
+// The attachments ledger (ATTRIBUTE_TYPES_FILES_SCALARS §8): one row per
+// uploaded blob object, inserted `pending` at presign and flipped `committed`
+// when a submission referencing its storage_key lands. It is NOT the source of
+// truth and nothing references its rows — pipeline values stay by-value, so a
+// GC bug can never corrupt history. It answers the bucket-side / cross-system
+// questions the pipeline is bad at: the quota fuse (local SUM(size), no
+// Cloudflare usage API), duplicate/integrity queries (same hash re-uploaded;
+// EXIF geo/time miles or years off), and trivial deferred GC (stale `pending`
+// rows). Rebuildable from a bucket listing + history if ever lost.
+export const attachments = pgTable('attachments', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  storageKey: text('storage_key').notNull(),
+  size: bigint('size', { mode: 'number' }).notNull(),
+  mime: text('mime').notNull(),
+  hash: text('hash'),
+  // Photo metadata — nullable (files carry none; a photo may lack EXIF geo/time).
+  width: integer('width'),
+  height: integer('height'),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
+  takenAt: timestamp('taken_at', { withTimezone: true }),
+  // pending → committed.
+  status: text('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('attachments_status').on(t.status),
+  index('attachments_hash').on(t.hash),
+  index('attachments_storage_key').on(t.storageKey),
 ]);
 
 export const rptAttributes = pgTable('rpt_attributes', {

@@ -7,7 +7,7 @@
 // Concurrency is last-write-wins per record for now (single-writer dev
 // deployments); optimistic versioning slots into writeBack when it matters.
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   createEngine,
   MemoryAdapter,
@@ -19,7 +19,7 @@ import {
   type RecordInstance,
 } from '@fluxus/engine';
 import type { Db } from './db/client';
-import { pages, records, rptActivities, rptAttributes, sdmConfigs } from './db/schema';
+import { attachments, pages, records, rptActivities, rptAttributes, sdmConfigs } from './db/schema';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 
 export interface ScopeHost {
@@ -92,8 +92,10 @@ function attributeValue(value: unknown): string | null {
  * attribute. A waived attribute is the SAME row with value null and
  * waive_desc set; system-produced attributes (system_log, system_warnings)
  * are ordinary rows. Plain-object values (composite attributes: attr → item →
- * column) flatten to one row per leaf, keyed by the dotted path
- * (`prelim_activities.access_permission.ok`) — '.' is reserved in keys for
+ * column; and file/photo descriptors: attr → field) flatten to one row per
+ * leaf, keyed by the dotted path (`prelim_activities.access_permission.ok`,
+ * `before_photo.hash`). Arrays (multi attributes) flatten with positional
+ * segments (`site_photos.0.hash`, `tags.0`) — '.' is reserved in keys for
  * this, so queries stay uniform on the single text value column.
  */
 function projectionAttributeRows(entry: ActivityHistoryEntry): { key: string; value: string | null; waiveDesc: string | null }[] {
@@ -101,7 +103,11 @@ function projectionAttributeRows(entry: ActivityHistoryEntry): { key: string; va
   const rows: { key: string; value: string | null; waiveDesc: string | null }[] = [];
   const push = (key: string, value: unknown) => {
     if (key in waived) return; // emitted below as the waived row
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    if (Array.isArray(value)) {
+      value.forEach((item, i) => push(`${key}.${i}`, item));
+      return;
+    }
+    if (value !== null && typeof value === 'object') {
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) push(`${key}.${k}`, v);
       return;
     }
@@ -120,11 +126,65 @@ function projectionAttributeRows(entry: ActivityHistoryEntry): { key: string; va
 }
 
 /**
+ * Every `storage_key` a value references (ATTRIBUTE_TYPES_FILES_SCALARS §8):
+ * a file/photo descriptor bag carries one; multi values are arrays of them;
+ * composite cells nest them. Walked structurally so the ledger commit finds
+ * them wherever they sit in an entry's capturedAttributes.
+ */
+function collectStorageKeys(value: unknown, out: Set<string> = new Set()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) collectStorageKeys(item, out);
+  } else if (value !== null && typeof value === 'object') {
+    const bag = value as Record<string, unknown>;
+    if (typeof bag.storage_key === 'string') out.add(bag.storage_key);
+    for (const v of Object.values(bag)) collectStorageKeys(v, out);
+  }
+  return out;
+}
+
+/** Ledger's live footprint — the quota fuse's SUM(size) (§7 #3). */
+export async function usedStorageBytes(db: Db): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<number>`COALESCE(SUM(${attachments.size}), 0)` })
+    .from(attachments);
+  return Number(row?.total ?? 0);
+}
+
+/** Record a pending bucket object at presign time (§8). */
+export async function insertPendingAttachment(
+  db: Db,
+  row: {
+    storageKey: string;
+    size: number;
+    mime: string;
+    hash?: string | null;
+    width?: number | null;
+    height?: number | null;
+    lat?: number | null;
+    lng?: number | null;
+    takenAt?: Date | null;
+  },
+): Promise<void> {
+  await db.insert(attachments).values({
+    storageKey: row.storageKey,
+    size: row.size,
+    mime: row.mime,
+    hash: row.hash ?? null,
+    width: row.width ?? null,
+    height: row.height ?? null,
+    lat: row.lat ?? null,
+    lng: row.lng ?? null,
+    takenAt: row.takenAt ?? null,
+  });
+}
+
+/**
  * Persist everything the run changed, atomically: record upserts/deletes on
- * the transactional layer plus the reporting projection of each new history
- * entry — the v1 synchronous in-transaction projection (ARCHITECTURE.md
- * "Hosting options"); the outbox/async upgrade replaces this call body, not
- * its callers.
+ * the transactional layer, the reporting projection of each new history
+ * entry, and the ledger flip (pending → committed) for every storage_key the
+ * new entries reference — the v1 synchronous in-transaction projection
+ * (ARCHITECTURE.md "Hosting options"); the outbox/async upgrade replaces this
+ * call body, not its callers.
  */
 export async function writeBack(db: Db, host: ScopeHost): Promise<void> {
   const current = host.adapter.allRecords();
@@ -187,6 +247,16 @@ export async function writeBack(db: Db, host: ScopeHost): Promise<void> {
           attributeRows.map((row) => ({ activityRowId: activityRow.id, ...row })),
         );
       }
+    }
+    // Ledger commit: every blob a new entry references is now real business
+    // data — flip it out of `pending` so GC never reaps it (§8).
+    const referenced = new Set<string>();
+    for (const { entry } of newEntries) collectStorageKeys(entry.capturedAttributes, referenced);
+    if (referenced.size > 0) {
+      await tx
+        .update(attachments)
+        .set({ status: 'committed' })
+        .where(and(eq(attachments.status, 'pending'), inArray(attachments.storageKey, [...referenced])));
     }
   });
 }
