@@ -25,6 +25,37 @@ The workbench executes FluxScript (see `packages/dsl`) for two attribute feature
 - **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attributes` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear.
 - **Composite attributes and sections** (2026-07-18): a composite renders as its question label with sub-attribute inputs stacked beneath (per-cell required/waive/show_condition); section markers render as headings with their description. Cell state is flat in the form (`attr.sub` keys); the engine owns nesting (see engine SPEC and SDM_Schema_Reference §1.5). **ActivityCard displays entry attributes in activity-definition order** — the stored entry is jsonb (key order not preserved), so the definition is the ordering truth; composite values display one row per cell under the dotted `attr.sub` key, unknown keys (system_log, hook extras) after.
 
+## Attribute widgets: files, photos & scalars (2026-07-18)
+
+`components/attributeWidgets.tsx` holds the capture + display widgets for the
+file/photo/scalar types (ATTRIBUTE_TYPES_FILES_SCALARS §10). Every widget is a
+**pure controlled component**: value in, `onChange` out, config as props, the
+upload service injected — **zero imports from the workbench's stores/context**.
+That is deliberate: when the page builder becomes the second consumer they lift
+to a shared package unchanged. `AttributesForm` is the composer that pulls
+`uploads` from context and passes it down; the widgets stay context-blind.
+
+- **Capture**: `PhotoInput` (messenger-style thumb grid + add tile, per-thumb
+  remove, single or multi), `FileInput` (paperclip rows + add), `TextAreaInput`
+  (`multiline` text), `DateTimeInput` (native picker; stamps the local offset,
+  §1), `TimeInput`, `NumberInput` (int step 1 / decimal step from
+  `decimal_places`). `ScalarInput` routes an attribute/cell to the right one;
+  `reference`/`list` keep their existing picker/datasource widgets.
+- **Display**: `PhotoThumbs`, `FileChips` (history + record details),
+  `PhotoCountCell` (grid cell: first thumbnail + count badge). All resolve
+  presigned GET URLs lazily through the injected service.
+- **Form state** is now `Record<string, unknown>`: scalars stay strings, but
+  file/photo attributes hold descriptor objects (arrays when `multi`). The
+  `isBlank` engine helper is the shared emptiness test (required / validation).
+- **Upload service** is `client.uploads` (the `@fluxus/client` UploadService),
+  memoised once in `AppContext` and injected via context; scope is pre-bound so
+  widgets stay scope-blind. The full hash → EXIF → thumbnail → presign →
+  direct-to-R2 PUT flow lives in `@fluxus/client` (client SPEC), not here.
+- **Descriptor rendering** on records/history keys off the value shape
+  (`isDescriptorValue`): a bag with a `storage_key` renders as thumbs/chips
+  instead of `[object Object]`. Custom fields stay dumb storage — a photo maps
+  to a field only by exact-key, else it lives in history alone.
+
 ## Hooks (DSL Phase 2)
 
 `runActivity` is the pipeline: **availability gate → before hook → record_map mapping → activity history append → after hook**. Since the Extraction milestone it lives in `@fluxus/engine` (`createEngine({ store, config, services })`); AppContext hosts the engine and wraps `runActivity` with the workbench's UI reactions (deselect a deleted record via the result's `recordId`, console the returned after-hook warnings). The behavioural doctrine below is unchanged by the move.

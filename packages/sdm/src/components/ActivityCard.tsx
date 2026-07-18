@@ -2,9 +2,22 @@ import { Fragment } from 'react';
 import { compositeSubs } from '@fluxus/engine';
 import type { ActivityDef, ActivityHistoryEntry } from '@fluxus/engine';
 import { useAppContext } from '../context/AppContext';
+import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
+import type { UploadService } from '@fluxus/client';
 
 interface Props {
   entry: ActivityHistoryEntry;
+}
+
+/** Render one entry value: descriptor bags as thumbs/chips, else plain text. */
+function ValueCell({ value, uploads }: { value: unknown; uploads: UploadService }) {
+  if (isDescriptorValue(value)) {
+    const first = (Array.isArray(value) ? value[0] : value) as Record<string, unknown>;
+    return typeof first.thumb_key === 'string' || String(first.mime ?? '').startsWith('image/')
+      ? <PhotoThumbs value={value} uploads={uploads} />
+      : <FileChips value={value} uploads={uploads} />;
+  }
+  return <>{String(value)}</>;
 }
 
 /**
@@ -22,7 +35,9 @@ function displayRows(entry: ActivityHistoryEntry, activity: ActivityDef | undefi
   const rows: [string, unknown][] = [];
   const pushFlat = (key: string, value: unknown) => {
     if (key in waived) return; // shown in the waived block with the reason
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    // File/photo descriptors (and arrays of them) stay whole — one row the
+    // display renders as thumbs/chips, not flattened to per-field text.
+    if (!isDescriptorValue(value) && value !== null && typeof value === 'object' && !Array.isArray(value)) {
       for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
         pushFlat(`${key}.${subKey}`, subValue);
       }
@@ -61,7 +76,7 @@ function displayRows(entry: ActivityHistoryEntry, activity: ActivityDef | undefi
 }
 
 export function ActivityCard({ entry }: Props) {
-  const { selectedRecordType } = useAppContext();
+  const { selectedRecordType, uploads } = useAppContext();
   const activity = selectedRecordType?.workflow.activities.find(a => a.id === entry.activityId);
   const ts = new Date(entry.timestamp).toLocaleString();
   const waived = entry.waived ?? {};
@@ -86,7 +101,7 @@ export function ActivityCard({ entry }: Props) {
           {attrs.map(([k, v]) => (
             <Fragment key={k}>
               <dt style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{k}</dt>
-              <dd style={{ margin: 0, fontSize: 12, color: '#0f172a' }}>{String(v)}</dd>
+              <dd style={{ margin: 0, fontSize: 12, color: '#0f172a' }}><ValueCell value={v} uploads={uploads} /></dd>
             </Fragment>
           ))}
         </dl>

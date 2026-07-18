@@ -1,6 +1,8 @@
 import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
 import { ComponentLabel } from '../context/UatLabels';
+import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
+import { useAppContext } from '../context/AppContext';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -9,7 +11,14 @@ interface Props {
   navigateTo: (typeId: string, recordId: string) => void;
 }
 
+/** A descriptor bag stored in a custom field: photos → thumbs, files → chips. */
+function isImageDescriptor(value: unknown): boolean {
+  const first = (Array.isArray(value) ? value[0] : value) as Record<string, unknown> | undefined;
+  return !!first && (typeof first.thumb_key === 'string' || String(first.mime ?? '').startsWith('image/'));
+}
+
 export function RecordDetails({ record, typeDef, navigateTo }: Props) {
+  const { uploads } = useAppContext();
   const fields = typeDef.custom_fields;
 
   return (
@@ -20,7 +29,8 @@ export function RecordDetails({ record, typeDef, navigateTo }: Props) {
       </h3>
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px' }}>
         {fields.map(cf => {
-          const rawValue = String(record.customFields[cf.key] ?? '');
+          const raw = record.customFields[cf.key];
+          const rawValue = String(raw ?? '');
           const isLink = cf.type === 'fk_ref' && rawValue !== '';
           return (
             <Fragment key={cf.key}>
@@ -36,6 +46,8 @@ export function RecordDetails({ record, typeDef, navigateTo }: Props) {
                     asLink
                     onNavigate={navigateTo}
                   />
+                ) : isDescriptorValue(raw) ? (
+                  isImageDescriptor(raw) ? <PhotoThumbs value={raw} uploads={uploads} /> : <FileChips value={raw} uploads={uploads} />
                 ) : (
                   rawValue
                 )}

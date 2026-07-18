@@ -5,6 +5,7 @@ import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
 import { CsvImportModal } from './CsvImportModal';
+import { PhotoCountCell, isDescriptorValue } from './attributeWidgets';
 import { exportToCSV, exportToJSON } from '../utils/export';
 import type { RecordInstance } from '@fluxus/engine';
 
@@ -23,6 +24,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     getRecordTypeDef,
     runActivity,
     isActivityAvailable,
+    uploads,
   } = useAppContext();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -387,7 +389,8 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                     }}
                   >
                     {customFields.map(cf => {
-                      const cellValue = String(record.customFields[cf.key] ?? '');
+                      const raw = record.customFields[cf.key];
+                      const cellValue = String(raw ?? '');
                       const isFk = !pickerMode && cf.type === 'fk_ref' && cellValue !== '';
                       return (
                         <td
@@ -400,6 +403,8 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                               fkRecordType={cf.fk_record_type!}
                               fkDisplayField={cf.fk_display_field}
                             />
+                          ) : isDescriptorValue(raw) ? (
+                            <PhotoCountCell value={raw} uploads={uploads} />
                           ) : (
                             cellValue
                           )}

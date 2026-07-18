@@ -2,8 +2,52 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
 import { ComponentLabel } from '../context/UatLabels';
-import { coerceCaptured, coerceValue, compositeSubs } from '@fluxus/engine';
+import { coerceCaptured, coerceCapturedValue, compositeSubs, isBlank } from '@fluxus/engine';
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
+import type { UploadService } from '@fluxus/client';
+import { DateTimeInput, FileInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
+
+/** The capture widget for a non-reference/non-list attribute or composite cell. */
+function ScalarInput({ attr, value, onChange, uploads }: {
+  attr: AttributeDef;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  uploads: UploadService;
+}) {
+  const str = typeof value === 'string' ? value : '';
+  switch (attr.type) {
+    case 'photo':
+      return <PhotoInput value={value} attributeKey={attr.key} config={attr.type_config} uploads={uploads}
+        onChange={(v) => onChange(v)} />;
+    case 'file':
+      return <FileInput value={value} attributeKey={attr.key} config={attr.type_config} uploads={uploads}
+        onChange={(v) => onChange(v)} />;
+    case 'datetime':
+      return <DateTimeInput value={str} onChange={onChange} />;
+    case 'time':
+      return <TimeInput value={str} onChange={onChange} />;
+    case 'int':
+      return <NumberInput value={str} step={1} placeholder={attr.description} onChange={onChange} />;
+    case 'decimal':
+      return <NumberInput value={str} step={attr.type_config?.decimal_places ? 1 / 10 ** attr.type_config.decimal_places : undefined} placeholder={attr.description} onChange={onChange} />;
+    case 'text':
+      if (attr.type_config?.multiline) return <TextAreaInput value={str} onChange={onChange} placeholder={attr.description} />;
+      return <TextInput value={str} onChange={onChange} placeholder={attr.description} />;
+    case 'date':
+      return <input type="date" value={str} onChange={(e) => onChange(e.target.value)} style={plainInputStyle} />;
+    default:
+      return <TextInput value={str} onChange={onChange} placeholder={attr.description} />;
+  }
+}
+
+const plainInputStyle: React.CSSProperties = {
+  width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 4,
+  fontSize: 14, outline: 'none', boxSizing: 'border-box',
+};
+
+function TextInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return <input type="text" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={plainInputStyle} />;
+}
 
 interface Props {
   activity: ActivityDef;
@@ -16,30 +60,38 @@ interface Props {
    * declared unavailable (key → reason).
    */
   onSubmit: (
-    captured: Record<string, string>,
+    captured: Record<string, unknown>,
     options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> }
   ) => Promise<RunActivityResult>;
   onClose: () => void;
 }
 
+/** Initial capture value for an attribute: multi → array, file/photo → its
+ *  natural empty, everything else the scalar string. */
+function emptyValue(attr: AttributeDef): unknown {
+  if (attr.type_config?.multi) return [];
+  return '';
+}
+
 export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
-  const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate } = useAppContext();
+  const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate, uploads } = useAppContext();
 
   // Form state is FLAT: composite attributes contribute one entry per cell
   // under the dotted path `attr.sub` — the engine nests them again. Section
-  // markers carry no value.
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {};
+  // markers carry no value. Scalars are strings; file/photo attributes hold
+  // descriptor objects (or arrays when multi).
+  const [values, setValues] = useState<Record<string, unknown>>(() => {
+    const out: Record<string, unknown> = {};
     for (const a of activity.attributes) {
       if (a.type === 'section') continue;
       const subs = compositeSubs(a);
       if (subs) {
-        for (const sub of subs) out[`${a.key}.${sub.key}`] = '';
+        for (const sub of subs) out[`${a.key}.${sub.key}`] = emptyValue(sub);
         continue;
       }
-      out[a.key] = activity.record_map === 'UPDATE' && anchorRecord
-        ? String(anchorRecord.customFields[a.key] ?? '')
-        : '';
+      out[a.key] = activity.record_map === 'UPDATE' && anchorRecord && a.key in anchorRecord.customFields
+        ? anchorRecord.customFields[a.key]
+        : emptyValue(a);
     }
     return out;
   });
@@ -73,7 +125,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   // the validations that already ran (the fields are locked while pending anyway).
   const [pending, setPending] = useState<{
     warnings: string[];
-    captured: Record<string, string>;
+    captured: Record<string, unknown>;
     waived: Record<string, string>;
   } | null>(null);
 
@@ -150,7 +202,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
         can_waive: sub.can_waive,
         validation: sub.validation,
         validation_message: sub.validation_message,
-        typed: () => coerceValue(sub.type, values[key] ?? ''),
+        typed: () => coerceCapturedValue(sub.type, values[key]),
       };
     });
   });
@@ -162,7 +214,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   };
 
   const submit = async (
-    captured: Record<string, string>,
+    captured: Record<string, unknown>,
     capturedWaived: Record<string, string>,
     options?: { acknowledgedWarnings?: boolean }
   ) => {
@@ -187,7 +239,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     // Required units must be captured (hidden ones are exempt by
     // construction; waived ones trade the value for a mandatory reason)
     const missing = captureUnits.filter(
-      u => u.required && !isWaived(u.key) && !String(values[u.key] ?? '').trim()
+      u => u.required && !isWaived(u.key) && isBlank(values[u.key])
     );
     if (missing.length > 0) {
       setSubmitError(`Required: ${missing.map(u => u.label).join(', ')}`);
@@ -201,7 +253,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     // Validation rules (FluxScript; the captured value is `value`)
     const failures: string[] = [];
     for (const unit of captureUnits) {
-      if (!unit.validation || !String(values[unit.key] ?? '').trim()) continue; // empties are required's job
+      if (!unit.validation || isBlank(values[unit.key])) continue; // empties are required's job
       try {
         const ok = dslEvaluate(unit.validation, {
           attributes: typedValues,
@@ -251,6 +303,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
             waived={waived}
             anchorRecord={anchorRecord}
             activity={activity}
+            uploads={uploads}
             isSubVisible={isVisible}
             onValue={(key, val) => setValues(v => ({ ...v, [key]: val }))}
             onToggleWaive={toggleWaive}
@@ -306,7 +359,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
                   background: '#f9fafb',
                   minHeight: 32,
                 }}>
-                  {displayLabels[attr.key] || values[attr.key] || 'None selected'}
+                  {displayLabels[attr.key] || String(values[attr.key] ?? '') || 'None selected'}
                 </div>
                 <button
                   type="button"
@@ -324,7 +377,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
                 >
                   {values[attr.key] ? 'Change…' : 'Select…'}
                 </button>
-                {values[attr.key] && (
+                {!!values[attr.key] && (
                   <button
                     type="button"
                     onClick={() => {
@@ -341,27 +394,18 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
             ) : attr.type === 'list' ? (
               <ListField
                 attr={attr}
-                value={values[attr.key]}
+                value={String(values[attr.key] ?? '')}
                 allValues={values}
                 anchorRecord={anchorRecord}
                 activity={activity}
                 onChange={val => setValues(v => ({ ...v, [attr.key]: val }))}
               />
             ) : (
-              <input
-                type={attr.type === 'date' ? 'date' : 'text'}
+              <ScalarInput
+                attr={attr}
                 value={values[attr.key]}
-                onChange={e => setValues(v => ({ ...v, [attr.key]: e.target.value }))}
-                placeholder={attr.description}
-                style={{
-                  width: '100%',
-                  padding: '6px 10px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: 4,
-                  fontSize: 14,
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
+                uploads={uploads}
+                onChange={val => setValues(v => ({ ...v, [attr.key]: val }))}
               />
             )}
           </div>
@@ -474,7 +518,7 @@ interface ListOption {
 interface ListFieldProps {
   attr: AttributeDef;
   value: string;
-  allValues: Record<string, string>;
+  allValues: Record<string, unknown>;
   anchorRecord: RecordInstance | null;
   activity: ActivityDef;
   onChange: (value: string) => void;
@@ -545,17 +589,18 @@ function ListField({ attr, value, allValues, anchorRecord, activity, onChange }:
 
 interface CompositeFieldProps {
   attr: AttributeDef;
-  values: Record<string, string>;
+  values: Record<string, unknown>;
   waived: Record<string, string>;
   anchorRecord: RecordInstance | null;
   activity: ActivityDef;
+  uploads: UploadService;
   isSubVisible: (sub: AttributeDef) => boolean;
-  onValue: (key: string, value: string) => void;
+  onValue: (key: string, value: unknown) => void;
   onToggleWaive: (key: string, on: boolean) => void;
   onWaiveReason: (key: string, reason: string) => void;
 }
 
-function CompositeField({ attr, values, waived, anchorRecord, activity, isSubVisible, onValue, onToggleWaive, onWaiveReason }: CompositeFieldProps) {
+function CompositeField({ attr, values, waived, anchorRecord, activity, uploads, isSubVisible, onValue, onToggleWaive, onWaiveReason }: CompositeFieldProps) {
   const subs = compositeSubs(attr);
   if (!subs) return null;
 
@@ -607,19 +652,18 @@ function CompositeField({ attr, values, waived, anchorRecord, activity, isSubVis
             ) : sub.type === 'list' ? (
               <ListField
                 attr={{ ...sub, key }}
-                value={values[key] ?? ''}
+                value={String(values[key] ?? '')}
                 allValues={values}
                 anchorRecord={anchorRecord}
                 activity={activity}
                 onChange={val => onValue(key, val)}
               />
             ) : (
-              <input
-                type={sub.type === 'date' ? 'date' : 'text'}
-                value={values[key] ?? ''}
-                onChange={e => onValue(key, e.target.value)}
-                placeholder={sub.description}
-                style={inputStyle}
+              <ScalarInput
+                attr={sub}
+                value={values[key]}
+                uploads={uploads}
+                onChange={val => onValue(key, val)}
               />
             )}
           </div>
