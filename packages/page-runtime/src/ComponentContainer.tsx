@@ -1,18 +1,17 @@
 import { useState, useEffect, createElement, useCallback, useMemo } from 'react';
 import type { ActivityDef, RecordInstance } from '@fluxus/engine';
 import type { ComponentManifest } from './manifest';
-import type { SlotConfig } from './persistence';
-import { sdmClient, sdmStore, findActivity } from '../../sdm-runtime/engine';
-import { ActivityFormModal } from '../../sdm-runtime/ActivityFormModal';
+import type { SlotConfig } from './pageDef';
+import type { PageRuntime } from './runtime';
+import { ActivityFormModal } from './ActivityFormModal';
 import {
-  evaluatePageExpression,
-  runPageCallback,
   packCallbackData,
   type PageContext,
   type PageServiceHandlers,
 } from './pageHost';
 
 interface Props {
+  runtime: PageRuntime;
   manifest: ComponentManifest;
   config: SlotConfig;
   pageCtx: PageContext;
@@ -26,7 +25,7 @@ interface PendingForm {
   callbackData: unknown;
 }
 
-export function ComponentContainer({ manifest, config, pageCtx, onContextChange, onError }: Props) {
+export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError }: Props) {
   const [dynamicData, setDynamicData] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
@@ -50,25 +49,25 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
       attributes: captured,
       callbackData,
     };
-    let result = await sdmClient.runActivity(input);
+    let result = await runtime.client.runActivity(input);
     if (result.status === 'needs-confirmation') {
       const ok = window.confirm(`${result.warnings.join('\n')}\n\nContinue anyway?`);
       if (!ok) return false;
-      result = await sdmClient.runActivity({ ...input, acknowledgedWarnings: true });
+      result = await runtime.client.runActivity({ ...input, acknowledgedWarnings: true });
     }
     setRefreshTick((t) => t + 1);
     return true;
-  }, []);
+  }, [runtime]);
 
   // services.activities.run — the callback contract stays (record, data):
   // UI activity (has attributes) → standard capture form; non-UI → straight
   // to the hooks with the data object as the `callbackData` root.
   const launchActivity = useCallback((activityId: string, record: unknown, data: unknown) => {
-    const found = findActivity(activityId);
+    const found = runtime.findActivity(activityId);
     if (!found) throw new Error(`Unknown activity '${activityId}'`);
     const anchorRecord = record === null || record === undefined || record === ''
       ? null
-      : sdmStore.getRecord(String(record));
+      : runtime.store.getRecord(String(record));
     if (found.activity.attributes.length > 0) {
       setPendingForm({ activity: found.activity, anchorRecord, callbackData: data ?? null });
     } else {
@@ -78,7 +77,7 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       });
     }
-  }, [runNow, onError, manifest.name]);
+  }, [runtime, runNow, onError, manifest.name]);
 
   // Handlers behind services.page (UI-local effects) and services.activities
   // (host-neutral activity runs) for this component instance.
@@ -96,7 +95,7 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
     const result: Record<string, unknown> = {};
     try {
       for (const [propName, source] of Object.entries(config.dynamicProps)) {
-        result[propName] = evaluatePageExpression(source, pageCtx);
+        result[propName] = runtime.evaluateExpression(source, pageCtx);
       }
       setDynamicData(result);
     } catch (err) {
@@ -133,7 +132,7 @@ export function ComponentContainer({ manifest, config, pageCtx, onContextChange,
     if (!source) continue;
     resolvedProps[prop.name] = (value: unknown, data?: unknown) => {
       try {
-        runPageCallback(source, packCallbackData(value, data), pageCtx, serviceHandlers);
+        runtime.runCallback(source, packCallbackData(value, data), pageCtx, serviceHandlers);
       } catch (err) {
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       }

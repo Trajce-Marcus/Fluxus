@@ -1,10 +1,17 @@
-// Imports individual component files (not the registry) to avoid the circular
-// dependency: registry → Shell → ContentArea → PageEditor → registry.
-import { AppHeader } from '../../components/AppHeader';
-import { InventorList } from '../../components/InventorList';
-import { InventorProfile } from '../../components/InventorProfile';
-import { Map } from '../../components/Map';
-import { WorkOrderList } from '../../components/WorkOrderList';
+// The component registry the renderer and validator resolve against. Moved
+// here with the component library at the page-runtime extraction — the old
+// circular-dependency reason for importing individual files is gone, but the
+// direct imports stay (the registry is the only aggregation point).
+//
+// Known duplication: the page builder keeps its palette registries
+// (SESSION_COMPONENTS, componentSchemas) as separate lists — deriving them
+// from this manifest is a floated cleanup, not agreed.
+
+import { AppHeader } from './components/AppHeader';
+import { InventorList } from './components/InventorList';
+import { InventorProfile } from './components/InventorProfile';
+import { Map } from './components/Map';
+import { WorkOrderList } from './components/WorkOrderList';
 import type { ComponentManifest } from './manifest';
 
 type AnyComponent = ComponentManifest['component'];

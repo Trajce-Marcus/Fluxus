@@ -1,6 +1,12 @@
-import type { LayoutDefinition } from './layout-editor/types';
-import { reportPageFindings } from './validatePage';
-import { sdmClient } from '../../sdm-runtime/engine';
+import type {
+  LayoutDefinition,
+  PageDef,
+  PageComponentEntry,
+  ContextKeyDef,
+  ContextKeyType,
+  SlotConfig,
+} from '@fluxus/page-runtime';
+import { sdmClient, pageRuntime } from '../../sdm-runtime/engine';
 
 // Pages live on @fluxus/server (config pipeline; no localStorage, hard
 // cutover like stage 2). The client snapshots the scope's page set at
@@ -8,53 +14,12 @@ import { sdmClient } from '../../sdm-runtime/engine';
 // round-trip in the background — a failed write logs loudly, same posture
 // as validatePage findings. Everything renders after initSdmRuntime()
 // resolves, so sdmClient is always assigned by the time these run.
+//
+// The page-def types and validatePage moved to @fluxus/page-runtime at the
+// extraction; this module keeps the Console-side write path (save/delete)
+// and re-exports the types for the editor's existing import paths.
 
-// ── Shared entry types ────────────────────────────────────────────────────────
-
-export interface PageComponentEntry {
-  name: string;
-  version: string;
-}
-
-export type ContextKeyType = 'string' | 'number' | 'boolean' | 'object';
-
-/**
- * A page-declared context key: seeds `context.page.<key>` at page start.
- * Declarations are conveniences, not a schema — the validator treats
- * `context.page.*` as opaque (ruled 2026-07-12: permissive for MVP).
- * Platform built-ins (`context.user`, `context.app`) come from the host,
- * never from here.
- */
-export interface ContextKeyDef {
-  key: string;
-  type: ContextKeyType;
-  defaultValue?: unknown;
-}
-
-// ── ComponentContainer config ─────────────────────────────────────────────────
-// Page wiring is FluxScript everywhere (PAGE_WIRING_DESIGN, 2026-07-12):
-// a dynamic prop is a single expression evaluated with datasource posture;
-// a callback is a script receiving the payload as the `callbackData` root.
-// The stored artifact is the source text; any picker UI merely writes it.
-
-export interface SlotConfig {
-  componentName: string;
-  staticConfig: Record<string, unknown>;
-  /** propName → FluxScript expression source. */
-  dynamicProps: Record<string, string>;
-  /** callbackName → FluxScript script source. */
-  callbacks: Record<string, string>;
-}
-
-// ── Page Definition ───────────────────────────────────────────────────────────
-
-export interface PageDef {
-  template?: string;
-  layout?: LayoutDefinition;
-  componentDependencies?: PageComponentEntry[];
-  contextSchema?: ContextKeyDef[];
-  slotConfigs?: Record<string, SlotConfig | null>;
-}
+export type { PageDef, PageComponentEntry, ContextKeyDef, ContextKeyType, SlotConfig };
 
 // ── Persistence functions ─────────────────────────────────────────────────────
 
@@ -68,11 +33,11 @@ export function savePage(path: string, def: PageDef): void {
   sdmClient.savePage(path, def).catch((err) => {
     console.error(`savePage('${path}') failed to persist to the server`, err);
   });
-  reportPageFindings(path, def);
+  pageRuntime.reportPageFindings(path, def);
 }
 
 export function loadPage(path: string): PageDef | null {
-  return (sdmClient.pages.get(path) as PageDef | undefined) ?? null;
+  return pageRuntime.getPage(path);
 }
 
 export function savePageLayout(path: string, layout: LayoutDefinition): void {
@@ -112,7 +77,7 @@ export function saveSlotConfigs(path: string, slotConfigs: Record<string, SlotCo
 }
 
 export function listPagePaths(): string[] {
-  return [...sdmClient.pages.keys()].sort();
+  return pageRuntime.listPagePaths();
 }
 
 export function deletePage(path: string): void {

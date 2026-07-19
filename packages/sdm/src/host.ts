@@ -11,6 +11,7 @@
 import { createEngine, buildGeoModule } from '@fluxus/engine';
 import type { Engine, MemoryAdapter } from '@fluxus/engine';
 import { FluxusClient } from '@fluxus/client';
+import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { NotificationLog } from './store/NotificationLog';
 import { buildNotifyModule } from './services/notify';
 
@@ -22,6 +23,9 @@ export const notificationLog = new NotificationLog();
 export let client: FluxusClient;
 export let adapter: MemoryAdapter;
 export let engine: Engine;
+// The run-a-page cluster's injected handle (@fluxus/page-runtime): renders
+// published pages in the workbench — the first step of workbench → Runtime app.
+export let pageRuntime: PageRuntime;
 
 export async function initHost(): Promise<void> {
   // Deployed builds bake in the live server URL; local dev (var unset) falls
@@ -33,6 +37,7 @@ export async function initHost(): Promise<void> {
     config: client.config,
     services: [buildNotifyModule(notificationLog), buildGeoModule(adapter)],
   });
+  pageRuntime = createPageRuntime({ client });
   // The stored config was validated at config.put; re-reporting here is a
   // free safety net against server/client engine version drift.
   engine.reportConfigFindings();

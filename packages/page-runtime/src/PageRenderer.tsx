@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { loadPageLayout } from './persistence';
-import type { Panel } from './layout-editor/types';
-import type { SlotConfig, ContextKeyDef } from './persistence';
+import type { Panel } from './layout';
+import type { SlotConfig, ContextKeyDef } from './pageDef';
+import type { PageRuntime } from './runtime';
 import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
 import type { PageContext } from './pageHost';
@@ -36,6 +36,7 @@ function panelStyle(panel: Panel): React.CSSProperties {
 }
 
 interface PanelNodeProps {
+  runtime: PageRuntime;
   panel: Panel;
   slotConfigs: Record<string, SlotConfig | null>;
   pageCtx: PageContext;
@@ -43,13 +44,14 @@ interface PanelNodeProps {
   onError: (error: Error, componentName: string) => void;
 }
 
-function PanelNode({ panel, slotConfigs, pageCtx, onContextChange, onError }: PanelNodeProps) {
+function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError }: PanelNodeProps) {
   if (panel.children.length > 0) {
     return (
       <div style={panelStyle(panel)}>
         {panel.children.map((child) => (
           <PanelNode
             key={child.id}
+            runtime={runtime}
             panel={child}
             slotConfigs={slotConfigs}
             pageCtx={pageCtx}
@@ -68,6 +70,7 @@ function PanelNode({ panel, slotConfigs, pageCtx, onContextChange, onError }: Pa
     <div style={{ ...panelStyle(panel), position: 'relative' }}>
       {manifest && config ? (
         <ComponentContainer
+          runtime={runtime}
           manifest={manifest}
           config={config}
           pageCtx={pageCtx}
@@ -86,16 +89,19 @@ function PanelNode({ panel, slotConfigs, pageCtx, onContextChange, onError }: Pa
 // ── PageRunner ────────────────────────────────────────────────────────────────
 
 interface Props {
+  runtime: PageRuntime;
   pagePath: string;
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
+  /** Show the collapsible context.page debug strip (the editor preview turns this on). */
+  debug?: boolean;
 }
 
-export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
+export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, debug }: Props) {
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<{ componentName: string; message: string }[]>([]);
 
-  const layout = loadPageLayout(pagePath);
+  const layout = runtime.getPage(pagePath)?.layout ?? null;
 
   useEffect(() => {
     const pageDefaults: Record<string, unknown> = {};
@@ -123,6 +129,7 @@ export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
     <div className="pr-root">
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <PanelNode
+          runtime={runtime}
           panel={layout.root}
           slotConfigs={slotConfigs}
           pageCtx={pageCtx}
@@ -142,7 +149,7 @@ export function PageRenderer({ pagePath, slotConfigs, contextSchema }: Props) {
         </div>
       )}
 
-      {(import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV && (
+      {debug && (
         <details className="pr-debug">
           <summary>context.page ({Object.keys(pageState).length} keys)</summary>
           <pre>{JSON.stringify(pageState, null, 2)}</pre>

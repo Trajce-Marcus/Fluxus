@@ -2,7 +2,7 @@
 // work order list whose named callbacks are wired (in the container config) to
 // activities. Note the callback contract: (record, data object).
 
-import type { PropSchema } from './schema';
+import type { PropSchema } from '../manifest';
 
 export interface WorkOrderRow {
   id: string;

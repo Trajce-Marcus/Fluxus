@@ -1,4 +1,6 @@
-// The page-builder's DSL host surface (page wiring redesign, 2026-07-12).
+// The page runtime's DSL host surface (page wiring redesign, 2026-07-12;
+// de-singletoned at the page-runtime extraction: the store and config arrive
+// as parameters from the PageRuntime handle instead of host-app singletons).
 //
 // Pages speak FluxScript everywhere: dynamic props are single expressions
 // evaluated with datasource posture (reads only), and component callbacks are
@@ -18,7 +20,7 @@ import {
   type ServiceModuleDef,
 } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, functionSignatures } from '@fluxus/engine';
-import { config, sdmStore } from '../../sdm-runtime/engine';
+import type { ConfigRaw, MemoryAdapter } from '@fluxus/engine';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
 // Components emit (value, data?) — a selection value or anchor record id, plus
@@ -109,8 +111,13 @@ export interface PageContext {
  * the evaluator runs in 'read' mode and the records host has no mutation
  * surface, so effects and writes fail loudly rather than silently.
  */
-export function evaluatePageExpression(source: string, pageCtx: PageContext): unknown {
-  const host = buildEvalHost(sdmStore, config, {
+export function evaluatePageExpression(
+  store: MemoryAdapter,
+  config: ConfigRaw,
+  source: string,
+  pageCtx: PageContext,
+): unknown {
+  const host = buildEvalHost(store, config, {
     contextExtras: { app: pageCtx.app, page: pageCtx.page },
     readonlyRecords: true,
   });
@@ -147,13 +154,15 @@ export function toComponentValue(value: unknown): unknown {
  * activities"), matching the validator's 'callback' mode.
  */
 export function runPageCallback(
+  store: MemoryAdapter,
+  config: ConfigRaw,
   source: string,
   callbackData: CallbackPayload,
   pageCtx: PageContext,
   handlers: PageServiceHandlers,
 ): void {
   const host = buildEvalHost(
-    sdmStore,
+    store,
     config,
     {
       contextExtras: { app: pageCtx.app, page: pageCtx.page },
@@ -167,24 +176,24 @@ export function runPageCallback(
 
 // ── Validation (shared by the editor dialog and validatePage) ─────────────────
 
-const pageSchema = () => buildDslSchema(config, pageServicesStub());
+const pageSchema = (config: ConfigRaw) => buildDslSchema(config, pageServicesStub());
 
-const pageFunctions = () => functionSignatures(config);
+const pageFunctions = (config: ConfigRaw) => functionSignatures(config);
 
 /** Validate a dynamic-prop expression. `attributes` is not a page root. */
-export function validatePageExpression(source: string): Diagnostic[] {
-  return validateExpression(source, pageSchema(), {
+export function validatePageExpression(config: ConfigRaw, source: string): Diagnostic[] {
+  return validateExpression(source, pageSchema(config), {
     bannedRoots: ['attributes'],
-    functions: pageFunctions(),
+    functions: pageFunctions(config),
   });
 }
 
 /** Validate a callback script: effects allowed, record mutations rejected. */
-export function validatePageCallback(source: string): Diagnostic[] {
-  return validateScript(source, pageSchema(), {
+export function validatePageCallback(config: ConfigRaw, source: string): Diagnostic[] {
+  return validateScript(source, pageSchema(config), {
     mode: 'callback',
     bannedRoots: ['attributes'],
     extraRoots: ['callbackData'],
-    functions: pageFunctions(),
+    functions: pageFunctions(config),
   });
 }

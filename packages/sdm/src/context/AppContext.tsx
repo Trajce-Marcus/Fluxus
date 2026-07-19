@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult, ScriptContext } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
-import { adapter, client, engine, notificationLog } from '../host';
+import { adapter, client, engine, notificationLog, pageRuntime } from '../host';
 
 // Singletons live in ../host (assigned before render by initHost). The server
 // owns hooks and persistence; the local engine evaluates expressions against
@@ -13,6 +13,12 @@ interface AppContextValue {
   recordTypes: RecordTypeDef[];
   selectedRecordType: (RecordTypeDef & { workflow: WorkflowDef }) | null;
   selectedRecord: RecordInstance | null;
+  // Published pages (the client's page snapshot) rendered via
+  // @fluxus/page-runtime — selecting a page swaps the content area to it;
+  // selecting a record type returns to the grid/view.
+  pagePaths: string[];
+  selectedPage: string | null;
+  selectPage: (path: string) => void;
   selectRecordType: (type: RecordTypeDef) => void;
   selectRecord: (record: RecordInstance) => void;
   // Select by id — used after CREATE, where only RunActivityResult.recordId is known.
@@ -49,6 +55,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [, setTick] = useState(0);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [selectedPage, setSelectedPage] = useState<string | null>(null);
 
   // Re-render whenever the snapshot changes (partition refresh after each run)
   useEffect(() => adapter.subscribe(() => setTick(t => t + 1)), []);
@@ -56,6 +63,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const selectRecordType = useCallback((type: RecordTypeDef) => {
     setSelectedTypeId(type.id);
     setSelectedRecordId(null);
+    setSelectedPage(null);
+  }, []);
+
+  const selectPage = useCallback((path: string) => {
+    setSelectedPage(path);
   }, []);
 
   const selectRecord = useCallback((record: RecordInstance) => {
@@ -153,6 +165,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       recordTypes: adapter.listRecordTypes(),
       selectedRecordType: rtDef,
       selectedRecord,
+      pagePaths: pageRuntime.listPagePaths(),
+      selectedPage,
+      selectPage,
       selectRecord,
       selectRecordById,
       selectRecordType,

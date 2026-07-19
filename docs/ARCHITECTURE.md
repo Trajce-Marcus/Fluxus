@@ -23,17 +23,23 @@ How the parts connect. Package-level detail lives in each package's `docs/SPEC.m
 │  UI, notify     │  │  layout editor ·   │  │  API surface (tRPC)│
 │  centre         │  │  wiring · apps     │  │  · Postgres        │
 └──────┬──────────┘  └────────┬───────────┘  └───────▲────────────┘
-       │      browser hosts talk to the server       │
-       └───────────────┬──────┘                      │
-               ┌───────▼────────────┐                │
-               │  @fluxus/client    │────────────────┘
-               │  config+partition  │   config.get · records.partition
-               │  +pages snapshot   │   · pages.* · activities.run
-               │  · runs            │
-               └────────────────────┘
+       │   both embed the page runtime and talk      │
+       │   to the server through the client          │
+┌──────▼───────────────▼──────┐                      │
+│   @fluxus/page-runtime      │                      │
+│   render stored pages:      │                      │
+│   PageRenderer · wiring     │                      │
+│   host · capture form       │                      │
+└──────────────┬──────────────┘                      │
+       ┌───────▼────────────┐                        │
+       │  @fluxus/client    │────────────────────────┘
+       │  config+partition  │   config.get · records.partition
+       │  +pages snapshot   │   · pages.* · activities.run
+       │  · runs            │
+       └────────────────────┘
 ```
 
-Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — the pipeline they share is a package they both import. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only. Page definitions ride the same pipeline (backend stage 3, 2026-07-16): stored per `(scope, path)` on the server as opaque jsonb, snapshotted at connect, authored in the page builder — and deployed as repo files by the seed script, so deploying pages = deploying files.
+Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); peer hosts never depend on each other — anything they share is a package they both import: the pipeline (`engine`), the server door (`client`), and since 2026-07-19 the run-a-page cluster (`@fluxus/page-runtime` — PageRenderer, ComponentContainer, the component registry, the page expression host, the standard capture form; extracted from the page builder so the workbench can render published pages, the first step of workbench → Runtime app). A host wraps its connected client in one injected `PageRuntime` handle; page *editing* stays in the page builder. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only. Page definitions ride the same pipeline (backend stage 3, 2026-07-16): stored per `(scope, path)` on the server as opaque jsonb, snapshotted at connect, authored in the page builder — and deployed as repo files by the seed script, so deploying pages = deploying files.
 
 ## The SDM is the centre
 
@@ -66,7 +72,7 @@ The activity pipeline — resolve attributes → evaluate show conditions → va
 
 ## The ComponentContainer is the reuse seam
 
-Page-builder app components are SDM-blind: a **manifest** declares ports (static config, dynamic data in, callbacks out, with item-shape contracts), and per-page **wiring** adapts them — dynamic props are DSL queries (aliasing `select` maps SDM fields to the component's shape), callbacks run activities. Reusing an app under a different SDM is a few lines of wiring, not a rewrite. The pattern is model-agnostic (a non-SDM backend can sit behind the wiring), but schema validation and the audit spine exist only with an SDM.
+App components (in `@fluxus/page-runtime` since the extraction) are SDM-blind: a **manifest** declares ports (static config, dynamic data in, callbacks out, with item-shape contracts), and per-page **wiring** adapts them — dynamic props are DSL queries (aliasing `select` maps SDM fields to the component's shape), callbacks run activities. Reusing an app under a different SDM is a few lines of wiring, not a rewrite. The pattern is model-agnostic (a non-SDM backend can sit behind the wiring), but schema validation and the audit spine exist only with an SDM.
 
 ## Data architecture — two layers
 

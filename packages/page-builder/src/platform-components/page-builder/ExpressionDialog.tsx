@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import type { Diagnostic } from '@fluxus/dsl';
 import { FLUXSCRIPT, registerFluxscript, monacoCss } from './fluxscriptLanguage';
-import { validatePageExpression, validatePageCallback } from './pageHost';
+import { pageRuntime } from '../../sdm-runtime/engine';
 
 export interface ExpressionDialogProps {
   title: string;
@@ -24,7 +24,7 @@ export function ExpressionDialog({ title, hint, kind, initialSource, onSave, onC
 
   const diagnostics = useMemo<Diagnostic[]>(() => {
     if (source.trim() === '') return [];
-    return kind === 'expression' ? validatePageExpression(source) : validatePageCallback(source);
+    return kind === 'expression' ? pageRuntime.validateExpression(source) : pageRuntime.validateCallback(source);
   }, [source, kind]);
 
   const errors = diagnostics.filter((d) => d.severity === 'error');

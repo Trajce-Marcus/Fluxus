@@ -2,7 +2,7 @@
 
 The SDM (Shared Data Model) runtime: record types, workflows, activities, activity history, and the record workbench UI. This is the centre of the platform — see [docs/VISION.md](../../docs/VISION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) at the repo root.
 
-**Status:** POC1·a complete. List record types → create via CREATE activity → run capture activities → view history; FK refs with related records, Schema Navigator, CSV import/export. FluxScript hooks live: before-hook gates and transactional after-hook effects (DSL Phase 2 — see [ROADMAP](../../docs/ROADMAP.md)).
+**Status:** POC1·a complete. List record types → create via CREATE activity → run capture activities → view history; FK refs with related records, Schema Navigator, CSV import/export. FluxScript hooks live: before-hook gates and transactional after-hook effects (DSL Phase 2 — see [ROADMAP](../../docs/ROADMAP.md)). Since 2026-07-19 the workbench also renders published pages ("Pages" sidebar section, via [`@fluxus/page-runtime`](../page-runtime/)) — the first step of the workbench becoming the Runtime app.
 
 **Next (workbench):**
 1. Activity run/test console — a UI to invoke *any* activity type headlessly (pick activity → enter parameters → see gate/warnings/result/history), independent of the record view; becomes the natural home for GET activities when they land.

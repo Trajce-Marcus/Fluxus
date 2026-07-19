@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-A model-first platform monorepo with six parts: `@fluxus/sdm` (the Shared Data Model workbench), `@fluxus/engine` (the shared activity engine every host drives), `@fluxus/page-builder` (the page/app builder), `@fluxus/dsl` (the scripting language), `@fluxus/server` (activities as the API surface; Postgres), `@fluxus/client` (the browser hosts' snapshot/run door to the server). Read [docs/VISION.md](docs/VISION.md) for why, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the parts connect, [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical terminology, [docs/ROADMAP.md](docs/ROADMAP.md) for phase interlocks.
+A model-first platform monorepo with seven parts: `@fluxus/sdm` (the Shared Data Model workbench), `@fluxus/engine` (the shared activity engine every host drives), `@fluxus/page-builder` (the page/app builder — the Console-side editor), `@fluxus/page-runtime` (the run-a-page cluster both browser hosts embed), `@fluxus/dsl` (the scripting language), `@fluxus/server` (activities as the API surface; Postgres), `@fluxus/client` (the browser hosts' snapshot/run door to the server). Read [docs/VISION.md](docs/VISION.md) for why, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the parts connect, [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical terminology, [docs/ROADMAP.md](docs/ROADMAP.md) for phase interlocks.
 
 ## Docs-with-code rule (binding)
 

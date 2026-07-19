@@ -12,6 +12,7 @@
     "@fluxus/client": "0.1.0",
     "@fluxus/dsl": "0.1.0",
     "@fluxus/engine": "0.1.0",
+    "@fluxus/page-runtime": "0.1.0",
     "@monaco-editor/react": "^4.7.0",
     "monaco-editor": "^0.55.1",
     "react": "^18.2.0",

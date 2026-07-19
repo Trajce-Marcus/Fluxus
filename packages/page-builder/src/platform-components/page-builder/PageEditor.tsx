@@ -21,9 +21,9 @@ import {
   type PageComponentEntry,
   type ContextKeyDef,
 } from './pageEditorStore';
-import { componentManifests } from './componentManifests';
+import { componentManifests, PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
+import { pageRuntime } from '../../sdm-runtime/engine';
 import { LayoutEditor, css as layoutEditorCss } from './layout-editor/LayoutEditor';
-import { PageRenderer, css as pageRendererCss } from './PageRenderer';
 import { ExpressionDialog, css as expressionDialogCss } from './ExpressionDialog';
 
 function collectLeafPanels(panel: Panel): Panel[] {
@@ -386,7 +386,13 @@ function PreviewColumn({ pagePath, slotConfigs, contextSchema }: { pagePath: str
     <div className="pe-col pe-col-preview">
       <div className="pe-col-header">Preview</div>
       <div className="pe-preview-content">
-        <PageRenderer pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} />
+        <PageRenderer
+          runtime={pageRuntime}
+          pagePath={pagePath}
+          slotConfigs={slotConfigs}
+          contextSchema={contextSchema}
+          debug={import.meta.env.DEV}
+        />
       </div>
     </div>
   );

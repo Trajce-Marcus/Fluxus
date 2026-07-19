@@ -91,7 +91,7 @@ const css = `
   }
 `;
 
-import type { PropSchema } from './schema';
+import type { PropSchema } from '../manifest';
 
 const schema: PropSchema[] = [
   { name: 'x', kind: 'dynamic-data', type: 'number', required: true,  description: 'X coordinate (0–100)' },

@@ -6,21 +6,27 @@
 // config-save validation: diagnostics land on the console.
 
 import { parseScript, type Call, type Diagnostic, type Stmt } from '@fluxus/dsl';
-import type { PageDef } from './persistence';
+import type { PageDef } from './pageDef';
 import { componentManifests } from './componentManifests';
-import { validatePageExpression, validatePageCallback } from './pageHost';
-import { findActivity } from '../../sdm-runtime/engine';
 
 export interface PageFinding {
   where: string;
   diagnostic: Diagnostic;
 }
 
+/** The slice of the PageRuntime handle validation needs — kept narrow so this
+ *  module doesn't import the runtime factory (no cycle). */
+export interface PageValidationHost {
+  validateExpression(source: string): Diagnostic[];
+  validateCallback(source: string): Diagnostic[];
+  findActivity(activityId: string): unknown | null;
+}
+
 const note = (findings: PageFinding[], where: string, message: string, severity: Diagnostic['severity'] = 'error') => {
   findings.push({ where, diagnostic: { severity, message, line: 1, col: 1 } });
 };
 
-export function validatePage(def: PageDef): PageFinding[] {
+export function validatePage(host: PageValidationHost, def: PageDef): PageFinding[] {
   const findings: PageFinding[] = [];
 
   for (const [slotId, config] of Object.entries(def.slotConfigs ?? {})) {
@@ -47,7 +53,7 @@ export function validatePage(def: PageDef): PageFinding[] {
       const prop = schemaByName.get(propName);
       if (!prop) note(findings, w, `'${manifest.name}' has no prop '${propName}'`);
       else if (prop.kind !== 'dynamic-data') note(findings, w, `'${propName}' is ${prop.kind}, not dynamic-data`);
-      for (const diagnostic of validatePageExpression(source)) {
+      for (const diagnostic of host.validateExpression(source)) {
         findings.push({ where: w, diagnostic });
       }
     }
@@ -65,10 +71,10 @@ export function validatePage(def: PageDef): PageFinding[] {
       const prop = schemaByName.get(callbackName);
       if (!prop) note(findings, w, `'${manifest.name}' has no callback '${callbackName}'`);
       else if (prop.kind !== 'callback') note(findings, w, `'${callbackName}' is ${prop.kind}, not a callback`);
-      for (const diagnostic of validatePageCallback(source)) {
+      for (const diagnostic of host.validateCallback(source)) {
         findings.push({ where: w, diagnostic });
       }
-      for (const finding of checkActivityRefs(source)) {
+      for (const finding of checkActivityRefs(host, source)) {
         findings.push({ where: w, diagnostic: finding });
       }
     }
@@ -82,7 +88,7 @@ export function validatePage(def: PageDef): PageFinding[] {
  * the SDM. Non-literal first arguments are left to runtime — the reference
  * check is for the common, statically-knowable case.
  */
-function checkActivityRefs(source: string): Diagnostic[] {
+function checkActivityRefs(host: PageValidationHost, source: string): Diagnostic[] {
   let body: Stmt[];
   try {
     body = parseScript(source).body;
@@ -98,7 +104,7 @@ function checkActivityRefs(source: string): Diagnostic[] {
       callee.object.object.kind === 'ident' && callee.object.object.name === 'services'
     ) {
       const first = call.args[0]?.value;
-      if (first?.kind === 'string' && !findActivity(first.value)) {
+      if (first?.kind === 'string' && !host.findActivity(first.value)) {
         out.push({
           severity: 'error',
           message: `Unknown activity '${first.value}'`,
@@ -127,8 +133,8 @@ function walk(node: unknown, visit: (call: Call) => void): void {
 }
 
 /** Console reporting, same voice as the engine's reportConfigFindings. */
-export function reportPageFindings(pagePath: string, def: PageDef): PageFinding[] {
-  const findings = validatePage(def);
+export function reportPageFindings(host: PageValidationHost, pagePath: string, def: PageDef): PageFinding[] {
+  const findings = validatePage(host, def);
   for (const { where, diagnostic } of findings) {
     const label = `[page ${pagePath}] ${where} [${diagnostic.line}:${diagnostic.col}] ${diagnostic.message}`;
     if (diagnostic.severity === 'error') console.error(label);

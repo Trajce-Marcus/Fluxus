@@ -1,4 +1,4 @@
-import type { PropSchema } from './schema';
+import type { PropSchema } from '../manifest';
 
 interface AppHeaderProps {
   appName: string;
