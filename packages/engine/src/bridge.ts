@@ -4,8 +4,15 @@
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
 import { parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
-import type { AttributeDef, ConfigRaw, RecordInstance } from './types';
+import type { AttributeDef, ConfigRaw, ContextUser, RecordInstance } from './types';
 import type { Store } from './store';
+
+/**
+ * `context.user` when no authenticated user is injected — the auth-unconfigured
+ * posture (fresh clone, tests, local dev). roles [] so role expressions
+ * evaluate uniformly either way.
+ */
+export const DEMO_USER: ContextUser = { id: 'demo', name: 'Demo User', email: null, roles: [] };
 
 export const shortName = (rtId: string): string => rtId.replace(/^rt_/, '');
 export const fullId = (short: string): string => `rt_${short}`;
@@ -165,6 +172,11 @@ export interface ScriptContext {
    * redesign: page context IS the ctx root, not a parallel construct).
    */
   contextExtras?: Record<string, unknown>;
+  /**
+   * The identity behind `context.user`. Engines created with a user inject it
+   * into every evaluation; absent → the demo stub (auth unconfigured / tests).
+   */
+  user?: ContextUser;
   /**
    * Omit the records mutation host, so record writes fail at runtime even in
    * 'mutate'-mode scripts. Page callbacks run this way: service effects
@@ -345,7 +357,7 @@ export function buildEvalHost(
   return {
     records,
     context: {
-      user: { id: 'demo', name: 'Demo User' },
+      user: script.user ?? DEMO_USER,
       record: script.anchorRecord ? toDslRecord(script.anchorRecord) : null,
       activity: script.activity ?? null,
       workflow: script.workflow ?? null,

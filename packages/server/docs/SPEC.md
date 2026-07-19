@@ -40,6 +40,9 @@ src/db/schema.ts       — Drizzle schema: sdm_configs, records (transactional),
                          attachments (blob ledger)
 src/db/client.ts       — driver selection (DATABASE_URL → node-postgres/Neon;
                          else PGlite) + boot-time idempotent DDL
+src/auth.ts            — bearer-JWT verification against Neon Auth's JWKS
+                         (jose), env-driven posture, the two-lookup
+                         roles-resolver seam (stubbed)
 src/host.ts            — loadScopeHost / writeBack (diff + projection) / putConfig
 src/router.ts          — the tRPC router: config.get/put, records.list/get,
                          activities.run, files.presignUpload/presignGet;
@@ -118,6 +121,34 @@ the transactional layer. Org-defined repo/folder levels arrive later as data
 in the path, not as schema (locked hierarchy ruling: org + SDM,
 GitHub-style).
 
+## Auth (RBAC phase 1, built 2026-07-19 — roles stubbed)
+
+Design authority: root docs/RBAC_COMPACT.md (compressed from RBAC_DESIGN.md
+rev 6 §0). What the server implements:
+
+- **Transport**: `Authorization: Bearer <JWT>` on every tRPC call — never
+  cookies; headless callers identical. Tokens are Neon Auth (Managed Better
+  Auth) session JWTs: EdDSA, ~15-min expiry, verified against the cached JWKS
+  at `${NEON_AUTH_URL}/.well-known/jwks.json` with issuer = the URL's origin
+  (`jose` `createRemoteJWKSet` owns caching/rotation).
+- **Placement**: per-request in `createApp`'s tRPC `createContext`
+  (`src/app.ts`): parse header → verify → `context.user`
+  `{ id, name, email, roles }`. One code path under Node/Lambda/Vercel (all
+  pass headers through untouched). `/health` stays open.
+- **Env-driven posture**: `NEON_AUTH_URL` (or `NEON_AUTH_BASE_URL`) unset ⇒
+  `context.user` is the engine's demo stub and everything is open — dev/tests
+  unchanged. Set ⇒ a valid session is **required**: missing/invalid token is
+  UNAUTHORIZED for the whole call; no anonymous mode.
+- **Roles-resolver seam** (`RolesResolver`, two lookups, both stubbed):
+  `runtimeRoles(user, operation) → roleIds` (→ `context.user.roles`, resolved
+  per call in `activities.run` before the engine exists — gates may read it;
+  stub `[]` until RBAC stage 1) and `implementerLevel(user, solution)` (server
+  -only, checked by `config.put`/`pages.put`/`pages.delete` via
+  `requireImplementer`; stub `admin` = open until stage 2).
+- **Author**: `runActivity` stamps the verified user id on each new history
+  entry (`entry.author`, engine-side); the projection copies it to
+  `rpt_activities.author` (`'demo'` for pre-auth entries and the stub).
+
 ## Data layers (v1: one Postgres, both hats)
 
 - `records` — `(scope, id)` PK, `custom_fields` + `activity_history` JSONB:
@@ -126,8 +157,9 @@ GitHub-style).
   definitions on the config pipeline, one row per page so the page builder
   saves a single page without touching the SDM config blob.
 - `rpt_activities` / `rpt_attributes` — the normalized projection (agreed
-  2026-07-12): one activities row per run (author is the `demo` stub until
-  auth); one attributes row per attribute, single text `value`; a waived
+  2026-07-12): one activities row per run (author = the entry's user id;
+  `demo` for pre-auth entries and the unconfigured stub); one attributes row
+  per attribute, single text `value`; a waived
   attribute is the same row with `value` null + `waive_desc`; acknowledged
   gate warnings project as a `system_warnings` row; `system_log` arrives as
   an ordinary captured attribute. Plain-object entry values (composite
@@ -204,7 +236,9 @@ against a running server) stays an open thread on the root ROADMAP.
 
 ## Known gaps (deliberate)
 
-- No auth: `context.user` is the demo stub; `author` in reporting likewise.
+- Auth built (2026-07-19) but roles stubbed: `context.user.roles` is `[]` and
+  the implementer plane is open until RBAC stages 1–2 fill the resolver seam;
+  record-type read filtering and page `open` checks are not yet enforced.
 - GET activities (DSL_SPEC §5a) not implemented — blocked on the unified-log
   design for their logging posture; `records.*` covers data needs meanwhile.
 - Lambda entry unexercised by design — it is the raw-AWS exit path, kept

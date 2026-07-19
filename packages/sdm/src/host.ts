@@ -9,8 +9,8 @@
 // server is down, boot fails loudly.
 
 import { createEngine, buildGeoModule } from '@fluxus/engine';
-import type { Engine, MemoryAdapter } from '@fluxus/engine';
-import { FluxusClient } from '@fluxus/client';
+import type { ContextUser, Engine, MemoryAdapter } from '@fluxus/engine';
+import { FluxusClient, type HostAuth } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { NotificationLog } from './store/NotificationLog';
 import { buildNotifyModule } from './services/notify';
@@ -27,15 +27,26 @@ export let engine: Engine;
 // published pages in the workbench — the first step of workbench → Runtime app.
 export let pageRuntime: PageRuntime;
 
-export async function initHost(): Promise<void> {
+export async function initHost(auth?: HostAuth): Promise<void> {
+  // The signed-in identity: bearer token on every tRPC call, and the local
+  // engine's context.user for UI-side expression parity (roles stubbed []
+  // until RBAC stage 1). Auth unconfigured → both stay undefined (demo stub).
+  const session = auth?.configured ? await auth.session() : null;
+  const user: ContextUser | undefined = session
+    ? { id: session.id, name: session.name, email: session.email, roles: [] }
+    : undefined;
   // Deployed builds bake in the live server URL; local dev (var unset) falls
   // back to the client's localhost default.
-  client = await FluxusClient.connect({ url: import.meta.env.VITE_FLUXUS_API_URL });
+  client = await FluxusClient.connect({
+    url: import.meta.env.VITE_FLUXUS_API_URL,
+    getToken: auth?.configured ? auth.getToken : undefined,
+  });
   adapter = client.adapter;
   engine = createEngine({
     store: adapter,
     config: client.config,
     services: [buildNotifyModule(notificationLog), buildGeoModule(adapter)],
+    user,
   });
   pageRuntime = createPageRuntime({ client });
   // The stored config was validated at config.put; re-reporting here is a

@@ -33,6 +33,7 @@ export {
   shortName,
   fullId,
   toDslRecord,
+  DEMO_USER,
 } from './bridge';
 export type { ScriptContext } from './bridge';
 
@@ -57,6 +58,7 @@ export type {
   AttributeUsageDef,
   SectionMarkerDef,
   ConfigRaw,
+  ContextUser,
   CustomFieldDef,
   FunctionDef,
   RecordInstance,

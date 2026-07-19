@@ -5,7 +5,7 @@
 // UI concerns (selection, toasts, console channels) stay with the host.
 
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ActivityDef, ConfigRaw, RecordInstance, RunActivityResult } from './types';
+import type { ActivityDef, ConfigRaw, ContextUser, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
 import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
@@ -15,6 +15,13 @@ export interface EngineOptions {
   store: Store;
   config: ConfigRaw;
   services?: ServiceModuleDef[];
+  /**
+   * The identity every evaluation sees as `context.user` and every committed
+   * entry records as `author`. The server passes the per-request verified
+   * user; absent → the demo stub (auth unconfigured, tests, browser hosts
+   * that only evaluate).
+   */
+  user?: ContextUser;
 }
 
 export interface ActivityAvailability {
@@ -62,7 +69,7 @@ function stripNullCells(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== null));
 }
 
-export function createEngine({ store, config, services: hostServices = [] }: EngineOptions): Engine {
+export function createEngine({ store, config, services: hostServices = [], user }: EngineOptions): Engine {
   // services.logger — engine-owned (see services/logger.ts): lines noted
   // during a run land on the entry as the reserved `system_log` attribute —
   // only if the run commits an entry (rejected submissions leave no trace,
@@ -99,7 +106,7 @@ export function createEngine({ store, config, services: hostServices = [] }: Eng
     try {
       const result = evaluateExpression(
         activity.show_condition,
-        buildEvalHost(store, config, { anchorRecord, activity: { id: activity.id, name: activity.name } }, services)
+        buildEvalHost(store, config, { anchorRecord, activity: { id: activity.id, name: activity.name }, user }, services)
       );
       return { available: result === true };
     } catch (err) {
@@ -152,6 +159,7 @@ export function createEngine({ store, config, services: hostServices = [] }: Eng
       liveAttributes,
       anchorRecord,
       activity: { id: activity.id, name: activity.name },
+      user,
       // The one data object of an app-triggered run; null on direct runs.
       extras: { callbackData: options?.callbackData ?? null },
     };
@@ -275,6 +283,7 @@ export function createEngine({ store, config, services: hostServices = [] }: Eng
     store.appendActivity(targetRecordId, {
       activityId: activity.id,
       activityName: activity.name,
+      ...(user ? { author: user.id } : {}),
       capturedAttributes: entryAttributes,
       ...(gateWarnings.length > 0 ? { warnings: gateWarnings } : {}),
       ...(Object.keys(waived).length > 0 ? { waived: { ...waived } } : {}),
@@ -295,7 +304,7 @@ export function createEngine({ store, config, services: hostServices = [] }: Eng
     activityAvailability,
     isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
     runActivity,
-    evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, script, services)),
+    evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
     validateConfig: () => validateConfig(config, services),
     reportConfigFindings: () => reportConfigFindings(config, services),
   };

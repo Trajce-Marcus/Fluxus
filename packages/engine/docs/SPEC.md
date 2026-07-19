@@ -140,11 +140,18 @@ record to the anchor and passes the object as `options.callbackData`.
 
 ### Host channels that remain engine defaults (deliberate, for now)
 
-- `context.user` is the demo stub (`{ id: 'demo', name: 'Demo User' }`) until
-  auth exists — set in `buildEvalHost`.
+- `context.user` is host-supplied since auth (RBAC phase 1, 2026-07-19):
+  `EngineOptions.user` (`ContextUser` `{ id, name, email?, roles? }`) is
+  injected into every evaluation the engine makes and stamped as `author` on
+  each committed history entry; `ScriptContext.user` carries it through
+  `buildEvalHost`. Absent (tests, hosts that only evaluate) → the exported
+  `DEMO_USER` stub (`{ id: 'demo', name: 'Demo User', email: null, roles: [] }`),
+  and entries carry no `author`. The server passes its per-request verified
+  user; `roles` are resolved outside the engine (the server's roles-resolver
+  seam) — scripts stay scope-blind.
 - Async `queue` dispatch failures land on `console.warn` via the bridge's
-  `onQueuedFailure`. Both become host-supplied when a second host needs them
-  to differ.
+  `onQueuedFailure`; becomes host-supplied when a second host needs it to
+  differ.
 
 ## The Store contract
 

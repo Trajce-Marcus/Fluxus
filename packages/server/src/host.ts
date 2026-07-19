@@ -15,6 +15,7 @@ import {
   type ActivityDef,
   type ActivityHistoryEntry,
   type ConfigRaw,
+  type ContextUser,
   type Engine,
   type RecordInstance,
 } from '@fluxus/engine';
@@ -43,7 +44,7 @@ export async function getScopeConfig(db: Db, scope: string): Promise<ConfigRaw> 
   return rows[0].config;
 }
 
-export async function loadScopeHost(db: Db, scope: string, sink: NotifySink = consoleNotifySink): Promise<ScopeHost> {
+export async function loadScopeHost(db: Db, scope: string, sink: NotifySink = consoleNotifySink, user?: ContextUser): Promise<ScopeHost> {
   const config = await getScopeConfig(db, scope);
   const rows = await db.select().from(records).where(eq(records.scope, scope));
 
@@ -56,6 +57,8 @@ export async function loadScopeHost(db: Db, scope: string, sink: NotifySink = co
     store: adapter,
     config,
     services: [buildNotifyModule(sink), buildGeoModule(adapter)],
+    // context.user for gates/hooks; entries record user.id as author.
+    user,
   });
 
   const baseline = new Map(
@@ -77,8 +80,8 @@ export function findActivity(host: ScopeHost, activityId: string): ActivityDef |
 
 // ── Write-back + projection ──────────────────────────────────────────────────
 
-/** context.user is the engine's demo stub until auth exists (engine SPEC). */
-const AUTHOR = 'demo';
+/** rpt author for entries recorded before entries carried one (pre-auth data). */
+const LEGACY_AUTHOR = 'demo';
 
 function attributeValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -237,7 +240,7 @@ export async function writeBack(db: Db, host: ScopeHost): Promise<void> {
           recordType: record.typeRef,
           activityId: entry.activityId,
           activityName: entry.activityName,
-          author: AUTHOR,
+          author: entry.author ?? LEGACY_AUTHOR,
           ts: new Date(entry.timestamp),
         })
         .returning({ id: rptActivities.id });

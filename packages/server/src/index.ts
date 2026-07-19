@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { createDb } from './db/client';
 import { createApp } from './app';
+import { createAuth } from './auth';
 import { getScopeConfig } from './host';
 import { DEFAULT_SCOPE } from './router';
 import { createBlobStore } from './services/blob';
@@ -18,7 +19,8 @@ if (!process.env.DATABASE_URL) {
 }
 
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
-const app = createApp({ db, blob: createBlobStore() });
+const auth = createAuth();
+const app = createApp({ db, blob: createBlobStore(), auth });
 
 try {
   await getScopeConfig(db, DEFAULT_SCOPE);
@@ -30,6 +32,7 @@ const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port });
 console.log(`@fluxus/server listening on http://localhost:${port} (tRPC at /trpc)`);
 console.log(`Storage: ${process.env.DATABASE_URL ? 'Postgres via DATABASE_URL (Neon)' : 'PGlite .data/'}`);
+console.log(`Auth: ${auth.configured ? 'Neon Auth via NEON_AUTH_URL — session required' : 'unconfigured — demo stub, everything open'}`);
 
 export { app, db };
 // Type-only surface for @fluxus/client (erased at compile time — importing

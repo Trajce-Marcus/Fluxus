@@ -94,7 +94,11 @@ export function ActivityCard({ entry }: Props) {
         <span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>
           {entry.activityName}
         </span>
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>{ts}</span>
+        <span style={{ fontSize: 11, color: '#94a3b8' }} title={entry.author}>
+          {/* author = user id (RBAC_COMPACT); display-name resolution arrives
+              with a user directory — until then the id, shortened. */}
+          {entry.author ? `${entry.author.slice(0, 8)} · ` : ''}{ts}
+        </span>
       </div>
       {attrs.length > 0 ? (
         <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 12px' }}>

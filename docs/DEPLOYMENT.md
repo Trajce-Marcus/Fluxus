@@ -131,6 +131,13 @@ Building locally sidesteps it entirely.
 - CORS: the server runs wide-open `cors()` — deliberate for the
   unauthenticated POC phase (origin checks add nothing without auth);
   preflight verified against the live server.
+- Auth (RBAC phase 1, 2026-07-19; docs/RBAC_COMPACT.md): env-driven on both
+  sides. Server: `NEON_AUTH_URL` (Neon Auth / Managed Better Auth base URL,
+  per environment — `neon_auth` branches with the DB) unset ⇒ demo stub,
+  everything open; set ⇒ bearer JWT required on every tRPC call. Hosts:
+  `VITE_NEON_AUTH_URL` baked at build time like the API URL; unset ⇒ no
+  sign-in gate. Set both or neither for an environment — a configured server
+  rejects tokenless hosts.
 - Verified e2e from a real browser (headless Chrome, 2026-07-17): both hosts
   boot against the live API; a city created through the deployed workbench
   landed in Neon `production` (and the `dev` branch stayed untouched). Note

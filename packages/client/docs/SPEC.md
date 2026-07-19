@@ -58,10 +58,26 @@ step is injected into `runUpload`, so the core is transport-agnostic;
 - Defaults: url `http://localhost:8787/trpc`, scope `demo/sdm` (matching the
   server's `DEFAULT_SCOPE`).
 
+## Auth (RBAC phase 1, 2026-07-19)
+
+- **Bearer token on every call**: `ConnectOptions.getToken` (typically
+  `HostAuth.getToken`) is resolved per request by the tRPC link and attached
+  as `Authorization: Bearer` — per request because Neon Auth session JWTs
+  live ~15 minutes. No supplier / null token ⇒ no header (the unconfigured
+  server is open; the configured one rejects).
+- **`src/auth.ts` — the hosts' Neon Auth seam** (`createHostAuth(url)` →
+  `HostAuth`): sign-in/sign-up/sign-out/session plus `getToken` with
+  near-expiry caching (30 s slack on the JWT `exp`). The young
+  `@neondatabase/neon-js` SDK (Managed Better Auth client) is used **only in
+  this module** (prefer-established-deps: young dep behind a seam, shallow
+  usage). No auth URL ⇒ `configured: false` and hosts skip their sign-in gate
+  — the same env-driven posture as the server.
+
 ## Not here (deliberately)
 
 - Engine construction — hosts differ in service modules (workbench wires
   `notify` to its notification centre), so `createEngine` stays host-side.
 - Optimistic updates, offline queueing, sync — parked with the offline
   question (root tt_todo); the seam is `refresh()`.
-- Auth headers — arrive with auth itself.
+- Sign-in UI — the minimal email+password form is per host (RBAC_DESIGN §0);
+  this package supplies only the seam it drives.

@@ -8,7 +8,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { isDescriptorType, validateSubmission, type ConfigRaw, type RunActivityResult } from '@fluxus/engine';
+import { DEMO_USER, isDescriptorType, validateSubmission, type ConfigRaw, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -27,6 +27,7 @@ import {
 } from './host';
 import type { NotifySink } from './services/notify';
 import { consoleNotifySink } from './services/notify';
+import { stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
 import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
 
 /** Scope is an opaque path string — org-defined levels arrive as data later. */
@@ -37,6 +38,37 @@ export interface AppContext {
   sink?: NotifySink;
   /** The blob store (R2) for `files` presigns; unconfigured when FLUXUS_R2_* is unset. */
   blob?: BlobStore;
+  /**
+   * The per-request verified identity (RBAC_COMPACT "Auth") — produced by
+   * Auth.authenticate in createApp's createContext. Absent (tests, direct
+   * callers) ⇒ the demo stub.
+   */
+  user?: AuthUser;
+  /** Roles-resolver seam (§0.4); absent ⇒ the stage-1/2 stubs. */
+  roles?: RolesResolver;
+}
+
+/**
+ * Runtime-plane identity for one call: the verified user with `roles`
+ * resolved for the operation (stand-in: the scope key). What the engine sees
+ * as `context.user` and entries record as `author`.
+ */
+async function resolveUser(ctx: AppContext, operation: string) {
+  const user = ctx.user ?? DEMO_USER;
+  const roles = ctx.roles ?? stubRolesResolver;
+  return { ...user, roles: await roles.runtimeRoles(user.id, operation) };
+}
+
+/**
+ * Console-plane check (implementer level) for config/page writes. The stub
+ * resolver answers 'admin' — open until RBAC stage 2 fills the seam.
+ */
+async function requireImplementer(ctx: AppContext, operation: string, level: 'write' | 'admin'): Promise<void> {
+  const user = ctx.user ?? DEMO_USER;
+  const roles = ctx.roles ?? stubRolesResolver;
+  const held = await roles.implementerLevel(user.id, operation);
+  const ok = held === 'admin' || (level === 'write' && held === 'write');
+  if (!ok) throw new TRPCError({ code: 'FORBIDDEN', message: `Requires implementer '${level}' on this solution` });
 }
 
 /** Whether a file's mime/extension satisfies a `file` attribute's `accept` list. */
@@ -85,6 +117,7 @@ export const appRouter = t.router({
       .input(z.object({ scope: scopeInput, config: z.unknown() }))
       .mutation(async ({ ctx, input }) => {
         try {
+          await requireImplementer(ctx, input.scope, 'write');
           await putConfig(ctx.db, input.scope, input.config as ConfigRaw, ctx.sink);
           return { ok: true as const };
         } catch (err) {
@@ -103,12 +136,14 @@ export const appRouter = t.router({
     put: t.procedure
       .input(z.object({ scope: scopeInput, path: z.string().min(1), def: z.unknown() }))
       .mutation(async ({ ctx, input }) => {
+        await requireImplementer(ctx, input.scope, 'write');
         await putPage(ctx.db, input.scope, input.path, input.def ?? {});
         return { ok: true as const };
       }),
     delete: t.procedure
       .input(z.object({ scope: scopeInput, path: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
+        await requireImplementer(ctx, input.scope, 'write');
         await deletePage(ctx.db, input.scope, input.path);
         return { ok: true as const };
       }),
@@ -274,7 +309,10 @@ export const appRouter = t.router({
       )
       .mutation(async ({ ctx, input }): Promise<RunActivityResult> => {
         try {
-          const host = await loadScopeHost(ctx.db, input.scope, ctx.sink ?? consoleNotifySink);
+          // Roles resolve per operation before the engine exists — the
+          // availability gate may read context.user.roles.
+          const user = await resolveUser(ctx, input.scope);
+          const host = await loadScopeHost(ctx.db, input.scope, ctx.sink ?? consoleNotifySink, user);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {

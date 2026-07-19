@@ -22,9 +22,24 @@ export type {
   Exif,
 } from './upload';
 export { sha256Hex, readExif, dmsToDecimal, runUpload } from './upload';
+export { createHostAuth } from './auth';
+export type { AuthSession, HostAuth } from './auth';
 
-function createTrpc(url: string) {
-  return createTRPCClient<AppRouter>({ links: [httpBatchLink({ url })] });
+function createTrpc(url: string, getToken?: () => Promise<string | null>) {
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url,
+        // Bearer JWT on every call (RBAC_DESIGN §0.1) — resolved per request
+        // because session tokens are short-lived. No token → no header; the
+        // unconfigured server ignores it, the configured one rejects.
+        headers: async () => {
+          const token = await getToken?.();
+          return token ? { authorization: `Bearer ${token}` } : {};
+        },
+      }),
+    ],
+  });
 }
 type Trpc = ReturnType<typeof createTrpc>;
 
@@ -33,6 +48,11 @@ export interface ConnectOptions {
   url?: string;
   /** Opaque scope path; partitions data server-side. */
   scope?: string;
+  /**
+   * Session-token supplier — typically HostAuth.getToken. Called per request
+   * (tokens expire in minutes); omit when auth is unconfigured.
+   */
+  getToken?: () => Promise<string | null>;
 }
 
 export const DEFAULT_URL = 'http://localhost:8787/trpc';
@@ -75,7 +95,7 @@ export class FluxusClient {
    * as their boot error; there is no localStorage fallback by ruling.
    */
   static async connect(options: ConnectOptions = {}): Promise<FluxusClient> {
-    const trpc = createTrpc(options.url ?? DEFAULT_URL);
+    const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
     const scope = options.scope ?? DEFAULT_SCOPE;
     const [config, partition, pageRows] = await Promise.all([
       trpc.config.get.query({ scope }) as Promise<ConfigRaw>,

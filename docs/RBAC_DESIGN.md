@@ -1,6 +1,7 @@
 # Fluxus — RBAC Design (PROPOSAL, for review)
 
-Status: **draft for review, rev 6 (2026-07-19).** Nothing here is built. Rev 6
+Status: **rev 6 (2026-07-19); §0 auth BUILT 2026-07-19 (roles stubbed), RBAC
+stages 1+ not built.** Rev 6
 settles the **auth design** (§0 — recommended and approved 2026-07-19): bearer
 JWT transport, per-request verification in tRPC `createContext`, env-driven dev
 stub, and a two-lookup roles-resolver seam stubbed until RBAC stages 1–2. It
@@ -25,10 +26,9 @@ implementer plane; row-level read conditions deferred.
 Spans packages, so it lives in root docs. When agreed and built, the living
 truth moves into the package SPECs and this becomes the design record.
 
-Hard dependency: **auth**. `context.user` is still the demo stub; every
-enforcement rule assumes the server can identify the caller and populate
-`context.user` (incl. `context.user.roles`). Auth comes first (§12 phasing);
-its design is settled in §0 below and awaits build.
+Hard dependency: **auth** — now built (§0 build note): the server identifies
+the caller per request and populates `context.user`; `context.user.roles`
+stays `[]` until the resolver seam is filled by stage 1.
 
 Provider settled (2026-07-19): **Neon Auth (Managed Better Auth)**, used
 shallowly — identity + sessions only. Auth data (users, sessions, JWKS) lives
@@ -45,7 +45,16 @@ is a fallback, not a rewrite.
 
 ---
 
-## 0. Auth design (settled rev 6, 2026-07-19 — awaiting build)
+## 0. Auth design (settled rev 6, 2026-07-19 — **built 2026-07-19**, roles stubbed)
+
+> Build note: implemented as specified. Server `src/auth.ts` (jose/JWKS,
+> env-driven posture, `RolesResolver` seam), per-request `createContext` in
+> `src/app.ts`, `entry.author` stamped engine-side (`EngineOptions.user`),
+> bearer plumbing + `createHostAuth` seam in `@fluxus/client` (young
+> `@neondatabase/neon-js` confined to that module), sign-in forms in both
+> hosts. Env names: `NEON_AUTH_URL` (server), `VITE_NEON_AUTH_URL` (hosts).
+> Verified live-doc shapes: JWKS at `/.well-known/jwks.json`, issuer = URL
+> origin, EdDSA, ~15-min tokens, client `token()`/`signIn.email`.
 
 Four rulings (each recommended by Claude, approved by TT), plus the smaller
 calls that ride along. Together with the provider note above this is the

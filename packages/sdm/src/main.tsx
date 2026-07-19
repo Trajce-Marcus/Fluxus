@@ -1,19 +1,30 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createHostAuth } from '@fluxus/client';
 import App from './App';
+import { SignIn } from './components/SignIn';
 import { initHost } from './host';
 
 const root = createRoot(document.getElementById('root')!);
 
-initHost()
-  .then(() => {
+// Auth gate (RBAC_DESIGN §0): VITE_NEON_AUTH_URL unset ⇒ demo posture, no
+// sign-in; set ⇒ a session is required before connect() (the server rejects
+// tokenless calls anyway — the gate just keeps the failure human).
+const auth = createHostAuth(import.meta.env.VITE_NEON_AUTH_URL);
+
+async function boot(): Promise<void> {
+  try {
+    if (auth.configured && !(await auth.session())) {
+      root.render(<SignIn auth={auth} onSignedIn={() => void boot()} />);
+      return;
+    }
+    await initHost(auth);
     root.render(
       <StrictMode>
         <App />
       </StrictMode>
     );
-  })
-  .catch((err: unknown) => {
+  } catch (err: unknown) {
     root.render(
       <div style={{ fontFamily: 'system-ui, sans-serif', padding: 32, maxWidth: 640 }}>
         <h2 style={{ margin: '0 0 8px' }}>Can't reach the Fluxus server</h2>
@@ -27,4 +38,7 @@ initHost()
         </pre>
       </div>
     );
-  });
+  }
+}
+
+void boot();

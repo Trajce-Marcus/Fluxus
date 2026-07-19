@@ -219,9 +219,30 @@ export interface RunActivityResult {
 
 // ── Runtime types (store reads/writes these) ──────────────────────────────────
 
+/**
+ * The authenticated identity scripts see as `context.user` (RBAC_COMPACT
+ * "Auth"). The server builds it per request from the verified session (or the
+ * demo stub when auth is unconfigured) and passes it via EngineOptions.user.
+ * `roles` are the role ids held in the current operation — resolved outside
+ * the engine (roles-resolver seam); scripts stay scope-blind.
+ */
+export interface ContextUser {
+  id: string;
+  name: string;
+  email?: string | null;
+  roles?: string[];
+}
+
 export interface ActivityHistoryEntry {
   activityId: string;
   activityName: string;
+  /**
+   * The user id that ran the activity (RBAC_COMPACT: Neon Auth user id;
+   * 'demo' under the unconfigured stub). Ids are stable where names aren't —
+   * display names resolve at render; entries are never edited. Absent on
+   * entries recorded before auth existed.
+   */
+  author?: string;
   /**
    * The activity's attributes: what the user entered, plus attributes hook
    * logic wrote (`attributes.crew = …`), plus the run's system log under the

@@ -63,6 +63,14 @@ Page-runtime extraction (workbench → Runtime app, step 1)        ✅ done
      replaces host singletons); workbench renders published
      pages ("Pages" sidebar section). Next per the direction
      session: auth design → auth build → RBAC stage 1 + menu
+
+Auth build (RBAC phase 1 — roles stubbed)                        ✅ done
+  └─ Bearer JWT (Neon Auth / Managed Better Auth) verified       (2026-07-19)
+     per request in tRPC createContext; env-driven demo-stub
+     posture; two-lookup roles-resolver seam (stubbed);
+     entry.author = user id; host sign-in gates. Design:
+     docs/RBAC_COMPACT.md + RBAC_DESIGN §0 build note.
+     Next: RBAC stage 1 (record types + activities), §2a fork
 ```
 
 ## Sequence
