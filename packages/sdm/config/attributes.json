@@ -763,5 +763,145 @@
         }
       ]
     }
+  },
+  {
+    "key": "demo_text",
+    "label": "Text",
+    "description": "A single-line text value.",
+    "type": "text"
+  },
+  {
+    "key": "demo_multiline",
+    "label": "Multiline Text",
+    "description": "A multi-line text value (type_config.multiline — one value, many lines; NOT the multi mechanism).",
+    "type": "text",
+    "type_config": {
+      "multiline": true
+    }
+  },
+  {
+    "key": "demo_int",
+    "label": "Integer",
+    "description": "A whole number.",
+    "type": "int"
+  },
+  {
+    "key": "demo_decimal",
+    "label": "Decimal",
+    "description": "A number with two decimal places (type_config.decimal_places controls step + display rounding).",
+    "type": "decimal",
+    "type_config": {
+      "decimal_places": 2
+    }
+  },
+  {
+    "key": "demo_date",
+    "label": "Date",
+    "description": "A calendar date.",
+    "type": "date"
+  },
+  {
+    "key": "demo_datetime",
+    "label": "Date & Time",
+    "description": "A date with a time-of-day.",
+    "type": "datetime"
+  },
+  {
+    "key": "demo_time",
+    "label": "Time",
+    "description": "A time-of-day.",
+    "type": "time"
+  },
+  {
+    "key": "demo_city_ref",
+    "label": "City (reference)",
+    "description": "A reference (FK) picker over Cities — stores the record id, displays a field.",
+    "type": "reference",
+    "type_config": {
+      "fk_record_type": "rt_cities"
+    }
+  },
+  {
+    "key": "demo_city_list",
+    "label": "City (list, records datasource)",
+    "description": "A list driven by a FluxScript records query.",
+    "type": "list",
+    "type_config": {
+      "datasource": "records.cities.orderBy(name).top(50)",
+      "key_field": "id",
+      "display_field": "name"
+    }
+  },
+  {
+    "key": "demo_priority",
+    "label": "Priority (list, literal datasource)",
+    "description": "A list driven by a FluxScript literal — self-contained choices.",
+    "type": "list",
+    "type_config": {
+      "datasource": "['Low', 'Medium', 'High', 'Urgent']"
+    }
+  },
+  {
+    "key": "demo_photo",
+    "label": "Photo (single)",
+    "description": "One photo — camera or gallery. By-value descriptor (dimensions, thumbnail, EXIF geo/time).",
+    "type": "photo",
+    "type_config": {
+      "max_size_mb": 10
+    }
+  },
+  {
+    "key": "demo_photos",
+    "label": "Photos (multi)",
+    "description": "Up to six photos (type_config.multi with max_count / max_size_mb).",
+    "type": "photo",
+    "type_config": {
+      "multi": true,
+      "max_count": 6,
+      "max_size_mb": 10
+    }
+  },
+  {
+    "key": "demo_file",
+    "label": "File (single)",
+    "description": "One file attachment (accept filters the file dialog).",
+    "type": "file",
+    "type_config": {
+      "accept": [".pdf", ".doc", ".docx"],
+      "max_size_mb": 25
+    }
+  },
+  {
+    "key": "demo_files",
+    "label": "Files (multi)",
+    "description": "Up to five file attachments (multi + accept + max_count + max_size_mb).",
+    "type": "file",
+    "type_config": {
+      "multi": true,
+      "accept": [".pdf", ".png", ".jpg", ".csv", ".xlsx"],
+      "max_count": 5,
+      "max_size_mb": 25
+    }
+  },
+  {
+    "key": "demo_check",
+    "label": "Checklist item (composite)",
+    "description": "A composite row — sub-attributes over the shared ok / ref / comment pool atoms. Cells live in history, addressed demo_check.ok etc.",
+    "type": "composite",
+    "type_config": {
+      "attributes": [
+        {
+          "attribute_ref": "ok",
+          "required": true,
+          "can_waive": true
+        },
+        {
+          "attribute_ref": "ref"
+        },
+        {
+          "attribute_ref": "comment"
+        }
+      ]
+    }
   }
 ]

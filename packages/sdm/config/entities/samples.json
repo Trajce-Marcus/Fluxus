@@ -1,0 +1,145 @@
+{
+  "_comment": "Showcase / test record type. Its Create activity exercises every renderable attribute TYPE (text, multiline text, int, decimal, date, datetime, time, reference, list [records + literal datasource], photo single/multi, file single/multi, composite) and every usage-level CONFIG setting (required, can_waive, validation + validation_message, show_condition, section markers). Scalars + the reference map to custom fields (exact-key) so they persist and pre-populate on Update; photos/files/composite are history-only by design (no matching custom field). Not part of any domain — purely for demonstration and manual testing of the capture form and widgets.",
+  "recordType": {
+    "id": "rt_samples",
+    "name": "Samples",
+    "description": "A throwaway record type that showcases every attribute type and config setting.",
+    "workflow_ref": "wf_samples",
+    "custom_fields": [
+      {
+        "key": "demo_text",
+        "type": "text",
+        "default": "",
+        "required": true,
+        "indexed": true
+      },
+      {
+        "key": "demo_multiline",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_int",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_decimal",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_date",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_datetime",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_time",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_priority",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_city_list",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "demo_city_ref",
+        "type": "fk_ref",
+        "default": "",
+        "indexed": true,
+        "fk_record_type": "rt_cities",
+        "fk_display_field": "name"
+      }
+    ]
+  },
+  "workflow": {
+    "id": "wf_samples",
+    "name": "Samples",
+    "description": "Create, update and delete Sample records.",
+    "activities": [
+      {
+        "id": "act_create_samples",
+        "name": "Create Sample",
+        "description": "Creates a Sample, capturing one of every attribute type and config.",
+        "sort_order": 0,
+        "record_map": "CREATE",
+        "attributes": [
+          { "section": "Scalars", "description": "Text and numeric types." },
+          { "attribute_ref": "demo_text", "required": true },
+          {
+            "attribute_ref": "demo_multiline",
+            "show_condition": "attributes.demo_priority = 'Urgent'"
+          },
+          {
+            "attribute_ref": "demo_int",
+            "validation": "value >= 0",
+            "validation_message": "Integer must be zero or greater"
+          },
+          { "attribute_ref": "demo_decimal" },
+          { "section": "Dates & times", "description": "Date, date-time and time-of-day types." },
+          { "attribute_ref": "demo_date" },
+          { "attribute_ref": "demo_datetime" },
+          { "attribute_ref": "demo_time" },
+          { "section": "Choices", "description": "Reference (FK) and list pickers." },
+          { "attribute_ref": "demo_priority", "required": true },
+          { "attribute_ref": "demo_city_ref", "required": true, "can_waive": true },
+          { "attribute_ref": "demo_city_list" },
+          { "section": "Files & photos", "description": "By-value descriptor types — single and multi." },
+          { "attribute_ref": "demo_photo" },
+          { "attribute_ref": "demo_photos" },
+          { "attribute_ref": "demo_file" },
+          { "attribute_ref": "demo_files" },
+          { "section": "Composite", "description": "A row of sub-attributes; cells live in history." },
+          { "attribute_ref": "demo_check" }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_update_samples",
+        "name": "Update Sample",
+        "description": "Updates a Sample — mapped scalar/reference fields pre-populate from the record.",
+        "sort_order": 1,
+        "record_map": "UPDATE",
+        "attributes": [
+          { "attribute_ref": "demo_text", "required": true },
+          {
+            "attribute_ref": "demo_int",
+            "validation": "value >= 0",
+            "validation_message": "Integer must be zero or greater"
+          },
+          { "attribute_ref": "demo_priority" },
+          { "attribute_ref": "demo_city_ref", "can_waive": true },
+          { "section": "Add photos", "description": "History-only capture on update." },
+          { "attribute_ref": "demo_photos" }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      },
+      {
+        "id": "act_delete_samples",
+        "name": "Delete Sample",
+        "description": "Delete this Sample record.",
+        "sort_order": 2,
+        "record_map": "DELETE",
+        "_comment": "record_map:DELETE — 'confirm' attribute must equal 'DELETE' exactly.",
+        "attributes": [
+          { "attribute_ref": "confirm" }
+        ],
+        "before_hook": null,
+        "after_hook": null
+      }
+    ]
+  }
+}
