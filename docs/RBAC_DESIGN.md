@@ -1,9 +1,13 @@
 # Fluxus — RBAC Design (PROPOSAL, for review)
 
-Status: **draft for review, rev 5 (2026-07-19).** Not yet agreed; nothing here
-is built. Rev 5 settles the auth *provider* (recommended and approved
-2026-07-19): **Neon Auth (Managed Better Auth)** — see the hard-dependency note
-below. Rev 4 is a vocabulary pass, no new decisions: aligned to the locked
+Status: **draft for review, rev 6 (2026-07-19).** Nothing here is built. Rev 6
+settles the **auth design** (§0 — recommended and approved 2026-07-19): bearer
+JWT transport, per-request verification in tRPC `createContext`, env-driven dev
+stub, and a two-lookup roles-resolver seam stubbed until RBAC stages 1–2. It
+also names the two planes after the two apps (§1): Console roles are the fixed
+implementer levels; Runtime roles are variable, solution-declared. Rev 5
+settles the auth *provider* (recommended and approved 2026-07-19): **Neon Auth
+(Managed Better Auth)** — see the hard-dependency note below. Rev 4 is a vocabulary pass, no new decisions: aligned to the locked
 **org / solution / operation** naming (GLOSSARY, 2026-07-19) — "scope" reads as
 operation, the repo tier is gone (solutions carry their own sharing and
 implementer permissions), roles are solution-scoped, and the governance store is
@@ -23,8 +27,8 @@ truth moves into the package SPECs and this becomes the design record.
 
 Hard dependency: **auth**. `context.user` is still the demo stub; every
 enforcement rule assumes the server can identify the caller and populate
-`context.user` (incl. `context.user.roles`). Auth design (identity, sessions,
-tokens) is out of scope here and comes first (§12 phasing).
+`context.user` (incl. `context.user.roles`). Auth comes first (§12 phasing);
+its design is settled in §0 below and awaits build.
 
 Provider settled (2026-07-19): **Neon Auth (Managed Better Auth)**, used
 shallowly — identity + sessions only. Auth data (users, sessions, JWKS) lives
@@ -41,14 +45,75 @@ is a fallback, not a rewrite.
 
 ---
 
+## 0. Auth design (settled rev 6, 2026-07-19 — awaiting build)
+
+Four rulings (each recommended by Claude, approved by TT), plus the smaller
+calls that ride along. Together with the provider note above this is the
+complete auth design; the build session starts from here.
+
+**0.1 Session transport: bearer JWT, never cookies.** The browser hosts are
+static sites on different origins than the server, so cookie sessions would
+mean cross-site cookie pain (SameSite=None, credentialed CORS, Safari quirks).
+Instead the Better Auth client in the host obtains the session JWT and
+`@fluxus/client` attaches it as an `Authorization: Bearer` header on every
+tRPC call. The server never reads a cookie. Headless/integration callers use
+the same header.
+
+**0.2 Verification placement: per-request tRPC `createContext`.** Today's
+`AppContext` is built once at startup and shared across requests; it becomes
+per-request. Verification (parse header → check against cached JWKS → produce
+`context.user`) lives in the `fetchRequestHandler`'s `createContext` — one
+code path, identical under local Hono, Lambda, and the hand-rolled Vercel
+bridge (which already passes headers through untouched). `/health` stays open.
+This is rev 5's "one middleware", placed at the tRPC seam because tRPC is the
+only real surface.
+
+**0.3 Dev posture: env-driven, demo stub when unconfigured.** When the Neon
+Auth env vars are unset (fresh clone, tests, local dev), `context.user` stays
+the demo stub and everything is open — §7's existing rule, dev workflow
+unchanged. When configured, a valid session is **required**: unauthenticated
+tRPC calls are rejected; there is no half-mode where a configured server
+accepts anonymous callers. Local dev can opt in by setting the vars (same Neon
+project, dev branch — `neon_auth` branches with the DB). This posture is
+convenience only: the verification path is identical either way, and the stub
+branch can be deleted later without redesign.
+
+**0.4 Roles resolution: a two-lookup resolver seam, stubbed until RBAC.**
+Auth does not wait on §2a. The middleware takes a resolver seam with one
+lookup per plane, matching the two apps (§1):
+
+- `(user, operation) → roleIds` — the Runtime plane; becomes
+  `context.user.roles`. Stubbed to `[]` at auth build; filled by RBAC stage 1,
+  however §2a lands (governance solution or bespoke table — either plugs into
+  this one function).
+- `(user, solution) → implementer level` — the Console plane; consumed
+  server-side by `config.put`/page save, **never enters the script
+  environment**. Stubbed to open at auth build; filled by RBAC stage 2.
+
+**Riding along:** `context.user` = `{ id, name, email, roles }`. History-entry
+`author` becomes the Neon Auth user **id** — stable where names aren't;
+display names resolve at render (entries are never edited). Sign-in UI is a
+minimal embedded email+password form per host, gating `connect()` — no hosted
+redirect pages, no social providers for MVP. Signup stays open for now
+(everything is open anyway); once RBAC stage 1 engages deny-by-default a fresh
+signup sees nothing, which is the intended end state — flip to invite-only in
+Neon Auth if the interim bothers us.
+
+**Build-time caveat:** Neon Auth's Better Auth incarnation is young — the
+build session verifies the current client SDK and JWKS endpoint shapes against
+live docs before writing code; minor API drift from this sketch is expected
+and does not touch the design.
+
 ## 1. Two planes, one analogy
 
-GitHub is the reference model, and it splits permissions the same way we need:
+GitHub is the reference model, and it splits permissions the same way we need.
+With the two apps named (2026-07-19), each plane has a home (TT's framing,
+rev 6):
 
-| Plane | GitHub analogue | Fluxus meaning |
-|---|---|---|
-| **Implementer (design-time)** | repo permission levels (read / write / admin) | who may view/edit the SDM config, pages, and the access rules themselves |
-| **App (runtime)** | what the *product built on the repo* lets its end users do | who may read which records, run which activities, open which pages |
+| Plane | App | GitHub analogue | Fluxus meaning | Role set |
+|---|---|---|---|---|
+| **Implementer (design-time)** | **Console** | repo permission levels (read / write / admin) | who may view/edit the SDM config, pages, and the access rules themselves | **fixed** — three platform-defined levels (§8), never in any config |
+| **App (runtime)** | **Runtime** | what the *product built on the repo* lets its end users do | who may read which records, run which activities, open which pages | **variable** — declared per solution in `access.roles`; drives menus, pages, activities |
 
 These never mix: an implementer level says nothing about runtime data access,
 and an app role grants no config-editing power. A solo implementer holds `admin`
@@ -398,8 +463,9 @@ pages + workflows replacing the raw record UI. That makes this phasing the
 app's front door, not a parallel track: identity → roles → visible menu →
 permitted activities is the first stretch of the user-app spine.
 
-1. **Auth** (prerequisite, separate design): identity, sessions, `context.user`
-   real, `context.user.roles` populated, reporting `author` real. Provider:
+1. **Auth** (prerequisite; **design settled — §0**): identity, sessions,
+   `context.user` real, reporting `author` real. `context.user.roles` ships as
+   the stubbed resolver seam (`[]`), filled by stages 2–3 below. Provider:
    Neon Auth (Managed Better Auth), per the hard-dependency note up top.
 2. **RBAC stage 1 — record types + activities:** `access.roles` in config, role
    validation, server-side partition filtering by readable type, role-aware
