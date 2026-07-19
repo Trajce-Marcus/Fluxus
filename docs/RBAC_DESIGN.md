@@ -1,7 +1,9 @@
 # Fluxus — RBAC Design (PROPOSAL, for review)
 
-Status: **draft for review, rev 4 (2026-07-19).** Not yet agreed; nothing here
-is built. Rev 4 is a vocabulary pass, no new decisions: aligned to the locked
+Status: **draft for review, rev 5 (2026-07-19).** Not yet agreed; nothing here
+is built. Rev 5 settles the auth *provider* (recommended and approved
+2026-07-19): **Neon Auth (Managed Better Auth)** — see the hard-dependency note
+below. Rev 4 is a vocabulary pass, no new decisions: aligned to the locked
 **org / solution / operation** naming (GLOSSARY, 2026-07-19) — "scope" reads as
 operation, the repo tier is gone (solutions carry their own sharing and
 implementer permissions), roles are solution-scoped, and the governance store is
@@ -22,7 +24,20 @@ truth moves into the package SPECs and this becomes the design record.
 Hard dependency: **auth**. `context.user` is still the demo stub; every
 enforcement rule assumes the server can identify the caller and populate
 `context.user` (incl. `context.user.roles`). Auth design (identity, sessions,
-tokens) is out of scope here and comes first (§11 phasing).
+tokens) is out of scope here and comes first (§12 phasing).
+
+Provider settled (2026-07-19): **Neon Auth (Managed Better Auth)**, used
+shallowly — identity + sessions only. Auth data (users, sessions, JWKS) lives
+in a `neon_auth` schema inside the existing Neon Postgres, so users are real
+rows the governance tables can reference directly, and the privileged bootstrap
+read (§2a) is a plain local query. The server verifies the session JWT locally
+via JWKS in one middleware that produces `context.user`; all role/permission
+logic stays in-platform (this doc), never in the provider. Why not Clerk: users
+would live in Clerk's cloud (webhook sync), and its organisation/role features
+overlap what Fluxus builds itself. Risk noted: Neon Auth is young (rebuilt on
+Better Auth in 2026, GA pending); the escape hatch is that Better Auth is
+open-source and runs against our own schema — self-hosting it on the same data
+is a fallback, not a rewrite.
 
 ---
 
@@ -384,7 +399,8 @@ app's front door, not a parallel track: identity → roles → visible menu →
 permitted activities is the first stretch of the user-app spine.
 
 1. **Auth** (prerequisite, separate design): identity, sessions, `context.user`
-   real, `context.user.roles` populated, reporting `author` real.
+   real, `context.user.roles` populated, reporting `author` real. Provider:
+   Neon Auth (Managed Better Auth), per the hard-dependency note up top.
 2. **RBAC stage 1 — record types + activities:** `access.roles` in config, role
    validation, server-side partition filtering by readable type, role-aware
    availability gates, workbench UX mirror. The security boundary, complete and
