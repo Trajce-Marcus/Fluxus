@@ -1,7 +1,12 @@
 # Fluxus — RBAC Design (PROPOSAL, for review)
 
-Status: **draft for review, rev 3 (2026-07-15).** Not yet agreed; nothing here
-is built. Rev 3 locks four decisions (§11): activity access **is** the gate
+Status: **draft for review, rev 4 (2026-07-19).** Not yet agreed; nothing here
+is built. Rev 4 is a vocabulary pass, no new decisions: aligned to the locked
+**org / solution / operation** naming (GLOSSARY, 2026-07-19) — "scope" reads as
+operation, the repo tier is gone (solutions carry their own sharing and
+implementer permissions), roles are solution-scoped, and the governance store is
+org-tier. Context also noted in §12: the workbench is slated to become the
+end-user app, making auth + RBAC its front door. Rev 3 locks four decisions (§11): activity access **is** the gate
 expression (settled — no separate access expression); running an activity
 against an unreadable anchor is **blocked**; page enforcement is **client-only
 until pages move server-side** (accepted interim); role definitions **stay in
@@ -37,46 +42,49 @@ explicitly.
 
 ## 2. Roles
 
-- A **role** is an org-created named grant bundle pertaining to an app / module
-  (e.g. `role_dispatchers`, `role_technicians`). Roles are module-scoped, not
-  platform-global: "Dispatcher" means something only within its module.
+- A **role** is an org-created named grant bundle pertaining to a solution
+  (e.g. `role_dispatchers`, `role_technicians`). Roles are solution-scoped, not
+  platform-global: "Dispatcher" means something only within its solution.
 - **Roles are declared in the SDM config, created as needed** — a new
   `access.roles` section at config root. Declaring them there means role ids
   are validatable at config-save time (schema-aware validation doctrine), and
-  the model travels: an SDM imported elsewhere carries the roles its rules
-  reference; the importing org just populates them with people.
-- **Assignments (user → roles) are NOT in the app's config.** They are
+  the model travels: a solution imported elsewhere carries the roles its rules
+  reference; the importing org just populates them with people. (This is the
+  "role *definitions* are part of the solution bundle" line now in GLOSSARY.)
+- **Assignments (user → roles) are NOT in the solution.** They are
   operational data, maintained through a **user-roles admin tool** (admin only —
-  §8), living in a **separate governance repo**, org-scoped, keyed `(org, scope,
-  userId) → roleIds`. Why not the app config (answering rev-1 Q): (a) the config
-  is reusable model that exports/travels — you don't want specific people baked
-  into a shareable SDM; (b) staff churn (onboarding/offboarding) would otherwise
-  route every assignment change through config-edit + validation +
-  change-management, far too heavy for what is really HR-shaped operations; (c)
-  it is exactly the per-user state an app's model shouldn't hold. So: **role
-  *definitions* in the app's SDM config, role *assignments* in a governance repo
-  of their own.** *How* that governance store is shaped is the open fork in §2a.
-- `context.user.roles` — the role ids the user holds **in the current scope** —
-  is injected by the host into every script environment. Scripts stay
-  scope-blind: they name roles, never orgs or scopes.
+  §8), living in an **org-tier governance store** of its own, keyed `(org,
+  operation, userId) → roleIds`. Why not the solution (answering rev-1 Q): (a)
+  the solution is reusable model that exports/travels — you don't want specific
+  people baked into a shareable solution; (b) staff churn (onboarding/
+  offboarding) would otherwise route every assignment change through config-edit
+  + validation + change-management, far too heavy for what is really HR-shaped
+  operations; (c) it is exactly the per-user state a solution shouldn't hold.
+  So: **role *definitions* in the solution, role *assignments* in a governance
+  store of their own.** *How* that governance store is shaped is the open fork
+  in §2a.
+- `context.user.roles` — the role ids the user holds **in the current
+  operation** — is injected by the host into every script environment. Scripts
+  stay scope-blind: they name roles, never orgs or operations.
 - Naming: role ids `role_<plural>`, display names plural ("Dispatchers").
 
 ## 2a. The governance store — SDM or bespoke? (OPEN, the interesting fork)
 
-Where role assignments live is settled (a governance repo of their own, §2).
+Where role assignments live is settled (an org-tier governance store, §2).
 *How they are shaped* is open, and it is a real "eat your own dogfood" question:
 **do we model governance with the platform, or beside it?**
 
-**Option A — a governance SDM (dogfood).** Assignments are a record type
-(`rt_role_assignments`: user ref, role id, scope) in a system-repo SDM;
-granting/revoking are **activities** (`act_grant_role`, `act_revoke_role`). What
-this buys, essentially for free:
+**Option A — a governance solution (dogfood).** Assignments are a record type
+(`rt_role_assignments`: user ref, role id, operation) in a system-provided
+governance solution, run in a single org-level operation; granting/revoking are
+**activities** (`act_grant_role`, `act_revoke_role`). What this buys,
+essentially for free:
 
 - **Audit is automatic.** Every grant/revoke is a history entry on the spine —
   who granted whom which role, when — with no separate audit store. Governance
   changes get the same truthful, never-edited log as business data.
-- **The admin tool is just a page-builder app** over that SDM — no bespoke CRUD
-  surface; the workbench already renders it.
+- **The admin tool is just a page-builder app** over that solution — no bespoke
+  CRUD surface; the workbench already renders it.
 - **Change-management reuses the same machinery** (the future review → approve →
   publish flow works on activities, so it covers grants too).
 - **One mechanism.** Strongly aligned with the One Pipeline Invariant.
@@ -92,11 +100,11 @@ The catch is **bootstrap ordering**, and it is the crux:
   (audit preserved); only the hot identity read bypasses the gate. This is a
   normal auth pattern (the session layer reads its own tables un-gated), not a
   hole — but it must be designed deliberately, not fall out by accident.
-- Scoping mismatch: assignments are org-scoped and cross-app (`(org, scope,
-  user)`), while SDMs are the unit of scope. A governance SDM would be
-  **org-scoped**, sitting in the system repo the locked hierarchy already
-  anticipates — a slightly different citizen from an app SDM, which is worth
-  being explicit about.
+- Scoping mismatch: assignments are org-scoped and cross-solution (`(org,
+  operation, user)`), while an operation is the unit of runtime partition. The
+  governance solution runs in a single **org-level operation** whose records
+  reference every other operation — a slightly different citizen from an app
+  operation, which is worth being explicit about.
 
 **Option B — bespoke org-tier structure.** Assignments are plain rows in the
 auth/org tier (a `role_assignments` table), no SDM, no activities. Simpler
@@ -108,8 +116,8 @@ audited, change-managed, mutated-only-through-actions data the platform exists t
 handle — governing the platform *with* the platform is the strongest possible
 dogfood, and the only real cost (the privileged identity read) is a well-trodden
 pattern. But it is not locked: it hinges on being comfortable with the
-RBAC-exempt bootstrap read and with an org-scoped governance SDM as a distinct
-citizen. Flagged for decision; nothing depends on it until auth exists.
+RBAC-exempt bootstrap read and with an org-level governance operation as a
+distinct citizen. Flagged for decision; nothing depends on it until auth exists.
 
 ## 3. What can be protected — three surfaces, three postures
 
@@ -275,7 +283,7 @@ behaviour would vary by caller, which the audit spine can't tolerate.
 ## 7. Defaults and adoption
 
 - **No auth / no `access` anywhere → everything open** (today's dev behaviour;
-  existing demo scopes keep working untouched).
+  existing demo operations keep working untouched).
 - **Once auth + access rules are engaged, per §3:** record types and pages are
   **deny-by-default** (unlisted ⇒ hidden), activities are **open-by-default**
   (no gate ⇒ invocable). No global "strict mode" flag — the default is fixed per
@@ -287,8 +295,9 @@ behaviour would vary by caller, which the audit spine can't tolerate.
 
 ## 8. Implementer (design-time) plane
 
-GitHub repo levels, **collapsed to three** (TT's ruling — `write` and `maintain`
-merged; a single implementer doing full stack doesn't need the split):
+GitHub-style permission levels, **collapsed to three** (TT's ruling — `write`
+and `maintain` merged; a single implementer doing full stack doesn't need the
+split):
 
 | Level | Grants |
 |---|---|
@@ -298,10 +307,10 @@ merged; a single implementer doing full stack doesn't need the split):
 
 - Enforcement: `config.put` and page save require `write`; managing who is an
   implementer and running the user-roles admin tool require `admin`.
-- Scope of these levels: today the scope path; later the org-defined **repo**
-  (locked hierarchy ruling already earmarks repos as "the unit of sharing/import
-  and permissions"). Scope-blindness means no script/config changes when that
-  arrives.
+- Attachment point of these levels: the **solution** (locked naming 2026-07-19 —
+  solutions carry their own sharing and implementer permissions; the repo tier
+  is gone). Today's stand-in is the operation key until solutions exist as
+  first-class. Scope-blindness means no script/config changes when that arrives.
 - The change-management pipeline from the tt_todo (review → approve → publish,
   "cooked in") is acknowledged and **deferred**: these levels are the substrate
   it will sit on (approval = an `admin`/second `write` actor other than the
@@ -324,8 +333,8 @@ merged; a single implementer doing full stack doesn't need the split):
   principals; hooks run as the model. `context.user.roles` membership tests
   cover conditional UI and gates.
 - **No org hierarchy work** — roles/assignments key off the existing opaque
-  scope; when repos land, assignments re-key by repo with scripts and config
-  untouched.
+  partition key (now named the operation id); when orgs/operations become
+  first-class, assignments re-key with scripts and config untouched.
 
 ## 10. Auditing posture
 
@@ -361,13 +370,18 @@ merged; a single implementer doing full stack doesn't need the split):
    now.)
 
 **Still open — the one fork worth a decision (§2a):** whether role *assignments*
-are modelled with a **governance SDM** (grant/revoke as activities → audit and
-admin UI for free, at the cost of a deliberate RBAC-exempt identity-read on
+are modelled with a **governance solution** (grant/revoke as activities → audit
+and admin UI for free, at the cost of a deliberate RBAC-exempt identity-read on
 bootstrap) or as **bespoke org-tier structure** (simpler bootstrap, everything
-else rebuilt by hand). Leaning governance-SDM (dogfood); not locked. Nothing
-depends on it until auth exists.
+else rebuilt by hand). Leaning governance-solution (dogfood); not locked.
+Nothing depends on it until auth exists.
 
 ## 12. Phasing (proposed)
+
+Context (2026-07-19): the workbench is slated to become the end-user app —
+pages + workflows replacing the raw record UI. That makes this phasing the
+app's front door, not a parallel track: identity → roles → visible menu →
+permitted activities is the first stretch of the user-app spine.
 
 1. **Auth** (prerequisite, separate design): identity, sessions, `context.user`
    real, `context.user.roles` populated, reporting `author` real.

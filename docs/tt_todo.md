@@ -12,7 +12,8 @@ _(empty — add freely)_
 ## Outstanding
 
 - [ ] **RBAC** (record level + activity level) — big open design. **Design
-  draft under review: [docs/RBAC_DESIGN.md](RBAC_DESIGN.md)** (rev 2, 2026-07-14).
+  draft under review: [docs/RBAC_DESIGN.md](RBAC_DESIGN.md)** (rev 4, 2026-07-19 —
+  vocabulary aligned to locked org/solution/operation naming).
   Shape so far: three surfaces (record type `read` role-list / activity access =
   the availability gate expression / page `open` role-list); strict-by-default
   for record types + pages, open-by-default for activities; implementer plane =
