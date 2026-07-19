@@ -13,13 +13,17 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { appRouter, type AppContext } from './router';
-import { createAuth, type Auth } from './auth';
+import { createAuth, createDbRolesResolver, type Auth } from './auth';
 
 /** What the entries construct once at boot; user is added per request. */
-export type AppOptions = Omit<AppContext, 'user'> & { auth?: Auth };
+export type AppOptions = Omit<AppContext, 'user' | 'authConfigured'> & { auth?: Auth };
 
 export function createApp(options: AppOptions): Hono {
   const { auth = createAuth(), ...base } = options;
+  // The live roles resolver (RBAC stage 1): reads role_assignments for
+  // context.user.roles. Enforcement (record-type read filter) is active only
+  // when auth is configured — the env stub keeps everything open.
+  const roles = base.roles ?? createDbRolesResolver(base.db);
   const app = new Hono();
 
   app.use('*', cors());
@@ -35,6 +39,8 @@ export function createApp(options: AppOptions): Hono {
       // response for every call in the batch.
       createContext: async (): Promise<AppContext> => ({
         ...base,
+        roles,
+        authConfigured: auth.configured,
         user: await auth.authenticate(c.req.header('authorization')),
       }),
     }),

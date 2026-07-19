@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { closeDb, createDb } from '../src/db/client';
-import { putConfig, putPage } from '../src/host';
-import { DEFAULT_SCOPE } from '../src/router';
+import { ensureOperation, ensureSolution, listPageVersions, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
+import { DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { config } from '../../sdm/src/config';
 
 // Match the dev server: seed the DATABASE_URL from .env (Neon) when present,
@@ -18,10 +18,16 @@ if (!process.env.DATABASE_URL) {
   try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); } catch { /* no .env → PGlite */ }
 }
 
-const scope = process.argv[2] ?? DEFAULT_SCOPE;
+// The demo bundle: one id is both the solution (config + pages) and the
+// operation (records). `npm run seed <solutionId> <operationId>` overrides.
+const solutionId = process.argv[2] ?? DEFAULT_SOLUTION;
+const operationId = process.argv[3] ?? DEFAULT_OPERATION;
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
 
-await putConfig(db, scope, config);
+await ensureSolution(db, solutionId, 'Demo');
+await putConfig(db, solutionId, config);
+await ensureOperation(db, operationId, solutionId, 'Demo');
+await seedOperationRecords(db, operationId, config);
 
 // Page files ride the same deploy: every *.json under page-builder/pages/ is
 // upserted, its page path = the file's path relative to packages/page-builder
@@ -32,9 +38,13 @@ const pagesDir = fileURLToPath(new URL('../../page-builder/pages', import.meta.u
 const pageFiles = readdirSync(pagesDir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'));
 for (const file of pageFiles) {
   const pagePath = `pages/${file.slice(0, -'.json'.length)}`;
-  await putPage(db, scope, pagePath, JSON.parse(readFileSync(join(pagesDir, file), 'utf8')));
+  await putPage(db, solutionId, pagePath, JSON.parse(readFileSync(join(pagesDir, file), 'utf8')));
+  // Runtime renders published-only (M3), so publish the seeded draft once —
+  // idempotent: skip if the page already has a version (re-seeds don't stack).
+  const existing = await listPageVersions(db, solutionId, pagePath);
+  if (existing.length === 0) await publishPage(db, solutionId, pagePath, 'Seed import', 'seed');
 }
 
-console.log(`Seeded SDM config (+ seed records for empty types) and ${pageFiles.length} page(s) into scope '${scope}'.`);
+console.log(`Seeded solution '${solutionId}' (config + ${pageFiles.length} page(s), published) and operation '${operationId}' (records for empty types).`);
 await closeDb(db);
 process.exit(0);

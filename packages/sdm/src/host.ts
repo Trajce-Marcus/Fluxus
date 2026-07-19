@@ -37,9 +37,12 @@ export async function initHost(auth?: HostAuth): Promise<void> {
     : undefined;
   // Deployed builds bake in the live server URL; local dev (var unset) falls
   // back to the client's localhost default.
+  // Runtime renders PUBLISHED pages only (CONSOLE_RUNTIME_SPEC §4); drafts
+  // never leave the Console. The Console's own preview keeps rendering drafts.
   client = await FluxusClient.connect({
     url: import.meta.env.VITE_FLUXUS_API_URL,
     getToken: auth?.configured ? auth.getToken : undefined,
+    pages: 'published',
   });
   adapter = client.adapter;
   engine = createEngine({

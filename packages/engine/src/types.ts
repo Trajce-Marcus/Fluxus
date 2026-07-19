@@ -170,6 +170,18 @@ export interface RecordTypeDef {
   workflow_ref: string;
   id_field?: string;
   custom_fields: CustomFieldDef[];
+  /** RBAC read surface (RBAC_COMPACT): role ids that may read this type.
+   *  Absent/empty ⇒ open. Enforced server-side (partition filter), never in
+   *  script env. */
+  access?: { read?: string[] };
+}
+
+// A runtime role, declared per solution (RBAC_COMPACT "Roles"): id `role_<plural>`,
+// display name plural. Definitions live here; assignments live in the
+// governance store, never in the config.
+export interface RoleDef {
+  id: string;
+  name: string;
 }
 
 // Named reusable FluxScript function (stored in the SDM's functions collection).
@@ -195,6 +207,9 @@ export interface ConfigRaw {
   workflows: WorkflowRawDef[];
   functions?: FunctionDef[];
   seeds?: SeedGroup[];
+  /** Solution-scoped RBAC role definitions (RBAC_COMPACT). Absent ⇒ RBAC
+   *  dormant (adoption posture): all record types/pages read open. */
+  access?: { roles?: RoleDef[] };
 }
 
 // Reverse-FK index entry — one per (sourceType, fieldKey) pair that points at a given target type

@@ -6,6 +6,7 @@ import { TabBar, css as tabBarCss } from './TabBar';
 import { ContentArea, css as contentAreaCss } from './ContentArea';
 import { ConsolePanel, css as consolePanelCss } from './ConsolePanel';
 import { css as pageEditorCss } from '../page-builder/PageEditor';
+import { css as adminViewCss } from '../admin/AdminView';
 
 // Demo-page seeding moved to api.ts (backend stage 2): savePage validates
 // against the fetched SDM config, so it must run after initSdmRuntime — not
@@ -47,6 +48,7 @@ const css = `
   ${contentAreaCss}
   ${consolePanelCss}
   ${pageEditorCss}
+  ${adminViewCss}
 
   *, *::before, *::after { box-sizing: border-box; }
 

@@ -19,6 +19,8 @@ interface AppContextValue {
   pagePaths: string[];
   selectedPage: string | null;
   selectPage: (path: string) => void;
+  // Return to the record grid/view (the menu-addressable "Workbench", §4).
+  showWorkbench: () => void;
   selectRecordType: (type: RecordTypeDef) => void;
   selectRecord: (record: RecordInstance) => void;
   // Select by id — used after CREATE, where only RunActivityResult.recordId is known.
@@ -68,6 +70,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const selectPage = useCallback((path: string) => {
     setSelectedPage(path);
+  }, []);
+
+  const showWorkbench = useCallback(() => {
+    setSelectedPage(null);
   }, []);
 
   const selectRecord = useCallback((record: RecordInstance) => {
@@ -168,6 +174,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pagePaths: pageRuntime.listPagePaths(),
       selectedPage,
       selectPage,
+      showWorkbench,
       selectRecord,
       selectRecordById,
       selectRecordType,

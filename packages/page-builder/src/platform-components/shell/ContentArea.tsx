@@ -1,5 +1,6 @@
 import { useShellState } from './useShellState';
 import { PageEditor } from '../page-builder/PageEditor';
+import { AdminView } from '../admin/AdminView';
 
 function ContentAreaComponent() {
   const { activeTab } = useShellState(['activeTab']);
@@ -14,7 +15,7 @@ function ContentAreaComponent() {
 
   return (
     <div className="content-area">
-      <PageEditor pagePath={activeTab} />
+      {activeTab.startsWith('admin/') ? <AdminView tab={activeTab} /> : <PageEditor pagePath={activeTab} />}
     </div>
   );
 }

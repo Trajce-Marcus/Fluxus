@@ -25,6 +25,7 @@ import { componentManifests, PageRenderer, pageRendererCss } from '@fluxus/page-
 import { pageRuntime } from '../../sdm-runtime/engine';
 import { LayoutEditor, css as layoutEditorCss } from './layout-editor/LayoutEditor';
 import { ExpressionDialog, css as expressionDialogCss } from './ExpressionDialog';
+import { PublishControl, css as publishControlCss } from './PublishControl';
 
 function collectLeafPanels(panel: Panel): Panel[] {
   if (panel.children.length === 0) return [panel];
@@ -434,6 +435,7 @@ function PageEditorComponent({ pagePath }: Props) {
           {col1Collapsed ? '›' : '‹'}
         </button>
         <span className="pe-toolbar-title">Page Builder</span>
+        <PublishControl pagePath={pagePath} />
       </div>
       <div className="pe-columns">
         {!col1Collapsed && (
@@ -451,6 +453,7 @@ export const css = `
   ${layoutEditorCss}
   ${pageRendererCss}
   ${expressionDialogCss}
+  ${publishControlCss}
 
   .pe-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--color-bg); }
   .pe-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 8px; height: 32px; flex-shrink: 0; background: var(--color-sidebar); border-bottom: 1px solid var(--color-border); }

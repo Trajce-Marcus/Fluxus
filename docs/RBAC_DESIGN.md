@@ -1,7 +1,9 @@
 # Fluxus — RBAC Design (PROPOSAL, for review)
 
-Status: **rev 6 (2026-07-19); §0 auth BUILT 2026-07-19 (roles stubbed), RBAC
-stages 1+ not built.** Rev 6
+Status: **rev 7 (2026-07-20); §0 auth BUILT 2026-07-19 (roles stubbed), RBAC
+stages 1+ not built.** Rev 7 closes the last fork: **§2a resolved — Option B,
+bespoke org-tier structure** (user ruling during the Console/Runtime spec
+session; see `docs/CONSOLE_RUNTIME_SPEC.md`). Rev 6
 settles the **auth design** (§0 — recommended and approved 2026-07-19): bearer
 JWT transport, per-request verification in tRPC `createContext`, env-driven dev
 stub, and a two-lookup roles-resolver seam stubbed until RBAC stages 1–2. It
@@ -157,7 +159,7 @@ explicitly.
   stay scope-blind: they name roles, never orgs or operations.
 - Naming: role ids `role_<plural>`, display names plural ("Dispatchers").
 
-## 2a. The governance store — SDM or bespoke? (OPEN, the interesting fork)
+## 2a. The governance store — SDM or bespoke? (RESOLVED rev 7: Option B)
 
 Where role assignments live is settled (an org-tier governance store, §2).
 *How they are shaped* is open, and it is a real "eat your own dogfood" question:
@@ -200,13 +202,15 @@ auth/org tier (a `role_assignments` table), no SDM, no activities. Simpler
 bootstrap (it's just an auth-tier read), no scoping gymnastics — but audit,
 admin UI, and change-management are all **rebuilt by hand** instead of inherited.
 
-**Leaning: Option A**, precisely because governance is exactly the kind of
-audited, change-managed, mutated-only-through-actions data the platform exists to
-handle — governing the platform *with* the platform is the strongest possible
-dogfood, and the only real cost (the privileged identity read) is a well-trodden
-pattern. But it is not locked: it hinges on being comfortable with the
-RBAC-exempt bootstrap read and with an org-level governance operation as a
-distinct citizen. Flagged for decision; nothing depends on it until auth exists.
+**Leaning was Option A** (dogfood), but **resolved rev 7 (2026-07-20, user
+ruling): Option B — bespoke org-tier structure.** Assignments and implementer
+levels are plain auth-tier tables (`role_assignments` keyed
+`(org, operation, user) → roleIds`; `implementer_levels` keyed
+`(user, solution) → level`), read directly by the roles resolver — no
+RBAC-exempt bootstrap read, no org-level governance operation. Audit and admin
+UI are built by hand (Console admin surfaces). The governance-solution option
+remains a possible later migration, not a seam obligation. Build shape:
+`docs/CONSOLE_RUNTIME_SPEC.md` §2.
 
 ## 3. What can be protected — three surfaces, three postures
 
@@ -439,7 +443,7 @@ split):
   org-tier events audited there. RBAC adds no separate audit store (One Pipeline
   Invariant).
 
-## 11. Decisions and the one remaining fork
+## 11. Decisions (no forks remain)
 
 **Decided (rev 3):**
 
@@ -458,12 +462,12 @@ split):
    home can move to an org registry with the same declaration shape — but not
    now.)
 
-**Still open — the one fork worth a decision (§2a):** whether role *assignments*
-are modelled with a **governance solution** (grant/revoke as activities → audit
-and admin UI for free, at the cost of a deliberate RBAC-exempt identity-read on
-bootstrap) or as **bespoke org-tier structure** (simpler bootstrap, everything
-else rebuilt by hand). Leaning governance-solution (dogfood); not locked.
-Nothing depends on it until auth exists.
+**Decided (rev 7, 2026-07-20):**
+
+5. **Role assignments live in bespoke org-tier structure (§2a Option B)** —
+   plain auth-tier tables read directly by the roles resolver; audit and admin
+   UI built by hand in Console. The governance-solution dogfood remains a
+   possible later migration.
 
 ## 12. Phasing (proposed)
 

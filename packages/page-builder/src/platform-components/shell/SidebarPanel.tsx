@@ -2,12 +2,14 @@ import { useShellState } from './useShellState';
 import { PageExplorer, css as explorerCss } from '../page-builder/PageExplorer';
 import { SearchPanel, css as searchCss } from '../page-builder/SearchPanel';
 import { ComponentsPanel, css as componentsCss } from '../page-builder/ComponentsPanel';
+import { AdminSidebar, css as adminSidebarCss } from '../admin/AdminSidebar';
 
 const TITLES: Record<string, string> = {
   explorer: 'Pages',
   search: 'Search',
   components: 'Components',
   sdm: 'Simple Data Model',
+  admin: 'Administration',
 };
 
 function SdmPlaceholder() {
@@ -34,6 +36,7 @@ function SidebarPanelComponent() {
         {activeActivityItem === 'search' && <SearchPanel />}
         {activeActivityItem === 'components' && <ComponentsPanel />}
         {activeActivityItem === 'sdm' && <SdmPlaceholder />}
+        {activeActivityItem === 'admin' && <AdminSidebar />}
       </div>
     </div>
   );
@@ -43,6 +46,7 @@ export const css = `
   ${explorerCss}
   ${searchCss}
   ${componentsCss}
+  ${adminSidebarCss}
 
   .sidebar-panel {
     display: flex;

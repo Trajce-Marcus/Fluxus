@@ -8,10 +8,12 @@ record.
 
 One class, `FluxusClient`, owning the movements every remote host makes:
 
-1. **`connect({url, scope})`** — fetch `config.get` + `records.partition` +
-   `pages.list` for the scope (in parallel) and build a `MemoryAdapter`
-   snapshot plus the `pages` map (path → def). The host creates its engine
-   over that adapter and wires UI subscriptions to it once.
+1. **`connect({url, operationId})`** — resolve the operation to its solution
+   (`operations.get`), then fetch `config.get` + `pages.list` (by `solutionId`)
+   and `records.partition` (by `operationId`) in parallel and build a
+   `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
+   operation's `menu` (spec §5). The host creates its engine over that adapter
+   and wires UI subscriptions to it once. Exposes `operationId` + `solutionId`.
 2. **`refresh()`** — re-fetch the partition into the *same* adapter via
    `MemoryAdapter.replaceRecords` (identity stable, subscribers notified).
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`
@@ -24,7 +26,8 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    here: `PageDef` and its validation belong to the page builder.
 5. **`uploads`** (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the upload surface
    capture widgets inject: `upload(attributeKey, file, onProgress?)` and
-   `resolveUrl(storageKey)`. Scope is bound here so widgets stay scope-blind.
+   `resolveUrl(storageKey)`. The solution is bound here so widgets stay blind
+   to it.
 
 ## Upload core (`src/upload.ts`)
 
@@ -39,7 +42,27 @@ fetch can't report it) → the thumbnail PUT for photos → return the descripto
 (`FileDescriptor` / `PhotoDescriptor`, §4). Bytes never transit our server. The
 descriptor types are exported here and reused by the widgets. The `presign`
 step is injected into `runUpload`, so the core is transport-agnostic;
-`FluxusClient` binds it to its tRPC client + scope.
+`FluxusClient` binds it to its tRPC client + solution.
+
+## ConsoleClient (Console plane, CONSOLE_RUNTIME_SPEC §8)
+
+A second, lighter class beside `FluxusClient`: the **cross-operation** admin
+surface the page builder drives, distinct from `FluxusClient`'s single-operation
+data snapshot. `ConsoleClient.create({ url, getToken })` (shares the bearer
+transport) exposes plain typed calls: `listSolutions`, `listOperations` /
+`getOperation` / `createOperation` / `putOperationConfig`, and the governance
+set (`operationRoles`, `listAssignments`/`putAssignment`,
+`listImplementers`/`putImplementer`), and the publish set (`publishPage`,
+`listPageVersions`, `getPageVersion`, `rollbackPage`). No snapshot, no engine —
+just the tRPC door for admin screens.
+
+`connect`'s `pages` option (`'draft'` default | `'published'`) picks which page
+set the snapshot holds: the Runtime host passes `'published'` (latest version
+per path); the Console passes `'draft'` (its editable preview). Connect also
+fetches `me` → the caller's `userRoles` + `enforced` flag, and the operation's
+`menu`. `visibleMenu()` filters the menu for display (deny-default per §5;
+unfiltered when not `enforced`, §7) — cosmetic, the server page filter is the
+real gate. `ConsoleClient.listPublishedPaths` feeds the menu editor.
 
 ## Contracts and postures
 
@@ -55,8 +78,9 @@ step is injected into `runUpload`, so the core is transport-agnostic;
 - **`@fluxus/server` is type-only** (`import type { AppRouter }`): erased at
   compile time, so no server code (pg, PGlite, Hono) enters a browser bundle.
   It lives in devDependencies to say so.
-- Defaults: url `http://localhost:8787/trpc`, scope `demo/sdm` (matching the
-  server's `DEFAULT_SCOPE`).
+- Defaults: url `http://localhost:8787/trpc`, operationId `demo/sdm` (matching
+  the server's `DEFAULT_OPERATION`; the demo bundle's single id is both its
+  operation and its solution).
 
 ## Auth (RBAC phase 1, 2026-07-19)
 

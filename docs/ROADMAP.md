@@ -70,7 +70,9 @@ Auth build (RBAC phase 1 — roles stubbed)                        ✅ done
      posture; two-lookup roles-resolver seam (stubbed);
      entry.author = user id; host sign-in gates. Design:
      docs/RBAC_COMPACT.md + RBAC_DESIGN §0 build note.
-     Next: RBAC stage 1 (record types + activities), §2a fork
+     Next: RBAC stage 1 (record types + activities); §2a resolved
+     2026-07-20 (Option B bespoke — RBAC_DESIGN rev 7); build plan
+     in docs/CONSOLE_RUNTIME_SPEC.md
 ```
 
 ## Sequence

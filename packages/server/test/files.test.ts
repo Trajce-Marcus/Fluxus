@@ -6,12 +6,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { insertPendingAttachment, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, insertPendingAttachment, putConfig } from '../src/host';
 import { appRouter } from '../src/router';
 import { attachments, rptActivities, rptAttributes } from '../src/db/schema';
 import type { BlobStore } from '../src/services/blob';
 import type { ConfigRaw } from '@fluxus/engine';
 
+// One id serves as both solution (config) and operation (records) for the test.
 const SCOPE = 'test/files';
 
 // A stub blob store — the presign logic under test is ours; the signed URL is
@@ -56,11 +57,13 @@ const caller = (withBlob = true) => appRouter.createCaller({ db, ...(withBlob ? 
 
 beforeAll(async () => {
   db = await createDb();
+  await ensureSolution(db, SCOPE, 'Test');
   await putConfig(db, SCOPE, config);
+  await ensureOperation(db, SCOPE, SCOPE, 'Test');
 });
 
 describe('files.presignUpload — cost safeguards (§7)', () => {
-  const good = { scope: SCOPE, attributeKey: 'site_photos', name: 'a.jpg', mime: 'image/jpeg', size: 1234 };
+  const good = { solutionId: SCOPE, attributeKey: 'site_photos', name: 'a.jpg', mime: 'image/jpeg', size: 1234 };
 
   it('refuses when the blob store is unconfigured', async () => {
     await expect(caller(false).files.presignUpload(good)).rejects.toThrow(/not configured/);
@@ -81,7 +84,7 @@ describe('files.presignUpload — cost safeguards (§7)', () => {
     await expect(caller().files.presignUpload({ ...good, mime: 'application/pdf', name: 'a.pdf' })).rejects.toThrow(/images only/);
   });
   it('rejects a file outside its accept filter', async () => {
-    await expect(caller().files.presignUpload({ scope: SCOPE, attributeKey: 'permit', name: 'a.png', mime: 'image/png', size: 10 })).rejects.toThrow(/not an accepted type/);
+    await expect(caller().files.presignUpload({ solutionId: SCOPE, attributeKey: 'permit', name: 'a.png', mime: 'image/png', size: 10 })).rejects.toThrow(/not an accepted type/);
   });
 
   it('signs a photo (full + thumb) and ledgers a pending row', async () => {
@@ -102,11 +105,11 @@ describe('descriptor pipeline — projection (§9) + ledger commit (§8)', () =>
     await insertPendingAttachment(db, { storageKey: 'K1', size: 1234, mime: 'image/jpeg', hash: 'h1' });
     await insertPendingAttachment(db, { storageKey: 'K2', size: 5678, mime: 'image/jpeg', hash: 'h2' });
 
-    const created = await caller().activities.run({ scope: SCOPE, activityId: 'act_create_widgets', attributes: { code: 'W-1' } });
+    const created = await caller().activities.run({ operationId: SCOPE, activityId: 'act_create_widgets', attributes: { code: 'W-1' } });
     expect(created.recordId).toBeTruthy();
 
     await caller().activities.run({
-      scope: SCOPE,
+      operationId: SCOPE,
       activityId: 'act_log_photos',
       recordId: created.recordId!,
       attributes: { site_photos: [photo('K1', 'h1'), photo('K2', 'h2')] },

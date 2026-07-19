@@ -22,6 +22,11 @@ const ITEMS: { id: ActivityItem; label: string; path: string }[] = [
     label: 'Simple Data Model',
     path: 'M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 14h-5v-9h5v9zm-7 0H5v-9h3v9zm12 0h-3v-9h3v9z',
   },
+  {
+    id: 'admin',
+    label: 'Administration',
+    path: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm6.5-9.5l1.5-1.5-1.4-1.4-1.5 1.5c-.3-.2-.64-.36-1-.48V1h-2v1.62c-.36.12-.7.28-1 .48L11.1 1.6 9.7 3l1.5 1.5c-.2.3-.36.64-.48 1H9v.02A6 6 0 0 1 18.98 8H21V6h-1.62c-.12-.36-.28-.7-.48-1z',
+  },
 ];
 
 function ActivityBarComponent() {

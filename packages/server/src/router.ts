@@ -13,25 +13,44 @@ import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
   ConfigValidationError,
-  ScopeNotFoundError,
+  OperationNotFoundError,
+  SolutionNotFoundError,
+  createOperation,
   deletePage,
   findActivity,
-  getScopeConfig,
+  getOperation,
+  getSolutionConfig,
+  getPageVersion,
   insertPendingAttachment,
+  listImplementerLevels,
+  listOperations,
+  listPageVersions,
   listPages,
-  loadScopeHost,
+  listPublishedPages,
+  listRoleAssignments,
+  listSolutions,
+  loadOperationHost,
+  pageOpenable,
+  publishPage,
+  rollbackPage,
   putConfig,
+  putImplementerLevel,
+  putOperationConfig,
   putPage,
+  putRoleAssignment,
   usedStorageBytes,
+  validateOperationMenu,
   writeBack,
 } from './host';
 import type { NotifySink } from './services/notify';
 import { consoleNotifySink } from './services/notify';
 import { stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
 import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
+import type { MenuItem, OperationConfig } from './db/schema';
 
-/** Scope is an opaque path string — org-defined levels arrive as data later. */
-export const DEFAULT_SCOPE = 'demo/sdm';
+/** The single demo bundle keeps one id as both its solution and its operation. */
+export const DEFAULT_SOLUTION = 'demo/sdm';
+export const DEFAULT_OPERATION = 'demo/sdm';
 
 export interface AppContext {
   db: Db;
@@ -46,6 +65,12 @@ export interface AppContext {
   user?: AuthUser;
   /** Roles-resolver seam (§0.4); absent ⇒ the stage-1/2 stubs. */
   roles?: RolesResolver;
+  /**
+   * Whether Neon Auth is configured. RBAC enforcement (the record-type read
+   * filter) is active only when true; the env stub (tests, local dev) leaves
+   * everything open, matching "no auth env ⇒ everything open".
+   */
+  authConfigured?: boolean;
 }
 
 /**
@@ -53,22 +78,64 @@ export interface AppContext {
  * resolved for the operation (stand-in: the scope key). What the engine sees
  * as `context.user` and entries record as `author`.
  */
-async function resolveUser(ctx: AppContext, operation: string) {
+async function resolveUser(ctx: AppContext, operationId: string) {
   const user = ctx.user ?? DEMO_USER;
   const roles = ctx.roles ?? stubRolesResolver;
-  return { ...user, roles: await roles.runtimeRoles(user.id, operation) };
+  return { ...user, roles: await roles.runtimeRoles(user.id, operationId) };
 }
 
 /**
- * Console-plane check (implementer level) for config/page writes. The stub
- * resolver answers 'admin' — open until RBAC stage 2 fills the seam.
+ * Console-plane check (implementer level) for config/page writes — keyed on the
+ * solution (the implementer plane attaches to the design artifact). The stub
+ * resolver answers 'admin', so this is open until RBAC stage 2 fills the seam.
  */
-async function requireImplementer(ctx: AppContext, operation: string, level: 'write' | 'admin'): Promise<void> {
+const IMPLEMENTER_RANK = { none: 0, read: 1, write: 2, admin: 3 } as const;
+async function requireImplementer(ctx: AppContext, solutionId: string, level: 'read' | 'write' | 'admin'): Promise<void> {
+  // Env stub (no auth) ⇒ implementer plane open, matching "no auth ⇒ everything
+  // open" (§7). Enforced only when auth is configured (RBAC stage 2 / M5).
+  if (!ctx.authConfigured) return;
   const user = ctx.user ?? DEMO_USER;
   const roles = ctx.roles ?? stubRolesResolver;
-  const held = await roles.implementerLevel(user.id, operation);
-  const ok = held === 'admin' || (level === 'write' && held === 'write');
-  if (!ok) throw new TRPCError({ code: 'FORBIDDEN', message: `Requires implementer '${level}' on this solution` });
+  const held = await roles.implementerLevel(user.id, solutionId);
+  if (IMPLEMENTER_RANK[held] < IMPLEMENTER_RANK[level]) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: `Requires implementer '${level}' on this solution` });
+  }
+}
+
+/**
+ * The record-type read surface (RBAC_COMPACT: role list, default deny, server
+ * partition filter). Returns the set of type ids readable to the caller in the
+ * operation, or `null` when RBAC is dormant/off (everything readable):
+ *   - auth unconfigured (env stub) ⇒ null (open), OR
+ *   - the solution declares no `access.roles` ⇒ null (adoption posture).
+ * Otherwise **default deny**: a type is readable only if its `access.read`
+ * lists a role the user holds. A held role set comes from `runtimeRoles`.
+ */
+function computeReadable(authConfigured: boolean | undefined, config: ConfigRaw, roles: string[] | undefined): Set<string> | null {
+  if (!authConfigured) return null; // env stub ⇒ everything open
+  if (!config.access?.roles?.length) return null; // solution opted out ⇒ open (adoption)
+  const held = new Set(roles ?? []);
+  const readable = new Set<string>();
+  for (const rt of config.recordTypes) {
+    if ((rt.access?.read ?? []).some((r) => held.has(r))) readable.add(rt.id); // default deny
+  }
+  return readable;
+}
+
+/** The caller's resolved roles + the operation's linked-solution config. */
+async function operationContext(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; config: ConfigRaw }> {
+  const user = await resolveUser(ctx, operationId);
+  const op = await getOperation(ctx.db, operationId);
+  const config = await getSolutionConfig(ctx.db, op.solutionId);
+  return { user, config };
+}
+
+async function readableTypeIds(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; readable: Set<string> | null }> {
+  const user = await resolveUser(ctx, operationId);
+  if (!ctx.authConfigured) return { user, readable: null };
+  const op = await getOperation(ctx.db, operationId);
+  const config = await getSolutionConfig(ctx.db, op.solutionId);
+  return { user, readable: computeReadable(ctx.authConfigured, config, user.roles) };
 }
 
 /** Whether a file's mime/extension satisfies a `file` attribute's `accept` list. */
@@ -85,7 +152,22 @@ function matchesAccept(accept: string[], mime: string, name: string): boolean {
 
 const t = initTRPC.context<AppContext>().create();
 
-const scopeInput = z.string().min(1).default(DEFAULT_SCOPE);
+const solutionInput = z.string().min(1).default(DEFAULT_SOLUTION);
+const operationInput = z.string().min(1).default(DEFAULT_OPERATION);
+
+// Menu shape (schema §5) — validated on operations.putConfig. Deeper validation
+// (page paths resolve to published versions; role ids exist) lands with M4.
+const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
+  z.object({
+    label: z.string().min(1),
+    page: z.string().min(1).optional(),
+    roles: z.array(z.string().min(1)).optional(),
+    items: z.array(menuItemSchema).optional(),
+  }),
+);
+const operationConfigSchema: z.ZodType<OperationConfig> = z.object({
+  menu: z.array(menuItemSchema).optional(),
+});
 
 /** Arbitrary JSON — the activity payload's transport; the engine types it. */
 const jsonValue: z.ZodType<unknown> = z.lazy(() =>
@@ -93,7 +175,8 @@ const jsonValue: z.ZodType<unknown> = z.lazy(() =>
 );
 
 function rethrow(err: unknown): never {
-  if (err instanceof ScopeNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+  if (err instanceof SolutionNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+  if (err instanceof OperationNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
   if (err instanceof TRPCError) throw err;
   throw new TRPCError({
@@ -103,22 +186,147 @@ function rethrow(err: unknown): never {
 }
 
 export const appRouter = t.router({
-  config: t.router({
+  // Solutions + operations (CONSOLE_RUNTIME_SPEC §2–3): plain auth-tier CRUD,
+  // no SDM/activities. operations.get is the Runtime's resolution door —
+  // operation → { solution, runtime config } — that connect() calls first.
+  // The caller's identity + roles resolved for an operation, and whether RBAC
+  // is enforced (auth configured). The Runtime host uses this for cosmetic
+  // menu filtering; server-side page/record filtering is the real gate.
+  me: t.procedure
+    .input(z.object({ operationId: operationInput }).default({}))
+    .query(async ({ ctx, input }) => {
+      const u = await resolveUser(ctx, input.operationId);
+      return { id: u.id, name: u.name, email: u.email, roles: u.roles ?? [], authConfigured: ctx.authConfigured === true };
+    }),
+
+  solutions: t.router({
+    list: t.procedure.query(async ({ ctx }) => listSolutions(ctx.db)),
+  }),
+
+  operations: t.router({
+    list: t.procedure.query(async ({ ctx }) => listOperations(ctx.db)),
     get: t.procedure
-      .input(z.object({ scope: scopeInput }).default({}))
+      .input(z.object({ operationId: operationInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          return await getScopeConfig(ctx.db, input.scope);
+          return await getOperation(ctx.db, input.operationId);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    create: t.procedure
+      .input(z.object({ id: z.string().min(1), solutionId: z.string().min(1), name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          // Creating an operation is org-admin work; gate on the linked
+          // solution's implementer plane (stub-open until stage 2).
+          await requireImplementer(ctx, input.solutionId, 'admin');
+          await createOperation(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    putConfig: t.procedure
+      .input(z.object({ operationId: operationInput, config: operationConfigSchema }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          // Menu/runtime-config editing = implementer write on the solution
+          // (spec §3, ruled 2026-07-20).
+          await requireImplementer(ctx, op.solutionId, 'write');
+          // Menu references validated at save (§5): pages resolve to published
+          // versions; role ids exist; one nesting level max.
+          await validateOperationMenu(ctx.db, op.solutionId, input.config.menu ?? []);
+          await putOperationConfig(ctx.db, input.operationId, input.config);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
+  // Governance admin (CONSOLE_RUNTIME_SPEC §2a/§3, RBAC_COMPACT): user→role
+  // assignments (per operation) and implementer levels (per solution). Both
+  // require implementer `admin`, checked on the solution. `roles` reads the
+  // linked solution's declared role defs, for the assignment picker.
+  assignments: t.router({
+    roles: t.procedure
+      .input(z.object({ operationId: operationInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          const config = await getSolutionConfig(ctx.db, op.solutionId);
+          return config.access?.roles ?? [];
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    list: t.procedure
+      .input(z.object({ operationId: operationInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireImplementer(ctx, op.solutionId, 'admin');
+          return await listRoleAssignments(ctx.db, input.operationId);
         } catch (err) {
           rethrow(err);
         }
       }),
     put: t.procedure
-      .input(z.object({ scope: scopeInput, config: z.unknown() }))
+      .input(z.object({ operationId: operationInput, userId: z.string().min(1), roleIds: z.array(z.string().min(1)) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireImplementer(ctx, input.scope, 'write');
-          await putConfig(ctx.db, input.scope, input.config as ConfigRaw, ctx.sink);
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireImplementer(ctx, op.solutionId, 'admin');
+          await putRoleAssignment(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
+  implementers: t.router({
+    list: t.procedure
+      .input(z.object({ solutionId: solutionInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'admin');
+          return await listImplementerLevels(ctx.db, input.solutionId);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    put: t.procedure
+      .input(z.object({ solutionId: solutionInput, userId: z.string().min(1), level: z.enum(['read', 'write', 'admin']) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'admin');
+          await putImplementerLevel(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
+  config: t.router({
+    get: t.procedure
+      .input(z.object({ solutionId: solutionInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          return await getSolutionConfig(ctx.db, input.solutionId);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    put: t.procedure
+      .input(z.object({ solutionId: solutionInput, config: z.unknown() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'write');
+          await putConfig(ctx.db, input.solutionId, input.config as ConfigRaw, ctx.sink);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
@@ -127,25 +335,91 @@ export const appRouter = t.router({
   }),
 
   // Page definitions on the config pipeline: defs are opaque jsonb (PageDef +
-  // validatePage live in the page builder), list returns the scope's full set
-  // (a host snapshots pages at connect exactly like the record partition).
+  // validatePage live in the page builder), list returns the solution's full
+  // set (a host snapshots pages at connect exactly like the record partition).
   pages: t.router({
+    // Two read modes (CONSOLE_RUNTIME_SPEC §3): draft (Console — the editable
+    // `pages` rows) vs published (Runtime — the latest `page_versions` per path).
     list: t.procedure
-      .input(z.object({ scope: scopeInput }).default({}))
-      .query(async ({ ctx, input }) => listPages(ctx.db, input.scope)),
+      .input(z.object({ solutionId: solutionInput, operationId: operationInput.optional(), published: z.boolean().default(false) }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          if (!input.published) return await listPages(ctx.db, input.solutionId);
+          const pubs = await listPublishedPages(ctx.db, input.solutionId);
+          // Env stub ⇒ everything open; skip the operation lookup entirely.
+          if (!ctx.authConfigured) return pubs;
+          // Published mode (Runtime): filter to pages openable to the caller in
+          // the operation (RBAC_COMPACT page surface, §6 — server upgrades the
+          // client interim). operationId resolves the caller's roles + solution.
+          const { user, config } = await operationContext(ctx, input.operationId ?? input.solutionId);
+          return pubs.filter((p) => pageOpenable(ctx.authConfigured, config, user.roles, p.def));
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
     put: t.procedure
-      .input(z.object({ scope: scopeInput, path: z.string().min(1), def: z.unknown() }))
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1), def: z.unknown() }))
       .mutation(async ({ ctx, input }) => {
-        await requireImplementer(ctx, input.scope, 'write');
-        await putPage(ctx.db, input.scope, input.path, input.def ?? {});
+        await requireImplementer(ctx, input.solutionId, 'write');
+        await putPage(ctx.db, input.solutionId, input.path, input.def ?? {});
         return { ok: true as const };
       }),
     delete: t.procedure
-      .input(z.object({ scope: scopeInput, path: z.string().min(1) }))
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
-        await requireImplementer(ctx, input.scope, 'write');
-        await deletePage(ctx.db, input.scope, input.path);
+        await requireImplementer(ctx, input.solutionId, 'write');
+        await deletePage(ctx.db, input.solutionId, input.path);
         return { ok: true as const };
+      }),
+    // Publish snapshots the current draft def at max(version)+1 with release
+    // notes. Append-only — rollback republishes an older def as a new version.
+    publish: t.procedure
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1), readme: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'write');
+          const publishedBy = ctx.user?.id ?? DEMO_USER.id;
+          return await publishPage(ctx.db, input.solutionId, input.path, input.readme, publishedBy);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    // Every published page path (unfiltered) — the implementer/authoring plane
+    // (menu editor, §5). Console preview is access-exempt (§6). Implementer read.
+    publishedPaths: t.procedure
+      .input(z.object({ solutionId: solutionInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'read');
+          return (await listPublishedPages(ctx.db, input.solutionId)).map((p) => p.path).sort();
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    versions: t.procedure
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1) }))
+      .query(async ({ ctx, input }) => listPageVersions(ctx.db, input.solutionId, input.path)),
+    // Rollback = republish an older version's def as a NEW version; the draft
+    // is untouched (append-only, never delete/edit).
+    rollback: t.procedure
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1), version: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'write');
+          const publishedBy = ctx.user?.id ?? DEMO_USER.id;
+          return await rollbackPage(ctx.db, input.solutionId, input.path, input.version, `Rollback to v${input.version}`, publishedBy);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    // A specific version's def — the rollback source (republish it as a new
+    // version). Diffing is a non-goal.
+    getVersion: t.procedure
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1), version: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        const def = await getPageVersion(ctx.db, input.solutionId, input.path, input.version);
+        if (def === null) throw new TRPCError({ code: 'NOT_FOUND', message: `No version ${input.version} of '${input.path}'` });
+        return { def };
       }),
   }),
 
@@ -158,7 +432,7 @@ export const appRouter = t.router({
     presignUpload: t.procedure
       .input(
         z.object({
-          scope: scopeInput,
+          solutionId: solutionInput,
           /** The pool attribute this upload is for — its type_config gates the presign. */
           attributeKey: z.string().min(1),
           name: z.string().min(1),
@@ -180,7 +454,7 @@ export const appRouter = t.router({
           if (!blob?.configured) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
           }
-          const config = await getScopeConfig(ctx.db, input.scope);
+          const config = await getSolutionConfig(ctx.db, input.solutionId);
           const attr = config.attributes.find((a) => a.key === input.attributeKey);
           if (!attr) throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown attribute '${input.attributeKey}'` });
           if (!isDescriptorType(attr.type)) {
@@ -235,7 +509,7 @@ export const appRouter = t.router({
         }
       }),
     presignGet: t.procedure
-      .input(z.object({ scope: scopeInput, key: z.string().min(1) }))
+      .input(z.object({ solutionId: solutionInput, key: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
         const blob = ctx.blob;
         if (!blob?.configured) {
@@ -249,42 +523,62 @@ export const appRouter = t.router({
     // The whole scope partition in one round trip — what a browser host loads
     // into its MemoryAdapter snapshot at bootstrap (and re-fetches after runs).
     partition: t.procedure
-      .input(z.object({ scope: scopeInput }).default({}))
+      .input(z.object({ operationId: operationInput }).default({}))
       .query(async ({ ctx, input }) => {
-        const rows = await ctx.db.select().from(records).where(eq(records.scope, input.scope));
-        return rows.map((r) => ({
-          id: r.id,
-          typeRef: r.typeRef,
-          customFields: r.customFields,
-          activityHistory: r.activityHistory,
-        }));
+        try {
+          const { readable } = await readableTypeIds(ctx, input.operationId);
+          const rows = await ctx.db.select().from(records).where(eq(records.operationId, input.operationId));
+          return rows
+            .filter((r) => readable === null || readable.has(r.typeRef))
+            .map((r) => ({
+              id: r.id,
+              typeRef: r.typeRef,
+              customFields: r.customFields,
+              activityHistory: r.activityHistory,
+            }));
+        } catch (err) {
+          rethrow(err);
+        }
       }),
     list: t.procedure
-      .input(z.object({ scope: scopeInput, typeId: z.string().min(1) }))
+      .input(z.object({ operationId: operationInput, typeId: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
-        const rows = await ctx.db
-          .select()
-          .from(records)
-          .where(and(eq(records.scope, input.scope), eq(records.typeRef, input.typeId)));
-        return rows.map((r) => ({
-          id: r.id,
-          typeRef: r.typeRef,
-          customFields: r.customFields,
-          activityHistory: r.activityHistory,
-        }));
+        try {
+          const { readable } = await readableTypeIds(ctx, input.operationId);
+          if (readable !== null && !readable.has(input.typeId)) return [];
+          const rows = await ctx.db
+            .select()
+            .from(records)
+            .where(and(eq(records.operationId, input.operationId), eq(records.typeRef, input.typeId)));
+          return rows.map((r) => ({
+            id: r.id,
+            typeRef: r.typeRef,
+            customFields: r.customFields,
+            activityHistory: r.activityHistory,
+          }));
+        } catch (err) {
+          rethrow(err);
+        }
       }),
     get: t.procedure
-      .input(z.object({ scope: scopeInput, recordId: z.string().min(1) }))
+      .input(z.object({ operationId: operationInput, recordId: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
-        const rows = await ctx.db
-          .select()
-          .from(records)
-          .where(and(eq(records.scope, input.scope), eq(records.id, input.recordId)));
-        if (rows.length === 0) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
+        try {
+          const { readable } = await readableTypeIds(ctx, input.operationId);
+          const rows = await ctx.db
+            .select()
+            .from(records)
+            .where(and(eq(records.operationId, input.operationId), eq(records.id, input.recordId)));
+          // Deny reads as not-found (RBAC_COMPACT): a hidden record and a
+          // missing one are indistinguishable to the caller.
+          if (rows.length === 0 || (readable !== null && !readable.has(rows[0].typeRef))) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
+          }
+          const r = rows[0];
+          return { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory };
+        } catch (err) {
+          rethrow(err);
         }
-        const r = rows[0];
-        return { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory };
       }),
   }),
 
@@ -292,7 +586,7 @@ export const appRouter = t.router({
     run: t.procedure
       .input(
         z.object({
-          scope: scopeInput,
+          operationId: operationInput,
           activityId: z.string().min(1),
           recordId: z.string().min(1).optional(),
           /** Attribute payload. Scalars are strings, as the capture form
@@ -311,8 +605,8 @@ export const appRouter = t.router({
         try {
           // Roles resolve per operation before the engine exists — the
           // availability gate may read context.user.roles.
-          const user = await resolveUser(ctx, input.scope);
-          const host = await loadScopeHost(ctx.db, input.scope, ctx.sink ?? consoleNotifySink, user);
+          const user = await resolveUser(ctx, input.operationId);
+          const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -329,6 +623,13 @@ export const appRouter = t.router({
               throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' needs a recordId to anchor on` });
             }
             anchorRecord = host.adapter.getRecord(input.recordId); // throws → BAD_REQUEST via rethrow
+            // Unreadable anchor ⇒ not-found, checked BEFORE the run gate
+            // (RBAC_COMPACT): the caller can't tell a hidden record from a
+            // missing one. Reuses the already-loaded config + resolved roles.
+            const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
+            if (readable !== null && !readable.has(anchorRecord.typeRef)) {
+              throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
+            }
           }
 
           const issues = validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {});

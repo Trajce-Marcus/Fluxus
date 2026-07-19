@@ -12,14 +12,83 @@
 //   carrying the reason. Derived and rebuildable by re-projection — hooks stay
 //   out of this layer.
 //
-// `scope` is the partition key: an opaque path string (today 'demo/sdm';
-// org-defined repo/folder levels slot in later as data, not as schema).
+// Partition keys (CONSOLE_RUNTIME_SPEC §1–2, endorsed rename of the opaque
+// `scope`): design artifacts (SDM config, pages) key on **solutionId**;
+// records + the reporting projection key on **operationId**. An operation
+// links to exactly one solution, so a runtime call resolves operation →
+// solution to read the config while its data stays operation-partitioned.
 
 import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrecision, index, primaryKey } from 'drizzle-orm/pg-core';
 import type { ActivityHistoryEntry, ConfigRaw } from '@fluxus/engine';
 
+// A solution is the design artifact — the container for one SDM config, its
+// pages and role defs (CONSOLE_RUNTIME_SPEC §1). No data, users or menus.
+export const solutions = pgTable('solutions', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// An operation is the runtime unit — it links to exactly one solution and owns
+// the record partition, users/assignments and its own runtime config (the menu
+// today, §5). `config` is jsonb, not a table, until a second consumer demands
+// one (spec §2). Single implicit org for MVP: the column is present, no org UI.
+export const operations = pgTable('operations', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').notNull().default('default'),
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  name: text('name').notNull(),
+  config: jsonb('config').$type<OperationConfig>().notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('operations_solution').on(t.solutionId),
+]);
+
+/** operations.config shape (spec §5): the role-gated runtime menu, and future
+ *  runtime settings. Menu items address published page paths of the linked
+ *  solution; role ids reference that solution's access.roles. */
+export interface OperationConfig {
+  menu?: MenuItem[];
+}
+export interface MenuItem {
+  label: string;
+  /** Page path (leaf items) — resolves to a published version of the solution. */
+  page?: string;
+  /** Role ids that may see this item; absent/empty ⇒ hidden (deny by default). */
+  roles?: string[];
+  /** One level of nesting max (MVP) — groups carry children instead of a page. */
+  items?: MenuItem[];
+}
+
+// Governance store (CONSOLE_RUNTIME_SPEC §2a — Option B, bespoke auth-tier
+// tables; RBAC_COMPACT "Roles"): assignments live here, never in the solution.
+// Plain reads — no SDM, no activities.
+
+// Runtime-plane assignments: which role ids a user holds in an operation. One
+// row per (org, operation, user); the resolver's lookup 1.
+export const roleAssignments = pgTable('role_assignments', {
+  orgId: text('org_id').notNull().default('default'),
+  operationId: text('operation_id').notNull(),
+  userId: text('user_id').notNull(),
+  roleIds: jsonb('role_ids').$type<string[]>().notNull().default([]),
+}, (t) => [
+  primaryKey({ columns: [t.orgId, t.operationId, t.userId] }),
+  index('role_assignments_operation').on(t.operationId),
+]);
+
+// Implementer-plane levels: a user's design-time level on a solution. One row
+// per (user, solution); the resolver's lookup 2 (consumed at RBAC stage 2/M5).
+export const implementerLevels = pgTable('implementer_levels', {
+  userId: text('user_id').notNull(),
+  solutionId: text('solution_id').notNull(),
+  level: text('level').$type<'read' | 'write' | 'admin'>().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.solutionId] }),
+  index('implementer_levels_solution').on(t.solutionId),
+]);
+
 export const sdmConfigs = pgTable('sdm_configs', {
-  scope: text('scope').primaryKey(),
+  solutionId: text('solution_id').primaryKey(),
   config: jsonb('config').$type<ConfigRaw>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -31,29 +100,46 @@ export const sdmConfigs = pgTable('sdm_configs', {
 // jsonb here: PageDef and validatePage live in the page builder (a host);
 // the server never depends on a peer host.
 export const pages = pgTable('pages', {
-  scope: text('scope').notNull(),
+  solutionId: text('solution_id').notNull(),
   path: text('path').notNull(),
   def: jsonb('def').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  primaryKey({ columns: [t.scope, t.path] }),
+  primaryKey({ columns: [t.solutionId, t.path] }),
+]);
+
+// Published page versions (CONSOLE_RUNTIME_SPEC §2/§3): an append-only,
+// immutable history — publishing snapshots the current draft `pages.def` at
+// `max(version)+1`; rollback is republishing an older def as a NEW version,
+// never a delete/edit (activity-history posture). Runtime renders the latest
+// version per path; Console edits the drafts in `pages`.
+export const pageVersions = pgTable('page_versions', {
+  solutionId: text('solution_id').notNull(),
+  path: text('path').notNull(),
+  version: integer('version').notNull(),
+  def: jsonb('def').notNull(),
+  readme: text('readme').notNull(),
+  publishedBy: text('published_by').notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.path, t.version] }),
 ]);
 
 export const records = pgTable('records', {
-  scope: text('scope').notNull(),
+  operationId: text('operation_id').notNull(),
   id: text('id').notNull(),
   typeRef: text('type_ref').notNull(),
   customFields: jsonb('custom_fields').$type<Record<string, unknown>>().notNull(),
   activityHistory: jsonb('activity_history').$type<ActivityHistoryEntry[]>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  primaryKey({ columns: [t.scope, t.id] }),
-  index('records_scope_type').on(t.scope, t.typeRef),
+  primaryKey({ columns: [t.operationId, t.id] }),
+  index('records_operation_type').on(t.operationId, t.typeRef),
 ]);
 
 export const rptActivities = pgTable('rpt_activities', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
-  scope: text('scope').notNull(),
+  operationId: text('operation_id').notNull(),
   recordId: text('record_id').notNull(),
   recordType: text('record_type').notNull(),
   activityId: text('activity_id').notNull(),
@@ -62,8 +148,8 @@ export const rptActivities = pgTable('rpt_activities', {
   author: text('author').notNull(),
   ts: timestamp('ts', { withTimezone: true }).notNull(),
 }, (t) => [
-  index('rpt_activities_scope_record').on(t.scope, t.recordId),
-  index('rpt_activities_scope_activity').on(t.scope, t.activityId),
+  index('rpt_activities_operation_record').on(t.operationId, t.recordId),
+  index('rpt_activities_operation_activity').on(t.operationId, t.activityId),
 ]);
 
 // The attachments ledger (ATTRIBUTE_TYPES_FILES_SCALARS §8): one row per

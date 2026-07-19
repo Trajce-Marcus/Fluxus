@@ -10,12 +10,15 @@
 // initialized values). Components never import this; they reach the SDM only
 // through the declarative wiring layer (dynamic props in, callbacks out).
 
-import { createHostAuth, FluxusClient } from '@fluxus/client';
+import { ConsoleClient, createHostAuth, FluxusClient } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { signInGate } from './SignIn';
 
 export let sdmClient: FluxusClient;
 export let pageRuntime: PageRuntime;
+// The Console-plane client (cross-operation admin: solutions/operations CRUD,
+// and later publish/versions/governance). Shares the host's auth transport.
+export let consoleClient: ConsoleClient;
 
 export async function initSdmRuntime(): Promise<void> {
   // Auth gate (RBAC_DESIGN §0): VITE_NEON_AUTH_URL unset ⇒ demo posture, no
@@ -25,9 +28,9 @@ export async function initSdmRuntime(): Promise<void> {
   if (auth.configured && !(await auth.session())) await signInGate(auth);
   // Deployed builds bake in the live server URL; local dev (var unset) falls
   // back to the client's localhost default.
-  sdmClient = await FluxusClient.connect({
-    url: import.meta.env.VITE_FLUXUS_API_URL,
-    getToken: auth.configured ? auth.getToken : undefined,
-  });
+  const url = import.meta.env.VITE_FLUXUS_API_URL;
+  const getToken = auth.configured ? auth.getToken : undefined;
+  sdmClient = await FluxusClient.connect({ url, getToken });
+  consoleClient = ConsoleClient.create({ url, getToken });
   pageRuntime = createPageRuntime({ client: sdmClient });
 }

@@ -153,6 +153,15 @@ record to the anchor and passes the object as `options.callbackData`.
   `onQueuedFailure`; becomes host-supplied when a second host needs it to
   differ.
 
+### RBAC config surface (RBAC_COMPACT; enforced outside the engine)
+
+`ConfigRaw.access.roles` (`RoleDef[]`, solution-scoped role definitions) and
+`RecordTypeDef.access.read` (role ids that may read a type) are carried on the
+config for the **server** to enforce (record-type read filter, RBAC stage 1) —
+the engine defines the shape but does not gate reads on it. Activity gating
+stays the existing `show_condition`/availability check, which already reads
+`context.user.roles`. Absent `access.roles` ⇒ RBAC dormant (adoption posture).
+
 ## The Store contract
 
 `src/store.ts` — unchanged from the sdm original: type/def/data reads, staged
