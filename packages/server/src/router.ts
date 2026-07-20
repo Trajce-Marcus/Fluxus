@@ -29,6 +29,7 @@ import {
   listPublishedPages,
   listRoleAssignments,
   listSolutions,
+  createSolution,
   loadOperationHost,
   pageOpenable,
   publishPage,
@@ -201,6 +202,16 @@ export const appRouter = t.router({
 
   solutions: t.router({
     list: t.procedure.query(async ({ ctx }) => listSolutions(ctx.db)),
+    create: t.procedure
+      .input(z.object({ id: z.string().min(1), name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await createSolution(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
   }),
 
   operations: t.router({

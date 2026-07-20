@@ -2,6 +2,7 @@
 // ContentArea delegates here when the active tab is an admin section; page
 // tabs still render the PageEditor.
 
+import { SolutionsAdmin } from './SolutionsAdmin';
 import { OperationsAdmin, css as operationsCss } from './OperationsAdmin';
 import { AssignmentsAdmin } from './AssignmentsAdmin';
 import { ImplementersAdmin } from './ImplementersAdmin';
@@ -9,6 +10,8 @@ import { MenuAdmin, css as menuCss } from './MenuAdmin';
 
 export function AdminView({ tab }: { tab: string }) {
   switch (tab) {
+    case 'admin/solutions':
+      return <SolutionsAdmin />;
     case 'admin/operations':
       return <OperationsAdmin />;
     case 'admin/menu':

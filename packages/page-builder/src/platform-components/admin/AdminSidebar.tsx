@@ -6,6 +6,7 @@ import { ADMIN_TAB, openTab } from '../shell/store';
 import { useShellState } from '../shell/useShellState';
 
 const SECTIONS: { key: string; label: string }[] = [
+  { key: ADMIN_TAB.solutions, label: 'Solutions' },
   { key: ADMIN_TAB.operations, label: 'Operations' },
   { key: ADMIN_TAB.menu, label: 'Operation menu' },
   { key: ADMIN_TAB.assignments, label: 'Role assignments' },

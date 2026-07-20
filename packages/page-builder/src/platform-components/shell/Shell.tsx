@@ -7,20 +7,24 @@ import { ContentArea, css as contentAreaCss } from './ContentArea';
 import { ConsolePanel, css as consolePanelCss } from './ConsolePanel';
 import { css as pageEditorCss } from '../page-builder/PageEditor';
 import { css as adminViewCss } from '../admin/AdminView';
+import { css as sdmViewCss } from '../sdm-builder/SdmView';
 
 // Demo-page seeding moved to api.ts (backend stage 2): savePage validates
 // against the fetched SDM config, so it must run after initSdmRuntime — not
 // at module load.
 
 function ShellComponent() {
-  const { activeActivityItem } = useShellState(['activeActivityItem']);
+  const { activeActivityItem, scopeVersion } = useShellState(['activeActivityItem', 'scopeVersion']);
 
   return (
     <div className="shell">
       <div className="shell-header">
         <HeaderBar />
       </div>
-      <div className="shell-body">
+      {/* Keyed by scopeVersion: opening/switching a solution (or an SDM config
+          save) remounts the sidebar + main so every view re-reads the fresh
+          design snapshot (sdmClient/pageRuntime). */}
+      <div className="shell-body" key={scopeVersion}>
         <div className="shell-activity">
           <ActivityBar />
         </div>
@@ -49,6 +53,7 @@ const css = `
   ${consolePanelCss}
   ${pageEditorCss}
   ${adminViewCss}
+  ${sdmViewCss}
 
   *, *::before, *::after { box-sizing: border-box; }
 

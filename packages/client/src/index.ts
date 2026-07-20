@@ -103,6 +103,9 @@ export class ConsoleClient {
   listSolutions(): Promise<{ id: string; name: string }[]> {
     return this.trpc.solutions.list.query();
   }
+  createSolution(input: { id: string; name: string }): Promise<{ ok: true }> {
+    return this.trpc.solutions.create.mutate(input);
+  }
   listOperations(): Promise<OperationRow[]> {
     return this.trpc.operations.list.query() as Promise<OperationRow[]>;
   }
@@ -194,6 +197,41 @@ export class FluxusClient {
     readonly userRoles: string[],
     readonly enforced: boolean,
   ) {}
+
+  /**
+   * Design-plane connect (CONSOLE_RUNTIME_SPEC §3): bind to a solution directly,
+   * no operation. Loads config + draft pages by solutionId; the record
+   * partition is empty (design has no data) and there is no menu/roles. The
+   * Console uses this to author a solution's model + pages; runActivity/refresh
+   * are not meaningful here (no operation partition) and are not called.
+   */
+  static async connectSolution(options: { url?: string; solutionId: string; getToken?: () => Promise<string | null> }): Promise<FluxusClient> {
+    const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
+    const { solutionId } = options;
+    // pages.list is the reachability probe (it never throws for an existing
+    // solution); config.get throws SolutionNotFoundError for a solution that
+    // has no config row yet — a freshly created solution the user is opening to
+    // author. Fall back to an empty model skeleton so the SDM editor starts
+    // blank and the first save (config.put) creates the row.
+    const [pageRows, config] = await Promise.all([
+      trpc.pages.list.query({ solutionId, published: false }),
+      (trpc.config.get.query({ solutionId }) as Promise<ConfigRaw>).catch(
+        () => ({ attributes: [], recordTypes: [], workflows: [] }) as ConfigRaw,
+      ),
+    ]);
+    const adapter = new MemoryAdapter(config, { initialRecords: [] });
+    const pages = new Map(pageRows.map((p) => [p.path, p.def]));
+    // operationId mirrors solutionId as an inert placeholder — design mode never
+    // touches the record partition. enforced=false: Console is the implementer
+    // plane, menus/roles are not filtered here.
+    return new FluxusClient(trpc, solutionId, solutionId, config, adapter, pages, [], [], false);
+  }
+
+  /** Persist the solution's SDM config (Console SDM editor → config.put). The
+   *  caller reconnects afterwards to rebuild the adapter/pageRuntime. */
+  async saveConfig(config: ConfigRaw): Promise<void> {
+    await this.trpc.config.put.mutate({ solutionId: this.solutionId, config });
+  }
 
   /**
    * Resolve the operation to its solution, then fetch config + page set (by

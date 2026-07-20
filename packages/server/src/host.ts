@@ -406,6 +406,11 @@ export async function listSolutions(db: Db): Promise<{ id: string; name: string 
   return rows.map((r) => ({ id: r.id, name: r.name }));
 }
 
+/** Create a solution (the design-artifact container, §1). Duplicate id → db unique-constraint error. */
+export async function createSolution(db: Db, input: { id: string; name: string }): Promise<void> {
+  await db.insert(solutions).values({ id: input.id, name: input.name });
+}
+
 export async function listOperations(db: Db): Promise<OperationRow[]> {
   const rows = await db.select().from(operations);
   return rows.map((r) => ({ id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, config: r.config }));

@@ -3,26 +3,15 @@ import { PageExplorer, css as explorerCss } from '../page-builder/PageExplorer';
 import { SearchPanel, css as searchCss } from '../page-builder/SearchPanel';
 import { ComponentsPanel, css as componentsCss } from '../page-builder/ComponentsPanel';
 import { AdminSidebar, css as adminSidebarCss } from '../admin/AdminSidebar';
+import { SdmSidebar, css as sdmSidebarCss } from '../sdm-builder/SdmSidebar';
 
 const TITLES: Record<string, string> = {
   explorer: 'Pages',
   search: 'Search',
   components: 'Components',
   sdm: 'Simple Data Model',
-  admin: 'Administration',
+  workspace: 'Workspace',
 };
-
-function SdmPlaceholder() {
-  return (
-    <div className="sdm-placeholder">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" className="sdm-placeholder-icon">
-        <path d="M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 14h-5v-9h5v9zm-7 0H5v-9h3v9zm12 0h-3v-9h3v9z" />
-      </svg>
-      <p className="sdm-placeholder-label">Simple Data Model</p>
-      <p className="sdm-placeholder-sub">Coming soon</p>
-    </div>
-  );
-}
 
 function SidebarPanelComponent() {
   const { activeActivityItem } = useShellState(['activeActivityItem']);
@@ -35,8 +24,8 @@ function SidebarPanelComponent() {
         {activeActivityItem === 'explorer' && <PageExplorer />}
         {activeActivityItem === 'search' && <SearchPanel />}
         {activeActivityItem === 'components' && <ComponentsPanel />}
-        {activeActivityItem === 'sdm' && <SdmPlaceholder />}
-        {activeActivityItem === 'admin' && <AdminSidebar />}
+        {activeActivityItem === 'sdm' && <SdmSidebar />}
+        {activeActivityItem === 'workspace' && <AdminSidebar />}
       </div>
     </div>
   );
@@ -46,7 +35,7 @@ export const css = `
   ${explorerCss}
   ${searchCss}
   ${componentsCss}
-  ${adminSidebarCss}
+  ${sdmSidebarCss}
 
   .sidebar-panel {
     display: flex;

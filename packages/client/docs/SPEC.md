@@ -14,6 +14,11 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
    operation's `menu` (spec §5). The host creates its engine over that adapter
    and wires UI subscriptions to it once. Exposes `operationId` + `solutionId`.
+1a. **`connectSolution({url, solutionId})`** (CONSOLE_RUNTIME_SPEC §3, design
+   plane) — bind to a solution directly, no operation: fetch `config.get` +
+   draft `pages.list` by `solutionId`, empty record partition, no menu/roles.
+   The Console uses this to author a solution's model + pages; `saveConfig`
+   round-trips `config.put`. `refresh`/`runActivity` are not meaningful here.
 2. **`refresh()`** — re-fetch the partition into the *same* adapter via
    `MemoryAdapter.replaceRecords` (identity stable, subscribers notified).
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`

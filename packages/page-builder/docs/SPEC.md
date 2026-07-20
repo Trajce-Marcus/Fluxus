@@ -6,17 +6,20 @@ Current design truth for the page builder. Updated in the same commit as any beh
 
 Two layers under `src/`:
 
-- **`platform-components/shell/`** — IDE-style shell: activity bar, sidebar panel, tab bar, content area, console panel, header.
-- **`platform-components/page-builder/`** — the editor: PageExplorer, PageEditor, ComponentsPanel, the layout editor, `ExpressionDialog.tsx`, `persistence.ts` (the save path). Rendering and validation are imported from `@fluxus/page-runtime` (`PageRenderer`, `componentManifests`, the validators via the `pageRuntime` handle).
+- **`platform-components/shell/`** — IDE-style shell: activity bar, sidebar panel, tab bar, content area, console panel, header. **Two-level IA (CONSOLE_RUNTIME_SPEC §3):** the store's `solutionId` splits the shell into a *workspace* mode (activity bar = **Workspace** → `AdminSidebar`: Solutions/Operations/governance) and a *solution* mode (a solution open → **Pages/SDM/Components/Search**). `enterSolutionScope`/`exitSolutionScope` toggle it; `scopeVersion` keys `shell-body` so opening/switching a solution (or an SDM config save) remounts every solution-scoped view to re-read the fresh snapshot.
+- **`platform-components/page-builder/`** — the editor: PageExplorer, PageEditor, ComponentsPanel, the layout editor, `ExpressionDialog.tsx`, `persistence.ts` (the save path). Mounts as a **solution-level** activity. Rendering and validation are imported from `@fluxus/page-runtime` (`PageRenderer`, `componentManifests`, the validators via the `pageRuntime` handle).
+- **`platform-components/admin/`** — workspace-level admin panels (Solutions, Operations, Role assignments, Implementer levels, Operation menu) over `ConsoleClient`. `SolutionsAdmin`'s **Open** action enters a solution's design scope.
+- **`platform-components/sdm-builder/`** — solution-level SDM editor (slice 1): `SdmSidebar` + `SdmView` route `sdm/record-types|attributes|roles` to `RecordTypesEditor`/`AttributesEditor`/`RolesEditor`. Each edits a local clone of `sdmClient.config` and persists via `useSolutionConfig.commitConfig` (→ `saveConfig` → `reloadSolution` → remount). Workflow/activity/hook (FluxScript) authoring is deferred.
 
 The app component library (AppHeader, InventorList, InventorProfile, Map, WorkOrderList and their prop schemas) moved to `@fluxus/page-runtime`; `src/components/index.ts` re-exports it for the `MyComponents` mount API (`src/api.ts` — the original react-in-html mechanism for embedding registered components, and the real entry: index.html loads it and mounts `Shell`; `src/main.tsx` is a dead POC leftover). The palette registries (`sessionComponents.ts`, `componentSchemas.ts`) stay here as separate lists by standing decision (deriving the three registries from the manifest is a floated cleanup, not agreed).
 
 ## SDM runtime (Extraction stage 2; repointed at backend stage 2; slimmed at the page-runtime extraction)
 
-`src/sdm-runtime/engine.ts` holds the two platform singletons (fork 2: never in React state), assigned by `initSdmRuntime()`, which `api.ts` kicks off at module load; every `mount` awaits it before rendering:
+`src/sdm-runtime/engine.ts` holds the platform singletons (fork 2: never in React state). `initSdmRuntime()` (kicked off by `api.ts` at module load; every `mount` awaits it) now only runs the auth gate and creates the solution-independent `consoleClient` — the Console **boots into workspace mode** with no solution connected. Opening a solution calls `openSolution(id)`, which assigns the design-scoped singletons; `reloadSolution()` re-runs it after a config save:
 
-- **`sdmClient`** — `FluxusClient.connect()` loads the shared scope's stored config + record partition + page set (`demo/sdm` — the same model the workbench edits) into the engine's `MemoryAdapter`; expressions keep evaluating locally and synchronously; every activity run round-trips the server and re-fetches the partition. No localStorage records, no local sample config, no fallback (hard-cutover ruling).
-- **`pageRuntime`** — `createPageRuntime({ client: sdmClient })`, the injected handle the runtime cluster (and this package's editor validation) reaches the SDM through. The pre-extraction `sdmStore`/`config`/`findActivity` singletons and the unused local `Engine` instance are gone.
+- **`consoleClient`** — `ConsoleClient` for the workspace admin surface (solutions/operations CRUD, publish/versions/governance). Created once at boot; solution-independent.
+- **`sdmClient`** — `FluxusClient.connectSolution(solutionId)` (design plane: config + draft pages by `solutionId`, no operation, empty partition) into the engine's `MemoryAdapter`. Reassigned on each `openSolution`; undefined in workspace mode (only solution-level views read it). `saveConfig` persists the SDM config.
+- **`pageRuntime`** — `createPageRuntime({ client: sdmClient })`, the injected handle the runtime cluster (and this package's editor validation) reaches the SDM through. Rebuilt alongside `sdmClient` on each open.
 
 Components never import these — they reach the SDM only through the FluxScript wiring (expressions in, callback scripts out).
 
