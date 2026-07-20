@@ -9,6 +9,7 @@ import { useShellState } from '../shell/useShellState';
 const SECTIONS: { key: string; label: string }[] = [
   { key: SDM_TAB.recordTypes, label: 'Record types' },
   { key: SDM_TAB.attributes, label: 'Attributes' },
+  { key: SDM_TAB.workflows, label: 'Workflows' },
   { key: SDM_TAB.roles, label: 'Roles' },
 ];
 

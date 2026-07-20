@@ -25,6 +25,7 @@ export const ADMIN_TAB = {
 export const SDM_TAB = {
   recordTypes: 'sdm/record-types',
   attributes: 'sdm/attributes',
+  workflows: 'sdm/workflows',
   roles: 'sdm/roles',
 } as const;
 
