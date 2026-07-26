@@ -11,8 +11,11 @@
 // `authClient.token()` (@neondatabase/neon-js).
 
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { and, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { DEMO_USER, type ContextUser } from '@fluxus/engine';
+import type { Db } from './db/client';
+import { implementerLevels, roleAssignments } from './db/schema';
 
 export type AuthUser = ContextUser;
 
@@ -25,11 +28,11 @@ export interface RolesResolver {
   /** Runtime plane: role ids the user holds in the operation → `context.user.roles`. */
   runtimeRoles(userId: string, operation: string): Promise<string[]>;
   /**
-   * Console plane: the user's implementer level on the solution (stand-in:
-   * operation key). Server-only — consumed by config.put/page save, never in
-   * the script environment.
+   * Console plane: the user's implementer level on the solution. Server-only —
+   * consumed by config.put/page save/publish/menu/admin, never in the script
+   * environment. `'none'` = no access (levels declared but not for this user).
    */
-  implementerLevel(userId: string, operation: string): Promise<'read' | 'write' | 'admin'>;
+  implementerLevel(userId: string, solutionId: string): Promise<'none' | 'read' | 'write' | 'admin'>;
 }
 
 /** Stage-1/2 stubs: no runtime roles, implementer plane open (everyone admin). */
@@ -37,6 +40,34 @@ export const stubRolesResolver: RolesResolver = {
   runtimeRoles: async () => [],
   implementerLevel: async () => 'admin',
 };
+
+/**
+ * The live resolver. `runtimeRoles` reads `role_assignments` (RBAC stage 1) —
+ * populates `context.user.roles`, drives record-type + activity enforcement.
+ * `implementerLevel` reads `implementer_levels` (RBAC stage 2 / M5): **dormant
+ * until declared** — if a solution has NO level rows, everyone is `admin`
+ * (adoption posture, matching record-type/page enforcement); once any row
+ * exists, a user without one is `'none'` (denied).
+ */
+export function createDbRolesResolver(db: Db): RolesResolver {
+  return {
+    runtimeRoles: async (userId, operationId) => {
+      const rows = await db
+        .select({ roleIds: roleAssignments.roleIds })
+        .from(roleAssignments)
+        .where(and(eq(roleAssignments.operationId, operationId), eq(roleAssignments.userId, userId)));
+      return rows[0]?.roleIds ?? [];
+    },
+    implementerLevel: async (userId, solutionId) => {
+      const rows = await db
+        .select({ userId: implementerLevels.userId, level: implementerLevels.level })
+        .from(implementerLevels)
+        .where(eq(implementerLevels.solutionId, solutionId));
+      if (rows.length === 0) return 'admin'; // dormant ⇒ open (adoption)
+      return rows.find((r) => r.userId === userId)?.level ?? 'none';
+    },
+  };
+}
 
 export interface Auth {
   /** True when Neon Auth env vars are set — a valid session is then required. */

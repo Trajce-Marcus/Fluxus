@@ -8,8 +8,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { putConfig } from '../src/host';
-import { appRouter, DEFAULT_SCOPE } from '../src/router';
+import { ensureOperation, ensureSolution, putConfig, seedOperationRecords } from '../src/host';
+import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { records, rptActivities, rptAttributes } from '../src/db/schema';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
 import { config } from '../../sdm/src/config';
@@ -43,7 +43,10 @@ beforeAll(async () => {
       records: [{ id: 'WG-1', fields: { id: 'WG-1', name: 'Crew A' } }],
     },
   ];
-  await putConfig(db, DEFAULT_SCOPE, cfg, sink);
+  await ensureSolution(db, DEFAULT_SOLUTION, 'Demo');
+  await putConfig(db, DEFAULT_SOLUTION, cfg, sink);
+  await ensureOperation(db, DEFAULT_OPERATION, DEFAULT_SOLUTION, 'Demo');
+  await seedOperationRecords(db, DEFAULT_OPERATION, cfg);
 });
 
 describe('config storage', () => {
@@ -60,7 +63,23 @@ describe('config storage', () => {
   it('rejects an invalid SDM at save time', async () => {
     const broken = structuredClone(config);
     broken.workflows[0].activities[0].before_hook = 'records.nonexistent_type.count() > 0';
-    await expect(caller().config.put({ scope: 'demo/broken', config: broken })).rejects.toThrow(/SDM config rejected/);
+    await expect(caller().config.put({ solutionId: 'demo/broken', config: broken })).rejects.toThrow(/SDM config rejected/);
+  });
+
+  it('blocks removing/renaming a record type that stored records still reference', async () => {
+    const SOL = 'demo/guard';
+    const OP = 'demo/guard-op';
+    const withGuardType = structuredClone(config);
+    withGuardType.recordTypes.push({ id: 'rt_guard_only', name: 'Guard Only', description: '', workflow_ref: withGuardType.workflows[0].id, custom_fields: [] });
+    await ensureSolution(db, SOL, 'Guard');
+    await putConfig(db, SOL, withGuardType, sink);
+    await ensureOperation(db, OP, SOL, 'Guard');
+    // A stored record of the type (test fixture insert — not an app write path).
+    await db.insert(records).values({ operationId: OP, id: 'GUARD-1', typeRef: 'rt_guard_only', customFields: { id: 'GUARD-1' }, activityHistory: [] });
+    // Saving a config without the type would orphan GUARD-1 — must be rejected.
+    await expect(caller().config.put({ solutionId: SOL, config })).rejects.toThrow(/stored records still reference 'rt_guard_only'/);
+    // The type back in place saves fine.
+    await expect(caller().config.put({ solutionId: SOL, config: withGuardType })).resolves.toEqual({ ok: true });
   });
 });
 
@@ -77,8 +96,8 @@ describe('page storage (opaque defs on the config pipeline)', () => {
     expect((await caller().pages.list({})).map((p) => p.path)).toEqual(['pages/a']);
   });
 
-  it('partitions pages by scope', async () => {
-    expect(await caller().pages.list({ scope: 'demo/other' })).toEqual([]);
+  it('partitions pages by solution', async () => {
+    expect(await caller().pages.list({ solutionId: 'demo/other' })).toEqual([]);
   });
 });
 
@@ -298,7 +317,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
     const runs = await db
       .select()
       .from(rptActivities)
-      .where(and(eq(rptActivities.scope, DEFAULT_SCOPE), eq(rptActivities.recordId, clId)));
+      .where(and(eq(rptActivities.operationId, DEFAULT_OPERATION), eq(rptActivities.recordId, clId)));
     const prelim = runs.find((r) => r.activityId === 'act_complete_preliminaries_inspection_checklists')!;
     const attrs = await db.select().from(rptAttributes).where(eq(rptAttributes.activityRowId, prelim.id));
     const byKey = new Map(attrs.map((a) => [a.key, a]));
@@ -317,7 +336,7 @@ describe('reporting projection (synchronous, normalized)', () => {
     const runs = await db
       .select()
       .from(rptActivities)
-      .where(and(eq(rptActivities.scope, DEFAULT_SCOPE), eq(rptActivities.recordId, 'WO-9001')));
+      .where(and(eq(rptActivities.operationId, DEFAULT_OPERATION), eq(rptActivities.recordId, 'WO-9001')));
     // create + set_location + complete — the rejected/soft-stopped runs left no rows.
     expect(runs.map((r) => r.activityId).sort()).toEqual([
       'act_complete_work_orders',
@@ -338,7 +357,7 @@ describe('reporting projection (synchronous, normalized)', () => {
     const rows = await db
       .select()
       .from(records)
-      .where(and(eq(records.scope, DEFAULT_SCOPE), eq(records.id, 'WO-9001')));
+      .where(and(eq(records.operationId, DEFAULT_OPERATION), eq(records.id, 'WO-9001')));
     expect(rows).toHaveLength(1);
     expect(rows[0].activityHistory.length).toBe(3);
   });

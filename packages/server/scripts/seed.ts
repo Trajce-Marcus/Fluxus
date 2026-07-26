@@ -1,15 +1,23 @@
-// Dev-time seeding: load the sdm workbench's demo SDM into the server's
-// database through the same putConfig path the API uses (validation
-// included). The cross-package import is deliberate dev tooling — the server
-// RUNTIME never depends on a peer host; config distribution stays an open
-// thread (root ROADMAP) and this script is its stopgap.
+// Bootstrap seeding: bring an EMPTY database up to a working demo — a fresh
+// clone, a fresh Neon branch, a PGlite run, CI.
+//
+// Not a deploy step, and no longer a config/page distribution channel (ruled
+// 2026-07-26). The database is the source of truth for solutions: Console
+// authors the model and pages, `sdm_config_versions` / `page_versions` hold
+// their history. The repo files this script reads are a bootstrap fixture, so
+// everything here is **skip-if-present** — re-seeding never overwrites work
+// done in Console. Pass --force to overwrite anyway (rebuilding a demo from the
+// files on purpose).
+//
+// The cross-package import is deliberate dev tooling — the server RUNTIME never
+// depends on a peer host.
 
 import { fileURLToPath } from 'node:url';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { closeDb, createDb } from '../src/db/client';
-import { putConfig, putPage } from '../src/host';
-import { DEFAULT_SCOPE } from '../src/router';
+import { ensureOperation, ensureSolution, getSolutionConfig, listPageVersions, listPages, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
+import { DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { config } from '../../sdm/src/config';
 
 // Match the dev server: seed the DATABASE_URL from .env (Neon) when present,
@@ -18,23 +26,50 @@ if (!process.env.DATABASE_URL) {
   try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); } catch { /* no .env → PGlite */ }
 }
 
-const scope = process.argv[2] ?? DEFAULT_SCOPE;
+const args = process.argv.slice(2);
+const force = args.includes('--force');
+const positional = args.filter((a) => !a.startsWith('--'));
+
+// The demo bundle: one id is both the solution (config + pages) and the
+// operation (records). `npm run seed <solutionId> <operationId>` overrides.
+const solutionId = positional[0] ?? DEFAULT_SOLUTION;
+const operationId = positional[1] ?? DEFAULT_OPERATION;
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
 
-await putConfig(db, scope, config);
+await ensureSolution(db, solutionId, 'Demo');
 
-// Page files ride the same deploy: every *.json under page-builder/pages/ is
-// upserted, its page path = the file's path relative to packages/page-builder
+// Config: only when the solution has none. An existing config is authored
+// truth — overwriting it silently is exactly the drift this seed used to cause.
+const hasConfig = await getSolutionConfig(db, solutionId).then(() => true).catch(() => false);
+const wroteConfig = force || !hasConfig;
+if (wroteConfig) await putConfig(db, solutionId, config);
+
+await ensureOperation(db, operationId, solutionId, 'Demo');
+await seedOperationRecords(db, operationId, config);
+
+// Page files: page path = the file's path relative to packages/page-builder
 // minus the extension (pages/work-orders-demo.json → 'pages/work-orders-demo').
-// Unconditional upsert by design — deploying pages = deploying files, so the
-// files win over live edits; unlike record seeds, pages are never user data.
 const pagesDir = fileURLToPath(new URL('../../page-builder/pages', import.meta.url));
 const pageFiles = readdirSync(pagesDir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'));
+const existingPaths = new Set((await listPages(db, solutionId)).map((p) => p.path));
+let wrotePages = 0;
 for (const file of pageFiles) {
   const pagePath = `pages/${file.slice(0, -'.json'.length)}`;
-  await putPage(db, scope, pagePath, JSON.parse(readFileSync(join(pagesDir, file), 'utf8')));
+  if (existingPaths.has(pagePath) && !force) continue;
+  await putPage(db, solutionId, pagePath, JSON.parse(readFileSync(join(pagesDir, file), 'utf8')));
+  wrotePages++;
+  // Runtime renders published-only (M3), so publish the seeded draft once —
+  // idempotent: skip if the page already has a version (re-seeds don't stack).
+  const existing = await listPageVersions(db, solutionId, pagePath);
+  if (existing.length === 0) await publishPage(db, solutionId, pagePath, 'Seed import', 'seed');
 }
 
-console.log(`Seeded SDM config (+ seed records for empty types) and ${pageFiles.length} page(s) into scope '${scope}'.`);
+const skipped = pageFiles.length - wrotePages;
+console.log(
+  `Seeded solution '${solutionId}' (config: ${wroteConfig ? 'written' : 'kept existing'}, ` +
+  `pages: ${wrotePages} written${skipped > 0 ? `, ${skipped} kept existing` : ''}) ` +
+  `and operation '${operationId}' (records for empty types).` +
+  (!force && (skipped > 0 || !wroteConfig) ? '\nExisting content was left alone — re-run with --force to overwrite from the repo files.' : ''),
+);
 await closeDb(db);
 process.exit(0);

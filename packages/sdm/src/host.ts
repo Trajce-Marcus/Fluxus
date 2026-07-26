@@ -35,11 +35,20 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   const user: ContextUser | undefined = session
     ? { id: session.id, name: session.name, email: session.email, roles: [] }
     : undefined;
+  // Which operation this app is running (ruled 2026-07-26): `?operation=<id>`
+  // in the URL — how Console's Operations list launches the app, and a plain
+  // bookmarkable address for an operation. Absent ⇒ the client's default
+  // operation, so existing local links keep working.
+  const operationId = new URLSearchParams(window.location.search).get('operation') ?? undefined;
   // Deployed builds bake in the live server URL; local dev (var unset) falls
   // back to the client's localhost default.
+  // Runtime renders PUBLISHED pages only (CONSOLE_RUNTIME_SPEC §4); drafts
+  // never leave the Console. The Console's own preview keeps rendering drafts.
   client = await FluxusClient.connect({
     url: import.meta.env.VITE_FLUXUS_API_URL,
+    operationId,
     getToken: auth?.configured ? auth.getToken : undefined,
+    pages: 'published',
   });
   adapter = client.adapter;
   engine = createEngine({

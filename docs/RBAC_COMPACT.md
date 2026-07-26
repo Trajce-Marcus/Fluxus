@@ -19,7 +19,7 @@
 
 ## Roles
 - Solution-scoped; ids `role_<plural>`, display names plural.
-- **Definitions** in SDM config (`access.roles`, validated at save). **Assignments** in org-tier governance store, keyed `(org, operation, userId) → roleIds` — never in solution.
+- **Definitions** in SDM config (`access.roles`, validated at save). **Assignments** in org-tier governance store, keyed `(org, operation, userId) → roleIds` — never in solution. Store shape ruled 2026-07-20 (§2a Option B): **bespoke auth-tier tables** (`role_assignments`, `implementer_levels`), not a governance solution.
 - `context.user.roles` = role ids in current operation; scripts scope-blind.
 
 ## Surfaces
@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | Record type | `read` | role list | deny | server (partition filter) |
 | Activity | `run` | `show_condition` expression | open | server (existing gate) |
-| Page | `open` | role list | deny | client (interim) |
+| Page | `open` | role list | deny | server (published `pages.list` filter, M4; client menu cosmetic on top) |
 
 - No `write`/`delete` verb — activities are the only mutation path.
 - Grant semantics: union across roles (OR); no deny rules.
@@ -55,4 +55,4 @@
 No row-level read conditions, field-level permissions, role inheritance/groups/wildcards, denial logging, `can()` builtin.
 
 ## Phasing
-1. Auth (roles stubbed) — **BUILT 2026-07-19** (see RBAC_DESIGN §0 build note) → 2. RBAC stage 1: record types + activities → 3. Stage 2: pages + implementer plane → 4. Evidence-driven extras.
+1. Auth (roles stubbed) — **BUILT 2026-07-19** (see RBAC_DESIGN §0 build note) → 2. RBAC stage 1: record types + activities — **BUILT 2026-07-20** (governance store `role_assignments`/`implementer_levels`; live `runtimeRoles`; record-type read filter, default-deny when auth configured + solution declares `access.roles`; anchor-read gate before the run check; Console assignments/implementers admin) → 3. Stage 2: pages + implementer plane — **BUILT 2026-07-20** (pages = M4: `def.access.open` server filter on published `pages.list`; implementer plane = M5: `implementer_levels` live, dormant-until-declared, gating config/pages/publish/menu/operations/governance; enforced only when auth configured) → 4. Evidence-driven extras.

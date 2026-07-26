@@ -1,5 +1,6 @@
 import { AppProvider, useAppContext } from './context/AppContext';
 import { UatLabelsProvider, UatLabelsToggle } from './context/UatLabels';
+import { MenuNav } from './components/MenuNav';
 import { RecordTypeList } from './components/RecordTypeList';
 import { RecordsGrid } from './components/RecordsGrid';
 import { RecordView } from './components/RecordView';
@@ -41,6 +42,7 @@ export default function App() {
           </header>
           <div className="app-body">
             <aside className="side-panel">
+              <MenuNav />
               <RecordTypeList />
               <PagesList />
             </aside>

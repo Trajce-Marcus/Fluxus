@@ -63,6 +63,7 @@ export type {
   FunctionDef,
   RecordInstance,
   RecordTypeDef,
+  RoleDef,
   ReverseRefEntry,
   RunActivityResult,
   SeedGroup,

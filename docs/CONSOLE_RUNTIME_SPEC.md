@@ -1,0 +1,132 @@
+# Console & Runtime Apps — Master Spec
+
+Status: **rev 4 (2026-07-26) — M1–M9 BUILT.** M9 closes the design-plane data
+gap (Console now builds against an operation's records) and gives the SDM config
+the version history pages have had since M3. Server 64 tests + full workspace
+build green. Living truth lives in the package SPECs (`@fluxus/server`,
+`@fluxus/client`, `@fluxus/engine`) per the docs-with-code rule; this doc is the
+milestone map + decision log. Browser-smoked end-to-end 2026-07-26: 10-step
+Playwright baseline (Console boot → solution open → SDM edit/save → model
+publish + versions → menu putConfig → Runtime boot → published page), zero
+console errors in both apps. Follow-ups landed same day: config.put blocks
+orphaning stored records; workflow binding mandatory in the record-types
+editor; "Shared Data Model" labels.
+
+## 0. Scope
+
+- Build out **Console** (design plane: page builder + SDM authoring + admin) and **Runtime** (workbench → end-user app).
+- Deliverables: operations tier; auth+RBAC wired into both apps; page publish w/ versioning + readme; per-operation runtime menus; page access control.
+- Baseline built: bearer-JWT auth (RBAC_COMPACT), `@fluxus/page-runtime`, pages on config pipeline, prod deploy.
+
+## 1. Entity model (GLOSSARY: org / solution / operation)
+
+- **Solution** = design artifact, the container: SDM config + pages + role defs. No data, users, assignments, menus.
+- **Operation** = runtime unit; **links to exactly one solution** (`solution_id` NOT NULL FK). Owns record partition, users, role assignments, files, **operation config** (menu + future runtime settings).
+- Two operations on one solution ⇒ disjoint data/people/menus, shared model + pages.
+- Opaque `scope` string splits: design artifacts key on **solutionId**; records + operation config key on **operationId** (endorsed rename of unendorsed "scope").
+- Org tier: single implicit org MVP; column present, no org UI.
+
+## 2. Storage (existing Drizzle/Neon pipeline — no new mechanisms)
+
+- `solutions(id, name, created_at)` — MVP row = today's `demo/sdm` bundle.
+- `operations(id, org_id, solution_id FK NOT NULL, name, config jsonb, created_at)` — `config` holds the menu (§5); jsonb column, not a table, until a second consumer demands one.
+- Rekey: `configs`/`pages` → `solution_id`; `records`/`rpt_*` → `operation_id`. One migration; seed script updated.
+- `page_versions(solution_id, path, version int, def jsonb, readme text, published_by, published_at)` — PK `(solution_id, path, version)`; **append-only, immutable** (activity-history posture).
+- `sdm_config_versions(solution_id, version int, config jsonb, readme text, published_by, published_at)` — PK `(solution_id, version)`; same posture (M9). The model's change history, now that the database — not the repo files — is the source of truth for a solution.
+- Governance (§2a **resolved 2026-07-20: Option B — bespoke org-tier structure**, RBAC_DESIGN rev 7):
+  - `role_assignments` keyed `(org, operation, user) → roleIds`.
+  - `implementer_levels` keyed `(user, solution) → level`.
+  - Plain auth-tier reads (no SDM, no activities); admin CRUD surfaces built by hand in Console. Governance-solution dogfood remains a possible later migration, not a seam obligation.
+
+## 3. Console app
+
+- **Two-level IA (M7)**: the Console is a *workspace* until a solution is opened.
+  - **Workspace level** (no solution open) — cross-solution/org admin: Solutions (list/create + operation count; **Open** = design it here), Operations (**Open** = run it in the Runtime app), Role assignments, Implementer levels, Operation menu. Activity bar = single **Workspace** item.
+  - **Solution level** (a solution open) — that solution's design artifacts: **Pages** (the builder), **SDM** (model editor), Components, Search. Activity bar switches to this set; header shows the solution name + **← Solutions** to return.
+  - Opening a solution = `engine.openSolution(id, operationId?)` → `FluxusClient.connectSolution({ solutionId, operationId })` → `enterSolutionScope`. The shell subtree is keyed by `scopeVersion` and remounts so every view re-reads the fresh snapshot.
+  - **Design data (M9, ruled 2026-07-26)**: the model and draft pages are solution-scoped; the **records come from one of the solution's operations**. Console previously connected with an empty record set, so the SDM editor and page preview showed nothing where the Runtime host showed rows — the platform contradicting itself, and authoring hooks/datasources/list columns blind. The header carries a **Data** picker (the solution's operations, remembered per solution in `fluxus:page-builder:data-operation:<solutionId>`); switching re-opens the solution against that operation and remounts. A solution with no operations still opens, with no records — the exception, not the design. Activities run normally in Console: running one is how you test a workflow.
+- Host: current page-builder app grows sections; page editing unchanged (drafts = `pages` table).
+- **The two Opens follow the two planes** (ruled 2026-07-26). **Solutions → Open** enters the **Console** design scope: author the model and pages, no operation required (authoring is never gated on data — a new solution opens with none, and the header Data picker fills in once operations exist). **Operations → Open** launches the **Runtime app** on that operation, in a new tab: `${VITE_FLUXUS_RUNTIME_URL}/?operation=<id>` (localhost:5173 in dev). One list is "what am I building", the other is "what is running".
+- **Operations admin** (workspace level): list/create operations (name + solution) + the Runtime Open above; user→role assignments UI; implementer levels UI (both over §2 governance tables).
+- **SDM editor** (solution level, M7): model authoring — record types (+ custom fields, workflow binding, RBAC read surface), the attribute pool (key/label/type + fk/list/multi/multiline config), workflows + their activities, and role defs. Plain forms over `config.get`/`config.put`; a save persists the whole config, reloads the solution to rebuild the model, and remounts. **Workflows editor** (M8, slice 2, lean): `WorkflowsEditor` under the `sdm/workflows` tab — workflows (id/name/description) with activities nested; per-activity id/name/description/sort_order/record_map/show_condition plus a lean attribute-usage composer (pick pool attribute, toggle required, insert section headings, reorder) and before/after hooks. FluxScript is edited as plain textareas (no DSL tooling yet); per-usage overrides (show_condition/validation/can_waive) and the FunctionDef/seed collections stay hand-edited — deferred.
+- **Publish flow**: per-page action → dialog requiring **readme** (release notes, md) → `pages.publish` snapshots the draft def into `page_versions` at `max(version)+1`. Rollback = republish an older version's def as a new version — never delete/edit.
+- **Model publish (M9)**: the same surface for the SDM — a toolbar above every SDM section → `config.publish` snapshots the solution's config into `sdm_config_versions`, readme required. One difference from pages: `config.rollback` republishes an older version **and restores it as the draft**, because the config draft is what every host evaluates against (a page draft is the builder's working copy, so it is left alone).
+- **Menu editor**: edits the operation's `config.menu` (§5); requires implementer `write` (admin included) — ruled 2026-07-20.
+- **Versions view**: per-page version list w/ readme. Diffing = non-goal.
+- Gating (RBAC stage 2): `config.put` / page save / publish / menu edit require implementer `write`; role-assignment + implementer-level admin require `admin`. Until then: stub-open per env posture.
+
+## 4. Runtime app
+
+- Host: SDM workbench evolves in place.
+- Boot: sign-in (built) → operation resolution (single membership auto-selects; picker if >1; MVP: single hardcoded op acceptable) → `connect(operationId)`.
+- Renders **published page versions only** (latest per path); drafts never leave Console. Console preview keeps rendering drafts via embedded page-runtime.
+- Nav = operation menu (§5), role-filtered.
+- **Record grid / record view stay reachable for now** (ruled 2026-07-20) — a menu-addressable "Workbench" item, no longer the default surface.
+- Solution branding, not platform branding (cosmetic MVP).
+
+## 5. Menu (operation config — ruled 2026-07-20: operation-side, NOT in solution/SDM)
+
+```jsonc
+// operations.config
+{ "menu": [
+  { "label": "Dispatch", "page": "dispatch/board", "roles": ["role_dispatchers"] },
+  { "label": "Admin", "roles": ["role_managers"], "items": [
+    { "label": "Crews", "page": "admin/crews", "roles": ["role_managers"] } ] }
+] }
+```
+
+- One level of nesting max (MVP).
+- **Per-item role lists; no `roles` (or empty) ⇒ item hidden** — deny by default (ruled 2026-07-20). Visible iff user holds ≥1 listed role in the operation. Groups: own `roles` gate AND ≥1 visible child.
+- Menu roles control **visibility**; page `access.open` (§6) still gates **entry** independently. Two layers, both deny-default.
+- Role ids reference the linked solution's `access.roles`; page paths must resolve to **published** versions of the linked solution (ruled 2026-07-20) — both validated at operation-config save.
+
+## 6. Page access control (RBAC stage-2 surface, per RBAC_COMPACT)
+
+- `PageDef.access.open: [roleIds]`; default deny once the solution declares `access.roles`; no roles section ⇒ open (adoption posture).
+- Enforcement: server filters the Runtime `pages.list` snapshot to openable published versions per `context.user.roles` (upgrades the "client interim" — cheap once roles are in context). Client menu filtering is cosmetic on top.
+- Console preview exempt (implementer plane; `read` sees all).
+
+## 7. Auth/RBAC wiring (existing seams)
+
+- Roles resolver lookup 1 `(user, operation) → roleIds`: un-stub against `role_assignments`. Lookup 2 `(user, solution) → implementer level`: un-stub against `implementer_levels`.
+- RBAC stage 1 (record types + activities) per RBAC_COMPACT enforcement table: partition filter, get→not-found, run gate. Sequenced M2, unchanged by this spec.
+- Env-stub posture preserved: no auth env ⇒ everything open, menus unfiltered.
+
+## 8. API surface (tRPC additions)
+
+- `operations.list / operations.create / operations.putConfig`
+- `pages.publish({ path, readme })`, `pages.versions({ path })`
+- `pages.list`: published mode (Runtime) vs draft mode (Console)
+- Governance: `assignments.list/put`, `implementers.list/put` (admin-gated)
+- `@fluxus/client`: `connect(operationId)` snapshot adds operation config (menu) + published page set; Console client keeps the draft set.
+
+## 9. Phasing
+
+1. **M1 — operations tier**: tables, scope→solution/operation rekey, Console operations CRUD, client connect by operation. No behaviour change for the demo op. **BUILT 2026-07-20** — migration `0003_operations_tier`; `solutions`/`operations`; server rekeyed to solutionId/operationId; `@fluxus/client.connect(operationId)` + `ConsoleClient`; seed splits solution config + operation records; Console **Administration** activity → Operations list/create panel. Tests + full build green.
+2. **M2 — RBAC stage 1**: governance tables (§2), roles resolver live, record-type + activity enforcement. **BUILT 2026-07-20** — `role_assignments`/`implementer_levels` (migration `0004_governance`); live `runtimeRoles` (`createDbRolesResolver`); record-type read filter (default-deny when auth configured + solution declares `access.roles`; anchor-read gate before the run check); `access.roles`/`access.read` on the engine config; `assignments.*`/`implementers.*` API + `ConsoleClient` methods; Console **Role assignments** + **Implementer levels** panels. Implementer *enforcement* deferred to M5. 8 RBAC tests green.
+3. **M3 — publish pipeline**: `page_versions` + readme, Console publish UI, Runtime reads published-only. **BUILT 2026-07-20** — `page_versions` (migration `0005_page_versions`, append-only); `pages.publish`/`versions`/`getVersion`/`rollback` + `pages.list` published mode; `connect({ pages: 'published' })` for Runtime; Console **Publish**/**Versions** control in the page editor (per-page, required readme, rollback = republish); seed publishes demo pages. 5 publish tests green.
+4. **M4 — menu + page access**: operation `config.menu` + editor, Runtime nav, server-side `open` filtering. **BUILT 2026-07-20** — menu validation at `operations.putConfig` (published pages + declared roles + one-level nesting); Console **Operation menu** editor; server-side published-`pages.list` filter by `def.access.open` (default-deny when enforced); `me` endpoint + `client.visibleMenu()`; Runtime **MenuNav** (role-filtered, Workbench item) in the sdm workbench. `pages.publishedPaths` (implementer read) for authoring. 7 menu/access tests green.
+5. **M5 — implementer plane**: levels wired into `config.put` / save / publish / menu edit / admin surfaces. **BUILT 2026-07-20** — `implementerLevel` reads `implementer_levels` (dormant until declared: no rows ⇒ everyone admin; once declared, unlisted ⇒ denied); `requireImplementer` a no-op when auth unconfigured (env stub open), else ranks none<read<write<admin; write gates config/pages/publish/menu, admin gates operations/governance. The M2 Implementer-levels panel now enforces. 3 implementer tests green.
+6. **M6 — Solutions admin tools**: `solutions.create`, Console **Solutions** panel (list/create), first slice of the still-undesigned Solutions/workspace IA layer above operations. **BUILT 2026-07-20** — `host.createSolution` (plain insert, duplicate id → db unique-constraint error, no implementer gate pre-creation); `solutions.create` mutation; `ConsoleClient.createSolution`; `SolutionsAdmin.tsx` (mirrors `OperationsAdmin`); `ADMIN_TAB.solutions` / `admin/solutions`, listed above Operations in `AdminSidebar`. No implementer/RBAC gate yet — same stub-open posture as the rest of Console admin pre-stage-2.
+7. **M7 — Solution admin (two-level IA + SDM editor)**: open a solution, author its pages + model in scope. **BUILT 2026-07-20** — `FluxusClient.connectSolution(solutionId)` (design plane: config + draft pages, no operation) + `saveConfig`; `engine.openSolution/reloadSolution` re-scope the design singletons; shell store `solutionId`/`scopeVersion` + `enterSolutionScope`/`exitSolutionScope`; two-level activity bar (Workspace vs Pages/SDM/Components/Search); `SolutionsAdmin` **Open** action; `HeaderBar` solution banner + back; Console boots to the Solutions list (no hardcoded operation). **SDM editor** (`sdm-builder/`): `SdmSidebar` + `SdmView` routing `sdm/record-types|attributes|roles`; `RecordTypesEditor` / `AttributesEditor` / `RolesEditor` over `commitConfig`. Page builder now mounts as a solution-level activity. Slice 1 only — workflow/activity/hook authoring deferred. tsc + vite build green; browser-smoked 2026-07-26.
+8. **M8 — Workflows editor (SDM slice 2, lean)**: author workflows + activities in scope. **BUILT 2026-07-21** — `WorkflowsEditor` (`sdm-builder/`) under new `SDM_TAB.workflows` / `sdm/workflows`; sidebar **Workflows** entry between Attributes and Roles; `SdmView` routes it. Three-level master/detail over `commitConfig`: workflows (id/name/description) → nested activities list → activity editor (id/name/description/sort_order/`record_map` select/`show_condition`) with a lean attribute-usage composer (pool-attribute picker + required toggle + section markers + reorder) and before/after-hook textareas. FluxScript stays plain text (no DSL tooling); per-usage FluxScript overrides + FunctionDef/seed collections stay hand-edited. tsc + vite build green; browser-smoked 2026-07-26.
+
+9. **M9 — design data + model history**: Console builds against real records; the SDM config gets page-style versioning; the repo files stop being a source of truth. **BUILT 2026-07-26** — `sdm_config_versions` (migration `0006_sdm_config_versions`, append-only); `config.publish`/`versions`/`rollback` (readme required, rollback also restores the draft); `FluxusClient.connectSolution({ solutionId, operationId })` now fetches that operation's records + `operationsForSolution` + `publishConfig`/`configVersions`/`rollbackConfig`; `engine.openSolution(solutionId, operationId?)` resolves and remembers the data operation; shell store `dataOperationId`/`dataOperations`; `HeaderBar` **Data** picker; `ConfigPublishControl` in a new SDM toolbar. Seed script demoted to **bootstrap-only** (skip-if-present, `--force` to overwrite from files). 5 config-publish tests green (64 server tests total); vite build green; browser-smoked 2026-07-26.
+
+## 10. Non-goals (MVP)
+
+- Solution publish/upgrade + version pinning per operation (operation always runs latest published pages; seam = future `pinned_version` on operations); catalogue/import; org management UI; page-version diffing; row/field-level permissions (RBAC_COMPACT exclusions); multi-org.
+
+## 11. Decision log
+
+- 2026-07-20 — §2a governance store: **Option B, bespoke org-tier structure** (user ruling; RBAC_DESIGN rev 7).
+- 2026-07-20 — menu lives in **operation config**, not solution/SDM; operation→solution FK NOT NULL; solution = SDM + pages + role defs.
+- 2026-07-20 — menu items carry **per-item role lists**; **no roles ⇒ no visibility** (deny default).
+- 2026-07-20 — menu validates against **published pages only**.
+- 2026-07-20 — Runtime keeps the record grid/workbench reachable for now.
+- 2026-07-20 — operation-config/menu editing = implementer **write** (admin included).
+- 2026-07-20 — doc name `CONSOLE_RUNTIME_SPEC.md` endorsed.
+- 2026-07-26 — **Console builds against an operation's records.** A solution has no data by definition, but authoring a model or a page without data is guesswork, and two of our own apps disagreeing about what exists is a product defect. No new mechanism: the existing operation→solution link supplies the list, the user picks. No schema change.
+- 2026-07-26 — **The database is the source of truth for solutions** (config + pages); git carries code and migrations. The repo's `sdm/config/` + `page-builder/pages/` files are a **bootstrap fixture** for an empty database (fresh clone, fresh Neon branch, PGlite, CI), never authority. The seed script no longer overwrites live content.
+- 2026-07-26 — **The two Opens follow the two planes** (user ruling, settled after two wrong turns by Claude). Solutions → Open = **open the Console** on that solution (authoring never requires an operation). Operations → Open = **open the app** — launches the Runtime host at `?operation=<id>`. Solutions also shows each solution's operation count.
+- 2026-07-26 — **SDM config gets page-style versioning** rather than relying on git for model history: history belongs beside the artifact. Same append-only posture; a later solution-level publish bundles config version + page versions into one release (§10).

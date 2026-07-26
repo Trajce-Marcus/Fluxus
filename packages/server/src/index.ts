@@ -7,8 +7,8 @@ import { serve } from '@hono/node-server';
 import { createDb } from './db/client';
 import { createApp } from './app';
 import { createAuth } from './auth';
-import { getScopeConfig } from './host';
-import { DEFAULT_SCOPE } from './router';
+import { getSolutionConfig } from './host';
+import { DEFAULT_SOLUTION } from './router';
 import { createBlobStore } from './services/blob';
 
 // Local dev convenience: load packages/server/.env if present so `npm run dev`
@@ -23,9 +23,9 @@ const auth = createAuth();
 const app = createApp({ db, blob: createBlobStore(), auth });
 
 try {
-  await getScopeConfig(db, DEFAULT_SCOPE);
+  await getSolutionConfig(db, DEFAULT_SOLUTION);
 } catch {
-  console.log(`No SDM config stored for '${DEFAULT_SCOPE}' yet — run \`npm run seed\` to load the demo SDM.`);
+  console.log(`No SDM config stored for solution '${DEFAULT_SOLUTION}' yet — run \`npm run seed\` to load the demo SDM.`);
 }
 
 const port = Number(process.env.PORT ?? 8787);
