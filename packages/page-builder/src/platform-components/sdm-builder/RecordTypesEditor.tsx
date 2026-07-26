@@ -81,9 +81,12 @@ export function RecordTypesEditor() {
               <input value={cur.name} onChange={(e) => edit({ name: e.target.value })} placeholder="Assets" /></label>
             <label className="admin-field"><span>Description</span>
               <input value={cur.description} onChange={(e) => edit({ description: e.target.value })} /></label>
+            {/* Every record type must resolve a workflow — the engine rejects
+                a dangling workflow_ref at save (MemoryAdapter resolution), so
+                no "(none)": an unset ref only shows as a disabled placeholder. */}
             <label className="admin-field"><span>Workflow</span>
               <select value={cur.workflow_ref} onChange={(e) => edit({ workflow_ref: e.target.value })}>
-                <option value="">(none)</option>
+                {!cur.workflow_ref && <option value="" disabled>(select a workflow)</option>}
                 {workflows.map((w) => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}
               </select></label>
 
