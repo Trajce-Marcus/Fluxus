@@ -161,6 +161,8 @@ Header ("Fluxus SDM / Aber sample", UAT Labels toggle, notification bell)
         └── ActivityHistoryList
 ```
 
+**Which operation it runs (2026-07-26):** `?operation=<id>` in the URL selects it (`initHost` reads the query string and passes `operationId` to `FluxusClient.connect`); absent ⇒ the client's default operation, so existing links keep working. This is how the Console's Operations list launches the app — Console's **Open** on an operation opens `${VITE_FLUXUS_RUNTIME_URL}/?operation=<id>` in a new tab — and it makes an operation a plain bookmarkable address.
+
 **Pages in the workbench (2026-07-19, approved MVP slice — first step of workbench → Runtime app):** the sidebar's "Pages" section lists the scope's published pages (the client's page snapshot); selecting one swaps the whole content area to the rendered page via `@fluxus/page-runtime` (`PageView` — plain `<style>` tag for the renderer css, no shadow DOM); selecting a record type returns to the grid/view pair, which is otherwise untouched. Page selection lives in AppContext beside the record selection.
 
 Schema Navigator: org-chart-style record-type relationship viewer — focal type centred, FK targets one side, reverse FKs the other, click to recentre; launched from the RecordView header.

@@ -12,7 +12,7 @@ npm run dev                # from repo root: server + workbench + page builder t
 # → http://localhost:5174 (server at :8787; seed the demo SDM once with npm run seed:server)
 ```
 
-Since backend stage 2 (2026-07-12) SDM records live in `@fluxus/server`, shared with the workbench (scope `demo/sdm`); the app boots by fetching the config + partition via `@fluxus/client` and runs activities server-side. Since backend stage 3 (2026-07-16) page definitions live there too (`pages` table, snapshot at connect, saves round-trip) — repo files under [pages/](pages/) are the deploy input the seed script pushes, so deploying pages = deploying files. No localStorage anywhere.
+Since backend stage 2 (2026-07-12) SDM records live in `@fluxus/server`, shared with the workbench; the app boots by fetching the config + records via `@fluxus/client` and runs activities server-side. Opening a solution binds it to one of its **operations** — the header's **Data** picker — so the model editor and page preview show the same records the workbench shows. Since backend stage 3 (2026-07-16) page definitions live on the server too (`pages` table, snapshot at connect, saves round-trip); the database is the source of truth and files under [pages/](pages/) only bootstrap an empty one. No localStorage anywhere (bar UI preferences).
 
 ## Docs
 

@@ -20,7 +20,7 @@ import {
   type RecordInstance,
 } from '@fluxus/engine';
 import type { Db } from './db/client';
-import { attachments, implementerLevels, operations, pageVersions, pages, records, roleAssignments, rptActivities, rptAttributes, sdmConfigs, solutions, type MenuItem, type OperationConfig } from './db/schema';
+import { attachments, implementerLevels, operations, pageVersions, pages, records, roleAssignments, rptActivities, rptAttributes, sdmConfigVersions, sdmConfigs, solutions, type MenuItem, type OperationConfig } from './db/schema';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 
 /**
@@ -577,8 +577,85 @@ export async function putConfig(db: Db, solutionId: string, config: ConfigRaw, s
     throw new ConfigValidationError(errors.map((f) => `${f.where}: ${f.diagnostic.message}`));
   }
 
+  // The config must also survive the data it already governs: a stored record's
+  // typeRef has to resolve in the new config, or those records become
+  // unreachable through every activity path (mutation is activity-only, so
+  // nothing could ever touch them again). Blocks renaming/removing a record
+  // type that any of the solution's operations still holds records of.
+  const ids = config.recordTypes.map((rt) => rt.id);
+  const stored = await db
+    .selectDistinct({ typeRef: records.typeRef })
+    .from(records)
+    .innerJoin(operations, eq(records.operationId, operations.id))
+    .where(eq(operations.solutionId, solutionId));
+  const orphaned = stored.map((r) => r.typeRef).filter((t) => !ids.includes(t));
+  if (orphaned.length > 0) {
+    throw new ConfigValidationError(
+      orphaned.map((t) => `recordTypes: stored records still reference '${t}' — rename or remove is blocked while records of this type exist`),
+    );
+  }
+
   await db
     .insert(sdmConfigs)
     .values({ solutionId, config, updatedAt: new Date() })
     .onConflictDoUpdate({ target: sdmConfigs.solutionId, set: { config, updatedAt: new Date() } });
+}
+
+// ── SDM config publishing (ruled 2026-07-26) ─────────────────────────────────
+// The model gets the history pages have had since M3, and for the same reason:
+// once Console is the authoring surface and the DB is the source of truth, the
+// change record has to live beside the artifact. Identical posture to
+// page_versions — append-only, readme required, rollback republishes.
+
+export class ConfigDraftNotFoundError extends Error {
+  constructor(solutionId: string) { super(`Solution '${solutionId}' has no SDM config to publish`); }
+}
+
+/** Append `config` as the next immutable version of a solution's model. */
+async function appendConfigVersion(db: Db, solutionId: string, config: ConfigRaw, readme: string, publishedBy: string): Promise<{ version: number }> {
+  const [row] = await db
+    .select({ maxV: sql<number | null>`MAX(${sdmConfigVersions.version})` })
+    .from(sdmConfigVersions)
+    .where(eq(sdmConfigVersions.solutionId, solutionId));
+  const version = (row?.maxV ?? 0) + 1;
+  await db.insert(sdmConfigVersions).values({ solutionId, version, config, readme, publishedBy });
+  return { version };
+}
+
+/** Snapshot the solution's current draft config into a new immutable version. */
+export async function publishConfig(db: Db, solutionId: string, readme: string, publishedBy: string): Promise<{ version: number }> {
+  const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
+  if (rows.length === 0) throw new ConfigDraftNotFoundError(solutionId);
+  return appendConfigVersion(db, solutionId, rows[0].config, readme, publishedBy);
+}
+
+/**
+ * Roll back by republishing an older version as a NEW version, and restore it
+ * as the draft — unlike pages (whose draft is the page builder's working copy),
+ * the config draft IS what every host evaluates against, so a rollback that
+ * left it untouched would change nothing observable.
+ */
+export async function rollbackConfig(db: Db, solutionId: string, version: number, readme: string, publishedBy: string): Promise<{ version: number }> {
+  const config = await getConfigVersion(db, solutionId, version);
+  if (config === null) throw new ConfigDraftNotFoundError(`${solutionId} (version ${version})`);
+  await putConfig(db, solutionId, config);
+  return appendConfigVersion(db, solutionId, config, readme, publishedBy);
+}
+
+/** Version history for a solution's model, newest first. */
+export async function listConfigVersions(db: Db, solutionId: string): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: Date }[]> {
+  const rows = await db
+    .select({ version: sdmConfigVersions.version, readme: sdmConfigVersions.readme, publishedBy: sdmConfigVersions.publishedBy, publishedAt: sdmConfigVersions.publishedAt })
+    .from(sdmConfigVersions)
+    .where(eq(sdmConfigVersions.solutionId, solutionId));
+  return rows.sort((a, b) => b.version - a.version);
+}
+
+/** One specific published config — the rollback source. */
+export async function getConfigVersion(db: Db, solutionId: string, version: number): Promise<ConfigRaw | null> {
+  const rows = await db
+    .select({ config: sdmConfigVersions.config })
+    .from(sdmConfigVersions)
+    .where(and(eq(sdmConfigVersions.solutionId, solutionId), eq(sdmConfigVersions.version, version)));
+  return rows[0]?.config ?? null;
 }

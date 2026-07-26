@@ -50,3 +50,50 @@ describe('page publishing', () => {
     expect(def).toEqual({ title: 'v1' });
   });
 });
+
+// Model history (ruled 2026-07-26): the SDM config gets the same append-only
+// versioning pages have, because the database — not git — is now the source of
+// truth for a solution's model.
+describe('SDM config publishing', () => {
+  const CSOL = 'test/config-publish';
+  const model = (label: string) => ({
+    attributes: [{ key: 'note', label, description: '', type: 'text' }],
+    recordTypes: [],
+    workflows: [],
+  });
+
+  it('publishes the current draft config as version 1', async () => {
+    await caller().config.put({ solutionId: CSOL, config: model('first') });
+    const res = await caller().config.publish({ solutionId: CSOL, readme: 'initial model' });
+    expect(res.version).toBe(1);
+    const versions = await caller().config.versions({ solutionId: CSOL });
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ version: 1, readme: 'initial model' });
+  });
+
+  it('bumps the version and keeps history newest-first', async () => {
+    await caller().config.put({ solutionId: CSOL, config: model('second') });
+    const res = await caller().config.publish({ solutionId: CSOL, readme: 'renamed attribute' });
+    expect(res.version).toBe(2);
+    const versions = await caller().config.versions({ solutionId: CSOL });
+    expect(versions.map((v) => v.version)).toEqual([2, 1]);
+  });
+
+  it('refuses to publish a solution with no config', async () => {
+    await expect(caller().config.publish({ solutionId: 'test/no-config', readme: 'x' })).rejects.toThrow(/no SDM config/i);
+  });
+
+  it('rollback republishes an older version AND restores it as the draft', async () => {
+    const res = await caller().config.rollback({ solutionId: CSOL, version: 1 });
+    expect(res.version).toBe(3); // append-only — never a delete/edit
+    // Unlike pages, the config draft is what hosts evaluate, so it moves too.
+    const draft = await caller().config.get({ solutionId: CSOL });
+    expect((draft as { attributes: { label: string }[] }).attributes[0].label).toBe('first');
+    const versions = await caller().config.versions({ solutionId: CSOL });
+    expect(versions.map((v) => v.version)).toEqual([3, 2, 1]);
+  });
+
+  it('rejects a publish with empty release notes', async () => {
+    await expect(caller().config.publish({ solutionId: CSOL, readme: '' })).rejects.toThrow();
+  });
+});

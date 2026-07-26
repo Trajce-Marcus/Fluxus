@@ -20,6 +20,7 @@ import {
   findActivity,
   getOperation,
   getSolutionConfig,
+  listConfigVersions,
   getPageVersion,
   insertPendingAttachment,
   listImplementerLevels,
@@ -32,7 +33,9 @@ import {
   createSolution,
   loadOperationHost,
   pageOpenable,
+  publishConfig,
   publishPage,
+  rollbackConfig,
   rollbackPage,
   putConfig,
   putImplementerLevel,
@@ -339,6 +342,37 @@ export const appRouter = t.router({
           await requireImplementer(ctx, input.solutionId, 'write');
           await putConfig(ctx.db, input.solutionId, input.config as ConfigRaw, ctx.sink);
           return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    // Model history (ruled 2026-07-26) — the same publish surface pages have.
+    // Readme required: a version without release notes is a diff nobody can
+    // read later, which is the whole point of keeping the history.
+    publish: t.procedure
+      .input(z.object({ solutionId: solutionInput, readme: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'write');
+          const publishedBy = ctx.user?.id ?? DEMO_USER.id;
+          return await publishConfig(ctx.db, input.solutionId, input.readme, publishedBy);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    versions: t.procedure
+      .input(z.object({ solutionId: solutionInput }).default({}))
+      .query(async ({ ctx, input }) => listConfigVersions(ctx.db, input.solutionId)),
+    // Rollback republishes an older version as a new one AND restores it as the
+    // draft — the config draft is what hosts evaluate, so nothing else would
+    // make the rollback observable.
+    rollback: t.procedure
+      .input(z.object({ solutionId: solutionInput, version: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'write');
+          const publishedBy = ctx.user?.id ?? DEMO_USER.id;
+          return await rollbackConfig(ctx.db, input.solutionId, input.version, `Rollback to v${input.version}`, publishedBy);
         } catch (err) {
           rethrow(err);
         }

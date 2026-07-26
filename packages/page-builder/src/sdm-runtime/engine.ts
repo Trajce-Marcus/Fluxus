@@ -28,6 +28,15 @@ let bootUrl: string | undefined;
 let bootGetToken: (() => Promise<string | null>) | undefined;
 /** The solution currently opened for design, if any. */
 export let currentSolutionId: string | null = null;
+/** Which operation supplies the records you are building against (ruled
+ *  2026-07-26). Null only when the solution has no operations yet. */
+export let currentOperationId: string | null = null;
+/** The open solution's operations — the header picker's options. */
+export let solutionOperations: { id: string; name: string }[] = [];
+
+/** Remembered per solution so reopening lands on the same data (local only —
+ *  a preference, not model state). */
+const dataOpKey = (solutionId: string) => `fluxus:page-builder:data-operation:${solutionId}`;
 
 export async function initSdmRuntime(): Promise<void> {
   // Auth gate (RBAC_DESIGN §0): VITE_NEON_AUTH_URL unset ⇒ demo posture, no
@@ -42,16 +51,31 @@ export async function initSdmRuntime(): Promise<void> {
   consoleClient = ConsoleClient.create({ url: bootUrl, getToken: bootGetToken });
 }
 
-/** Re-scope the design singletons to `solutionId` (design plane: config + draft
- *  pages, no operation). The shell remounts the solution subtree on change. */
-export async function openSolution(solutionId: string): Promise<void> {
-  sdmClient = await FluxusClient.connectSolution({ url: bootUrl, solutionId, getToken: bootGetToken });
+/**
+ * Re-scope the design singletons to `solutionId`. The model and draft pages are
+ * solution-scoped; the records come from one of the solution's operations, so
+ * the SDM editor and page preview show the same data the Runtime host shows
+ * (ruled 2026-07-26 — Console showing an empty table where the workbench showed
+ * four records was the platform contradicting itself).
+ *
+ * `operationId` omitted ⇒ the remembered choice, else the solution's first
+ * operation, else none (a solution with no operations yet).
+ */
+export async function openSolution(solutionId: string, operationId?: string): Promise<void> {
+  solutionOperations = await FluxusClient.operationsForSolution({ url: bootUrl, solutionId, getToken: bootGetToken });
+  const remembered = localStorage.getItem(dataOpKey(solutionId));
+  const chosen =
+    [operationId, remembered].find((id) => id && solutionOperations.some((o) => o.id === id)) ??
+    solutionOperations[0]?.id;
+  sdmClient = await FluxusClient.connectSolution({ url: bootUrl, solutionId, operationId: chosen, getToken: bootGetToken });
   pageRuntime = createPageRuntime({ client: sdmClient });
   currentSolutionId = solutionId;
+  currentOperationId = chosen ?? null;
+  if (chosen) localStorage.setItem(dataOpKey(solutionId), chosen);
 }
 
-/** Re-read the current solution's config + pages (e.g. after an SDM config save
- *  rebuilds the model). */
+/** Re-read the current solution's config + pages + records (e.g. after an SDM
+ *  config save rebuilds the model, or an activity run changes data). */
 export async function reloadSolution(): Promise<void> {
-  if (currentSolutionId) await openSolution(currentSolutionId);
+  if (currentSolutionId) await openSolution(currentSolutionId, currentOperationId ?? undefined);
 }

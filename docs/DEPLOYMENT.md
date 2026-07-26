@@ -122,6 +122,13 @@ Building locally sidesteps it entirely.
 - The API URL is baked at build time via `VITE_FLUXUS_API_URL`
   (`https://fluxus-server.vercel.app/trpc`); unset (local dev) the hosts fall
   back to `http://localhost:8787/trpc` — the dev workflow is untouched.
+- **Console only**: `VITE_FLUXUS_RUNTIME_URL` (2026-07-26) is where the
+  Operations list's **Open** sends you — the Runtime host
+  (`https://fluxus-sdm.vercel.app`), unset falls back to
+  `http://localhost:5173`. The Console build needs it set, or Open on a
+  deployed Console points at the user's own machine. The Runtime host reads
+  `?operation=<id>` from its URL; absent, it runs the client's default
+  operation.
 - To redeploy a host: build with the env var set, copy `dist/` to a directory
   **outside the repo** (the CLI walks up to the nearest package.json/git root
   and would upload package source instead of the bundle), add the static

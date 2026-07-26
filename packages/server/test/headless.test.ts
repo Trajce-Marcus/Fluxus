@@ -65,6 +65,22 @@ describe('config storage', () => {
     broken.workflows[0].activities[0].before_hook = 'records.nonexistent_type.count() > 0';
     await expect(caller().config.put({ solutionId: 'demo/broken', config: broken })).rejects.toThrow(/SDM config rejected/);
   });
+
+  it('blocks removing/renaming a record type that stored records still reference', async () => {
+    const SOL = 'demo/guard';
+    const OP = 'demo/guard-op';
+    const withGuardType = structuredClone(config);
+    withGuardType.recordTypes.push({ id: 'rt_guard_only', name: 'Guard Only', description: '', workflow_ref: withGuardType.workflows[0].id, custom_fields: [] });
+    await ensureSolution(db, SOL, 'Guard');
+    await putConfig(db, SOL, withGuardType, sink);
+    await ensureOperation(db, OP, SOL, 'Guard');
+    // A stored record of the type (test fixture insert — not an app write path).
+    await db.insert(records).values({ operationId: OP, id: 'GUARD-1', typeRef: 'rt_guard_only', customFields: { id: 'GUARD-1' }, activityHistory: [] });
+    // Saving a config without the type would orphan GUARD-1 — must be rejected.
+    await expect(caller().config.put({ solutionId: SOL, config })).rejects.toThrow(/stored records still reference 'rt_guard_only'/);
+    // The type back in place saves fine.
+    await expect(caller().config.put({ solutionId: SOL, config: withGuardType })).resolves.toEqual({ ok: true });
+  });
 });
 
 describe('page storage (opaque defs on the config pipeline)', () => {

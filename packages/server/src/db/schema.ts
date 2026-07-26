@@ -93,6 +93,23 @@ export const sdmConfigs = pgTable('sdm_configs', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Published SDM config versions — the model's change history, closing the gap
+// pages have had since M3 (ruled 2026-07-26). Same posture as page_versions:
+// append-only and immutable, publish snapshots the current draft `sdm_configs`
+// row at `max(version)+1` with release notes, rollback republishes an older
+// config as a NEW version. This is what replaces git as the model's history
+// now that the repo config files are demoted to a bootstrap fixture.
+export const sdmConfigVersions = pgTable('sdm_config_versions', {
+  solutionId: text('solution_id').notNull(),
+  version: integer('version').notNull(),
+  config: jsonb('config').$type<ConfigRaw>().notNull(),
+  readme: text('readme').notNull(),
+  publishedBy: text('published_by').notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.version] }),
+]);
+
 // Page definitions ride the config pipeline (ruled 2026-07-16): server is
 // runtime truth, repo page files are the deploy input (seed upserts them —
 // deploying pages = deploying files). One row per page so the page builder

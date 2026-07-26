@@ -15,7 +15,7 @@ const WORKSPACE_ITEMS: { id: ActivityItem; label: string; path: string }[] = [
 
 const SOLUTION_ITEMS: { id: ActivityItem; label: string; path: string }[] = [
   { id: 'explorer', label: 'Pages', path: ICON.explorer },
-  { id: 'sdm', label: 'Simple Data Model', path: ICON.sdm },
+  { id: 'sdm', label: 'Shared Data Model', path: ICON.sdm },
   { id: 'components', label: 'Components', path: ICON.components },
   { id: 'search', label: 'Search', path: ICON.search },
 ];

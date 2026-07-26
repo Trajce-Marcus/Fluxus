@@ -1,8 +1,21 @@
 import { useShellState } from './useShellState';
-import { exitSolutionScope } from './store';
+import { exitSolutionScope, shellStore } from './store';
+import { openSolution } from '../../sdm-runtime/engine';
 
 function HeaderBarComponent() {
-  const { solutionId, solutionName } = useShellState(['solutionId', 'solutionName']);
+  const { solutionId, solutionName, dataOperationId, dataOperations } = useShellState([
+    'solutionId', 'solutionName', 'dataOperationId', 'dataOperations',
+  ]);
+
+  // Switching the data operation re-opens the solution against that operation's
+  // records and bumps scopeVersion, so every design view remounts on the new
+  // data. The model and draft pages are unaffected — they are solution-scoped.
+  async function switchOperation(operationId: string) {
+    if (!solutionId) return;
+    await openSolution(solutionId, operationId);
+    shellStore.set((prev) => ({ ...prev, dataOperationId: operationId, scopeVersion: prev.scopeVersion + 1 }));
+  }
+
   return (
     <div className="header-bar">
       <span className="header-logo">Fluxus</span>
@@ -11,6 +24,28 @@ function HeaderBarComponent() {
           <button className="header-back" title="Back to Solutions" onClick={exitSolutionScope}>← Solutions</button>
           <span className="header-solution-name">{solutionName}</span>
           <span className="header-solution-id admin-mono">{solutionId}</span>
+          {/* Which operation's records the SDM editor and page preview show.
+              Always visible in solution scope: the data you build against is a
+              deliberate, named choice, never an invisible difference between
+              Console and Runtime. */}
+          <label className="header-data">
+            <span className="header-data-label">Data</span>
+            {dataOperations.length > 0 ? (
+              <select
+                className="header-data-select"
+                value={dataOperationId ?? ''}
+                onChange={(e) => void switchOperation(e.target.value)}
+              >
+                {dataOperations.map((op) => (
+                  <option key={op.id} value={op.id}>{op.name}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="header-data-empty" title="Create an operation running this solution to build against real records">
+                no operation
+              </span>
+            )}
+          </label>
         </div>
       ) : (
         <div className="header-search">
@@ -101,6 +136,23 @@ export const css = `
   .header-back:hover { background: rgba(255,255,255,0.06); }
   .header-solution-name { font-size: 0.85rem; font-weight: 600; color: var(--color-text); }
   .header-solution-id { font-size: 0.72rem; color: var(--color-text-muted); }
+  .header-data { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .header-data-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+  }
+  .header-data-select {
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 0.78rem;
+    padding: 2px 6px;
+  }
+  .header-data-empty { font-size: 0.78rem; color: var(--color-text-muted); font-style: italic; }
 `;
 
 export const HeaderBar = HeaderBarComponent;

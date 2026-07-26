@@ -14,11 +14,19 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
    operation's `menu` (spec §5). The host creates its engine over that adapter
    and wires UI subscriptions to it once. Exposes `operationId` + `solutionId`.
-1a. **`connectSolution({url, solutionId})`** (CONSOLE_RUNTIME_SPEC §3, design
-   plane) — bind to a solution directly, no operation: fetch `config.get` +
-   draft `pages.list` by `solutionId`, empty record partition, no menu/roles.
-   The Console uses this to author a solution's model + pages; `saveConfig`
-   round-trips `config.put`. `refresh`/`runActivity` are not meaningful here.
+1a. **`connectSolution({url, solutionId, operationId?})`** (CONSOLE_RUNTIME_SPEC
+   §3, design plane) — bind to a solution to author its model + draft pages:
+   fetch `config.get` + draft `pages.list` by `solutionId`, plus **that
+   operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
+   the data you build against is one operation's). No menu/roles (`enforced`
+   false: Console is the implementer plane). With an operation bound,
+   `refresh`/`runActivity` work exactly as in the Runtime host — running an
+   activity is how an implementer tests a workflow. Omitting `operationId`
+   yields an empty record set: legal for a solution with no operations yet,
+   but the exception, not the design. `saveConfig` round-trips `config.put`;
+   `publishConfig`/`configVersions`/`rollbackConfig` are the model's version
+   history (the surface pages have had since M3). `operationsForSolution`
+   (static) lists a solution's operations for the Console data picker.
 2. **`refresh()`** — re-fetch the partition into the *same* adapter via
    `MemoryAdapter.replaceRecords` (identity stable, subscribers notified).
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`

@@ -5,8 +5,23 @@ import { RecordTypesEditor } from './RecordTypesEditor';
 import { AttributesEditor } from './AttributesEditor';
 import { WorkflowsEditor } from './WorkflowsEditor';
 import { RolesEditor } from './RolesEditor';
+import { ConfigPublishControl } from './ConfigPublishControl';
+import { css as publishControlCss } from '../page-builder/PublishControl';
 
+/** Every SDM section sits under one model-level toolbar — publish/versions act
+ *  on the solution's config as a whole, not on the section you happen to be in. */
 export function SdmView({ tab }: { tab: string }) {
+  return (
+    <div className="sdm-view">
+      <div className="sdm-toolbar">
+        <ConfigPublishControl />
+      </div>
+      <div className="sdm-view-body">{sdmSection(tab)}</div>
+    </div>
+  );
+}
+
+function sdmSection(tab: string) {
   switch (tab) {
     case 'sdm/record-types':
       return <RecordTypesEditor />;
@@ -58,4 +73,13 @@ export const css = `
   }
   .sdm-usage-move button:disabled { opacity: 0.3; cursor: default; }
   .sdm-usage-section { color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; flex-shrink: 0; }
+
+  /* Model publish toolbar (SDM sections share it). */
+  .sdm-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .sdm-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-bottom: 1px solid var(--color-border); flex-shrink: 0;
+  }
+  .sdm-view-body { flex: 1; min-height: 0; overflow: auto; }
+  ${publishControlCss}
 `;

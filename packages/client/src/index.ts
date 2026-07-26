@@ -199,38 +199,79 @@ export class FluxusClient {
   ) {}
 
   /**
-   * Design-plane connect (CONSOLE_RUNTIME_SPEC §3): bind to a solution directly,
-   * no operation. Loads config + draft pages by solutionId; the record
-   * partition is empty (design has no data) and there is no menu/roles. The
-   * Console uses this to author a solution's model + pages; runActivity/refresh
-   * are not meaningful here (no operation partition) and are not called.
+   * Design-plane connect (CONSOLE_RUNTIME_SPEC §3): bind to a solution to author
+   * its model + draft pages. `operationId` names which of the solution's
+   * operations supplies the records you build against — the model and pages are
+   * solution-scoped, the data is one operation's (ruled 2026-07-26).
+   *
+   * Passing no operation is still legal (a solution with none yet) and yields an
+   * empty record set, but it is the exception, not the design: authoring a hook
+   * script, a datasource filter or a list column without data is guesswork, and
+   * Console showing an empty table where the workbench shows four records was
+   * the platform contradicting itself.
    */
-  static async connectSolution(options: { url?: string; solutionId: string; getToken?: () => Promise<string | null> }): Promise<FluxusClient> {
+  static async connectSolution(options: {
+    url?: string;
+    solutionId: string;
+    operationId?: string;
+    getToken?: () => Promise<string | null>;
+  }): Promise<FluxusClient> {
     const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
-    const { solutionId } = options;
+    const { solutionId, operationId } = options;
     // pages.list is the reachability probe (it never throws for an existing
     // solution); config.get throws SolutionNotFoundError for a solution that
     // has no config row yet — a freshly created solution the user is opening to
     // author. Fall back to an empty model skeleton so the SDM editor starts
     // blank and the first save (config.put) creates the row.
-    const [pageRows, config] = await Promise.all([
+    const [pageRows, config, partition] = await Promise.all([
       trpc.pages.list.query({ solutionId, published: false }),
       (trpc.config.get.query({ solutionId }) as Promise<ConfigRaw>).catch(
         () => ({ attributes: [], recordTypes: [], workflows: [] }) as ConfigRaw,
       ),
+      operationId
+        ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
+        : Promise.resolve([] as RecordInstance[]),
     ]);
-    const adapter = new MemoryAdapter(config, { initialRecords: [] });
+    const adapter = new MemoryAdapter(config, {
+      initialRecords: partition.map((r) => [r.id, r] as const),
+    });
     const pages = new Map(pageRows.map((p) => [p.path, p.def]));
-    // operationId mirrors solutionId as an inert placeholder — design mode never
-    // touches the record partition. enforced=false: Console is the implementer
-    // plane, menus/roles are not filtered here.
-    return new FluxusClient(trpc, solutionId, solutionId, config, adapter, pages, [], [], false);
+    // enforced=false: Console is the implementer plane, menus/roles are not
+    // filtered here. With an operation bound, runActivity/refresh work exactly
+    // as in the Runtime host — running an activity is how you test a workflow.
+    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], [], false);
+  }
+
+  /** The operations running a given solution — Console's data picker (which
+   *  operation am I building against). */
+  static async operationsForSolution(options: { url?: string; solutionId: string; getToken?: () => Promise<string | null> }): Promise<{ id: string; name: string }[]> {
+    const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
+    const rows = await trpc.operations.list.query();
+    return rows.filter((o) => o.solutionId === options.solutionId).map((o) => ({ id: o.id, name: o.name }));
   }
 
   /** Persist the solution's SDM config (Console SDM editor → config.put). The
    *  caller reconnects afterwards to rebuild the adapter/pageRuntime. */
   async saveConfig(config: ConfigRaw): Promise<void> {
     await this.trpc.config.put.mutate({ solutionId: this.solutionId, config });
+  }
+
+  /**
+   * Model history (ruled 2026-07-26) — the same publish surface pages have had
+   * since M3, and what replaces git as the record of model change now that the
+   * database is the source of truth. Append-only: rollback republishes.
+   */
+  async publishConfig(readme: string): Promise<{ version: number }> {
+    return this.trpc.config.publish.mutate({ solutionId: this.solutionId, readme });
+  }
+
+  async configVersions(): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]> {
+    return this.trpc.config.versions.query({ solutionId: this.solutionId }) as Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]>;
+  }
+
+  /** Restore an older version as the draft and record it as a new version. */
+  async rollbackConfig(version: number): Promise<{ version: number }> {
+    return this.trpc.config.rollback.mutate({ solutionId: this.solutionId, version });
   }
 
   /**

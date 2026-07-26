@@ -1,4 +1,4 @@
-// Sidebar for the Simple Data Model activity (solution-level): a flat list of
+// Sidebar for the Shared Data Model activity (solution-level): a flat list of
 // model sections; clicking opens the matching content tab. Slice 1 — record
 // types, the attribute pool, and role defs (plain-form editing, no DSL).
 

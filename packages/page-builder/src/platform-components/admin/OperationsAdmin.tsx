@@ -1,5 +1,9 @@
-// Console operations admin (CONSOLE_RUNTIME_SPEC §3): list operations and
-// create new ones against an existing solution. Plain functional form over the
+// Console operations admin (CONSOLE_RUNTIME_SPEC §3): list operations, create
+// new ones against an existing solution, and **Open** one — which launches the
+// **Runtime app** on it (ruled 2026-07-26), not a Console design scope. The two
+// Opens follow the two planes: a solution opens the Console (author the model),
+// an operation opens the app (run it). Runtime host URL comes from
+// VITE_FLUXUS_RUNTIME_URL, localhost:5173 in dev. Plain functional form over the
 // ConsoleClient's operations/solutions CRUD — no SDM, no activities. RBAC
 // stage-2 gates operations.create on implementer `admin`; until then it's open
 // per the env stub, and a FORBIDDEN surfaces here as the error line.
@@ -7,6 +11,9 @@
 import { useEffect, useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { consoleClient } from '../../sdm-runtime/engine';
+
+/** The Runtime app's address; `?operation=<id>` selects what it runs. */
+const RUNTIME_URL = import.meta.env.VITE_FLUXUS_RUNTIME_URL ?? 'http://localhost:5173';
 
 /** Kebab an id from a display name (org-scoped id is the user's to refine). */
 function slug(name: string): string {
@@ -58,11 +65,17 @@ export function OperationsAdmin() {
 
   const solName = (sid: string) => solutions.find((s) => s.id === sid)?.name ?? sid;
 
+  /** Launch the Runtime app on this operation — a new tab: Console is a
+   *  workbench you keep open while the app runs beside it. */
+  function open(op: OperationRow) {
+    window.open(`${RUNTIME_URL}/?operation=${encodeURIComponent(op.id)}`, '_blank', 'noopener');
+  }
+
   return (
     <div className="admin-panel">
       <div className="admin-panel-head">
         <h2 className="admin-title">Operations</h2>
-        <p className="admin-sub">Runtime units. Each links to one solution and owns its own data, users and menu.</p>
+        <p className="admin-sub">Runtime units. Each links to one solution and owns its own data, users and menu. <strong>Open</strong> runs it in the Runtime app.</p>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -75,7 +88,7 @@ export function OperationsAdmin() {
         ) : (
           <table className="admin-table">
             <thead>
-              <tr><th>Name</th><th>Id</th><th>Solution</th><th>Org</th></tr>
+              <tr><th>Name</th><th>Id</th><th>Solution</th><th>Org</th><th /></tr>
             </thead>
             <tbody>
               {operations.map((op) => (
@@ -84,6 +97,9 @@ export function OperationsAdmin() {
                   <td className="admin-mono">{op.id}</td>
                   <td>{solName(op.solutionId)}</td>
                   <td className="admin-mono">{op.orgId}</td>
+                  <td>
+                    <button className="admin-btn" onClick={() => open(op)} title="Run this operation in the Runtime app">Open</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

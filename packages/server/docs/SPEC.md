@@ -137,10 +137,13 @@ takes `operationId?` (both default `demo/sdm`):
   `partition`/`list`.
 - **`config.get` / `config.put`** `{ solutionId?, config }` — the Phase 4 shift:
   the SDM config is a stored artifact and "config-save-time validation" is
-  literal. `put` rejects on structural danglers (MemoryAdapter resolution) or
-  any error-severity `validateConfig` finding. Config is solution-plane and
-  owns no records; demo-record seeding moved to `seedOperationRecords` (called
-  against an operation by the seed script), not `config.put`.
+  literal. `put` rejects on structural danglers (MemoryAdapter resolution),
+  any error-severity `validateConfig` finding, or (2026-07-26) a record-type
+  id that stored records still reference — the config must survive the data it
+  already governs: mutation is activity-only, so orphaned `typeRef`s would be
+  unreachable forever. Config is solution-plane and owns no records;
+  demo-record seeding moved to `seedOperationRecords` (called against an
+  operation by the seed script), not `config.put`.
 - **`pages.list` / `pages.put` / `pages.delete`** `{ solutionId?, path, def }`
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
@@ -264,6 +267,16 @@ rev 6 §0). What the server implements:
   at: the quota fuse (`SUM(size)`, no Cloudflare usage API), duplicate/
   integrity queries (same `hash`, EXIF geo/time off), and trivial deferred GC
   (stale `pending` rows). Rebuildable from a bucket listing + history.
+
+**Solution history** (M9, ruled 2026-07-26): the database is the source of
+truth for a solution, so its change record lives beside it — `page_versions`
+for pages (M3) and `sdm_config_versions` for the model. Both append-only with
+required release notes; rollback republishes rather than deleting. One
+difference: `rollbackConfig` also restores the older config **as the draft**,
+because the config draft is what every host evaluates against, whereas a page
+draft is the builder's working copy. The repo files the seed script reads are a
+bootstrap fixture for an empty database, never authority — `npm run seed` is
+skip-if-present (`--force` overwrites from the files on purpose).
 
 DDL is drizzle-kit migrations (`migrations/`, generated from `schema.ts` via
 `npm run db:generate`): `createDb()` applies outstanding migrations

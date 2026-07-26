@@ -9,7 +9,7 @@ const TITLES: Record<string, string> = {
   explorer: 'Pages',
   search: 'Search',
   components: 'Components',
-  sdm: 'Simple Data Model',
+  sdm: 'Shared Data Model',
   workspace: 'Workspace',
 };
 

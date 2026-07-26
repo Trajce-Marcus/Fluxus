@@ -33,6 +33,11 @@ export interface ShellState {
   /** Open solution (design scope), or null in workspace mode. */
   solutionId: string | null;
   solutionName: string | null;
+  /** Which operation's records the design views show (ruled 2026-07-26) —
+   *  null when the open solution has no operations yet. */
+  dataOperationId: string | null;
+  /** The open solution's operations, for the header picker. */
+  dataOperations: { id: string; name: string }[];
   /** Bumped on solution open/switch to remount the solution subtree. */
   scopeVersion: number;
   activeActivityItem: ActivityItem | null;
@@ -46,6 +51,8 @@ export interface ShellState {
 export const shellStore = createContextStore<ShellState>({
   solutionId: null,
   solutionName: null,
+  dataOperationId: null,
+  dataOperations: [],
   scopeVersion: 0,
   activeActivityItem: 'workspace',
   tree: [],
@@ -55,12 +62,19 @@ export const shellStore = createContextStore<ShellState>({
   consoleHeight: 200,
 });
 
-/** Enter a solution's design scope (call after engine.openSolution resolves). */
-export function enterSolutionScope(solutionId: string, solutionName: string): void {
+/** Enter a solution's design scope (call after engine.openSolution resolves —
+ *  it decides which operation supplies the records). */
+export function enterSolutionScope(
+  solutionId: string,
+  solutionName: string,
+  data: { operationId: string | null; operations: { id: string; name: string }[] } = { operationId: null, operations: [] },
+): void {
   shellStore.set((prev) => ({
     ...prev,
     solutionId,
     solutionName,
+    dataOperationId: data.operationId,
+    dataOperations: data.operations,
     scopeVersion: prev.scopeVersion + 1,
     activeActivityItem: 'explorer',
     openTabs: [],
@@ -74,6 +88,8 @@ export function exitSolutionScope(): void {
     ...prev,
     solutionId: null,
     solutionName: null,
+    dataOperationId: null,
+    dataOperations: [],
     scopeVersion: prev.scopeVersion + 1,
     activeActivityItem: 'workspace',
     openTabs: [ADMIN_TAB.solutions],
