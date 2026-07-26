@@ -100,7 +100,7 @@ export class ConsoleClient {
     return new ConsoleClient(createTrpc(options.url ?? DEFAULT_URL, options.getToken));
   }
 
-  listSolutions(): Promise<{ id: string; name: string }[]> {
+  listSolutions(): Promise<{ id: string; name: string; origin: string }[]> {
     return this.trpc.solutions.list.query();
   }
   createSolution(input: { id: string; name: string }): Promise<{ ok: true }> {
@@ -117,6 +117,11 @@ export class ConsoleClient {
   }
   putOperationConfig(operationId: string, config: OperationConfig): Promise<{ ok: true }> {
     return this.trpc.operations.putConfig.mutate({ operationId, config });
+  }
+  /** The solution's stored config artifact (opaque here) — MenuAdmin reads
+   *  `default_menu` off it to show what an operation inherits (M10). */
+  getSolutionConfig(solutionId: string): Promise<unknown> {
+    return this.trpc.config.get.query({ solutionId });
   }
 
   // Governance (RBAC stage 1): user→role assignments per operation, implementer
@@ -187,8 +192,16 @@ export class FluxusClient {
      * before the server round trip, so hosts keep synchronous reads.
      */
     readonly pages: Map<string, unknown>,
-    /** The operation's runtime menu (spec §5); [] when none configured. */
+    /**
+     * The effective runtime menu (spec §5, amended M10): the operation's
+     * override when its config sets `menu`, else the solution's `default_menu`,
+     * else []. Whole-menu semantics — never a per-item merge.
+     */
     readonly menu: MenuItem[],
+    /** Display names for the Runtime header (M10): the solution's name is the
+     *  product name end users see; the operation names their business unit. */
+    readonly solutionName: string,
+    readonly operationName: string,
     /**
      * The caller's role ids in this operation, and whether RBAC is enforced
      * (auth configured). Hosts use these for cosmetic menu filtering; the
@@ -239,7 +252,7 @@ export class FluxusClient {
     // enforced=false: Console is the implementer plane, menus/roles are not
     // filtered here. With an operation bound, runActivity/refresh work exactly
     // as in the Runtime host — running an activity is how you test a workflow.
-    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], [], false);
+    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], solutionId, operationId ?? '', [], false);
   }
 
   /** The operations running a given solution — Console's data picker (which
@@ -299,8 +312,16 @@ export class FluxusClient {
       initialRecords: partition.map((r) => [r.id, r] as const),
     });
     const pages = new Map(pageRows.map((p) => [p.path, p.def]));
-    const menu = (op.config as { menu?: MenuItem[] }).menu ?? [];
-    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, me.roles, me.authConfigured);
+    // Effective menu (§5, M10): operation override ?? solution default ?? [].
+    // `menu` absent on the operation means inherit; `[]` is an explicit empty
+    // override. The engine is menu-blind, so default_menu is read off the raw
+    // config here, not via ConfigRaw.
+    const menu =
+      (op.config as { menu?: MenuItem[] }).menu ??
+      (config as { default_menu?: MenuItem[] }).default_menu ??
+      [];
+    const solutionName = (op as { solutionName?: string }).solutionName ?? solutionId;
+    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, solutionName, op.name, me.roles, me.authConfigured);
   }
 
   /**

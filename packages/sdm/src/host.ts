@@ -10,7 +10,7 @@
 
 import { createEngine, buildGeoModule } from '@fluxus/engine';
 import type { ContextUser, Engine, MemoryAdapter } from '@fluxus/engine';
-import { FluxusClient, type HostAuth } from '@fluxus/client';
+import { FluxusClient, type AuthSession, type HostAuth } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { NotificationLog } from './store/NotificationLog';
 import { buildNotifyModule } from './services/notify';
@@ -23,6 +23,10 @@ export const notificationLog = new NotificationLog();
 export let client: FluxusClient;
 export let adapter: MemoryAdapter;
 export let engine: Engine;
+// The shell's user menu (M10): who is signed in, and the auth handle for
+// sign-out. Both null/undefined in the demo (auth unconfigured) posture.
+export let currentSession: AuthSession | null = null;
+export let hostAuth: HostAuth | undefined;
 // The run-a-page cluster's injected handle (@fluxus/page-runtime): renders
 // published pages in the workbench — the first step of workbench → Runtime app.
 export let pageRuntime: PageRuntime;
@@ -32,6 +36,8 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   // engine's context.user for UI-side expression parity (roles stubbed []
   // until RBAC stage 1). Auth unconfigured → both stay undefined (demo stub).
   const session = auth?.configured ? await auth.session() : null;
+  currentSession = session;
+  hostAuth = auth;
   const user: ContextUser | undefined = session
     ? { id: session.id, name: session.name, email: session.email, roles: [] }
     : undefined;

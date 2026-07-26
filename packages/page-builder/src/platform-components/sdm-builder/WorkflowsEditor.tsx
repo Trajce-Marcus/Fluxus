@@ -16,7 +16,7 @@ import type {
   SectionMarkerDef,
   WorkflowRawDef,
 } from '@fluxus/engine';
-import { readConfig, commitConfig } from './useSolutionConfig';
+import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
 
 type UsageItem = AttributeUsageDef | SectionMarkerDef;
 const isUsage = (it: UsageItem): it is AttributeUsageDef => 'attribute_ref' in it;
@@ -34,7 +34,9 @@ export function WorkflowsEditor() {
   const [selAct, setSelAct] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useDirty();
+  // Which remove is armed ('wf' | 'act') — the button asks once before it bites.
+  const [armed, setArmed] = useState<string | null>(null);
 
   const wfs = draft.workflows;
   const pool = draft.attributes;
@@ -51,13 +53,23 @@ export function WorkflowsEditor() {
   }
   function addWf() {
     setWfs([...wfs, { id: 'wf_', name: '', description: '', activities: [] }]);
-    setSelWf(wfs.length);
+    selectWf(wfs.length);
+  }
+  /** Selection moves disarm a pending remove (either level). */
+  function selectWf(i: number) {
+    setSelWf(i);
     setSelAct(0);
+    setArmed(null);
+  }
+  function selectAct(i: number) {
+    setSelAct(i);
+    setArmed(null);
   }
   function removeWf() {
     setWfs(wfs.filter((_, i) => i !== selWf));
     setSelWf((s) => Math.max(0, s > selWf ? s - 1 : s));
     setSelAct(0);
+    setArmed(null);
   }
 
   function setActs(next: ActivityRawDef[]) {
@@ -77,11 +89,12 @@ export function WorkflowsEditor() {
       after_hook: null,
     };
     setActs([...acts, next]);
-    setSelAct(acts.length);
+    selectAct(acts.length);
   }
   function removeAct() {
     setActs(acts.filter((_, i) => i !== selAct));
     setSelAct((s) => Math.max(0, s > selAct ? s - 1 : s));
+    setArmed(null);
   }
 
   // ── attribute-usage composer ──
@@ -119,6 +132,12 @@ export function WorkflowsEditor() {
     }
   }
 
+  // Ids are gated at Save only — mid-typing states stay editable. Activity ids
+  // are checked within the selected workflow (that's the scope they live in).
+  const wfIdErr = idProblems(wfs.map((w) => w.id));
+  const actIdErr = idProblems(acts.map((a) => a.id));
+  const idErr = [wfIdErr && `Workflows — ${wfIdErr}`, actIdErr && `Activities — ${actIdErr}`].filter(Boolean).join(' · ');
+
   return (
     <div className="admin-panel">
       <div className="admin-panel-head">
@@ -127,11 +146,12 @@ export function WorkflowsEditor() {
       </div>
 
       {error && <div className="admin-error">{error}</div>}
+      {idErr && <div className="admin-error">{idErr}</div>}
 
       <div className="sdm-split">
         <div className="sdm-list">
           {wfs.map((w, i) => (
-            <button key={i} className={`sdm-list-item${i === selWf ? ' active' : ''}`} onClick={() => { setSelWf(i); setSelAct(0); }}>
+            <button key={i} className={`sdm-list-item${i === selWf ? ' active' : ''}`} onClick={() => selectWf(i)}>
               <span className="admin-mono">{w.id || '(new)'}</span>
               <span className="sdm-list-sub">{w.name}</span>
             </button>
@@ -153,7 +173,7 @@ export function WorkflowsEditor() {
               <div className="sdm-subsplit">
                 <div className="sdm-sublist">
                   {acts.map((a, i) => (
-                    <button key={i} className={`sdm-list-item${i === selAct ? ' active' : ''}`} onClick={() => setSelAct(i)}>
+                    <button key={i} className={`sdm-list-item${i === selAct ? ' active' : ''}`} onClick={() => selectAct(i)}>
                       <span className="admin-mono">{a.id || '(new)'}</span>
                       <span className="sdm-list-sub">{a.name}</span>
                     </button>
@@ -214,19 +234,21 @@ export function WorkflowsEditor() {
                     <label className="admin-field"><span>After hook (FluxScript — effects)</span>
                       <textarea className="sdm-code" value={hookText(act.after_hook)} onChange={(e) => editAct({ after_hook: e.target.value || null })} /></label>
 
-                    <button className="admin-btn admin-btn-ghost" onClick={removeAct}>Remove activity</button>
+                    <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'act' ? removeAct() : setArmed('act'))}>
+                      {armed === 'act' ? 'Really remove?' : 'Remove activity'}</button>
                   </div>
                 )}
               </div>
             </div>
 
-            <button className="admin-btn admin-btn-ghost" onClick={removeWf}>Remove workflow</button>
+            <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'wf' ? removeWf() : setArmed('wf'))}>
+              {armed === 'wf' ? 'Really remove?' : 'Remove workflow'}</button>
           </div>
         )}
       </div>
 
       <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save workflows'}</button>
+        <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save workflows'}</button>
       </div>
     </div>
   );

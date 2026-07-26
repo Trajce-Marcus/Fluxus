@@ -22,10 +22,17 @@ import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrec
 import type { ActivityHistoryEntry, ConfigRaw } from '@fluxus/engine';
 
 // A solution is the design artifact — the container for one SDM config, its
-// pages and role defs (CONSOLE_RUNTIME_SPEC §1). No data, users or menus.
+// pages, role defs and default menu (CONSOLE_RUNTIME_SPEC §1). No data, users
+// or role assignments. Provenance (M12): `origin` says where it came from —
+// 'authored' (this org) or 'installed' (the Catalogue; unreachable until that
+// exists) — and `origin_ref` is the installed lineage, an opaque catalogue ref
+// (e.g. catalogue:<id>@<version>), null for authored work. The seam that stops
+// anything assuming every solution is locally authored.
 export const solutions = pgTable('solutions', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  origin: text('origin').notNull().default('authored'),
+  originRef: text('origin_ref'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

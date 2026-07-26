@@ -4,15 +4,16 @@
 
 import { useState } from 'react';
 import type { ConfigRaw, RoleDef } from '@fluxus/engine';
-import { readConfig, commitConfig } from './useSolutionConfig';
+import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
 
 export function RolesEditor() {
   const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useDirty();
 
   const roles: RoleDef[] = draft.access?.roles ?? [];
+  const idErr = idProblems(roles.map((r) => r.id));
 
   function setRoles(next: RoleDef[]) {
     setDraft((d) => ({ ...d, access: { ...d.access, roles: next } }));
@@ -44,6 +45,7 @@ export function RolesEditor() {
       </div>
 
       {error && <div className="admin-error">{error}</div>}
+      {idErr && <div className="admin-error">{idErr}</div>}
 
       <div className="admin-section">
         {roles.length === 0 ? (
@@ -66,7 +68,7 @@ export function RolesEditor() {
       </div>
 
       <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save roles'}</button>
+        <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save roles'}</button>
       </div>
     </div>
   );

@@ -16,8 +16,6 @@ export type ActivityItem = WorkspaceActivityItem | SolutionActivityItem;
 export const ADMIN_TAB = {
   solutions: 'admin/solutions',
   operations: 'admin/operations',
-  menu: 'admin/menu',
-  assignments: 'admin/assignments',
   implementers: 'admin/implementers',
 } as const;
 
@@ -27,6 +25,7 @@ export const SDM_TAB = {
   attributes: 'sdm/attributes',
   workflows: 'sdm/workflows',
   roles: 'sdm/roles',
+  menu: 'sdm/menu',
 } as const;
 
 export interface ShellState {

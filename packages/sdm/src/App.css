@@ -17,7 +17,7 @@ body {
 .app-header {
   background: #1e293b;
   color: #f8fafc;
-  padding: 0 20px;
+  padding: 0 16px 0 8px;
   height: 48px;
   display: flex;
   align-items: center;
@@ -28,10 +28,63 @@ body {
   gap: 10px;
 }
 
+.app-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .app-header-sub {
   font-size: 12px;
   font-weight: 400;
   color: #94a3b8;
+  white-space: nowrap;
+}
+
+.nav-toggle {
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.nav-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 1px solid #334155;
+}
+
+.user-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.user-signout {
+  background: none;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.user-signout:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
 }
 
 .app-body {

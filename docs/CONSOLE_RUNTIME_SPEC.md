@@ -1,6 +1,6 @@
 # Console & Runtime Apps — Master Spec
 
-Status: **rev 4 (2026-07-26) — M1–M9 BUILT.** M9 closes the design-plane data
+Status: **rev 5 (2026-07-26) — M1–M9 BUILT; M10 specced (UI phase step 1: Runtime shell + solution default menu).** M9 closes the design-plane data
 gap (Console now builds against an operation's records) and gives the SDM config
 the version history pages have had since M3. Server 64 tests + full workspace
 build green. Living truth lives in the package SPECs (`@fluxus/server`,
@@ -20,8 +20,8 @@ editor; "Shared Data Model" labels.
 
 ## 1. Entity model (GLOSSARY: org / solution / operation)
 
-- **Solution** = design artifact, the container: SDM config + pages + role defs. No data, users, assignments, menus.
-- **Operation** = runtime unit; **links to exactly one solution** (`solution_id` NOT NULL FK). Owns record partition, users, role assignments, files, **operation config** (menu + future runtime settings).
+- **Solution** = design artifact, the container: SDM config + pages + role defs + **default menu** (M10 — amends "no menus"). No data, users, assignments.
+- **Operation** = runtime unit; **links to exactly one solution** (`solution_id` NOT NULL FK). Owns record partition, users, role assignments, files, **operation config** (menu *override* since M10 + future runtime settings).
 - Two operations on one solution ⇒ disjoint data/people/menus, shared model + pages.
 - Opaque `scope` string splits: design artifacts key on **solutionId**; records + operation config key on **operationId** (endorsed rename of unendorsed "scope").
 - Org tier: single implicit org MVP; column present, no org UI.
@@ -41,7 +41,7 @@ editor; "Shared Data Model" labels.
 ## 3. Console app
 
 - **Two-level IA (M7)**: the Console is a *workspace* until a solution is opened.
-  - **Workspace level** (no solution open) — cross-solution/org admin: Solutions (list/create + operation count; **Open** = design it here), Operations (**Open** = run it in the Runtime app), Role assignments, Implementer levels, Operation menu. Activity bar = single **Workspace** item.
+  - **Workspace level** (no solution open) — cross-solution/org admin: Solutions (list/create + operation count; **Open** = design it here), Operations (**Open** = run it in the Runtime app; **Admin** = the operation view, M11), Implementer levels. Activity bar = single **Workspace** item. Since M11 the operation-scoped admin — menu override, role assignments — lives inside the **operation view** (master/detail under Operations), not as separate picker-driven panels; the Operation menu and Role assignments sidebar entries retired.
   - **Solution level** (a solution open) — that solution's design artifacts: **Pages** (the builder), **SDM** (model editor), Components, Search. Activity bar switches to this set; header shows the solution name + **← Solutions** to return.
   - Opening a solution = `engine.openSolution(id, operationId?)` → `FluxusClient.connectSolution({ solutionId, operationId })` → `enterSolutionScope`. The shell subtree is keyed by `scopeVersion` and remounts so every view re-reads the fresh snapshot.
   - **Design data (M9, ruled 2026-07-26)**: the model and draft pages are solution-scoped; the **records come from one of the solution's operations**. Console previously connected with an empty record set, so the SDM editor and page preview showed nothing where the Runtime host showed rows — the platform contradicting itself, and authoring hooks/datasources/list columns blind. The header carries a **Data** picker (the solution's operations, remembered per solution in `fluxus:page-builder:data-operation:<solutionId>`); switching re-opens the solution against that operation and remounts. A solution with no operations still opens, with no records — the exception, not the design. Activities run normally in Console: running one is how you test a workflow.
@@ -61,10 +61,15 @@ editor; "Shared Data Model" labels.
 - Boot: sign-in (built) → operation resolution (single membership auto-selects; picker if >1; MVP: single hardcoded op acceptable) → `connect(operationId)`.
 - Renders **published page versions only** (latest per path); drafts never leave Console. Console preview keeps rendering drafts via embedded page-runtime.
 - Nav = operation menu (§5), role-filtered.
-- **Record grid / record view stay reachable for now** (ruled 2026-07-20) — a menu-addressable "Workbench" item, no longer the default surface.
-- Solution branding, not platform branding (cosmetic MVP).
+- **Record grid / record view stay reachable for now** (ruled 2026-07-20) — a menu-addressable "Workbench" item, no longer the default surface. Longer term the workbench is a **platform-supplied component set** (`RecordGrid`/`RecordView` as page-runtime components; direction 2026-07-26) — decomposition deferred (§10); meanwhile nothing may couple it harder to the shell.
+- Solution branding, not platform branding (cosmetic MVP). M10 cut: the header shows the **solution name** as the product name and the **operation name** as context (both from the connect snapshot — no branding config yet; logo/colours deferred, §10).
+- **Shell (M10)**: standard app-shell chrome — top bar (solution name, operation name, signed-in user menu w/ sign-out, UAT toggle + notification bell retained), collapsible left nav, content area. Nav is the effective menu (§5) with the Workbench item; when a menu is effective the record-type and pages sidebar listings retire from the nav (record types show inside the Workbench surface only; the pages listing remains solely as the **no-menu fallback**, so an unconfigured demo operation is unchanged — adoption posture). Plain CSS; no component-library dependency without a ruling.
 
-## 5. Menu (operation config — ruled 2026-07-20: operation-side, NOT in solution/SDM)
+## 5. Menu (amended 2026-07-26: **defined solution-side, overridable operation-side**; original 2026-07-20 ruling was operation-side only)
+
+- The solution's config artifact carries a top-level **`default_menu`** (key name pending endorsement) in the §5 shape below — versioned/published with the model via `sdm_config_versions`, so a prebuilt solution ships working menus. The engine stays menu-blind (`config.put` is `z.unknown()`; `validateConfig` ignores the key); the server validates it with the same §5 rules at `config.put`, roles read from the **incoming** config.
+- `operations.config.menu` becomes the **override**: key absent ⇒ inherit the solution default; present ⇒ **whole-menu replacement** (`[]` = explicitly empty). Per-item merge is ruled out — that is where diff semantics and upgrade pain live. Effective menu = `operation.config.menu ?? solution.default_menu ?? []`, resolved at client connect.
+- Role-filtering, deny-default, §5 validation, `visibleMenu()` are unchanged and run on whichever menu is effective.
 
 ```jsonc
 // operations.config
@@ -113,9 +118,27 @@ editor; "Shared Data Model" labels.
 
 9. **M9 — design data + model history**: Console builds against real records; the SDM config gets page-style versioning; the repo files stop being a source of truth. **BUILT 2026-07-26** — `sdm_config_versions` (migration `0006_sdm_config_versions`, append-only); `config.publish`/`versions`/`rollback` (readme required, rollback also restores the draft); `FluxusClient.connectSolution({ solutionId, operationId })` now fetches that operation's records + `operationsForSolution` + `publishConfig`/`configVersions`/`rollbackConfig`; `engine.openSolution(solutionId, operationId?)` resolves and remembers the data operation; shell store `dataOperationId`/`dataOperations`; `HeaderBar` **Data** picker; `ConfigPublishControl` in a new SDM toolbar. Seed script demoted to **bootstrap-only** (skip-if-present, `--force` to overwrite from files). 5 config-publish tests green (64 server tests total); vite build green; browser-smoked 2026-07-26.
 
+10. **M10 — Runtime shell + solution default menu (UI phase step 1)**: **BUILT 2026-07-26** (`default_menu` key endorsed) — server `config.put` default_menu validation (`validateOperationMenu` + `rolesFrom`), `operations.get` + connect snapshot carry solution/operation names; client resolves the effective menu and exposes the names; Runtime shell (collapsible nav, solution-branding header, user menu w/ sign-out, Workbench-scoped record-type list, pages listing as no-menu fallback); Console `MenuEditor` (SDM section, shared `MenuItemsEditor`) + `MenuAdmin` inherit/override posture (+ `ConsoleClient.getSolutionConfig`). 69 server tests green (5 new); both apps tsc + vite build green. Spec as below:
+   - **Server**: `config.put` validates a top-level `default_menu` in the artifact via the §5 validator (published pages + one-level nesting; roles from the incoming config — `validateOperationMenu` gains a roles-override param rather than a twin). `connect` snapshot adds solution + operation display names (header). `operations.putConfig` unchanged — absent `menu` ⇒ inherit, `[]` ⇒ explicit empty.
+   - **Client**: effective menu resolved at connect (`operation.config.menu ?? config.default_menu ?? []`, today's `op.config.menu` read); `visibleMenu()` untouched. Exposes solution/operation names.
+   - **Engine**: untouched (menu-blind by construction).
+   - **Runtime app**: §4 shell — top bar, collapsible nav, MenuNav as primary nav, record-type list scoped to the Workbench surface, pages listing as no-menu fallback only. Plain CSS.
+   - **Console**: SDM section gains a **Menu** entry editing `default_menu` through `commitConfig` (reusing the MenuAdmin item composer); the operation **Menu editor** gains inherit/override posture — inheriting shows the default read-only + **Override** (copies default into the editor); overriding shows **Revert to inherit** (removes the key).
+   - **Tests**: extend `menu.test.ts` — `default_menu` validated at `config.put`; inherit fallback; override wins; `[]` override yields empty.
+   - **Acceptance**: Playwright — Runtime boots showing solution/operation names in the header; a solution-default menu renders role-filtered with no operation override; setting an override replaces it; demo op without any menu keeps today's fallback nav.
+
+11. **M11 — Console operation view (UI phase step 2)**: **BUILT 2026-07-26.** The org-home regroup — operation-scoped admin consolidates into a detail view. `OperationsAdmin` becomes master/detail: the list keeps **Open** (Runtime) and create; selecting an operation opens its view — **Overview** (name, id, linked solution, Open in Runtime), **Menu** (the M10 inherit/override editor, scoped — `OperationMenuSection`), **Role assignments** (scoped — `AssignmentsSection`). The standalone `MenuAdmin`/`AssignmentsAdmin` panels and their sidebar entries (`admin/menu`, `admin/assignments`) are deleted; no operation pickers remain. Workspace sidebar: Solutions, Operations, Implementer levels.
+
+12. **M12 — solution provenance (UI phase step 3)**: **BUILT 2026-07-26** (`origin`/`origin_ref` endorsed) — migration `0007_solution_provenance`, `solutions.list` + `ConsoleClient` carry `origin`, SolutionsAdmin Origin column. 69 server tests green. The packaging seam (decision log 2026-07-26: solutions are packages, extension/composition via dependency, entitlement not DRM) made honest in schema, and nothing more:
+   - `solutions` gains **`origin`** (`text NOT NULL DEFAULT 'authored'`; values `'authored'` | `'installed'`) and **`origin_ref`** (`text`, null unless installed — an opaque ref to the source catalogue item/version, e.g. `catalogue:<solutionId>@<version>`, shape firmed up when the Catalogue exists). Version lineage of *authored* work is already `sdm_config_versions`/`page_versions`; `origin_ref` is the lineage of *installed* work.
+   - Migration `0007_solution_provenance`; seed rows default `'authored'`.
+   - `solutions.list` returns `origin`; `SolutionsAdmin` shows it as a badge. **No install path, no fork/copy affordance** — `'installed'` is unreachable from the UI until the Catalogue lands; the column exists so nothing built meanwhile can assume all solutions are locally authored.
+   - No entitlement table yet (reserved concept; nothing enforces it until a second party exists).
+
 ## 10. Non-goals (MVP)
 
 - Solution publish/upgrade + version pinning per operation (operation always runs latest published pages; seam = future `pinned_version` on operations); catalogue/import; org management UI; page-version diffing; row/field-level permissions (RBAC_COMPACT exclusions); multi-org.
+- M10 deferrals: header operation **switcher** (boot stays `?operation=` / default); branding beyond names (logo, colours); per-item menu merge (ruled out, not deferred); workbench decomposition into page-runtime components; component-library adoption (needs a dependency ruling).
 
 ## 11. Decision log
 
@@ -130,3 +153,6 @@ editor; "Shared Data Model" labels.
 - 2026-07-26 — **The database is the source of truth for solutions** (config + pages); git carries code and migrations. The repo's `sdm/config/` + `page-builder/pages/` files are a **bootstrap fixture** for an empty database (fresh clone, fresh Neon branch, PGlite, CI), never authority. The seed script no longer overwrites live content.
 - 2026-07-26 — **The two Opens follow the two planes** (user ruling, settled after two wrong turns by Claude). Solutions → Open = **open the Console** on that solution (authoring never requires an operation). Operations → Open = **open the app** — launches the Runtime host at `?operation=<id>`. Solutions also shows each solution's operation count.
 - 2026-07-26 — **SDM config gets page-style versioning** rather than relying on git for model history: history belongs beside the artifact. Same append-only posture; a later solution-level publish bundles config version + page versions into one release (§10).
+- 2026-07-26 — **Menu placement amended** (UI-phase direction session): *defined solution-side* (`default_menu` in the config artifact, versioned with the model — prebuilt solutions ship working menus), *overridable operation-side* (whole-menu replacement; absent = inherit). Per-item merge ruled out. Amends the 2026-07-20 operation-side-only ruling; all M4 machinery survives on the effective menu.
+- 2026-07-26 — **Workbench = platform-supplied component set**, not a solution artifact: stays the special menu item now; later decomposes into `RecordGrid`/`RecordView` page-runtime components (the out-of-the-box workbench becomes the default page composition). Deferred until a solution wants a grid inside a page.
+- 2026-07-26 — **Solutions are packages; extension and composition are one mechanism** — a thin org solution *depending on* base package(s), adding glue (FKs, menu, activities). Never copy; **operation → exactly one solution stays locked** (composition is design-plane only). Copy protection = runtime entitlement, not DRM. Known hazard: cross-package id collisions → future package-qualified ids; no feature may assume ids globally unique across solutions. Direction only — nothing built until a second party exists.

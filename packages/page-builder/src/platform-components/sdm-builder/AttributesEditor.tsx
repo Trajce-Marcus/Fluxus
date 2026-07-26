@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import type { AttributeDef, ConfigRaw } from '@fluxus/engine';
-import { readConfig, commitConfig } from './useSolutionConfig';
+import { readConfig, commitConfig, useDirty } from './useSolutionConfig';
 
 const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'reference', 'list', 'photo', 'file'];
 
@@ -14,7 +14,7 @@ export function AttributesEditor() {
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useDirty();
 
   const attrs = draft.attributes;
   const cur: AttributeDef | undefined = attrs[sel];

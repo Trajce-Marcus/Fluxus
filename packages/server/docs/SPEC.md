@@ -81,11 +81,14 @@ takes `operationId?` (both default `demo/sdm`):
 
 - **`solutions.list`** → `{ id, name }[]` and **`operations.list`** →
   `OperationRow[]` / **`operations.get`** `{ operationId? }` →
-  `{ id, orgId, solutionId, name, config }` / **`operations.create`**
+  `{ id, orgId, solutionId, name, config, solutionName }` (the solution's
+  display name rides along for the Runtime header, M10) / **`operations.create`**
   `{ id, solutionId, name }` (implementer `admin`) / **`operations.putConfig`**
-  `{ operationId?, config }` (implementer `write`; the runtime menu, §5 —
-  **validated at save**: every leaf `page` resolves to a published page of the
-  linked solution, every role id is declared, one nesting level max).
+  `{ operationId?, config }` (implementer `write`; the runtime menu **override**,
+  §5 amended M10 — `menu` absent ⇒ inherit the solution's `default_menu`, `[]` ⇒
+  explicitly empty; **validated at save**: every leaf `page` resolves to a
+  published page of the linked solution, every role id is declared, one nesting
+  level max).
   Plain auth-tier CRUD — no SDM, no activities. `operations.get` is the
   Runtime's resolution door: `@fluxus/client.connect(operationId)` calls it
   first, then loads config + pages by the returned `solutionId`.
@@ -143,7 +146,12 @@ takes `operationId?` (both default `demo/sdm`):
   already governs: mutation is activity-only, so orphaned `typeRef`s would be
   unreachable forever. Config is solution-plane and owns no records;
   demo-record seeding moved to `seedOperationRecords` (called against an
-  operation by the seed script), not `config.put`.
+  operation by the seed script), not `config.put`. Since M10 the artifact may
+  carry a top-level **`default_menu`** (§5 amended — the solution's default
+  runtime navigation, inherited by operations unless overridden): the engine
+  stays menu-blind, so `put` validates it here — §5 shape, published-page +
+  declared-role references (roles read from the **incoming** config via
+  `validateOperationMenu`'s `rolesFrom` param), one nesting level.
 - **`pages.list` / `pages.put` / `pages.delete`** `{ solutionId?, path, def }`
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
@@ -223,9 +231,12 @@ rev 6 §0). What the server implements:
 
 ## Data layers (v1: one Postgres, both hats)
 
-- `solutions` — `(id)` PK: the design artifact (name only for MVP). `operations`
+- `solutions` — `(id)` PK: the design artifact — `name`, plus provenance (M12):
+  `origin` (`'authored'` default | `'installed'`, the packaging seam) and
+  `origin_ref` (opaque catalogue lineage, null for authored). `operations`
   — `(id)` PK, `solution_id` FK NOT NULL, `org_id` (default `default`), `config`
-  jsonb (the runtime menu, §5). The tier the rest key off (CONSOLE_RUNTIME_SPEC §2).
+  jsonb (the runtime menu **override**, §5 amended M10). The tier the rest key
+  off (CONSOLE_RUNTIME_SPEC §2).
 - `role_assignments` — `(org_id, operation_id, user_id)` PK, `role_ids` jsonb:
   the runtime-plane governance store (§2a). `implementer_levels` —
   `(user_id, solution_id)` PK, `level`: the design-plane store (consumed at M5).

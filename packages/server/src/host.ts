@@ -401,9 +401,16 @@ export async function ensureOperation(db: Db, id: string, solutionId: string, na
   await db.insert(operations).values({ id, solutionId, name }).onConflictDoNothing({ target: operations.id });
 }
 
-export async function listSolutions(db: Db): Promise<{ id: string; name: string }[]> {
+export async function listSolutions(db: Db): Promise<{ id: string; name: string; origin: string }[]> {
   const rows = await db.select().from(solutions);
-  return rows.map((r) => ({ id: r.id, name: r.name }));
+  return rows.map((r) => ({ id: r.id, name: r.name, origin: r.origin }));
+}
+
+/** Display name for an operation's linked solution (Runtime header, M10);
+ *  falls back to the id so a missing row can't break boot. */
+export async function getSolutionName(db: Db, solutionId: string): Promise<string> {
+  const rows = await db.select({ name: solutions.name }).from(solutions).where(eq(solutions.id, solutionId));
+  return rows[0]?.name ?? solutionId;
 }
 
 /** Create a solution (the design-artifact container, §1). Duplicate id → db unique-constraint error. */
@@ -436,14 +443,16 @@ export class MenuValidationError extends Error {
 }
 
 /**
- * Validate an operation menu against its linked solution (CONSOLE_RUNTIME_SPEC
- * §5): every leaf `page` must resolve to a **published** page of the solution;
- * every role id must be one the solution declares (`access.roles`); nesting is
- * one level max (MVP). Run at operation-config save.
+ * Validate a menu against its solution (CONSOLE_RUNTIME_SPEC §5): every leaf
+ * `page` must resolve to a **published** page of the solution; every role id
+ * must be one the solution declares (`access.roles`); nesting is one level max
+ * (MVP). Run at operation-config save (the override) and at config.put (the
+ * solution's `default_menu`) — the latter passes `rolesFrom` so roles are read
+ * from the config being saved, not the stored one it is replacing.
  */
-export async function validateOperationMenu(db: Db, solutionId: string, menu: MenuItem[]): Promise<void> {
+export async function validateOperationMenu(db: Db, solutionId: string, menu: MenuItem[], rolesFrom?: ConfigRaw): Promise<void> {
   const published = new Set((await listPublishedPages(db, solutionId)).map((p) => p.path));
-  const config = await getSolutionConfig(db, solutionId);
+  const config = rolesFrom ?? (await getSolutionConfig(db, solutionId));
   const roleIds = new Set((config.access?.roles ?? []).map((r) => r.id));
   const errors: string[] = [];
   const walk = (items: MenuItem[], depth: number) => {

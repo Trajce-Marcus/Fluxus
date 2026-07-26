@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import type { ConfigRaw, CustomFieldDef, RecordTypeDef } from '@fluxus/engine';
-import { readConfig, commitConfig } from './useSolutionConfig';
+import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
 
 const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'fk_ref'];
 
@@ -13,7 +13,9 @@ export function RecordTypesEditor() {
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useDirty();
+  // Which remove is armed — the button asks once before it bites.
+  const [armed, setArmed] = useState(false);
 
   const rts = draft.recordTypes;
   const cur: RecordTypeDef | undefined = rts[sel];
@@ -32,7 +34,17 @@ export function RecordTypesEditor() {
   }
   function add() {
     setRts([...rts, { id: 'rt_', name: '', description: '', workflow_ref: workflows[0]?.id ?? '', custom_fields: [] }]);
-    setSel(rts.length);
+    select(rts.length);
+  }
+  /** Selection moves disarm a pending remove. */
+  function select(i: number) {
+    setSel(i);
+    setArmed(false);
+  }
+  function removeRt() {
+    setRts(rts.filter((_, j) => j !== sel));
+    setSel((s) => Math.max(0, s > sel ? s - 1 : s));
+    setArmed(false);
   }
 
   async function save() {
@@ -53,6 +65,8 @@ export function RecordTypesEditor() {
     editFields(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   }
 
+  const idErr = idProblems(rts.map((r) => r.id));
+
   return (
     <div className="admin-panel">
       <div className="admin-panel-head">
@@ -61,11 +75,12 @@ export function RecordTypesEditor() {
       </div>
 
       {error && <div className="admin-error">{error}</div>}
+      {idErr && <div className="admin-error">{idErr}</div>}
 
       <div className="sdm-split">
         <div className="sdm-list">
           {rts.map((r, i) => (
-            <button key={i} className={`sdm-list-item${i === sel ? ' active' : ''}`} onClick={() => setSel(i)}>
+            <button key={i} className={`sdm-list-item${i === sel ? ' active' : ''}`} onClick={() => select(i)}>
               <span className="admin-mono">{r.id || '(new)'}</span>
               <span className="sdm-list-sub">{r.name}</span>
             </button>
@@ -115,29 +130,47 @@ export function RecordTypesEditor() {
               <table className="admin-table">
                 <thead><tr><th>Key</th><th>Type</th><th>Req</th><th>Uniq</th><th>FK type</th><th>FK display</th><th /></tr></thead>
                 <tbody>
-                  {fields.map((f, i) => (
-                    <tr key={i}>
-                      <td><input className="admin-mono" value={f.key} onChange={(e) => editField(i, { key: e.target.value })} /></td>
-                      <td><select value={f.type} onChange={(e) => editField(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></td>
-                      <td><input type="checkbox" checked={!!f.required} onChange={(e) => editField(i, { required: e.target.checked })} /></td>
-                      <td><input type="checkbox" checked={!!f.unique} onChange={(e) => editField(i, { unique: e.target.checked })} /></td>
-                      <td>{f.type === 'fk_ref' && <input className="admin-mono" value={f.fk_record_type ?? ''} onChange={(e) => editField(i, { fk_record_type: e.target.value })} />}</td>
-                      <td>{f.type === 'fk_ref' && <input className="admin-mono" value={f.fk_display_field ?? ''} onChange={(e) => editField(i, { fk_display_field: e.target.value })} />}</td>
-                      <td><button className="admin-btn admin-btn-ghost" onClick={() => editFields(fields.filter((_, j) => j !== i))}>✕</button></td>
-                    </tr>
-                  ))}
+                  {fields.map((f, i) => {
+                    // An fk_ref points at another record type in this draft, so
+                    // both sides are pickable: the target's id, then one of its
+                    // own field keys (or `id`) as the label to display.
+                    const target = f.type === 'fk_ref' ? rts.find((r) => r.id === f.fk_record_type) : undefined;
+                    return (
+                      <tr key={i}>
+                        <td><input className="admin-mono" value={f.key} onChange={(e) => editField(i, { key: e.target.value })} /></td>
+                        <td><select value={f.type} onChange={(e) => editField(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></td>
+                        <td><input type="checkbox" checked={!!f.required} onChange={(e) => editField(i, { required: e.target.checked })} /></td>
+                        <td><input type="checkbox" checked={!!f.unique} onChange={(e) => editField(i, { unique: e.target.checked })} /></td>
+                        <td>{f.type === 'fk_ref' && (
+                          <select className="admin-mono" value={f.fk_record_type ?? ''} onChange={(e) => editField(i, { fk_record_type: e.target.value })}>
+                            {!f.fk_record_type && <option value="" disabled>(select)</option>}
+                            {rts.map((r, j) => <option key={j} value={r.id}>{r.id}</option>)}
+                          </select>
+                        )}</td>
+                        <td>{f.type === 'fk_ref' && (
+                          <select className="admin-mono" value={f.fk_display_field ?? ''} disabled={!target}
+                            onChange={(e) => editField(i, { fk_display_field: e.target.value || undefined })}>
+                            <option value="">(default)</option>
+                            {['id', ...(target?.custom_fields ?? []).map((c) => c.key)].map((k, j) => <option key={j} value={k}>{k}</option>)}
+                          </select>
+                        )}</td>
+                        <td><button className="admin-btn admin-btn-ghost" onClick={() => editFields(fields.filter((_, j) => j !== i))}>✕</button></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               <button className="admin-btn admin-btn-ghost" onClick={() => editFields([...fields, { key: '', type: 'text' }])}>+ Add field</button>
             </div>
 
-            <button className="admin-btn admin-btn-ghost" onClick={() => { setRts(rts.filter((_, j) => j !== sel)); setSel((s) => Math.max(0, s > sel ? s - 1 : s)); }}>Remove record type</button>
+            <button className="admin-btn admin-btn-ghost" onClick={() => (armed ? removeRt() : setArmed(true))}>
+              {armed ? 'Really remove?' : 'Remove record type'}</button>
           </div>
         )}
       </div>
 
       <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save record types'}</button>
+        <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save record types'}</button>
       </div>
     </div>
   );

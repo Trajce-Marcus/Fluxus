@@ -82,3 +82,48 @@ describe('operation menu validation at save (§5)', () => {
     })).rejects.toThrow(/nests too deep/i);
   });
 });
+
+// M10 (§5 amended): the solution ships a default_menu in its config artifact,
+// validated at config.put with the same §5 rules — roles read from the config
+// being saved. The operation's config.menu is the whole-menu override; the
+// inherit fallback itself is resolved client-side at connect.
+describe('solution default_menu validation at config.put (§5, M10)', () => {
+  it('accepts a default_menu of published pages + roles from the incoming config', async () => {
+    const res = await open().config.put({
+      solutionId: SOL,
+      config: { ...config, default_menu: [{ label: 'Home', page: 'pages/p1', roles: ['role_a'] }] },
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it('rejects an unpublished page reference', async () => {
+    await expect(open().config.put({
+      solutionId: SOL,
+      config: { ...config, default_menu: [{ label: 'X', page: 'pages/ghost' }] },
+    })).rejects.toThrow(/no published page/i);
+  });
+
+  it('validates roles against the incoming config, not the stored one', async () => {
+    // role_c exists only in the config being saved — must pass.
+    await expect(open().config.put({
+      solutionId: SOL,
+      config: {
+        ...config,
+        access: { roles: [...(config.access?.roles ?? []), { id: 'role_c', name: 'Cs' }] },
+        default_menu: [{ label: 'C', page: 'pages/p1', roles: ['role_c'] }],
+      },
+    })).resolves.toEqual({ ok: true });
+    // role_zzz exists nowhere — must fail even though the stored config now has role_c.
+    await expect(open().config.put({
+      solutionId: SOL,
+      config: { ...config, default_menu: [{ label: 'X', page: 'pages/p1', roles: ['role_zzz'] }] },
+    })).rejects.toThrow(/unknown role/i);
+  });
+
+  it('rejects a default_menu that is not a menu shape', async () => {
+    await expect(open().config.put({
+      solutionId: SOL,
+      config: { ...config, default_menu: [{ page: 'pages/p1' }] },
+    })).rejects.toThrow(/default_menu is not a menu/i);
+  });
+});

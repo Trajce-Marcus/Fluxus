@@ -19,6 +19,7 @@ import {
   deletePage,
   findActivity,
   getOperation,
+  getSolutionName,
   getSolutionConfig,
   listConfigVersions,
   getPageVersion,
@@ -223,7 +224,11 @@ export const appRouter = t.router({
       .input(z.object({ operationId: operationInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          return await getOperation(ctx.db, input.operationId);
+          const op = await getOperation(ctx.db, input.operationId);
+          // Solution display name rides along for the Runtime header (M10) —
+          // end users see the solution's name, not the platform's.
+          const solutionName = await getSolutionName(ctx.db, op.solutionId);
+          return { ...op, solutionName };
         } catch (err) {
           rethrow(err);
         }
@@ -340,6 +345,16 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         try {
           await requireImplementer(ctx, input.solutionId, 'write');
+          // The solution's default runtime menu (§5, amended 2026-07-26) rides
+          // in the config artifact; the engine stays menu-blind, so its shape
+          // and references are validated here — same §5 rules as the operation
+          // override, with roles read from the config being saved.
+          const defaultMenu = (input.config as { default_menu?: unknown }).default_menu;
+          if (defaultMenu !== undefined) {
+            const parsed = z.array(menuItemSchema).safeParse(defaultMenu);
+            if (!parsed.success) throw new TRPCError({ code: 'BAD_REQUEST', message: `default_menu is not a menu: ${parsed.error.message}` });
+            await validateOperationMenu(ctx.db, input.solutionId, parsed.data, input.config as ConfigRaw);
+          }
           await putConfig(ctx.db, input.solutionId, input.config as ConfigRaw, ctx.sink);
           return { ok: true as const };
         } catch (err) {

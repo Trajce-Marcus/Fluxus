@@ -12,8 +12,12 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    (`operations.get`), then fetch `config.get` + `pages.list` (by `solutionId`)
    and `records.partition` (by `operationId`) in parallel and build a
    `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
-   operation's `menu` (spec §5). The host creates its engine over that adapter
-   and wires UI subscriptions to it once. Exposes `operationId` + `solutionId`.
+   **effective menu** (§5 amended M10): `operation.config.menu ??
+   config.default_menu ?? []` — the operation's whole-menu override when set,
+   else the solution's default, resolved here because the engine is menu-blind.
+   The host creates its engine over that adapter and wires UI subscriptions to
+   it once. Exposes `operationId` + `solutionId`, and (M10) `solutionName` +
+   `operationName` for the Runtime shell header.
 1a. **`connectSolution({url, solutionId, operationId?})`** (CONSOLE_RUNTIME_SPEC
    §3, design plane) — bind to a solution to author its model + draft pages:
    fetch `config.get` + draft `pages.list` by `solutionId`, plus **that
@@ -72,10 +76,12 @@ just the tRPC door for admin screens.
 `connect`'s `pages` option (`'draft'` default | `'published'`) picks which page
 set the snapshot holds: the Runtime host passes `'published'` (latest version
 per path); the Console passes `'draft'` (its editable preview). Connect also
-fetches `me` → the caller's `userRoles` + `enforced` flag, and the operation's
+fetches `me` → the caller's `userRoles` + `enforced` flag, and the effective
 `menu`. `visibleMenu()` filters the menu for display (deny-default per §5;
 unfiltered when not `enforced`, §7) — cosmetic, the server page filter is the
-real gate. `ConsoleClient.listPublishedPaths` feeds the menu editor.
+real gate. `ConsoleClient.listPublishedPaths` feeds the menu editors, and
+`ConsoleClient.getSolutionConfig` (M10) lets the Console's operation view show
+the `default_menu` an operation inherits.
 
 ## Contracts and postures
 

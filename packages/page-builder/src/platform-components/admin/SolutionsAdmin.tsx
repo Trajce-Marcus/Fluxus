@@ -18,7 +18,7 @@ function slug(name: string): string {
 }
 
 export function SolutionsAdmin() {
-  const [solutions, setSolutions] = useState<{ id: string; name: string }[] | null>(null);
+  const [solutions, setSolutions] = useState<{ id: string; name: string; origin: string }[] | null>(null);
   const [operations, setOperations] = useState<{ id: string; solutionId: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,13 +94,16 @@ export function SolutionsAdmin() {
         ) : (
           <table className="admin-table">
             <thead>
-              <tr><th>Name</th><th>Id</th><th>Operations</th><th /></tr>
+              <tr><th>Name</th><th>Id</th><th>Origin</th><th>Operations</th><th /></tr>
             </thead>
             <tbody>
               {solutions.map((s) => (
                 <tr key={s.id}>
                   <td>{s.name}</td>
                   <td className="admin-mono">{s.id}</td>
+                  {/* Provenance (M12): authored here vs installed from the
+                      Catalogue — installed is unreachable until that exists. */}
+                  <td className="admin-muted">{s.origin}</td>
                   {/* Where its data lives, and where you open it from. */}
                   <td className="admin-muted">{opCount(s.id)}</td>
                   <td>

@@ -2,15 +2,20 @@
 // new ones against an existing solution, and **Open** one — which launches the
 // **Runtime app** on it (ruled 2026-07-26), not a Console design scope. The two
 // Opens follow the two planes: a solution opens the Console (author the model),
-// an operation opens the app (run it). Runtime host URL comes from
-// VITE_FLUXUS_RUNTIME_URL, localhost:5173 in dev. Plain functional form over the
-// ConsoleClient's operations/solutions CRUD — no SDM, no activities. RBAC
-// stage-2 gates operations.create on implementer `admin`; until then it's open
-// per the env stub, and a FORBIDDEN surfaces here as the error line.
+// an operation opens the app (run it). Since M11 this panel is master/detail:
+// **Admin** on a row opens the operation view — Overview + the operation-scoped
+// admin (menu override, role assignments) that used to be separate
+// picker-driven panels. Runtime host URL comes from VITE_FLUXUS_RUNTIME_URL,
+// localhost:5173 in dev. Plain functional form over the ConsoleClient's
+// operations/solutions CRUD — no SDM, no activities. RBAC stage-2 gates
+// operations.create on implementer `admin`; until then it's open per the env
+// stub, and a FORBIDDEN surfaces here as the error line.
 
 import { useEffect, useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { consoleClient } from '../../sdm-runtime/engine';
+import { OperationMenuSection } from './OperationMenuSection';
+import { AssignmentsSection } from './AssignmentsSection';
 
 /** The Runtime app's address; `?operation=<id>` selects what it runs. */
 const RUNTIME_URL = import.meta.env.VITE_FLUXUS_RUNTIME_URL ?? 'http://localhost:5173';
@@ -24,6 +29,8 @@ export function OperationsAdmin() {
   const [operations, setOperations] = useState<OperationRow[] | null>(null);
   const [solutions, setSolutions] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The operation view (M11): the selected operation, or null for the list. */
+  const [selected, setSelected] = useState<OperationRow | null>(null);
 
   // Create form.
   const [name, setName] = useState('');
@@ -71,11 +78,36 @@ export function OperationsAdmin() {
     window.open(`${RUNTIME_URL}/?operation=${encodeURIComponent(op.id)}`, '_blank', 'noopener');
   }
 
+  // The operation view (M11): overview + the operation-scoped admin sections.
+  if (selected) {
+    return (
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <button className="admin-link" onClick={() => setSelected(null)}>← Operations</button>
+          <h2 className="admin-title" style={{ marginTop: 6 }}>{selected.name}</h2>
+          <p className="admin-sub">
+            <span className="admin-mono">{selected.id}</span>
+            {' · runs '}
+            <strong>{solName(selected.solutionId)}</strong>{' '}
+            <span className="admin-mono">({selected.solutionId})</span>
+          </p>
+        </div>
+        <div className="admin-section">
+          <button className="admin-btn" onClick={() => open(selected)} title="Run this operation in the Runtime app">
+            Open in Runtime app
+          </button>
+        </div>
+        <OperationMenuSection operationId={selected.id} solutionId={selected.solutionId} />
+        <AssignmentsSection operationId={selected.id} />
+      </div>
+    );
+  }
+
   return (
     <div className="admin-panel">
       <div className="admin-panel-head">
         <h2 className="admin-title">Operations</h2>
-        <p className="admin-sub">Runtime units. Each links to one solution and owns its own data, users and menu. <strong>Open</strong> runs it in the Runtime app.</p>
+        <p className="admin-sub">Runtime units. Each links to one solution and owns its own data, users and menu. <strong>Open</strong> runs it in the Runtime app; <strong>Admin</strong> manages its menu and role assignments.</p>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -97,8 +129,9 @@ export function OperationsAdmin() {
                   <td className="admin-mono">{op.id}</td>
                   <td>{solName(op.solutionId)}</td>
                   <td className="admin-mono">{op.orgId}</td>
-                  <td>
-                    <button className="admin-btn" onClick={() => open(op)} title="Run this operation in the Runtime app">Open</button>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="admin-btn" onClick={() => open(op)} title="Run this operation in the Runtime app">Open</button>{' '}
+                    <button className="admin-btn admin-btn-ghost" onClick={() => setSelected(op)} title="Menu and role assignments">Admin</button>
                   </td>
                 </tr>
               ))}
@@ -155,6 +188,7 @@ export const css = `
     white-space: pre-wrap;
   }
   .admin-section { margin-bottom: 24px; }
+  .admin-section-title { margin: 0 0 2px; font-size: 0.95rem; font-weight: 600; padding-top: 14px; border-top: 1px solid var(--color-border); }
   .admin-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   .admin-table th, .admin-table td {
     text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--color-border);

@@ -4,9 +4,8 @@
 
 import { SolutionsAdmin } from './SolutionsAdmin';
 import { OperationsAdmin, css as operationsCss } from './OperationsAdmin';
-import { AssignmentsAdmin } from './AssignmentsAdmin';
 import { ImplementersAdmin } from './ImplementersAdmin';
-import { MenuAdmin, css as menuCss } from './MenuAdmin';
+import { css as menuCss } from './OperationMenuSection';
 
 export function AdminView({ tab }: { tab: string }) {
   switch (tab) {
@@ -14,10 +13,6 @@ export function AdminView({ tab }: { tab: string }) {
       return <SolutionsAdmin />;
     case 'admin/operations':
       return <OperationsAdmin />;
-    case 'admin/menu':
-      return <MenuAdmin />;
-    case 'admin/assignments':
-      return <AssignmentsAdmin />;
     case 'admin/implementers':
       return <ImplementersAdmin />;
     default:
@@ -26,5 +21,6 @@ export function AdminView({ tab }: { tab: string }) {
 }
 
 // The shared admin CSS lives in OperationsAdmin; all admin panels use its
-// `.admin-*` classes. MenuAdmin adds its own `.menu-*` rules.
+// `.admin-*` classes. OperationMenuSection adds the `.menu-*` rules (shared
+// with the solution-level MenuEditor via MenuItemsEditor).
 export const css = operationsCss + menuCss;
