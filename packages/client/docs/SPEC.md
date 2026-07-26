@@ -16,8 +16,11 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    config.default_menu ?? []` — the operation's whole-menu override when set,
    else the solution's default, resolved here because the engine is menu-blind.
    The host creates its engine over that adapter and wires UI subscriptions to
-   it once. Exposes `operationId` + `solutionId`, and (M10) `solutionName` +
-   `operationName` for the Runtime shell header.
+   it once. Exposes `operationId` + `solutionId`, and the Runtime header's
+   three display names — `solutionName` + `operationName` (M10), `orgName`
+   (M13) — all resolved from the one `operations.get` call. `connectSolution`
+   passes `''` for `orgName`: display names are Runtime chrome, and Console has
+   its own solution banner.
 1a. **`connectSolution({url, solutionId, operationId?})`** (CONSOLE_RUNTIME_SPEC
    §3, design plane) — bind to a solution to author its model + draft pages:
    fetch `config.get` + draft `pages.list` by `solutionId`, plus **that
@@ -80,6 +83,9 @@ fetches `me` → the caller's `userRoles` + `enforced` flag, and the effective
 `menu`. `visibleMenu()` filters the menu for display (deny-default per §5;
 unfiltered when not `enforced`, §7) — cosmetic, the server page filter is the
 real gate. `ConsoleClient.listPublishedPaths` feeds the menu editors, and
+`ConsoleClient.getOrg` / `putOrgProfile` (M14) drive Console's Organisation
+settings surface — profile reads and edits over the `orgs` row (`OrgProfile`).
+No create and no plan/status writes; the server owns both rules.
 `ConsoleClient.getSolutionConfig` (M10) lets the Console's operation view show
 the `default_menu` an operation inherits.
 

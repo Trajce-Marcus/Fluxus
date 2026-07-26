@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { closeDb, createDb } from '../src/db/client';
-import { ensureOperation, ensureSolution, getSolutionConfig, listPageVersions, listPages, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
+import { ensureOperation, ensureOrg, ensureSolution, getSolutionConfig, listPageVersions, listPages, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
 import { DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { config } from '../../sdm/src/config';
 
@@ -36,7 +36,11 @@ const solutionId = positional[0] ?? DEFAULT_SOLUTION;
 const operationId = positional[1] ?? DEFAULT_OPERATION;
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
 
-await ensureSolution(db, solutionId, 'Demo');
+// Dummy tenancy for the demo bundle — the three names the Runtime header
+// shows (org · solution … operation). Placeholders until org/solution admin
+// names them for real.
+await ensureOrg(db, 'default', 'Northwind Utilities');
+await ensureSolution(db, solutionId, 'Asset Maintenance');
 
 // Config: only when the solution has none. An existing config is authored
 // truth — overwriting it silently is exactly the drift this seed used to cause.
@@ -44,7 +48,7 @@ const hasConfig = await getSolutionConfig(db, solutionId).then(() => true).catch
 const wroteConfig = force || !hasConfig;
 if (wroteConfig) await putConfig(db, solutionId, config);
 
-await ensureOperation(db, operationId, solutionId, 'Demo');
+await ensureOperation(db, operationId, solutionId, 'Western Region');
 await seedOperationRecords(db, operationId, config);
 
 // Page files: page path = the file's path relative to packages/page-builder

@@ -4,7 +4,9 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig, putRoleAssignment } from '../src/host';
+import { ensureOperation, ensureOrg, ensureSolution, putConfig, putRoleAssignment } from '../src/host';
+import { operations } from '../src/db/schema';
+import { eq } from 'drizzle-orm';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
 import type { ConfigRaw, ContextUser } from '@fluxus/engine';
@@ -125,5 +127,54 @@ describe('solution default_menu validation at config.put (§5, M10)', () => {
       solutionId: SOL,
       config: { ...config, default_menu: [{ page: 'pages/p1' }] },
     })).rejects.toThrow(/default_menu is not a menu/i);
+  });
+});
+
+// M13: the Runtime header's identity line — org · solution … operation. The
+// three names all arrive on operations.get, which connect() calls first.
+describe('runtime header names (M13)', () => {
+  it('carries org, solution and operation display names', async () => {
+    await ensureOrg(db, 'default', 'Northwind Utilities');
+    const op = await open().operations.get({ operationId: OP });
+    expect(op.orgName).toBe('Northwind Utilities');
+    expect(op.solutionName).toBe('Menu');
+    expect(op.name).toBe('Menu');
+  });
+
+  it('falls back to the org id when no orgs row exists', async () => {
+    await ensureOperation(db, 'test/menu-orphan', SOL, 'Orphan');
+    await db.update(operations).set({ orgId: 'no-such-org' }).where(eq(operations.id, 'test/menu-orphan'));
+    const op = await open().operations.get({ operationId: 'test/menu-orphan' });
+    expect(op.orgName).toBe('no-such-org'); // boot must not break on a missing name
+  });
+});
+
+// M14: the org tier — profile reads/edits. No create (registration waits on
+// user → org resolution) and no plan/status writes (ours to set, not theirs).
+describe('org profile (M14)', () => {
+  it('reads the profile with plan defaults', async () => {
+    await ensureOrg(db, 'default', 'Northwind Utilities');
+    const org = await open().orgs.get({ orgId: 'default' });
+    expect(org.name).toBe('Northwind Utilities');
+    expect(org.plan).toBe('free');
+    expect(org.status).toBe('active');
+  });
+
+  it('edits name and contact email', async () => {
+    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Water', contactEmail: 'ops@northwind.example' });
+    const org = await open().orgs.get({ orgId: 'default' });
+    expect(org.name).toBe('Northwind Water');
+    expect(org.contactEmail).toBe('ops@northwind.example');
+    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Utilities', contactEmail: null });
+  });
+
+  it('rejects an unknown org and a malformed email', async () => {
+    await expect(open().orgs.putProfile({ orgId: 'no-such-org', name: 'X', contactEmail: null })).rejects.toThrow(/not onboarded/i);
+    await expect(open().orgs.putProfile({ orgId: 'default', name: 'X', contactEmail: 'nope' })).rejects.toThrow();
+  });
+
+  it('returns a synthetic row for an org with no record', async () => {
+    const org = await open().orgs.get({ orgId: 'ghost' });
+    expect(org).toMatchObject({ id: 'ghost', name: 'ghost', plan: 'free', createdAt: null });
   });
 });

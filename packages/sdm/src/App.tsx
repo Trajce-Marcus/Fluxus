@@ -60,9 +60,14 @@ function Nav() {
   const hasMenu = client.visibleMenu().length > 0;
   return (
     <aside className="side-panel">
-      <MenuNav />
-      {(!hasMenu || selectedPage === null) && <RecordTypeList />}
-      {!hasMenu && <PagesList />}
+      <div className="side-panel-nav">
+        <MenuNav />
+        {(!hasMenu || selectedPage === null) && <RecordTypeList />}
+        {!hasMenu && <PagesList />}
+      </div>
+      {/* Platform attribution sits at the edge, under the tenant's own nav —
+          the header is the solution's branding, not ours. */}
+      <div className="powered-by">Powered by Fluxus</div>
     </aside>
   );
 }
@@ -82,9 +87,14 @@ function Shell() {
         <button className="nav-toggle" onClick={toggleNav} aria-label="Toggle navigation" title="Toggle navigation">
           ☰
         </button>
+        {/* Identity line: who you work for, then which app you are in. */}
+        <span className="app-org">{client.orgName}</span>
+        <span className="app-header-sep">·</span>
         <span className="app-title">{client.solutionName}</span>
-        <span className="app-header-sub">{client.operationName}</span>
         <span style={{ flex: 1 }} />
+        {/* Which business unit's data this app is running on. Not switchable
+            yet — one operation per session until memberships land. */}
+        <span className="op-chip" title="Operation">{client.operationName}</span>
         <UatLabelsToggle />
         <NotificationCentre />
         <UserMenu />

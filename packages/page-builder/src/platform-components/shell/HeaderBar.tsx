@@ -1,8 +1,16 @@
+import { useEffect, useState } from 'react';
 import { useShellState } from './useShellState';
 import { exitSolutionScope, shellStore } from './store';
-import { openSolution } from '../../sdm-runtime/engine';
+import { consoleClient, openSolution } from '../../sdm-runtime/engine';
 
 function HeaderBarComponent() {
+  // The org you are acting as — pinned at both IA levels (workspace and
+  // solution-open), because solutions and operations all belong to it (M14).
+  const [orgName, setOrgName] = useState<string | null>(null);
+  useEffect(() => {
+    void consoleClient.getOrg().then((o) => setOrgName(o.name)).catch(() => setOrgName(null));
+  }, []);
+
   const { solutionId, solutionName, dataOperationId, dataOperations } = useShellState([
     'solutionId', 'solutionName', 'dataOperationId', 'dataOperations',
   ]);
@@ -19,6 +27,7 @@ function HeaderBarComponent() {
   return (
     <div className="header-bar">
       <span className="header-logo">Fluxus</span>
+      {orgName && <span className="header-org" title="Organisation">{orgName}</span>}
       {solutionId ? (
         <div className="header-solution">
           <button className="header-back" title="Back to Solutions" onClick={exitSolutionScope}>← Solutions</button>
@@ -83,6 +92,15 @@ export const css = `
     color: var(--color-text);
     white-space: nowrap;
     width: 80px;
+    flex-shrink: 0;
+  }
+  .header-org {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+    padding-left: 12px;
+    border-left: 1px solid var(--color-border);
     flex-shrink: 0;
   }
   .header-search {

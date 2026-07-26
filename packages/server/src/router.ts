@@ -14,12 +14,16 @@ import { records } from './db/schema';
 import {
   ConfigValidationError,
   OperationNotFoundError,
+  OrgNotFoundError,
   SolutionNotFoundError,
   createOperation,
   deletePage,
   findActivity,
   getOperation,
+  getOrg,
+  getOrgName,
   getSolutionName,
+  putOrgProfile,
   getSolutionConfig,
   listConfigVersions,
   getPageVersion,
@@ -56,6 +60,8 @@ import type { MenuItem, OperationConfig } from './db/schema';
 /** The single demo bundle keeps one id as both its solution and its operation. */
 export const DEFAULT_SOLUTION = 'demo/sdm';
 export const DEFAULT_OPERATION = 'demo/sdm';
+/** The single implicit org (§1) until the auth tier resolves user → org. */
+export const DEFAULT_ORG = 'default';
 
 export interface AppContext {
   db: Db;
@@ -159,6 +165,7 @@ const t = initTRPC.context<AppContext>().create();
 
 const solutionInput = z.string().min(1).default(DEFAULT_SOLUTION);
 const operationInput = z.string().min(1).default(DEFAULT_OPERATION);
+const orgInput = z.string().min(1).default(DEFAULT_ORG);
 
 // Menu shape (schema §5) — validated on operations.putConfig. Deeper validation
 // (page paths resolve to published versions; role ids exist) lands with M4.
@@ -182,6 +189,7 @@ const jsonValue: z.ZodType<unknown> = z.lazy(() =>
 function rethrow(err: unknown): never {
   if (err instanceof SolutionNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof OperationNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+  if (err instanceof OrgNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
   if (err instanceof TRPCError) throw err;
   throw new TRPCError({
@@ -204,6 +212,29 @@ export const appRouter = t.router({
       return { id: u.id, name: u.name, email: u.email, roles: u.roles ?? [], authConfigured: ctx.authConfigured === true };
     }),
 
+  // The org tier (§1a, M14): the tenant everything hangs under. Profile reads
+  // and edits only — no create (registration needs user → org resolution, which
+  // the auth tier does not do yet) and no plan/status writes (ours to set).
+  orgs: t.router({
+    get: t.procedure
+      .input(z.object({ orgId: orgInput }).default({}))
+      .query(async ({ ctx, input }) => getOrg(ctx.db, input.orgId)),
+    putProfile: t.procedure
+      .input(z.object({
+        orgId: orgInput,
+        name: z.string().min(1),
+        contactEmail: z.string().email().nullable().default(null),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await putOrgProfile(ctx.db, input.orgId, { name: input.name, contactEmail: input.contactEmail });
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
   solutions: t.router({
     list: t.procedure.query(async ({ ctx }) => listSolutions(ctx.db)),
     create: t.procedure
@@ -225,10 +256,14 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         try {
           const op = await getOperation(ctx.db, input.operationId);
-          // Solution display name rides along for the Runtime header (M10) —
-          // end users see the solution's name, not the platform's.
-          const solutionName = await getSolutionName(ctx.db, op.solutionId);
-          return { ...op, solutionName };
+          // Display names ride along for the Runtime header (M10, M13): the
+          // org is the tenant the user works for, the solution is the app they
+          // are in, the operation is which business unit's data it runs on.
+          const [solutionName, orgName] = await Promise.all([
+            getSolutionName(ctx.db, op.solutionId),
+            getOrgName(ctx.db, op.orgId),
+          ]);
+          return { ...op, solutionName, orgName };
         } catch (err) {
           rethrow(err);
         }

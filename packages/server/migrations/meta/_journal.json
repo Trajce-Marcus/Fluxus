@@ -57,6 +57,20 @@
       "when": 1785100000000,
       "tag": "0007_solution_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0008_orgs",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785200100000,
+      "tag": "0009_org_profile",
+      "breakpoints": true
     }
   ]
 }

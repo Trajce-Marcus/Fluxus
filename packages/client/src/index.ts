@@ -81,9 +81,22 @@ export interface OperationConfig {
 export interface OperationRow {
   id: string;
   orgId: string;
+  /** Binding and permanent — an operation is never re-pointed at another
+   *  solution (ruled 2026-07-27). There is deliberately no write path. */
   solutionId: string;
   name: string;
   config: OperationConfig;
+}
+
+/** The org's profile — Console's Organisation → Settings surface (M14).
+ *  `createdAt` is the registration date; `plan` is the subscribed tier. */
+export interface OrgProfile {
+  id: string;
+  name: string;
+  contactEmail: string | null;
+  plan: string;
+  status: string;
+  createdAt: string | null;
 }
 
 /**
@@ -98,6 +111,16 @@ export class ConsoleClient {
 
   static create(options: { url?: string; getToken?: () => Promise<string | null> } = {}): ConsoleClient {
     return new ConsoleClient(createTrpc(options.url ?? DEFAULT_URL, options.getToken));
+  }
+
+  // The org tier (M14): Console's Organisation → Settings surface. Reads and
+  // profile edits only — no create (registration waits on user → org
+  // resolution), no plan/status writes (ours to set, not the org's).
+  getOrg(orgId?: string): Promise<OrgProfile> {
+    return this.trpc.orgs.get.query(orgId ? { orgId } : {}) as Promise<OrgProfile>;
+  }
+  putOrgProfile(input: { orgId?: string; name: string; contactEmail: string | null }): Promise<{ ok: true }> {
+    return this.trpc.orgs.putProfile.mutate(input);
   }
 
   listSolutions(): Promise<{ id: string; name: string; origin: string }[]> {
@@ -198,8 +221,14 @@ export class FluxusClient {
      * else []. Whole-menu semantics — never a per-item merge.
      */
     readonly menu: MenuItem[],
-    /** Display names for the Runtime header (M10): the solution's name is the
-     *  product name end users see; the operation names their business unit. */
+    /**
+     * Display names for the Runtime header (M10, extended M13). The three
+     * together are the app's identity line: the **org** is the tenant the user
+     * works for, the **solution** is the app they are in (solution branding,
+     * not platform branding), the **operation** is which business unit's data
+     * it is running on.
+     */
+    readonly orgName: string,
     readonly solutionName: string,
     readonly operationName: string,
     /**
@@ -252,7 +281,9 @@ export class FluxusClient {
     // enforced=false: Console is the implementer plane, menus/roles are not
     // filtered here. With an operation bound, runActivity/refresh work exactly
     // as in the Runtime host — running an activity is how you test a workflow.
-    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], solutionId, operationId ?? '', [], false);
+    // Display names are Runtime chrome; Console shows the solution banner it
+    // already has, so the ids stand in.
+    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], '', solutionId, operationId ?? '', [], false);
   }
 
   /** The operations running a given solution — Console's data picker (which
@@ -321,7 +352,8 @@ export class FluxusClient {
       (config as { default_menu?: MenuItem[] }).default_menu ??
       [];
     const solutionName = (op as { solutionName?: string }).solutionName ?? solutionId;
-    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, solutionName, op.name, me.roles, me.authConfigured);
+    const orgName = (op as { orgName?: string }).orgName ?? op.orgId;
+    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, me.roles, me.authConfigured);
   }
 
   /**

@@ -20,7 +20,7 @@ import {
   type RecordInstance,
 } from '@fluxus/engine';
 import type { Db } from './db/client';
-import { attachments, implementerLevels, operations, pageVersions, pages, records, roleAssignments, rptActivities, rptAttributes, sdmConfigVersions, sdmConfigs, solutions, type MenuItem, type OperationConfig } from './db/schema';
+import { attachments, implementerLevels, operations, orgs, pageVersions, pages, records, roleAssignments, rptActivities, rptAttributes, sdmConfigVersions, sdmConfigs, solutions, type MenuItem, type OperationConfig } from './db/schema';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 
 /**
@@ -47,6 +47,12 @@ export class SolutionNotFoundError extends Error {
 export class OperationNotFoundError extends Error {
   constructor(operationId: string) {
     super(`No operation '${operationId}' — create one in the Console (or npm run seed)`);
+  }
+}
+
+export class OrgNotFoundError extends Error {
+  constructor(orgId: string) {
+    super(`No org '${orgId}' — the workspace is not onboarded (or npm run seed)`);
   }
 }
 
@@ -393,12 +399,57 @@ export async function listPublishedPages(db: Db, solutionId: string): Promise<{ 
 // Plain auth-tier reads/writes — no SDM, no activities. The Console admin
 // surfaces are built by hand over these helpers.
 
+// Bootstrap upserts. M9 demoted the seed to skip-if-present for *content*
+// (config, records); display names are not content, so these refresh the name
+// on conflict — renaming the demo tenancy stays a one-line seed edit.
+export async function ensureOrg(db: Db, id: string, name: string): Promise<void> {
+  await db.insert(orgs).values({ id, name }).onConflictDoUpdate({ target: orgs.id, set: { name } });
+}
+
 export async function ensureSolution(db: Db, id: string, name: string): Promise<void> {
-  await db.insert(solutions).values({ id, name }).onConflictDoNothing({ target: solutions.id });
+  await db.insert(solutions).values({ id, name }).onConflictDoUpdate({ target: solutions.id, set: { name } });
 }
 
 export async function ensureOperation(db: Db, id: string, solutionId: string, name: string): Promise<void> {
-  await db.insert(operations).values({ id, solutionId, name }).onConflictDoNothing({ target: operations.id });
+  await db.insert(operations).values({ id, solutionId, name }).onConflictDoUpdate({ target: operations.id, set: { name } });
+}
+
+/** Display name for an org (Runtime header, M13); falls back to the id so a
+ *  missing row can't break boot — the same posture as getSolutionName. */
+export async function getOrgName(db: Db, orgId: string): Promise<string> {
+  const rows = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId));
+  return rows[0]?.name ?? orgId;
+}
+
+/** The org's profile — what Console's Organisation → Settings surface shows
+ *  (M14). Unknown id ⇒ a synthetic row so an un-onboarded workspace renders
+ *  rather than errors; the same don't-break-boot posture as getOrgName. */
+export async function getOrg(db: Db, orgId: string): Promise<OrgRow> {
+  const rows = await db.select().from(orgs).where(eq(orgs.id, orgId));
+  const r = rows[0];
+  if (!r) return { id: orgId, name: orgId, contactEmail: null, plan: 'free', status: 'active', createdAt: null };
+  return { id: r.id, name: r.name, contactEmail: r.contactEmail, plan: r.plan, status: r.status, createdAt: r.createdAt };
+}
+
+export interface OrgRow {
+  id: string;
+  name: string;
+  contactEmail: string | null;
+  /** What the org is subscribed to. Billing is later — this records the tier. */
+  plan: string;
+  status: string;
+  /** Registration date; null only for the synthetic un-onboarded row. */
+  createdAt: Date | null;
+}
+
+/** Edit the org profile. Only the fields an org owns about itself — `plan` and
+ *  `status` are ours to set, never theirs, so they are not writable here. */
+export async function putOrgProfile(db: Db, orgId: string, input: { name: string; contactEmail: string | null }): Promise<void> {
+  const res = await db.update(orgs)
+    .set({ name: input.name, contactEmail: input.contactEmail })
+    .where(eq(orgs.id, orgId))
+    .returning({ id: orgs.id });
+  if (res.length === 0) throw new OrgNotFoundError(orgId);
 }
 
 export async function listSolutions(db: Db): Promise<{ id: string; name: string; origin: string }[]> {

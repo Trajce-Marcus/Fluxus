@@ -2,6 +2,7 @@
 // ContentArea delegates here when the active tab is an admin section; page
 // tabs still render the PageEditor.
 
+import { OrganisationAdmin, css as orgCss } from './OrganisationAdmin';
 import { SolutionsAdmin } from './SolutionsAdmin';
 import { OperationsAdmin, css as operationsCss } from './OperationsAdmin';
 import { ImplementersAdmin } from './ImplementersAdmin';
@@ -9,6 +10,8 @@ import { css as menuCss } from './OperationMenuSection';
 
 export function AdminView({ tab }: { tab: string }) {
   switch (tab) {
+    case 'admin/organisation':
+      return <OrganisationAdmin />;
     case 'admin/solutions':
       return <SolutionsAdmin />;
     case 'admin/operations':
@@ -23,4 +26,4 @@ export function AdminView({ tab }: { tab: string }) {
 // The shared admin CSS lives in OperationsAdmin; all admin panels use its
 // `.admin-*` classes. OperationMenuSection adds the `.menu-*` rules (shared
 // with the solution-level MenuEditor via MenuItemsEditor).
-export const css = operationsCss + menuCss;
+export const css = operationsCss + menuCss + orgCss;

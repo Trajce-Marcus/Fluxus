@@ -36,13 +36,39 @@ export const solutions = pgTable('solutions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// The tenant an operation runs for. `operations.org_id` and
+// `role_assignments.org_id` have carried an org key since the operations tier
+// (M1) with nowhere to read a display name from; this table is that row.
+// Added M13 (name only, for the Runtime header); M14 gives it the profile an
+// onboarded org actually has — GitHub's model, where the org is a real thing
+// with settings and a plan, and solutions/operations hang under it.
+//
+// `created_at` is the registration date; `plan` is what they are subscribed to
+// (billing itself is later — this column just records the tier). One implicit
+// 'default' org still: signing *up* a new org needs the auth tier to know
+// which org a user belongs to, which doesn't exist yet.
+export const orgs = pgTable('orgs', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  contactEmail: text('contact_email'),
+  plan: text('plan').notNull().default('free'),
+  status: text('status').notNull().default('active'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // An operation is the runtime unit — it links to exactly one solution and owns
 // the record partition, users/assignments and its own runtime config (the menu
 // today, §5). `config` is jsonb, not a table, until a second consumer demands
-// one (spec §2). Single implicit org for MVP: the column is present, no org UI.
+// one (spec §2). Single implicit org for MVP: `org_id` names a row in `orgs`
+// (M13) but there is still no org-management UI.
 export const operations = pgTable('operations', {
   id: text('id').primaryKey(),
   orgId: text('org_id').notNull().default('default'),
+  // BINDING AND PERMANENT (ruled 2026-07-27). An operation is created against
+  // exactly one solution and can never be re-pointed at another: its record
+  // partition, role assignments and menu override are all written against that
+  // solution's model, so re-linking would orphan every one of them. Enforced by
+  // absence — there is no update path, and none may be added.
   solutionId: text('solution_id').notNull().references(() => solutions.id),
   name: text('name').notNull(),
   config: jsonb('config').$type<OperationConfig>().notNull().default({}),

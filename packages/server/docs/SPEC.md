@@ -36,7 +36,7 @@ because the entry append and record_map change preceded the hook.
 ## What the package owns
 
 ```
-src/db/schema.ts       — Drizzle schema: solutions + operations (the tier,
+src/db/schema.ts       — Drizzle schema: orgs + solutions + operations (the tier,
                          CONSOLE_RUNTIME_SPEC §2), role_assignments +
                          implementer_levels (governance store, §2a),
                          sdm_configs + pages (solution-keyed design artifacts),
@@ -51,11 +51,13 @@ src/auth.ts            — bearer-JWT verification against Neon Auth's JWKS
                          roles-resolver seam (stubbed)
 src/host.ts            — loadOperationHost (resolve operation → solution, then
                          load) / writeBack (diff + projection) / putConfig;
-                         solutions + operations helpers (ensure/list/create/
-                         getOperation/putOperationConfig/seedOperationRecords)
-src/router.ts          — the tRPC router: solutions.list, operations.list/get/
-                         create/putConfig, config.get/put, pages.*, records.*,
-                         activities.run, files.*; DEFAULT_SOLUTION/DEFAULT_OPERATION
+                         orgs + solutions + operations helpers (ensure/list/
+                         create/getOrg/putOrgProfile/getOperation/
+                         putOperationConfig/seedOperationRecords)
+src/router.ts          — the tRPC router: orgs.get/putProfile, solutions.list,
+                         operations.list/get/create/putConfig, config.get/put,
+                         pages.*, records.*, activities.run, files.*;
+                         DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
 src/services/blob.ts   — the blob-store seam (R2): the ONLY module touching the
                          S3 client; presign helpers, key generation, cost
                          constants. Unconfigured when FLUXUS_R2_* is unset
@@ -79,10 +81,17 @@ ARCHITECTURE.md "Hosting options"). Two partition keys after the operations
 tier (CONSOLE_RUNTIME_SPEC §1–2): design artifacts take `solutionId?`, data
 takes `operationId?` (both default `demo/sdm`):
 
+- **`orgs.get`** `{ orgId? }` → the org profile (unknown id ⇒ a synthetic row,
+  so an un-onboarded workspace renders rather than errors) / **`orgs.putProfile`**
+  `{ orgId?, name, contactEmail }` — name and contact email only. There is
+  deliberately **no `orgs.create`** (signup needs user → org resolution) and
+  `plan`/`status` are not writable: they are ours to set, not the org's.
 - **`solutions.list`** → `{ id, name }[]` and **`operations.list`** →
   `OperationRow[]` / **`operations.get`** `{ operationId? }` →
-  `{ id, orgId, solutionId, name, config, solutionName }` (the solution's
-  display name rides along for the Runtime header, M10) / **`operations.create`**
+  `{ id, orgId, solutionId, name, config, solutionName, orgName }` (the display
+  names ride along for the Runtime header's identity line — solution M10, org
+  M13; both fall back to their id so a missing row can't break boot)
+  / **`operations.create`**
   `{ id, solutionId, name }` (implementer `admin`) / **`operations.putConfig`**
   `{ operationId?, config }` (implementer `write`; the runtime menu **override**,
   §5 amended M10 — `menu` absent ⇒ inherit the solution's `default_menu`, `[]` ⇒
@@ -231,6 +240,13 @@ rev 6 §0). What the server implements:
 
 ## Data layers (v1: one Postgres, both hats)
 
+- `orgs` — `(id)` PK: the tenant (M13 `name`, M14 profile). `operations.org_id`
+  / `role_assignments.org_id` have carried an org key since M1 with nowhere to
+  read a row from; this is that row. `contact_email`, `plan` (subscribed tier,
+  default `'free'`), `status` (default `'active'`), `created_at` = the
+  registration date. Migrations `0008_orgs` / `0009_org_profile`; one implicit
+  `'default'` row, and **no signup path** — creating an org needs the auth tier
+  to resolve user → org, which it does not do.
 - `solutions` — `(id)` PK: the design artifact — `name`, plus provenance (M12):
   `origin` (`'authored'` default | `'installed'`, the packaging seam) and
   `origin_ref` (opaque catalogue lineage, null for authored). `operations`

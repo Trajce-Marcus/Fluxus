@@ -14,6 +14,7 @@ export type ActivityItem = WorkspaceActivityItem | SolutionActivityItem;
 /** Workspace admin content tabs (Console §3) share the tab strip; the `admin/`
  *  prefix routes them to the admin views instead of the page editor. */
 export const ADMIN_TAB = {
+  organisation: 'admin/organisation',
   solutions: 'admin/solutions',
   operations: 'admin/operations',
   implementers: 'admin/implementers',
