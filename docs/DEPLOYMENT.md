@@ -98,7 +98,14 @@ discovery runs pre-build), the non-empty `public/`, and the **hand-rolled
 (req, res) bridge in `src/vercel.ts`** — both off-the-shelf Hono adapters
 hang on this runtime (`hono/vercel` is Edge-only; `@hono/node-server/vercel`
 waits on a body stream Vercel's pre-parsing already consumed, and
-`api.bodyParser: false` is not honored).
+`api.bodyParser: false` is not honored). Added 2026-07-26: the esbuild
+`--banner:js` in `build:vercel` defining a real `require` via
+`createRequire` — CJS deps in the ESM bundle (first hit: `@aws-sdk/client-s3`
+→ `@smithy/node-http-handler`) dynamically `require('node:https')` at module
+evaluation, and esbuild's `__require` shim throws
+`Dynamic require of "node:https" is not supported` unless a real `require`
+is in scope, taking the whole function down as
+`FUNCTION_INVOCATION_FAILED` on every request.
 
 ## Where everything lives on Vercel
 
