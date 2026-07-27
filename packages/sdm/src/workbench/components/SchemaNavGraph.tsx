@@ -1,5 +1,5 @@
 import { useRef, useState, useLayoutEffect } from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useWorkbench } from '../WorkbenchContext';
 import { SchemaNavCard } from './SchemaNavCard';
 
 type Cardinality = '1:1' | 'N:1';
@@ -28,7 +28,7 @@ function fieldMidY(cardEl: HTMLElement, fieldKey: string | undefined, containerT
 }
 
 export function SchemaNavGraph({ focalTypeId, onSelectType }: Props) {
-  const { getRecordTypeDef, getReverseRefs } = useAppContext();
+  const { getRecordTypeDef, getReverseRefs } = useWorkbench();
 
   const focalDef = getRecordTypeDef(focalTypeId);
   if (!focalDef) return <div style={{ color: '#94a3b8', padding: 24 }}>Unknown type.</div>;

@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { useAppContext } from '../context/AppContext';
-import { ComponentLabel } from '../context/UatLabels';
+import { useWorkbench } from '../WorkbenchContext';
+import { ComponentLabel } from '../../context/UatLabels';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
 import { CsvImportModal } from './CsvImportModal';
 import { PhotoCountCell, isDescriptorValue } from './attributeWidgets';
-import { exportToCSV, exportToJSON } from '../utils/export';
+import { exportToCSV, exportToJSON } from '../export';
 import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
@@ -25,7 +25,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     runActivity,
     isActivityAvailable,
     uploads,
-  } = useAppContext();
+  } = useWorkbench();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showImportCSV, setShowImportCSV] = useState(false);

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useWorkbench } from '../WorkbenchContext';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
-import { ComponentLabel } from '../context/UatLabels';
+import { ComponentLabel } from '../../context/UatLabels';
 import type { ActivityDef, RecordInstance, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function AvailableActivities({ record, workflow }: Props) {
-  const { runActivity, isActivityAvailable } = useAppContext();
+  const { runActivity, isActivityAvailable } = useWorkbench();
   const [activeActivity, setActiveActivity] = useState<ActivityDef | null>(null);
 
   // Record-level activities: CREATE excluded (no anchor; lives in the grid).

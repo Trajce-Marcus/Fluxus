@@ -1,8 +1,8 @@
 import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
-import { ComponentLabel } from '../context/UatLabels';
+import { ComponentLabel } from '../../context/UatLabels';
 import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
-import { useAppContext } from '../context/AppContext';
+import { useWorkbench } from '../WorkbenchContext';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -18,7 +18,7 @@ function isImageDescriptor(value: unknown): boolean {
 }
 
 export function RecordDetails({ record, typeDef, navigateTo }: Props) {
-  const { uploads } = useAppContext();
+  const { uploads } = useWorkbench();
   const fields = typeDef.custom_fields;
 
   return (

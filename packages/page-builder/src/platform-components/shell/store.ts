@@ -20,6 +20,12 @@ export const ADMIN_TAB = {
   implementers: 'admin/implementers',
 } as const;
 
+/** The workbench (CONSOLE_RUNTIME_SPEC §4, M15) — one solution-level content
+ *  tab, opened straight from the activity bar. Raw record access and arbitrary
+ *  activity runs are implementer work, so they live here, not in the Runtime
+ *  app; the tab runs against the solution's current data operation. */
+export const WORKBENCH_TAB = 'workbench';
+
 /** Solution-level design tabs (SDM editor sections). */
 export const SDM_TAB = {
   recordTypes: 'sdm/record-types',

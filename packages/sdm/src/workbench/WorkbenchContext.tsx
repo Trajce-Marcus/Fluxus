@@ -1,26 +1,31 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityDef, ReverseRefEntry, RunActivityResult, ScriptContext } from '@fluxus/engine';
-import type { UploadService } from '@fluxus/client';
-import { adapter, client, engine, notificationLog, pageRuntime } from '../host';
+import { createEngine, buildGeoModule } from '@fluxus/engine';
+import type {
+  ContextUser,
+  Engine,
+  RecordTypeDef,
+  WorkflowDef,
+  RecordInstance,
+  ActivityDef,
+  ReverseRefEntry,
+  RunActivityResult,
+  ScriptContext,
+} from '@fluxus/engine';
+import type { FluxusClient, UploadService } from '@fluxus/client';
+import { NotificationLog } from '../store/NotificationLog';
+import { buildNotifyModule } from '../services/notify';
 
-// Singletons live in ../host (assigned before render by initHost). The server
-// owns hooks and persistence; the local engine evaluates expressions against
-// the fetched snapshot; this context owns the workbench's UI state (selection)
-// and channels (console warnings).
-export { notificationLog };
+// The workbench's own state (CONSOLE_RUNTIME_SPEC §4, M15). Everything
+// record-shaped lives here — selected record type, selected record, activity
+// runs — and nothing above <Workbench> knows these exist. The host hands over a
+// connected FluxusClient; the local engine that evaluates expressions (show
+// conditions, datasources, availability) synchronously against the fetched
+// snapshot is built here, per mounted workbench, from that client.
 
-interface AppContextValue {
+interface WorkbenchContextValue {
   recordTypes: RecordTypeDef[];
   selectedRecordType: (RecordTypeDef & { workflow: WorkflowDef }) | null;
   selectedRecord: RecordInstance | null;
-  // Published pages (the client's page snapshot) rendered via
-  // @fluxus/page-runtime — selecting a page swaps the content area to it;
-  // selecting a record type returns to the grid/view.
-  pagePaths: string[];
-  selectedPage: string | null;
-  selectPage: (path: string) => void;
-  // Return to the record grid/view (the menu-addressable "Workbench", §4).
-  showWorkbench: () => void;
   selectRecordType: (type: RecordTypeDef) => void;
   selectRecord: (record: RecordInstance) => void;
   // Select by id — used after CREATE, where only RunActivityResult.recordId is known.
@@ -51,29 +56,52 @@ interface AppContextValue {
   dslEvaluate: (source: string, script: ScriptContext) => unknown;
 }
 
-const Ctx = createContext<AppContextValue | null>(null);
+const Ctx = createContext<WorkbenchContextValue | null>(null);
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
+export interface WorkbenchProviderProps {
+  /** The host's connected client — the snapshot, the config and the run door. */
+  client: FluxusClient;
+  /** Signed-in identity for `ctx.user` in expression parity; omitted in the
+   *  demo (auth unconfigured) posture. */
+  user?: ContextUser;
+  children: React.ReactNode;
+}
+
+export function WorkbenchProvider({ client, user, children }: WorkbenchProviderProps) {
   const [, setTick] = useState(0);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
-  const [selectedPage, setSelectedPage] = useState<string | null>(null);
+
+  const adapter = client.adapter;
+
+  // One engine per mounted workbench, rebuilt when the host re-scopes the
+  // client (Console's Data picker, a solution switch). The notify sink is
+  // local and dormant — hooks run server-side, so nothing writes to it; it
+  // stays wired so the service manifest validates.
+  const engine: Engine = useMemo(
+    () =>
+      createEngine({
+        store: adapter,
+        config: client.config,
+        services: [buildNotifyModule(new NotificationLog()), buildGeoModule(adapter)],
+        user,
+      }),
+    [client, adapter, user]
+  );
 
   // Re-render whenever the snapshot changes (partition refresh after each run)
-  useEffect(() => adapter.subscribe(() => setTick(t => t + 1)), []);
+  useEffect(() => adapter.subscribe(() => setTick(t => t + 1)), [adapter]);
+
+  // A re-scoped client brings a different model and partition; the old
+  // selection does not belong to it.
+  useEffect(() => {
+    setSelectedTypeId(null);
+    setSelectedRecordId(null);
+  }, [client]);
 
   const selectRecordType = useCallback((type: RecordTypeDef) => {
     setSelectedTypeId(type.id);
     setSelectedRecordId(null);
-    setSelectedPage(null);
-  }, []);
-
-  const selectPage = useCallback((path: string) => {
-    setSelectedPage(path);
-  }, []);
-
-  const showWorkbench = useCallback(() => {
-    setSelectedPage(null);
   }, []);
 
   const selectRecord = useCallback((record: RecordInstance) => {
@@ -86,7 +114,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const getRecordTypeDef = useCallback((typeId: string) => {
     try { return adapter.getRecordTypeDef(typeId); } catch { return null; }
-  }, []);
+  }, [adapter]);
 
   const getRecordAndType = useCallback((typeId: string, recordId: string) => {
     try {
@@ -96,39 +124,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return null;
     }
-  }, []);
+  }, [adapter]);
 
   const resolveDisplayLabel = useCallback(
     (fkRecordType: string, fkDisplayField: string | undefined, rawId: string) =>
       adapter.resolveDisplayLabel(fkRecordType, fkDisplayField, rawId),
-    []
+    [adapter]
   );
 
   const resolveAttributeDisplayField = useCallback(
     (typeId: string, attrKey: string) =>
       adapter.resolveAttributeDisplayField(typeId, attrKey),
-    []
+    [adapter]
   );
 
   const getReverseRefs = useCallback(
     (targetTypeId: string) => adapter.getReverseRefs(targetTypeId),
-    []
+    [adapter]
   );
 
   const getRecordsByField = useCallback(
     (typeId: string, fieldKey: string, value: string) =>
       adapter.getRecordsByField(typeId, fieldKey, value),
-    []
+    [adapter]
   );
 
   const dslEvaluate = useCallback(
     (source: string, script: ScriptContext) => engine.evaluate(source, script),
-    []
+    [engine]
   );
 
   // client.uploads mints a fresh object per access; hold one stable instance so
   // widget effects keyed on it don't re-run every render.
-  const uploads = useMemo(() => client.uploads, []);
+  const uploads = useMemo(() => client.uploads, [client]);
 
   // Thin host wrapper over the server pipeline: the server runs the activity
   // (gate, hooks, persistence) and the client refreshes the snapshot; the
@@ -155,7 +183,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (result.warnings.length > 0) console.warn(`[${activity.name}]`, result.warnings.join(' · '));
     }
     return result;
-  }, []);
+  }, [client]);
 
   // Derived from adapter on every render; forceUpdate (via setTick) keeps it fresh
   const rtDef = selectedTypeId
@@ -171,10 +199,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       recordTypes: adapter.listRecordTypes(),
       selectedRecordType: rtDef,
       selectedRecord,
-      pagePaths: pageRuntime.listPagePaths(),
-      selectedPage,
-      selectPage,
-      showWorkbench,
       selectRecord,
       selectRecordById,
       selectRecordType,
@@ -195,8 +219,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAppContext(): AppContextValue {
+export function useWorkbench(): WorkbenchContextValue {
   const ctx = useContext(Ctx);
-  if (!ctx) throw new Error('useAppContext must be used within AppProvider');
+  if (!ctx) throw new Error('useWorkbench must be used within <Workbench>');
   return ctx;
 }

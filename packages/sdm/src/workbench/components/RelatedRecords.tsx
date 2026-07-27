@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useAppContext } from '../context/AppContext';
-import { ComponentLabel } from '../context/UatLabels';
+import { useWorkbench } from '../WorkbenchContext';
+import { ComponentLabel } from '../../context/UatLabels';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function RelatedRecords({ typeId, recordId, navigateTo }: Props) {
-  const { getReverseRefs, getRecordsByField, getRecordTypeDef } = useAppContext();
+  const { getReverseRefs, getRecordsByField, getRecordTypeDef } = useWorkbench();
   const [activeTab, setActiveTab] = useState(0);
 
   const groups = getReverseRefs(typeId)
@@ -85,7 +85,7 @@ interface TableProps {
 }
 
 function RelatedRecordsTable({ records, typeDef, sourceTypeId, navigateTo }: TableProps) {
-  const { resolveDisplayLabel } = useAppContext();
+  const { resolveDisplayLabel } = useWorkbench();
   const customFields = typeDef.custom_fields;
 
   return (

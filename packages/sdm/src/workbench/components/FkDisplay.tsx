@@ -1,4 +1,4 @@
-import { useAppContext } from '../context/AppContext';
+import { useWorkbench } from '../WorkbenchContext';
 
 interface Props {
   value: string;
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function FkDisplay({ value, fkRecordType, fkDisplayField, asLink = false, onNavigate }: Props) {
-  const { resolveDisplayLabel } = useAppContext();
+  const { resolveDisplayLabel } = useWorkbench();
 
   const displayValue = resolveDisplayLabel(fkRecordType, fkDisplayField, value);
 

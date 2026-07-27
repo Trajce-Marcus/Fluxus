@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { compositeSubs } from '@fluxus/engine';
 import type { ActivityDef, ActivityHistoryEntry } from '@fluxus/engine';
-import { useAppContext } from '../context/AppContext';
+import { useWorkbench } from '../WorkbenchContext';
 import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
 import type { UploadService } from '@fluxus/client';
 
@@ -76,7 +76,7 @@ function displayRows(entry: ActivityHistoryEntry, activity: ActivityDef | undefi
 }
 
 export function ActivityCard({ entry }: Props) {
-  const { selectedRecordType, uploads } = useAppContext();
+  const { selectedRecordType, uploads } = useWorkbench();
   const activity = selectedRecordType?.workflow.activities.find(a => a.id === entry.activityId);
   const ts = new Date(entry.timestamp).toLocaleString();
   const waived = entry.waived ?? {};

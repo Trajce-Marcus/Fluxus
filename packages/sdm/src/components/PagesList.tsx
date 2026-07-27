@@ -3,11 +3,11 @@
 // swaps the content area to the rendered page (@fluxus/page-runtime). The
 // first step of workbench → Runtime app.
 
-import { useAppContext } from '../context/AppContext';
+import { useRuntime } from '../context/RuntimeContext';
 import { ComponentLabel } from '../context/UatLabels';
 
 export function PagesList() {
-  const { pagePaths, selectedPage, selectPage } = useAppContext();
+  const { pagePaths, selectedPage, selectPage } = useRuntime();
 
   if (pagePaths.length === 0) return null;
 

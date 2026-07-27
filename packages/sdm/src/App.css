@@ -148,30 +148,30 @@ body {
   overflow: hidden;
 }
 
-/* Each panel is a fixed header strip over a scrolling body, so grid toolbars
-   and record headers stay pinned while the content below them scrolls. */
-.panel {
+/* Nothing open, or nothing published (§4, M15) — with the workbench gone to
+   the Console there is no record grid to fall back to, so this is what an app
+   with no published pages looks like. */
+.content-empty {
   flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
 }
 
-.panel + .panel {
-  border-left: 1px solid #e2e8f0;
+.content-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #334155;
 }
 
-.panel-header {
-  flex-shrink: 0;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #fff;
-  position: relative; /* anchors the UAT component label */
-}
-
-.panel-body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px 20px 20px;
+.content-empty-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+  max-width: 34em;
 }

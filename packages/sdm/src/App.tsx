@@ -1,47 +1,50 @@
 import { useState } from 'react';
-import { AppProvider, useAppContext } from './context/AppContext';
+import { RuntimeProvider, useRuntime } from './context/RuntimeContext';
 import { UatLabelsProvider, UatLabelsToggle } from './context/UatLabels';
 import { MenuNav } from './components/MenuNav';
-import { RecordTypeList } from './components/RecordTypeList';
-import { RecordsGrid } from './components/RecordsGrid';
-import { RecordView } from './components/RecordView';
 import { PagesList } from './components/PagesList';
 import { PageView } from './components/PageView';
 import { NotificationCentre } from './components/NotificationCentre';
-import { client, currentSession, hostAuth } from './host';
+import { client } from './host';
 import './App.css';
 
 const NAV_PREF_KEY = 'fluxus:sdm:nav-open';
 
-// Selecting a page swaps the whole content area to the rendered page; the
-// record grid/view pair stays the Workbench surface and is untouched otherwise.
+// The Runtime app renders published pages, and nothing else (§4, M15). The
+// workbench — raw records, arbitrary activity runs, CSV import, the schema
+// navigator — is implementer work and lives in the Console now, so an
+// operation whose solution has no published pages shows an empty app. That is
+// the design, not a gap: the escape hatch is gone deliberately.
 function ContentArea() {
-  const { selectedPage } = useAppContext();
+  const { selectedPage, pagePaths } = useRuntime();
 
   if (selectedPage) return <PageView path={selectedPage} />;
 
   return (
-    <>
-      <div className="panel">
-        <RecordsGrid />
-      </div>
-      <div className="panel">
-        <RecordView />
-      </div>
-    </>
+    <div className="content-empty">
+      <p className="content-empty-title">
+        {pagePaths.length === 0 ? 'Nothing published yet' : 'Nothing open'}
+      </p>
+      <p className="content-empty-hint">
+        {pagePaths.length === 0
+          ? 'This app has no published pages. Publish one from the Console to see it here.'
+          : 'Choose an item from the menu to open it.'}
+      </p>
+    </div>
   );
 }
 
 // Signed-in identity + sign-out; absent entirely in the demo (auth
 // unconfigured) posture. Sign-out reloads so boot re-runs the sign-in gate.
 function UserMenu() {
-  if (!currentSession) return null;
+  const { session, auth } = useRuntime();
+  if (!session) return null;
   return (
     <span className="user-menu">
-      <span className="user-name" title={currentSession.email}>{currentSession.name}</span>
+      <span className="user-name" title={session.email}>{session.name}</span>
       <button
         className="user-signout"
-        onClick={() => void hostAuth?.signOut().then(() => window.location.reload())}
+        onClick={() => void auth?.signOut().then(() => window.location.reload())}
       >
         Sign out
       </button>
@@ -51,18 +54,15 @@ function UserMenu() {
 
 // The Runtime shell (CONSOLE_RUNTIME_SPEC §4, M10): solution branding in the
 // top bar (end users see the solution, not the platform), a collapsible nav
-// driven by the effective menu, and the content area. With a menu effective,
-// the record-type list belongs to the Workbench surface only and the pages
-// listing retires; without one (demo/adoption posture) the pre-M10 nav —
-// record types + pages — is the fallback.
+// driven by the effective menu, and the content area. The pages listing is the
+// no-menu fallback only, so an unconfigured demo operation is still navigable
+// — adoption posture.
 function Nav() {
-  const { selectedPage } = useAppContext();
   const hasMenu = client.visibleMenu().length > 0;
   return (
     <aside className="side-panel">
       <div className="side-panel-nav">
         <MenuNav />
-        {(!hasMenu || selectedPage === null) && <RecordTypeList />}
         {!hasMenu && <PagesList />}
       </div>
       {/* Platform attribution sits at the edge, under the tenant's own nav —
@@ -73,6 +73,7 @@ function Nav() {
 }
 
 function Shell() {
+  const { orgName, solutionName, operationName } = useRuntime();
   const [navOpen, setNavOpen] = useState(() => localStorage.getItem(NAV_PREF_KEY) !== 'closed');
   const toggleNav = () => {
     setNavOpen((open) => {
@@ -88,13 +89,13 @@ function Shell() {
           ☰
         </button>
         {/* Identity line: who you work for, then which app you are in. */}
-        <span className="app-org">{client.orgName}</span>
+        <span className="app-org">{orgName}</span>
         <span className="app-header-sep">·</span>
-        <span className="app-title">{client.solutionName}</span>
+        <span className="app-title">{solutionName}</span>
         <span style={{ flex: 1 }} />
         {/* Which business unit's data this app is running on. Not switchable
             yet — one operation per session until memberships land. */}
-        <span className="op-chip" title="Operation">{client.operationName}</span>
+        <span className="op-chip" title="Operation">{operationName}</span>
         <UatLabelsToggle />
         <NotificationCentre />
         <UserMenu />
@@ -112,9 +113,9 @@ function Shell() {
 export default function App() {
   return (
     <UatLabelsProvider>
-      <AppProvider>
+      <RuntimeProvider>
         <Shell />
-      </AppProvider>
+      </RuntimeProvider>
     </UatLabelsProvider>
   );
 }

@@ -48,7 +48,7 @@ to a shared package unchanged. `AttributesForm` is the composer that pulls
   file/photo attributes hold descriptor objects (arrays when `multi`). The
   `isBlank` engine helper is the shared emptiness test (required / validation).
 - **Upload service** is `client.uploads` (the `@fluxus/client` UploadService),
-  memoised once in `AppContext` and injected via context; scope is pre-bound so
+  memoised once in `WorkbenchContext` and injected via context; scope is pre-bound so
   widgets stay scope-blind. The full hash → EXIF → thumbnail → presign →
   direct-to-R2 PUT flow lives in `@fluxus/client` (client SPEC), not here.
 - **Descriptor rendering** on records/history keys off the value shape
@@ -58,7 +58,7 @@ to a shared package unchanged. `AttributesForm` is the composer that pulls
 
 ## Hooks (DSL Phase 2)
 
-`runActivity` is the pipeline: **availability gate → before hook → record_map mapping → activity history append → after hook**. Since the Extraction milestone it lives in `@fluxus/engine` (`createEngine({ store, config, services })`); AppContext hosts the engine and wraps `runActivity` with the workbench's UI reactions (deselect a deleted record via the result's `recordId`, console the returned after-hook warnings). The behavioural doctrine below is unchanged by the move.
+`runActivity` is the pipeline: **availability gate → before hook → record_map mapping → activity history append → after hook**. Since the Extraction milestone it lives in `@fluxus/engine` (`createEngine({ store, config, services })`); WorkbenchContext builds the engine (one per mounted workbench, from the host's client) and wraps `runActivity` with the workbench's UI reactions (deselect a deleted record via the result's `recordId`, console the returned after-hook warnings). The behavioural doctrine below is unchanged by the move.
 
 - **Availability gate** — activity-level `show_condition` (on the activity def, e.g. `"context.record.status <> 'Completed'"` on `act_update_work_orders` / `act_complete_work_orders`): whether the activity is offered and invocable at all. Strict boolean — only `true` makes it available. Evaluated before capture, so `attributes` is banned (the validator rejects it at config load); `context.record` is the anchor, null for CREATE. The UI hides unavailable activities (record activity strip; the grid's New button and with it CSV import), but the check inside `runActivity` is the enforcement point — headless callers skip the UI. **Evaluation errors fail closed** (deliberately opposite to the attribute-level rule above): this is an access rule, and a broken gate must not wave the activity through. Availability ("does this activity apply to this record right now") is this gate's job; validating the captured payload is the before hook's. Role-style conditions on `context.user` work through the same mechanism, but a real permission model is a platform-tier concern — this complements it, it doesn't replace it. Server-authoritative re-check when the backend lands, same doctrine as the rest of the contract.
 - **Before hook** — the gate. Runs with the captured attributes (type-coerced) before anything persists, in read-only mode: mutations and `queue` are rejected statically and at run time. `fail('msg')` rejects the submission with that message in the form; a runtime error in the hook also blocks (a broken gate must not wave submissions through). `warn('msg')` is a **soft stop**: `runActivity` returns `needs-confirmation` with the messages and persists nothing; the form locks its fields, shows the warnings with **Continue anyway / Cancel**, and Continue re-submits the *frozen snapshot* that was validated (edited values can never ride through on an acknowledged submit). CSV bulk import acknowledges warnings up front; `fail` still rejects rows. **Acknowledged gate warnings are recorded on the activity history entry** (`warnings` field — "warned X, continued anyway" is audit), kept separate from `capturedAttributes`. Entry attributes carry what the user entered plus anything hook logic wrote (Extraction stage 2 ruling: immutable means users never edit them; hooks legitimately write them — see engine SPEC). When the backend lands, the same gate re-runs server-side authoritatively with the same protocol.
@@ -74,7 +74,7 @@ Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost
 
 ## Services (DSL Phase 3)
 
-The workbench registers two service modules (DSL_SPEC §7a) with the evaluator and validator, composed in AppContext alongside the adapter:
+The workbench registers two service modules (DSL_SPEC §7a) with the evaluator and validator, composed in WorkbenchContext alongside the adapter:
 
 - **`notify`** (effect) — `user(message)` and `email(to, subject, body)`. In the POC "sending" means appending to the **notification centre**: `NotificationLog` (localStorage `fluxus:sdm:notifications`, capped at 200, subscribe pattern) rendered as the header bell with an unseen count and a newest-first panel. When a real gateway exists it slots behind the same manifest; scripts don't change.
 - **`geo`** (read) — `suburbsOf(city)`: suburb records for a city id, ordered by name, over the seeded reference data. Backs the suburb `List` datasource (`services.geo.suburbsOf(attributes.city)` — the query-chain version it replaced is noted in the attribute's description), so the city → suburb dependent picker now exercises a service call end to end. The implementation moved to `@fluxus/engine` at DSL Phase 4 (it is Store-backed and host-agnostic; the workbench imports `buildGeoModule` from the engine). `notify` stays workbench-owned — its sink (`src/services/notify.ts` → NotificationLog) is UI.
@@ -132,44 +132,68 @@ config/{attributes,functions}.json + config/entities/*.json
   └── config.ts (merges to one typed ConfigRaw — the seed script's input;
         the running workbench reads config from the server)
   src/host.ts (backend stage 2): FluxusClient.connect() → scope config +
-        partition snapshot in the engine's MemoryAdapter; createEngine over it
-        (notify + geo modules); createPageRuntime({client}) — the
-        @fluxus/page-runtime handle; main.tsx awaits initHost() before
-        rendering (server unreachable → boot error screen, no fallback)
-        └── context/AppContext (subscribe → tick → re-render; selection state;
-              UI reactions around runActivity, which now round-trips
+        partition snapshot in the engine's MemoryAdapter;
+        createPageRuntime({client}) — the @fluxus/page-runtime handle; one
+        throwaway engine for reportConfigFindings() at boot (since M15 the app
+        renders pages only, so nothing else here needs one); main.tsx awaits
+        initHost() before rendering (server unreachable → boot error screen,
+        no fallback)
+        └── context/RuntimeContext (shell state: session/auth, the identity
+              line's three names, published page paths, the open page)
+              └── components/ (MenuNav, PagesList, PageView, NotificationCentre)
+                    read via useRuntime()
+
+src/index.ts — the package's library face (M15): exports <Workbench>, which
+        the Console mounts. Independent of src/host.ts; it takes a connected
+        client as a prop and builds its own engine over that client's snapshot.
+        └── workbench/WorkbenchContext (subscribe → tick → re-render; record
+              selection; UI reactions around runActivity, which round-trips
               client.runActivity → activities.run → snapshot refresh)
-              └── components read via useAppContext()
+              └── workbench/components/ read via useWorkbench()
 ```
 
-- The Store-contract seam paid off at backend stage 2 (2026-07-12): the workbench swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a partition re-fetch. `runActivity` (AppContext) is async now; `AttributesForm.onSubmit` awaits it, CSV import runs rows sequentially. The sdm package keeps what is workbench-specific — the demo config (as seed input), UI, `NotificationLog`, and the notify service implementation (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
+- The Store-contract seam paid off at backend stage 2 (2026-07-12): the workbench swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a partition re-fetch. `runActivity` (WorkbenchContext) is async now; `AttributesForm.onSubmit` awaits it, CSV import runs rows sequentially. The sdm package keeps what is workbench-specific — the demo config (as seed input), UI, `NotificationLog`, and the notify service implementation (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
 - **Notification bell is dormant since stage 2**: hooks (and their `queue services.notify.*`) execute server-side, where the sink is the process console. The bell + `NotificationLog` stay wired (manifest still validates) and come back to life with the unified-log design.
 - Two separate gets on type selection, kept separate for the future CQRS split: `getRecordTypeDef(typeId)` (def + workflow → grid columns, CREATE discovery, activity strip) and `getRecordTypeData(typeId)` (instances → grid rows).
 
 ## UI
 
+Since M15 the package ships **two** surfaces: the Runtime app (`main.tsx` →
+`App.tsx`), which renders published pages and nothing else, and the
+`<Workbench>` component (`src/index.ts`), which the Console mounts.
+
 ```
-Header ("Fluxus SDM / Aber sample", UAT Labels toggle, notification bell)
-├── Side panel — RecordTypeList, PagesList ("Pages" section; hidden when the
-│     scope has no pages)
-└── Content — record pair by default; PageView when a page is selected
-    ├── RecordsGrid — sort, search, count, CSV import/export, FK links, CREATE launch
-    └── RecordView — owns back/forward nav state (viewedTypeId derived from record.typeRef)
-        ├── AvailableActivities (record-level; CREATE excluded — it has no anchor record)
-        ├── RecordDetails (read-only custom fields; FKs via FkDisplay asLink)
-        ├── RelatedRecords (reverse-FK index)
-        └── ActivityHistoryList
+Runtime app — src/App.tsx
+Header (identity line, UAT Labels toggle, notification bell, user menu)
+├── Side panel — MenuNav; PagesList only as the no-menu fallback
+└── Content — PageView for the open page, else the empty state
+      ("Nothing published yet" / "Nothing open")
+
+<Workbench client user? /> — src/workbench/Workbench.tsx
+├── RecordTypeList (its own nav pane — retired from the Runtime shell at M15)
+├── RecordsGrid — sort, search, count, CSV import/export, FK links, CREATE launch
+└── RecordView — owns back/forward nav state (viewedTypeId derived from record.typeRef)
+    ├── AvailableActivities (record-level; CREATE excluded — it has no anchor record)
+    ├── RecordDetails (read-only custom fields; FKs via FkDisplay asLink)
+    ├── RelatedRecords (reverse-FK index)
+    └── ActivityHistoryList
 ```
 
 **Which operation it runs (2026-07-26):** `?operation=<id>` in the URL selects it (`initHost` reads the query string and passes `operationId` to `FluxusClient.connect`); absent ⇒ the client's default operation, so existing links keep working. This is how the Console's Operations list launches the app — Console's **Open** on an operation opens `${VITE_FLUXUS_RUNTIME_URL}/?operation=<id>` in a new tab — and it makes an operation a plain bookmarkable address.
 
-**Pages in the workbench (2026-07-19, approved MVP slice — first step of workbench → Runtime app):** the sidebar's "Pages" section lists the scope's published pages (the client's page snapshot); selecting one swaps the whole content area to the rendered page via `@fluxus/page-runtime` (`PageView` — plain `<style>` tag for the renderer css, no shadow DOM); selecting a record type returns to the grid/view pair, which is otherwise untouched. Page selection lives in AppContext beside the record selection.
+**Pages (2026-07-19, extended M15):** pages render via `@fluxus/page-runtime` (`PageView` — plain `<style>` tag for the renderer css, no shadow DOM). The "Pages" listing that introduced them is now the **no-menu fallback only**; with a menu effective, `MenuNav` addresses pages. The open page lives in `RuntimeContext` — since M15 there is no record selection beside it to return to.
 
-**Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the UAT toggle, the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` (the role-filtered effective menu, `client.visibleMenu()`) is primary; with a menu effective the record-type list shows **only on the Workbench surface** (no page selected) and the pages listing retires; without one (demo/adoption posture) the pre-M10 nav — record types + pages — is the fallback, unchanged.
+**Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the UAT toggle, the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` (the role-filtered effective menu, `client.visibleMenu()`) is primary; without a menu (demo/adoption posture) the pages listing is the fallback. *Amended M15:* the record-type list is gone from this nav entirely — it belongs to `<Workbench>` now — and so is the "Workbench" menu item.
 
 **Identity line (M13, 2026-07-27):** the header answers who you work for, which app you are in, whose data it runs on, who you are, and whose platform this is. Left: **org name** `·` **solution name** (`.app-org` / `.app-header-sep` / `.app-title`). Right, before the toggles: the **operation name** as a context chip (`.op-chip`) — display-only, since switching operations in-session needs a memberships list that does not exist. All three come off `FluxusClient` (`orgName` / `solutionName` / `operationName`, resolved at connect from `operations.get`). Platform attribution is one **"Powered by Fluxus"** line pinned to the foot of the nav (`.powered-by`; `.side-panel` is now a column with a scrolling `.side-panel-nav`) — at the edge, never competing with the tenant's branding in the bar. Demo tenancy names come from the seed: Northwind Utilities / Asset Maintenance / Western Region.
 
-**Ruled next (M14, not built):** the Runtime app renders **published pages only** — the workbench collapses into one `<Workbench>` component with its own context and moves to Console, and the `AppContext` split (shell state vs record state) is that extraction. Until then the workbench surface below stands as described. Nothing may couple it harder to the shell.
+**Workbench out of the Runtime app (M15, 2026-07-27 — BUILT; CONSOLE_RUNTIME_SPEC §4):** the Runtime app renders published pages only. Raw record access, running any activity, CSV import and the schema navigator are implementer work, so the whole cluster collapsed into `<Workbench client user? />` and moved to the Console, where it mounts as a solution-level tab against the M9 data operation. What changed here:
+
+- **`AppContext` is gone**, split in two. `context/RuntimeContext` holds shell state (session/auth, the identity line's three names, published page paths, the open page); `workbench/WorkbenchContext` holds everything record-shaped (selected type, selected record, `runActivity` and the adapter reads). Nothing above `<Workbench>` knows the record state exists — that mixing *was* the coupling.
+- **The component builds its own engine** from the client it is handed (`createEngine` over `client.adapter` + `client.config`, notify + geo modules, optional `user` for `ctx.user` parity), rebuilt when the host re-scopes the client. Its notify sink is a local dormant `NotificationLog` — hooks run server-side, and the Runtime bell is shell-level.
+- **Package shape**: `src/index.ts` + `"main"` make `@fluxus/sdm` importable; the workbench cluster moved to `src/workbench/` (components, context, `export.ts`, `workbench.css`). It stays in this package until a second host wants it — a package extraction needs a name endorsement.
+- **Styling travels in the tree, not in a stylesheet import.** `Workbench.tsx` exports its css as a string and renders `<style>{css}</style>` inside its own subtree (also exported as `workbenchCss` for a host with its own injection channel). A `.css` file import was the first cut and was **wrong**: the Console mounts its shell in a **shadow root**, which a bundler-injected document-level stylesheet never reaches. The failure mode was quiet — the workbench rendered its data as near-black text (`#0f172a`) on the Console's `#1e1e1e` shell with no background of its own, so it read as "no data". Same reasoning as `PageView`'s `<style>{pageRendererCss}</style>`; a `<style>` element applies in both a shadow root and the light DOM. All rules are scoped under `.workbench`. Known cosmetic: the workbench is light and the Console is dark — a themed workbench waits on the branding config (CONSOLE_RUNTIME_SPEC §10).
+- **Consequences, by design**: no "Workbench" menu item, no record-type list in the Runtime nav, and an operation whose solution has no published pages shows an empty app. The escape hatch is gone deliberately.
 
 Schema Navigator: org-chart-style record-type relationship viewer — focal type centred, FK targets one side, reverse FKs the other, click to recentre; launched from the RecordView header.
 

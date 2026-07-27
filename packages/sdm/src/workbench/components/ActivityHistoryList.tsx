@@ -1,5 +1,5 @@
 import { ActivityCard } from './ActivityCard';
-import { ComponentLabel } from '../context/UatLabels';
+import { ComponentLabel } from '../../context/UatLabels';
 import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {

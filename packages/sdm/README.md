@@ -2,7 +2,12 @@
 
 The SDM (Shared Data Model) runtime: record types, workflows, activities, activity history, and the record workbench UI. This is the centre of the platform — see [docs/VISION.md](../../docs/VISION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) at the repo root.
 
-**Status:** POC1·a complete. List record types → create via CREATE activity → run capture activities → view history; FK refs with related records, Schema Navigator, CSV import/export. FluxScript hooks live: before-hook gates and transactional after-hook effects (DSL Phase 2 — see [ROADMAP](../../docs/ROADMAP.md)). Since 2026-07-19 the workbench also renders published pages ("Pages" sidebar section, via [`@fluxus/page-runtime`](../page-runtime/)) — the first step of the workbench becoming the Runtime app.
+**Two surfaces since M15 (2026-07-27):**
+
+- **The Runtime app** (`src/main.tsx`) — the end-user app: sign in, land on the operation's menu, open **published pages**. Nothing else. Chrome is the identity line (org · solution … operation · user) over a collapsible menu nav.
+- **`<Workbench client user? />`** (`src/index.ts`) — the record surface, exported as a component and mounted by the **Console**, not by this app. Raw record access, running any activity, CSV import and the Schema Navigator are implementer work. It owns everything record-shaped in its own context; a host hands it a connected client and knows nothing more.
+
+**Status:** POC1·a complete. Workbench: list record types → create via CREATE activity → run capture activities → view history; FK refs with related records, Schema Navigator, CSV import/export. FluxScript hooks live: before-hook gates and transactional after-hook effects (DSL Phase 2 — see [ROADMAP](../../docs/ROADMAP.md)). Pages render via [`@fluxus/page-runtime`](../page-runtime/).
 
 **Next (workbench):**
 1. Activity run/test console — a UI to invoke *any* activity type headlessly (pick activity → enter parameters → see gate/warnings/result/history), independent of the record view; becomes the natural home for GET activities when they land.

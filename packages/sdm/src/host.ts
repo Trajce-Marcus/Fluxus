@@ -1,7 +1,11 @@
-// The workbench's connection to @fluxus/server (backend stage 2). Records and
-// activity runs live server-side; this module holds the fetched partition
-// snapshot and the local engine that keeps every expression (show conditions,
-// datasources, availability) evaluating synchronously in the browser.
+// The Runtime app's connection to @fluxus/server (backend stage 2). Records
+// and activity runs live server-side; this module holds the connected client,
+// whose snapshot the published pages render from.
+//
+// Since M15 the app renders published pages only — the workbench moved to the
+// Console — so the engine built here exists for one job: re-reporting config
+// findings at boot. Page expressions go through the PageRuntime handle, and
+// the workbench builds its own engine from whichever client its host passes.
 //
 // Module-level singletons as before — one client, one adapter, one engine for
 // the lifetime of the app — but assigned by initHost(), which main.tsx awaits
@@ -9,7 +13,7 @@
 // server is down, boot fails loudly.
 
 import { createEngine, buildGeoModule } from '@fluxus/engine';
-import type { ContextUser, Engine, MemoryAdapter } from '@fluxus/engine';
+import type { ContextUser } from '@fluxus/engine';
 import { FluxusClient, type AuthSession, type HostAuth } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { NotificationLog } from './store/NotificationLog';
@@ -21,8 +25,6 @@ import { buildNotifyModule } from './services/notify';
 export const notificationLog = new NotificationLog();
 
 export let client: FluxusClient;
-export let adapter: MemoryAdapter;
-export let engine: Engine;
 // The shell's user menu (M10): who is signed in, and the auth handle for
 // sign-out. Both null/undefined in the demo (auth unconfigured) posture.
 export let currentSession: AuthSession | null = null;
@@ -56,15 +58,13 @@ export async function initHost(auth?: HostAuth): Promise<void> {
     getToken: auth?.configured ? auth.getToken : undefined,
     pages: 'published',
   });
-  adapter = client.adapter;
-  engine = createEngine({
-    store: adapter,
-    config: client.config,
-    services: [buildNotifyModule(notificationLog), buildGeoModule(adapter)],
-    user,
-  });
   pageRuntime = createPageRuntime({ client });
   // The stored config was validated at config.put; re-reporting here is a
   // free safety net against server/client engine version drift.
-  engine.reportConfigFindings();
+  createEngine({
+    store: client.adapter,
+    config: client.config,
+    services: [buildNotifyModule(notificationLog), buildGeoModule(client.adapter)],
+    user,
+  }).reportConfigFindings();
 }

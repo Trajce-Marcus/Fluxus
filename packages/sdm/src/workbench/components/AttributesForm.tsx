@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useWorkbench } from '../WorkbenchContext';
 import { RecordPickerDialog } from './RecordPickerDialog';
-import { ComponentLabel } from '../context/UatLabels';
+import { ComponentLabel } from '../../context/UatLabels';
 import { coerceCaptured, coerceCapturedValue, compositeSubs, isBlank } from '@fluxus/engine';
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
@@ -74,7 +74,7 @@ function emptyValue(attr: AttributeDef): unknown {
 }
 
 export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
-  const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate, uploads } = useAppContext();
+  const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate, uploads } = useWorkbench();
 
   // Form state is FLAT: composite attributes contribute one entry per cell
   // under the dotted path `attr.sub` — the engine nests them again. Section
@@ -525,7 +525,7 @@ interface ListFieldProps {
 }
 
 function ListField({ attr, value, allValues, anchorRecord, activity, onChange }: ListFieldProps) {
-  const { dslEvaluate } = useAppContext();
+  const { dslEvaluate } = useWorkbench();
   const datasource = attr.type_config?.datasource ?? '';
   const keyField = attr.type_config?.key_field ?? 'id';
   const displayField = attr.type_config?.display_field ?? 'name';

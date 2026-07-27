@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { notificationLog } from '../context/AppContext';
+import { notificationLog } from '../host';
 import { ComponentLabel } from '../context/UatLabels';
 
 // Notification centre — where queued services.notify.* calls land (DSL Phase 3).

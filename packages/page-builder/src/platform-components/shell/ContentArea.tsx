@@ -1,7 +1,9 @@
 import { useShellState } from './useShellState';
+import { WORKBENCH_TAB } from './store';
 import { PageEditor } from '../page-builder/PageEditor';
 import { AdminView } from '../admin/AdminView';
 import { SdmView } from '../sdm-builder/SdmView';
+import { WorkbenchView, css as workbenchCss } from '../workbench/WorkbenchView';
 
 function ContentAreaComponent() {
   const { activeTab } = useShellState(['activeTab']);
@@ -16,7 +18,9 @@ function ContentAreaComponent() {
 
   return (
     <div className="content-area">
-      {activeTab.startsWith('admin/') ? (
+      {activeTab === WORKBENCH_TAB ? (
+        <WorkbenchView />
+      ) : activeTab.startsWith('admin/') ? (
         <AdminView tab={activeTab} />
       ) : activeTab.startsWith('sdm/') ? (
         <SdmView tab={activeTab} />
@@ -28,6 +32,8 @@ function ContentAreaComponent() {
 }
 
 export const css = `
+  ${workbenchCss}
+
   .content-area {
     flex: 1;
     overflow: hidden;

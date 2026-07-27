@@ -3,7 +3,7 @@
 // component: value in, onChange out, config as props, the upload service
 // injected — ZERO imports from the workbench's stores/context. That is the
 // whole point: when the page builder becomes the second consumer these lift to
-// a shared package unchanged. Keep it that way (no useAppContext here).
+// a shared package unchanged. Keep it that way (no useWorkbench here).
 
 import { useEffect, useRef, useState } from 'react';
 import type { Descriptor, FileDescriptor, PhotoDescriptor, UploadService } from '@fluxus/client';

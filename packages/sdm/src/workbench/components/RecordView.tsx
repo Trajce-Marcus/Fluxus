@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAppContext } from '../context/AppContext';
-import { ComponentLabel } from '../context/UatLabels';
+import { useWorkbench } from '../WorkbenchContext';
+import { ComponentLabel } from '../../context/UatLabels';
 import { RecordDetails } from './RecordDetails';
 import { RelatedRecords } from './RelatedRecords';
 import { ActivityHistoryList } from './ActivityHistoryList';
@@ -34,7 +34,7 @@ const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
 });
 
 export function RecordView() {
-  const { selectedRecord, selectedRecordType, getRecordAndType } = useAppContext();
+  const { selectedRecord, selectedRecordType, getRecordAndType } = useWorkbench();
 
   const [viewedTypeId, setViewedTypeId] = useState<string | null>(null);
   const [viewedRecordId, setViewedRecordId] = useState<string | null>(null);

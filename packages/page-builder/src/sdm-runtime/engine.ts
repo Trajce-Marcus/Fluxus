@@ -10,7 +10,7 @@
 // initialized values). Components never import this; they reach the SDM only
 // through the declarative wiring layer (dynamic props in, callbacks out).
 
-import { ConsoleClient, createHostAuth, FluxusClient } from '@fluxus/client';
+import { ConsoleClient, createHostAuth, FluxusClient, type AuthSession } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { signInGate } from './SignIn';
 
@@ -23,6 +23,10 @@ export let pageRuntime: PageRuntime;
 // The Console-plane client (cross-operation admin: solutions/operations CRUD,
 // publish/versions/governance). Solution-independent — created once at boot.
 export let consoleClient: ConsoleClient;
+// Who is signed in — null in the demo (auth unconfigured) posture. Read by the
+// hosted workbench (M15) so expression evaluation there sees the same
+// `ctx.user` the Runtime app would.
+export let currentSession: AuthSession | null = null;
 
 let bootUrl: string | undefined;
 let bootGetToken: (() => Promise<string | null>) | undefined;
@@ -44,6 +48,7 @@ export async function initSdmRuntime(): Promise<void> {
   // holds every pending mount until sign-in succeeds.
   const auth = createHostAuth(import.meta.env.VITE_NEON_AUTH_URL);
   if (auth.configured && !(await auth.session())) await signInGate(auth);
+  currentSession = auth.configured ? await auth.session() : null;
   // Deployed builds bake in the live server URL; local dev (var unset) falls
   // back to the client's localhost default.
   bootUrl = import.meta.env.VITE_FLUXUS_API_URL;

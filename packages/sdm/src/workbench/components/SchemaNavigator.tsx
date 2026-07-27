@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
 import { Modal } from './Modal';
 import { SchemaNavGraph } from './SchemaNavGraph';
-import { useAppContext } from '../context/AppContext';
-import { ComponentLabel } from '../context/UatLabels';
+import { useWorkbench } from '../WorkbenchContext';
+import { ComponentLabel } from '../../context/UatLabels';
 
 interface Props {
   initialTypeId: string;
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function SchemaNavigator({ initialTypeId, onClose }: Props) {
-  const { getRecordTypeDef, selectRecordType, recordTypes } = useAppContext();
+  const { getRecordTypeDef, selectRecordType, recordTypes } = useWorkbench();
   const [focalTypeId, setFocalTypeId] = useState(initialTypeId);
   const [history, setHistory] = useState<string[]>([]);
 

@@ -1,8 +1,8 @@
-import { useAppContext } from '../context/AppContext';
-import { ComponentLabel } from '../context/UatLabels';
+import { useWorkbench } from '../WorkbenchContext';
+import { ComponentLabel } from '../../context/UatLabels';
 
 export function RecordTypeList() {
-  const { recordTypes, selectedRecordType, selectRecordType } = useAppContext();
+  const { recordTypes, selectedRecordType, selectRecordType } = useWorkbench();
 
   return (
     <div style={{ position: 'relative' }}>

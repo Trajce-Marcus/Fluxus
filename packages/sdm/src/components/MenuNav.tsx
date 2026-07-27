@@ -1,12 +1,13 @@
 // Runtime navigation (CONSOLE_RUNTIME_SPEC §4/§5): the operation's menu,
-// role-filtered. Leaf items open a published page; groups nest one level. A
-// "Workbench" item returns to the record grid (§4 — reachable, no longer the
-// default). Renders nothing when no menu is configured, so the demo op is
-// unchanged. Client filtering is cosmetic; the server already filtered the
-// page snapshot to what the caller may open.
+// role-filtered. Leaf items open a published page; groups nest one level.
+// Every item addresses a published page — the M10 "Workbench" item is gone
+// with M15, the workbench having moved to the Console. Renders nothing when no
+// menu is configured, so the demo op is unchanged. Client filtering is
+// cosmetic; the server already filtered the page snapshot to what the caller
+// may open.
 
 import { client } from '../host';
-import { useAppContext } from '../context/AppContext';
+import { useRuntime } from '../context/RuntimeContext';
 import type { MenuItem } from '@fluxus/client';
 
 const headerStyle: React.CSSProperties = {
@@ -27,7 +28,7 @@ function itemStyle(active: boolean, indent = false): React.CSSProperties {
 }
 
 export function MenuNav() {
-  const { selectedPage, selectPage, showWorkbench } = useAppContext();
+  const { selectedPage, selectPage } = useRuntime();
   const menu = client.visibleMenu();
   if (menu.length === 0) return null;
 
@@ -44,7 +45,6 @@ export function MenuNav() {
     <nav>
       <div style={headerStyle}>Menu</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: '4px 0' }}>
-        <li style={itemStyle(selectedPage === null)} onClick={showWorkbench}>Workbench</li>
         {menu.map((it, i) =>
           it.items ? (
             <li key={i}>
