@@ -1,6 +1,4 @@
-// Content-area router for admin tabs (keys prefixed `admin/`). The shell's
-// ContentArea delegates here when the active tab is an admin section; page
-// tabs still render the PageEditor.
+// Content router for the workspace admin sections (registry ids, M16).
 
 import { OrganisationAdmin, css as orgCss } from './OrganisationAdmin';
 import { SolutionsAdmin } from './SolutionsAdmin';
@@ -10,13 +8,13 @@ import { css as menuCss } from './OperationMenuSection';
 
 export function AdminView({ tab }: { tab: string }) {
   switch (tab) {
-    case 'admin/organisation':
+    case 'organisation':
       return <OrganisationAdmin />;
-    case 'admin/solutions':
+    case 'solutions':
       return <SolutionsAdmin />;
-    case 'admin/operations':
+    case 'operations':
       return <OperationsAdmin />;
-    case 'admin/implementers':
+    case 'implementers':
       return <ImplementersAdmin />;
     default:
       return <div className="admin-panel"><p className="admin-muted">Unknown admin view: {tab}</p></div>;

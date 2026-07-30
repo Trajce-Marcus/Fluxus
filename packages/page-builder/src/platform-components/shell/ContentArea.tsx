@@ -1,31 +1,24 @@
+// Content area (M16): renders the active section from the registry — one view
+// at a time, chosen by the nav/router. Section internals (inner panels, editor
+// tabs) are the section's own business.
+
 import { useShellState } from './useShellState';
-import { WORKBENCH_TAB } from './store';
-import { PageEditor } from '../page-builder/PageEditor';
-import { AdminView } from '../admin/AdminView';
-import { SdmView } from '../sdm-builder/SdmView';
-import { WorkbenchView, css as workbenchCss } from '../workbench/WorkbenchView';
+import { sectionsForScope } from './sections';
+import { css as workbenchCss } from '../workbench/WorkbenchView';
+import { css as overviewCss } from './OverviewSection';
 
 function ContentAreaComponent() {
-  const { activeTab } = useShellState(['activeTab']);
-
-  if (!activeTab) {
-    return (
-      <div className="content-area content-area-empty">
-        <p className="content-empty-hint">Select an item from the sidebar to open it</p>
-      </div>
-    );
-  }
+  const { solutionId, activeSection } = useShellState(['solutionId', 'activeSection']);
+  const section = sectionsForScope(solutionId !== null).find((s) => s.id === activeSection);
 
   return (
     <div className="content-area">
-      {activeTab === WORKBENCH_TAB ? (
-        <WorkbenchView />
-      ) : activeTab.startsWith('admin/') ? (
-        <AdminView tab={activeTab} />
-      ) : activeTab.startsWith('sdm/') ? (
-        <SdmView tab={activeTab} />
+      {section ? (
+        section.render()
       ) : (
-        <PageEditor pagePath={activeTab} />
+        <div className="content-area-empty">
+          <p className="content-empty-hint">Unknown section: {activeSection}</p>
+        </div>
       )}
     </div>
   );
@@ -33,6 +26,7 @@ function ContentAreaComponent() {
 
 export const css = `
   ${workbenchCss}
+  ${overviewCss}
 
   .content-area {
     flex: 1;
@@ -40,8 +34,12 @@ export const css = `
     background: var(--color-bg);
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
+  .content-area > * { flex: 1; min-height: 0; }
   .content-area-empty {
+    flex: 1;
+    display: flex;
     align-items: center;
     justify-content: center;
   }

@@ -1,11 +1,10 @@
+import { useEffect } from 'react';
 import { useShellState } from './useShellState';
-import { ActivityBar, css as activityBarCss } from './ActivityBar';
 import { HeaderBar, css as headerBarCss } from './HeaderBar';
-import { SidebarPanel, css as sidebarPanelCss } from './SidebarPanel';
-import { TabBar, css as tabBarCss } from './TabBar';
+import { SideNav, css as sideNavCss } from './SideNav';
 import { ContentArea, css as contentAreaCss } from './ContentArea';
-import { ConsolePanel, css as consolePanelCss } from './ConsolePanel';
-import { css as pageEditorCss } from '../page-builder/PageEditor';
+import { initRouter } from './router';
+import { css as pagesSectionCss } from '../page-builder/PagesSection';
 import { css as adminViewCss } from '../admin/AdminView';
 import { css as sdmViewCss } from '../sdm-builder/SdmView';
 
@@ -14,7 +13,12 @@ import { css as sdmViewCss } from '../sdm-builder/SdmView';
 // at module load.
 
 function ShellComponent() {
-  const { activeActivityItem, scopeVersion } = useShellState(['activeActivityItem', 'scopeVersion']);
+  const { scopeVersion } = useShellState(['scopeVersion']);
+
+  // Hash routing (M16): boot applies the landing hash, then hash and state
+  // stay in step both ways. Idempotent across StrictMode double-mount is not
+  // needed — subscribe/listen once for the app's life.
+  useEffect(() => { initRouter(); }, []);
 
   return (
     <div className="shell">
@@ -22,22 +26,14 @@ function ShellComponent() {
         <HeaderBar />
       </div>
       {/* Keyed by scopeVersion: opening/switching a solution (or an SDM config
-          save) remounts the sidebar + main so every view re-reads the fresh
+          save) remounts the nav + main so every view re-reads the fresh
           design snapshot (sdmClient/pageRuntime). */}
       <div className="shell-body" key={scopeVersion}>
-        <div className="shell-activity">
-          <ActivityBar />
-        </div>
-        <div
-          className="shell-sidebar"
-          style={{ width: activeActivityItem ? '240px' : '0' }}
-        >
-          <SidebarPanel />
+        <div className="shell-nav">
+          <SideNav />
         </div>
         <div className="shell-main">
-          <TabBar />
           <ContentArea />
-          <ConsolePanel />
         </div>
       </div>
     </div>
@@ -45,13 +41,10 @@ function ShellComponent() {
 }
 
 const css = `
-  ${activityBarCss}
   ${headerBarCss}
-  ${sidebarPanelCss}
-  ${tabBarCss}
+  ${sideNavCss}
   ${contentAreaCss}
-  ${consolePanelCss}
-  ${pageEditorCss}
+  ${pagesSectionCss}
   ${adminViewCss}
   ${sdmViewCss}
 
@@ -92,15 +85,9 @@ const css = `
     overflow: hidden;
   }
 
-  .shell-activity {
+  .shell-nav {
     flex-shrink: 0;
-    width: 48px;
-  }
-
-  .shell-sidebar {
-    flex-shrink: 0;
-    overflow: hidden;
-    transition: width 0.15s ease;
+    width: 200px;
   }
 
   .shell-main {

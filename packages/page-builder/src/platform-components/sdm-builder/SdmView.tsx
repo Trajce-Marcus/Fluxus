@@ -1,5 +1,5 @@
-// Content-area router for SDM editor tabs (keys prefixed `sdm/`). The shell's
-// ContentArea delegates here when the active tab is an SDM section.
+// Content router for the SDM editor sections (registry ids, M16). Every
+// section sits under one model-level publish toolbar.
 
 import { RecordTypesEditor } from './RecordTypesEditor';
 import { AttributesEditor } from './AttributesEditor';
@@ -24,15 +24,15 @@ export function SdmView({ tab }: { tab: string }) {
 
 function sdmSection(tab: string) {
   switch (tab) {
-    case 'sdm/record-types':
+    case 'record-types':
       return <RecordTypesEditor />;
-    case 'sdm/attributes':
+    case 'attributes':
       return <AttributesEditor />;
-    case 'sdm/workflows':
+    case 'workflows':
       return <WorkflowsEditor />;
-    case 'sdm/roles':
+    case 'roles':
       return <RolesEditor />;
-    case 'sdm/menu':
+    case 'menu':
       return <MenuEditor />;
     default:
       return <div className="admin-panel"><p className="admin-muted">Unknown SDM view: {tab}</p></div>;

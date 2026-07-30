@@ -9,8 +9,8 @@
 // in the *Operations* list is the other door, and names the data explicitly.
 
 import { useEffect, useState } from 'react';
-import { consoleClient, currentOperationId, openSolution, solutionOperations } from '../../sdm-runtime/engine';
-import { enterSolutionScope } from '../shell/store';
+import { consoleClient } from '../../sdm-runtime/engine';
+import { openSolutionScoped } from '../shell/router';
 
 /** Kebab an id from a display name (org-scoped id is the user's to refine). */
 function slug(name: string): string {
@@ -63,8 +63,7 @@ export function SolutionsAdmin() {
     setOpening(sol.id);
     setError(null);
     try {
-      await openSolution(sol.id);
-      enterSolutionScope(sol.id, sol.name, { operationId: currentOperationId, operations: solutionOperations });
+      await openSolutionScoped(sol.id, sol.name);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setOpening(null);
