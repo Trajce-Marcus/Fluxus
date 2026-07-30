@@ -13,6 +13,7 @@ import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
   ConfigValidationError,
+  NotImplementedError,
   OperationNotFoundError,
   OrgNotFoundError,
   SolutionNotFoundError,
@@ -36,6 +37,8 @@ import {
   listRoleAssignments,
   listSolutions,
   createSolution,
+  updateSolution,
+  deleteSolution,
   loadOperationHost,
   pageOpenable,
   publishConfig,
@@ -188,6 +191,7 @@ const jsonValue: z.ZodType<unknown> = z.lazy(() =>
 
 function rethrow(err: unknown): never {
   if (err instanceof SolutionNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+  if (err instanceof NotImplementedError) throw new TRPCError({ code: 'NOT_IMPLEMENTED', message: err.message });
   if (err instanceof OperationNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof OrgNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
@@ -242,6 +246,30 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         try {
           await createSolution(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    // Editing an existing solution is design-plane admin — `update` rather
+    // than `rename` because the profile will grow beyond the name.
+    update: t.procedure
+      .input(z.object({ solutionId: z.string().min(1), name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'admin');
+          await updateSolution(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    delete: t.procedure
+      .input(z.object({ solutionId: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireImplementer(ctx, input.solutionId, 'admin');
+          await deleteSolution(ctx.db, input.solutionId);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);

@@ -129,6 +129,15 @@ export class ConsoleClient {
   createSolution(input: { id: string; name: string }): Promise<{ ok: true }> {
     return this.trpc.solutions.create.mutate(input);
   }
+  /** Edit a solution's profile — name only; the id is permanent. */
+  updateSolution(input: { solutionId: string; name: string }): Promise<{ ok: true }> {
+    return this.trpc.solutions.update.mutate(input);
+  }
+  /** Delete a solution and everything under it. The server side is a TODO —
+   *  this currently fails with NOT_IMPLEMENTED and destroys nothing. */
+  deleteSolution(solutionId: string): Promise<{ ok: true }> {
+    return this.trpc.solutions.delete.mutate({ solutionId });
+  }
   listOperations(): Promise<OperationRow[]> {
     return this.trpc.operations.list.query() as Promise<OperationRow[]>;
   }

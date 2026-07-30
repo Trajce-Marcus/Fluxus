@@ -4,18 +4,12 @@
 //
 // Reads and profile edits only. There is no **create** — registering a new org
 // needs the auth tier to resolve user → org, which it does not do yet (single
-// implicit 'default' org, §1) — and `plan`/`status` are ours to set, never the
-// org's, so they render read-only.
+// implicit 'default' org, §1). `plan`/`status` are ours to set, never the
+// org's; since M17 they read on **Billing**, leaving this the settings surface.
 
 import { useEffect, useState } from 'react';
 import { consoleClient } from '../../sdm-runtime/engine';
 import type { OrgProfile } from '@fluxus/client';
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
-}
 
 export function OrganisationAdmin() {
   const [org, setOrg] = useState<OrgProfile | null>(null);
@@ -66,8 +60,8 @@ export function OrganisationAdmin() {
   return (
     <div className="admin-panel">
       <div className="admin-panel-head">
-        <h2 className="admin-title">Organisation</h2>
-        <p className="admin-sub">Your organisation's profile and plan. Solutions and operations all belong to it.</p>
+        <h2 className="admin-title">Settings</h2>
+        <p className="admin-sub">Your organisation's profile. Solutions and operations all belong to it; the plan it is on reads under Billing.</p>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -99,18 +93,13 @@ export function OrganisationAdmin() {
             </div>
           </form>
 
-          {/* Set by us, not by the org — billing itself is later. */}
           <div className="admin-section">
-            <h3 className="admin-form-title">Plan</h3>
+            <h3 className="admin-form-title">Identity</h3>
             <table className="admin-table">
               <tbody>
-                <tr><th>Plan</th><td>{org.plan}</td></tr>
-                <tr><th>Status</th><td>{org.status}</td></tr>
-                <tr><th>Registered</th><td className="admin-muted">{formatDate(org.createdAt)}</td></tr>
-                <tr><th>Id</th><td className="admin-mono">{org.id}</td></tr>
+                <tr><th>Organisation id</th><td className="admin-mono">{org.id}</td></tr>
               </tbody>
             </table>
-            <p className="admin-sub">Changing plan isn't self-serve yet.</p>
           </div>
         </>
       )}

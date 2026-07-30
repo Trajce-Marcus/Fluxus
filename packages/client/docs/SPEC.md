@@ -69,7 +69,10 @@ step is injected into `runUpload`, so the core is transport-agnostic;
 A second, lighter class beside `FluxusClient`: the **cross-operation** admin
 surface the page builder drives, distinct from `FluxusClient`'s single-operation
 data snapshot. `ConsoleClient.create({ url, getToken })` (shares the bearer
-transport) exposes plain typed calls: `listSolutions`, `listOperations` /
+transport) exposes plain typed calls: `listSolutions` / `createSolution` /
+`updateSolution` (name only — the id is permanent) / `deleteSolution` (the
+server side is a TODO: it answers `NOT_IMPLEMENTED` and destroys nothing),
+`listOperations` /
 `getOperation` / `createOperation` / `putOperationConfig`, and the governance
 set (`operationRoles`, `listAssignments`/`putAssignment`,
 `listImplementers`/`putImplementer`), and the publish set (`publishPage`,

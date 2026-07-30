@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import type { AttributeDef, ConfigRaw } from '@fluxus/engine';
 import { readConfig, commitConfig, useDirty } from './useSolutionConfig';
+import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'reference', 'list', 'photo', 'file'];
 
@@ -52,24 +53,21 @@ export function AttributesEditor() {
   }
 
   return (
-    <div className="admin-panel">
-      <div className="admin-panel-head">
-        <h2 className="admin-title">Attributes</h2>
-        <p className="admin-sub">The reusable capture fields activities compose from.</p>
-      </div>
+    <>
+      <InnerPanel title="Attributes" actions={<button className="panel-btn" onClick={add}>New</button>}>
+        {attrs.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
+        {attrs.map((a, i) => (
+          <PanelItem key={i} name={a.key || '(new)'} sub={a.type} active={i === sel} onClick={() => setSel(i)} />
+        ))}
+      </InnerPanel>
 
-      {error && <div className="admin-error">{error}</div>}
-
-      <div className="sdm-split">
-        <div className="sdm-list">
-          {attrs.map((a, i) => (
-            <button key={i} className={`sdm-list-item${i === sel ? ' active' : ''}`} onClick={() => setSel(i)}>
-              <span className="admin-mono">{a.key || '(new)'}</span>
-              <span className="sdm-list-sub">{a.type}</span>
-            </button>
-          ))}
-          <button className="admin-btn admin-btn-ghost" onClick={add}>+ Add attribute</button>
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <h2 className="admin-title">Attributes</h2>
+          <p className="admin-sub">The reusable capture fields activities compose from.</p>
         </div>
+
+        {error && <div className="admin-error">{error}</div>}
 
         {cur && (
           <div className="sdm-detail">
@@ -101,11 +99,11 @@ export function AttributesEditor() {
             <button className="admin-btn admin-btn-ghost" onClick={() => remove(sel)}>Remove attribute</button>
           </div>
         )}
-      </div>
 
-      <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save attributes'}</button>
+        <div className="admin-actions">
+          <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save attributes'}</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

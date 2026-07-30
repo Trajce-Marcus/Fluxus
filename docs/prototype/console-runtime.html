@@ -1,0 +1,1792 @@
+<title>Fluxus — Console &amp; Runtime prototype</title>
+
+<style>
+/* ─── frame tokens (theme-aware) ─────────────────────────────────────── */
+:root{
+  --page-bg:#E8ECEB; --page-fg:#101A19; --page-dim:#5C6B6A; --page-line:#CDD5D3;
+  --page-panel:#F7F9F8;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --page-bg:#0A0F10; --page-fg:#DCE5E4; --page-dim:#7E8F8E; --page-line:#1E2A2B; --page-panel:#0F1617; }
+}
+:root[data-theme="dark"]{ --page-bg:#0A0F10; --page-fg:#DCE5E4; --page-dim:#7E8F8E; --page-line:#1E2A2B; --page-panel:#0F1617; }
+:root[data-theme="light"]{ --page-bg:#E8ECEB; --page-fg:#101A19; --page-dim:#5C6B6A; --page-line:#CDD5D3; --page-panel:#F7F9F8; }
+
+*{ box-sizing:border-box; }
+body{ margin:0; background:var(--page-bg); color:var(--page-fg); font-family:var(--ui); font-size:14px; }
+button{ font:inherit; color:inherit; cursor:pointer; }
+input,select,textarea{ font:inherit; }
+:focus-visible{ outline:2px solid #38A3B8; outline-offset:1px; }
+
+.wrap{ max-width:1360px; margin:0 auto; padding:18px 16px 40px; }
+
+/* ─── instrument frame ───────────────────────────────────────────────── */
+.frame-bar{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:8px 10px; border:1px solid var(--page-line); border-bottom:0;
+  background:var(--page-panel); border-radius:6px 6px 0 0;
+}
+.brand{ font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--page-dim); }
+.brand b{ color:var(--page-fg); font-weight:600; }
+.seg{ display:flex; border:1px solid var(--page-line); border-radius:5px; overflow:hidden; }
+.seg button{ background:transparent; border:0; padding:5px 12px; font-size:12.5px; color:var(--page-dim); }
+.seg button[aria-pressed="true"]{ background:#38A3B8; color:#04191C; font-weight:600; }
+.urlbar{
+  flex:1 1 240px; min-width:180px; font-family:var(--mono); font-size:11.5px;
+  color:var(--page-dim); background:var(--page-bg); border:1px solid var(--page-line);
+  border-radius:5px; padding:5px 9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ctl{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--page-dim); }
+.ctl select{
+  background:var(--page-bg); color:var(--page-fg); border:1px solid var(--page-line);
+  border-radius:5px; padding:4px 6px; font-size:11.5px;
+}
+.ctl-label{ font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; }
+
+.viewport{ border:1px solid var(--page-line); border-radius:0 0 6px 6px; overflow:hidden; height:760px; position:relative; }
+.frame-note{ margin:10px 2px 0; font-size:12px; color:var(--page-dim); line-height:1.6; max-width:74ch; }
+.frame-note code{ font-family:var(--mono); font-size:11.5px; }
+
+/* ─── shared app primitives ──────────────────────────────────────────── */
+.app{ height:100%; display:flex; flex-direction:column; font-size:13px; }
+.hidden{ display:none !important; }
+.mono{ font-family:var(--mono); }
+.spacer{ flex:1; }
+
+/* ═══ CONSOLE (design plane — dark) ══════════════════════════════════ */
+.console{
+  --bg:#0E1416; --panel:#131A1D; --panel2:#182226; --line:#223034; --line2:#2C3A3F;
+  --fg:#DDE6E6; --dim:#8FA0A3; --dim2:#6B7C7F;
+  --acc:#38A3B8; --acc-soft:#123039; --amber:#E0A03C; --danger:#D2604F; --pos:#5FAF7E;
+  background:var(--bg); color:var(--fg);
+}
+.console button{ color:var(--fg); }
+
+.chdr{ display:flex; align-items:center; gap:10px; height:44px; padding:0 12px; background:var(--panel); border-bottom:1px solid var(--line); position:relative; z-index:30; }
+.logo{ width:20px; height:20px; border-radius:4px; background:linear-gradient(140deg,#38A3B8,#1C6273); flex:none; }
+.crumb{ display:flex; align-items:center; gap:7px; font-size:13.5px; }
+.crumb .sep{ color:var(--dim2); }
+.crumb .org{ color:var(--fg); font-weight:500; }
+.crumb-btn{ background:transparent; border:1px solid transparent; border-radius:5px; padding:3px 7px; display:flex; align-items:center; gap:6px; }
+.crumb-btn:hover{ background:var(--panel2); border-color:var(--line); }
+.crumb-btn .caret{ color:var(--dim); font-size:10px; }
+
+.menu{ position:absolute; top:38px; background:var(--panel2); border:1px solid var(--line2); border-radius:7px; padding:5px; min-width:240px; box-shadow:0 14px 34px rgba(0,0,0,.5); z-index:40; }
+.menu-h{ font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim2); padding:6px 8px 4px; }
+.menu button{ display:flex; width:100%; align-items:center; gap:8px; background:transparent; border:0; text-align:left; padding:6px 8px; border-radius:5px; font-size:13px; }
+.menu button:hover{ background:#213035; }
+.menu button .sub{ color:var(--dim2); font-family:var(--mono); font-size:10.5px; }
+.menu .rule{ height:1px; background:var(--line); margin:5px 2px; }
+.menu button[aria-current="true"]{ color:var(--acc); }
+
+.pill{ font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line2); color:var(--dim); }
+.pill.authored{ border-color:#2E4249; color:#8FB4BC; }
+.pill.installed{ border-color:#4A3B22; color:var(--amber); }
+.pill.acc{ border-color:#1F4E5B; background:var(--acc-soft); color:#7FD0E0; }
+.pill.warn{ border-color:#4A3B22; background:#241D10; color:var(--amber); }
+.pill.pos{ border-color:#26452F; background:#12251A; color:var(--pos); }
+
+.cbody{ flex:1; display:grid; grid-template-columns:228px 1fr; min-height:0; }
+.cnav{ background:var(--panel); border-right:1px solid var(--line); padding:10px 8px; overflow:auto; display:flex; flex-direction:column; }
+.nav-h{ font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim2); padding:12px 8px 5px; }
+.nav-i{ display:flex; align-items:center; gap:9px; width:100%; background:transparent; border:0; text-align:left; padding:6px 9px; border-radius:5px; color:var(--dim); font-size:13px; }
+.nav-i:hover{ background:var(--panel2); color:var(--fg); }
+.nav-i[aria-current="true"]{ background:var(--acc-soft); color:#9FDDEA; font-weight:500; box-shadow:inset 2px 0 0 var(--acc); }
+.nav-i .ico{ width:14px; text-align:center; color:var(--dim2); font-size:11px; }
+.nav-i[aria-current="true"] .ico{ color:var(--acc); }
+.nav-foot{ margin-top:auto; padding:10px 9px 2px; border-top:1px solid var(--line); font-size:11px; color:var(--dim2); font-family:var(--mono); }
+
+.cmain{ min-width:0; min-height:0; overflow:auto; display:flex; flex-direction:column; }
+.view{ padding:20px 24px 34px; }
+.view.flush{ padding:0; height:100%; }
+.vh{ display:flex; align-items:flex-end; gap:12px; margin-bottom:4px; }
+.vh h1{ margin:0; font-size:19px; font-weight:600; letter-spacing:-.01em; }
+.vsub{ color:var(--dim); font-size:12.5px; margin:0 0 18px; }
+.vsub .mono{ color:var(--dim2); }
+
+.card{ background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+.card-h{ padding:11px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; font-weight:500; font-size:13px; }
+.card-b{ padding:14px; }
+.grid2{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+
+table.tbl{ width:100%; border-collapse:collapse; font-size:12.5px; }
+.tbl th{ text-align:left; font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim2); font-weight:500; padding:8px 12px; border-bottom:1px solid var(--line); }
+.tbl td{ padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+.tbl tr:last-child td{ border-bottom:0; }
+.tbl tbody tr:hover{ background:#161F22; }
+.tbl td.num{ font-variant-numeric:tabular-nums; }
+.tbl .id{ font-family:var(--mono); font-size:11.5px; color:var(--dim); }
+.tbl-wrap{ overflow-x:auto; }
+
+.btn{ background:var(--panel2); border:1px solid var(--line2); border-radius:5px; padding:5px 11px; font-size:12.5px; }
+.btn:hover{ background:#213035; border-color:#385057; }
+.btn.pri{ background:var(--acc); border-color:var(--acc); color:#04191C; font-weight:600; }
+.btn.pri:hover{ background:#45B7CE; }
+.btn.pri:disabled{ background:#1E3A42; border-color:#1E3A42; color:#5D7A81; cursor:not-allowed; }
+.btn.sm{ padding:3px 8px; font-size:11.5px; }
+.btn.danger{ color:var(--danger); border-color:#4A2A26; }
+.btn.ghost{ background:transparent; border-color:transparent; color:var(--dim); }
+.btn.ghost:hover{ color:var(--fg); background:var(--panel2); }
+.btnrow{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+label.f{ display:block; margin-bottom:12px; }
+label.f > span{ display:block; font-size:11.5px; color:var(--dim); margin-bottom:5px; }
+.inp{ width:100%; background:#0C1214; border:1px solid var(--line2); border-radius:5px; color:var(--fg); padding:6px 9px; font-size:12.5px; }
+.inp:focus{ border-color:var(--acc); outline:none; }
+textarea.inp{ font-family:var(--mono); font-size:11.5px; line-height:1.6; resize:vertical; }
+.hint{ font-size:11px; color:var(--dim2); margin-top:5px; line-height:1.5; }
+.ro{ display:flex; justify-content:space-between; gap:16px; padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+.ro:last-child{ border-bottom:0; }
+.ro span:first-child{ color:var(--dim); }
+
+.md{ display:grid; grid-template-columns:250px 1fr; min-height:0; height:100%; }
+.md-list{ border-right:1px solid var(--line); overflow:auto; background:var(--panel); }
+.md-list-h{ display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--line); }
+.md-list-h .t{ font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim2); }
+.li{ display:block; width:100%; text-align:left; background:transparent; border:0; border-bottom:1px solid var(--line); padding:9px 12px; }
+.li:hover{ background:#161F22; }
+.li[aria-current="true"]{ background:var(--acc-soft); box-shadow:inset 2px 0 0 var(--acc); }
+.li .n{ font-size:12.5px; }
+.li .s{ font-family:var(--mono); font-size:10.5px; color:var(--dim2); margin-top:2px; }
+.md-detail{ overflow:auto; min-width:0; }
+
+.tabs{ display:flex; gap:2px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--panel); }
+.tab{ background:transparent; border:0; border-bottom:2px solid transparent; padding:9px 12px; font-size:12.5px; color:var(--dim); }
+.tab:hover{ color:var(--fg); }
+.tab[aria-selected="true"]{ color:var(--fg); border-bottom-color:var(--acc); }
+
+.toolbar{ display:flex; align-items:center; gap:10px; padding:9px 24px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#141C1F,#111819); }
+.toolbar .lbl{ font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim2); }
+
+.empty{ padding:40px 24px; text-align:center; color:var(--dim); }
+.empty h3{ margin:0 0 6px; font-size:14px; color:var(--fg); font-weight:500; }
+.empty p{ margin:0; font-size:12.5px; max-width:46ch; margin-inline:auto; line-height:1.6; }
+
+.notice{ border:1px solid #3A3018; background:#1C1811; border-radius:7px; padding:10px 13px; font-size:12.5px; color:#E4C384; line-height:1.6; }
+.notice.info{ border-color:#1F3B44; background:#0F1B1F; color:#96C6D2; }
+
+.chip{ display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:4px; border:1px solid var(--line2); color:var(--dim); }
+.chip.on{ border-color:#1F4E5B; background:var(--acc-soft); color:#7FD0E0; }
+.chips{ display:flex; flex-wrap:wrap; gap:5px; }
+
+/* pages section */
+.pages{ display:grid; grid-template-columns:206px 1fr auto; height:100%; min-height:0; }
+.ptree{ border-right:1px solid var(--line); background:var(--panel); overflow:auto; }
+.ptree-h{ display:flex; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); }
+.ptree-h .t{ font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim2); }
+.pnode{ display:flex; align-items:center; gap:7px; width:100%; background:transparent; border:0; text-align:left; padding:5px 10px; font-size:12.5px; color:var(--dim); font-family:var(--mono); font-size:11.5px; }
+.pnode:hover{ background:#161F22; color:var(--fg); }
+.pnode[aria-current="true"]{ color:#9FDDEA; background:var(--acc-soft); }
+.pfolder{ font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; color:var(--dim2); padding:8px 10px 3px; }
+.pmid{ display:grid; grid-template-rows:auto 1fr auto; min-width:0; min-height:0; }
+.ptabs{ display:flex; align-items:stretch; background:var(--panel); border-bottom:1px solid var(--line); overflow-x:auto; }
+.ptab{ display:flex; align-items:center; gap:8px; padding:7px 10px; border-right:1px solid var(--line); background:transparent; border-top:0; border-bottom:0; border-left:0; font-family:var(--mono); font-size:11.5px; color:var(--dim); white-space:nowrap; }
+.ptab[aria-selected="true"]{ background:var(--bg); color:var(--fg); box-shadow:inset 0 -2px 0 var(--acc); }
+.ptab .x{ opacity:.5; font-size:13px; }
+.ptab .x:hover{ opacity:1; }
+.ptab .dot{ width:6px; height:6px; border-radius:50%; background:var(--amber); }
+.pcanvas{ overflow:auto; background:var(--bg); padding:16px; min-height:0; }
+.pconsole{ border-top:1px solid var(--line); background:#0B1012; height:132px; display:flex; flex-direction:column; }
+.pconsole-h{ display:flex; align-items:center; gap:10px; padding:5px 10px; border-bottom:1px solid var(--line); }
+.pconsole-b{ flex:1; overflow:auto; padding:7px 10px; font-family:var(--mono); font-size:11px; line-height:1.75; color:var(--dim); }
+.plog b{ color:#7FD0E0; font-weight:500; }
+.plog .warn{ color:var(--amber); }
+.pside{ width:236px; border-left:1px solid var(--line); background:var(--panel); overflow:auto; }
+.comp{ display:flex; gap:9px; padding:8px 11px; border-bottom:1px solid var(--line); align-items:center; }
+.comp .g{ width:22px; height:22px; border-radius:4px; background:#1B282C; display:grid; place-items:center; font-size:11px; color:var(--dim); }
+.comp .n{ font-size:12px; }
+.comp .d{ font-size:10.5px; color:var(--dim2); }
+
+/* preview surface inside page editor */
+.prev{ background:#F6F7F5; color:#16211F; border-radius:6px; padding:14px; }
+.prev h4{ margin:0 0 10px; font-size:14px; }
+.prev .board{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.prev .col{ background:#EDF0EE; border-radius:6px; padding:8px; }
+.prev .col h5{ margin:0 0 8px; font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:#5A6B68; }
+.prev .wo{ background:#fff; border:1px solid #DCE2E0; border-radius:5px; padding:8px; margin-bottom:7px; font-size:11.5px; }
+.prev .wo b{ font-family:var(--mono); font-size:10.5px; color:#1F6F7A; display:block; }
+.prev table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+.prev th{ text-align:left; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:#5A6B68; padding:6px 8px; border-bottom:1px solid #DCE2E0; }
+.prev td{ padding:6px 8px; border-bottom:1px solid #E8ECEA; }
+
+/* workbench (light component inside dark console) */
+.workbench{ background:#F6F7F5; color:#16211F; height:100%; display:grid; grid-template-columns:200px 1fr; font-size:12.5px; }
+.workbench .wb-list{ border-right:1px solid #DCE2E0; background:#EFF2F0; overflow:auto; }
+.workbench .wb-h{ font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:#6B7B78; padding:9px 11px; border-bottom:1px solid #DCE2E0; }
+.workbench .wb-i{ display:block; width:100%; text-align:left; background:transparent; border:0; border-bottom:1px solid #E4E8E6; padding:8px 11px; font-size:12.5px; color:#16211F; }
+.workbench .wb-i:hover{ background:#E4E9E6; }
+.workbench .wb-i[aria-current="true"]{ background:#DCEAEA; box-shadow:inset 2px 0 0 #1F6F7A; font-weight:500; }
+.workbench .wb-i .s{ font-family:var(--mono); font-size:10px; color:#6B7B78; }
+.workbench .wb-main{ overflow:auto; min-width:0; }
+.workbench .wb-bar{ display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #DCE2E0; background:#fff; }
+.workbench table{ width:100%; border-collapse:collapse; font-size:12px; }
+.workbench th{ text-align:left; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:#6B7B78; padding:7px 12px; border-bottom:1px solid #DCE2E0; }
+.workbench td{ padding:8px 12px; border-bottom:1px solid #E8ECEA; }
+.workbench tbody tr:hover{ background:#EFF2F0; cursor:pointer; }
+.workbench tr[aria-selected="true"]{ background:#DCEAEA; }
+.wbtn{ background:#fff; border:1px solid #CFD7D4; border-radius:5px; padding:4px 10px; font-size:12px; color:#16211F; }
+.wbtn:hover{ background:#EFF2F0; }
+.wbtn.pri{ background:#1F6F7A; border-color:#1F6F7A; color:#fff; font-weight:600; }
+.wb-rec{ padding:12px; }
+.wb-rec .fr{ display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #E8ECEA; }
+.wb-rec .fr span:first-child{ color:#6B7B78; }
+
+/* dialog + toast */
+.scrim{ position:absolute; inset:0; background:rgba(4,10,11,.62); display:grid; place-items:center; z-index:60; padding:20px; }
+.dlg{ width:min(520px,100%); background:#141C1F; border:1px solid #2C3A3F; border-radius:9px; box-shadow:0 26px 60px rgba(0,0,0,.6); max-height:100%; overflow:auto; }
+.dlg-h{ padding:13px 16px; border-bottom:1px solid #223034; font-weight:600; font-size:13.5px; }
+.dlg-b{ padding:16px; }
+.dlg-f{ padding:12px 16px; border-top:1px solid #223034; display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+.toasts{ position:absolute; right:14px; bottom:14px; display:flex; flex-direction:column; gap:8px; z-index:70; }
+.toast{ background:#182226; border:1px solid #2C3A3F; border-left:3px solid var(--pos); border-radius:6px; padding:9px 13px; font-size:12.5px; color:#DDE6E6; box-shadow:0 10px 26px rgba(0,0,0,.5); max-width:340px; animation:tin .18s ease-out; }
+.toast .m{ font-family:var(--mono); font-size:10.5px; color:#8FA0A3; margin-top:3px; }
+@keyframes tin{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:none;} }
+@media (prefers-reduced-motion: reduce){ .toast{ animation:none; } }
+
+/* ═══ RUNTIME (run plane — light) ════════════════════════════════════ */
+.runtime{
+  --r-bg:#F6F7F5; --r-panel:#FFFFFF; --r-line:#DCE2E0; --r-line2:#CBD4D1;
+  --r-fg:#16211F; --r-dim:#63736F; --r-acc:#1F6F7A; --r-acc-soft:#E2EEEF;
+  background:var(--r-bg); color:var(--r-fg);
+}
+.runtime button{ color:var(--r-fg); }
+.rhdr{ display:flex; align-items:center; gap:12px; height:52px; padding:0 14px; background:var(--r-panel); border-bottom:1px solid var(--r-line); position:relative; z-index:30; }
+.ident{ display:flex; align-items:baseline; gap:9px; min-width:0; }
+.ident .org{ font-size:12px; color:var(--r-dim); }
+.ident .dot{ color:var(--r-line2); }
+.ident .sol{ font-size:15px; font-weight:600; letter-spacing:-.01em; }
+.opchip{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--r-line2); border-radius:999px; padding:3px 11px; font-size:12px; color:var(--r-dim); background:var(--r-bg); }
+.opchip .led{ width:6px; height:6px; border-radius:50%; background:#4E9E76; }
+.icobtn{ background:transparent; border:1px solid transparent; border-radius:6px; width:32px; height:32px; display:grid; place-items:center; position:relative; }
+.icobtn:hover{ background:var(--r-bg); border-color:var(--r-line); }
+.badge{ position:absolute; top:3px; right:3px; min-width:15px; height:15px; border-radius:8px; background:#C4553F; color:#fff; font-size:9.5px; display:grid; place-items:center; padding:0 4px; font-variant-numeric:tabular-nums; }
+.uat{ display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--r-dim); }
+.sw{ width:32px; height:18px; border-radius:9px; background:#CBD4D1; border:0; position:relative; padding:0; }
+.sw::after{ content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left .15s; }
+.sw[aria-pressed="true"]{ background:var(--r-acc); }
+.sw[aria-pressed="true"]::after{ left:16px; }
+@media (prefers-reduced-motion: reduce){ .sw::after{ transition:none; } }
+.uatstrip{ background:#FBF0DA; border-bottom:1px solid #E8D5A8; color:#7A5A16; font-size:11.5px; padding:5px 14px; font-family:var(--mono); letter-spacing:.04em; }
+.avatar{ width:28px; height:28px; border-radius:50%; background:#1F6F7A; color:#fff; display:grid; place-items:center; font-size:11px; font-weight:600; }
+.rmenu{ position:absolute; top:46px; right:12px; background:#fff; border:1px solid var(--r-line2); border-radius:8px; padding:6px; min-width:220px; box-shadow:0 16px 36px rgba(20,30,28,.18); z-index:40; }
+.rmenu .who{ padding:8px 9px; border-bottom:1px solid var(--r-line); margin-bottom:5px; }
+.rmenu .who .n{ font-size:12.5px; font-weight:500; }
+.rmenu .who .e{ font-size:11px; color:var(--r-dim); font-family:var(--mono); }
+.rmenu button{ display:block; width:100%; text-align:left; background:transparent; border:0; padding:7px 9px; border-radius:5px; font-size:12.5px; }
+.rmenu button:hover{ background:var(--r-bg); }
+
+.rbody{ flex:1; display:flex; min-height:0; }
+.rnav{ width:216px; flex:none; background:var(--r-panel); border-right:1px solid var(--r-line); display:flex; flex-direction:column; transition:width .16s; overflow:hidden; }
+.rnav.collapsed{ width:52px; }
+@media (prefers-reduced-motion: reduce){ .rnav{ transition:none; } }
+.rnav-top{ display:flex; align-items:center; gap:6px; padding:8px 10px; border-bottom:1px solid var(--r-line); }
+.rnav-items{ flex:1; overflow:auto; padding:8px 8px; }
+.rnav-i{ display:flex; align-items:center; gap:10px; width:100%; background:transparent; border:0; text-align:left; padding:8px 9px; border-radius:6px; font-size:13px; color:var(--r-fg); white-space:nowrap; }
+.rnav-i:hover{ background:var(--r-bg); }
+.rnav-i[aria-current="true"]{ background:var(--r-acc-soft); color:#0F4F58; font-weight:600; }
+.rnav-i .ico{ width:16px; text-align:center; color:var(--r-dim); flex:none; }
+.rnav-i[aria-current="true"] .ico{ color:var(--r-acc); }
+.rnav-g{ font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--r-dim); padding:12px 10px 4px; font-family:var(--mono); }
+.rnav-sub{ padding-left:16px; }
+.rnav-foot{ padding:10px 12px; border-top:1px solid var(--r-line); font-size:10.5px; color:#8B9995; font-family:var(--mono); letter-spacing:.06em; white-space:nowrap; }
+.rmain{ flex:1; min-width:0; overflow:auto; }
+.rpage{ padding:22px 26px 40px; }
+.rpage h1{ margin:0 0 3px; font-size:20px; font-weight:600; letter-spacing:-.015em; }
+.rpage .rsub{ margin:0 0 20px; color:var(--r-dim); font-size:12.5px; }
+.rcard{ background:var(--r-panel); border:1px solid var(--r-line); border-radius:8px; }
+.rcard-h{ padding:10px 14px; border-bottom:1px solid var(--r-line); font-weight:600; font-size:12.5px; display:flex; align-items:center; gap:10px; }
+.board{ display:grid; grid-template-columns:repeat(4,minmax(180px,1fr)); gap:12px; }
+.bcol{ background:#EEF1EF; border:1px solid var(--r-line); border-radius:8px; padding:9px; }
+.bcol h3{ margin:0 0 9px; font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--r-dim); display:flex; justify-content:space-between; }
+.wo{ background:#fff; border:1px solid var(--r-line); border-radius:6px; padding:9px; margin-bottom:8px; }
+.wo .id{ font-family:var(--mono); font-size:10.5px; color:var(--r-acc); }
+.wo .t{ font-size:12.5px; margin:3px 0 6px; }
+.wo .m{ font-size:11px; color:var(--r-dim); display:flex; justify-content:space-between; }
+.sev{ display:inline-block; width:100%; height:3px; border-radius:2px; margin-bottom:7px; }
+.sev.hi{ background:#C4553F; } .sev.med{ background:#D9A441; } .sev.lo{ background:#7FA79B; }
+.rtbl{ width:100%; border-collapse:collapse; font-size:12.5px; }
+.rtbl th{ text-align:left; font-size:9.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--r-dim); font-weight:600; padding:9px 14px; border-bottom:1px solid var(--r-line); }
+.rtbl td{ padding:10px 14px; border-bottom:1px solid #EAEEEC; }
+.rtbl tbody tr:last-child td{ border-bottom:0; }
+.rtbl tbody tr:hover{ background:#F1F4F2; cursor:pointer; }
+.rpill{ font-size:11px; padding:2px 9px; border-radius:999px; border:1px solid var(--r-line2); color:var(--r-dim); }
+.rpill.ok{ border-color:#B6D3C3; background:#EAF4EE; color:#2F6B4C; }
+.rpill.warn{ border-color:#E5D2A6; background:#FBF2DE; color:#7A5A16; }
+.rpill.crit{ border-color:#E7BDB2; background:#FBECE8; color:#9B4331; }
+.rempty{ display:grid; place-items:center; height:100%; text-align:center; padding:40px; }
+.rempty .t{ font-size:15px; font-weight:600; margin-bottom:6px; }
+.rempty .d{ font-size:12.5px; color:var(--r-dim); max-width:44ch; line-height:1.65; }
+.signin{ display:grid; place-items:center; height:100%; background:var(--r-bg); }
+.signin .box{ width:min(360px,100%); background:#fff; border:1px solid var(--r-line); border-radius:10px; padding:26px; text-align:center; }
+.signin h2{ margin:14px 0 4px; font-size:17px; }
+.signin p{ margin:0 0 18px; font-size:12.5px; color:var(--r-dim); }
+.rinp{ width:100%; border:1px solid var(--r-line2); border-radius:6px; padding:8px 10px; font-size:12.5px; margin-bottom:9px; }
+.rbtn{ background:var(--r-acc); border:1px solid var(--r-acc); color:#fff; border-radius:6px; padding:8px 14px; font-size:13px; font-weight:600; width:100%; }
+</style>
+
+<div class="wrap">
+  <div class="frame-bar">
+    <div class="brand"><b>Fluxus</b> · interactive prototype · rev 7 spec</div>
+    <div class="seg" role="group" aria-label="Application">
+      <button data-act="app" data-v="console" aria-pressed="true">Console</button>
+      <button data-act="app" data-v="runtime" aria-pressed="false">Runtime</button>
+    </div>
+    <div class="urlbar" id="urlbar">—</div>
+    <div class="ctl" id="frame-ctls"></div>
+  </div>
+  <div class="viewport" id="stage"></div>
+  <p class="frame-note" id="frame-note"></p>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   Model — realistic tenancy from the spec's seed (§13 M13 dummy names)
+   ══════════════════════════════════════════════════════════════════════ */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const DB = {
+  org: { id:'default', name:'Northwind Utilities', contactEmail:'platform@northwind-utilities.com',
+         plan:'free', status:'active', createdAt:'2026-03-14' },
+  solutions:[
+    { id:'sol_asset_maintenance', name:'Asset Maintenance', origin:'authored', originRef:null, created:'2026-03-16' },
+    { id:'sol_field_dispatch',    name:'Field Dispatch',    origin:'authored', originRef:null, created:'2026-05-02' },
+    { id:'sol_meter_compliance',  name:'Meter Compliance',  origin:'installed', originRef:'catalogue:meter-compliance@2.1.0', created:'2026-07-09' }
+  ],
+  operations:[
+    { id:'op_western',       name:'Western Region', solutionId:'sol_asset_maintenance', created:'2026-03-18', menuOverride:true },
+    { id:'op_northern',      name:'Northern Region', solutionId:'sol_asset_maintenance', created:'2026-06-11', menuOverride:false },
+    { id:'op_dispatch_pilot',name:'Dispatch Pilot',  solutionId:'sol_field_dispatch',   created:'2026-05-04', menuOverride:false }
+  ],
+  users:[
+    { id:'u_okafor',   name:'Ada Okafor',    email:'a.okafor@northwind-utilities.com' },
+    { id:'u_novak',    name:'Marek Novak',   email:'m.novak@northwind-utilities.com' },
+    { id:'u_ramesh',   name:'Priya Ramesh',  email:'p.ramesh@northwind-utilities.com' },
+    { id:'u_beaulieu', name:'Tom Beaulieu',  email:'t.beaulieu@northwind-utilities.com' }
+  ],
+  roles:[
+    { id:'role_managers',    name:'Managers',    description:'Full operational oversight' },
+    { id:'role_dispatchers', name:'Dispatchers', description:'Raises and routes work orders' },
+    { id:'role_technicians', name:'Technicians', description:'Field crew — inspections and closures' },
+    { id:'role_auditors',    name:'Auditors',    description:'Read-only compliance review' }
+  ],
+  recordTypes:[
+    { id:'rt_assets', name:'Assets', workflow:'wf_assets', readRoles:['role_managers','role_technicians','role_auditors'],
+      fields:[ {key:'status',type:'text',label:'Status'},{key:'criticality',type:'list',label:'Criticality'},
+               {key:'last_inspected_at',type:'date',label:'Last inspected'},{key:'site_id',type:'fk',label:'Site'} ] },
+    { id:'rt_sites', name:'Sites', workflow:'wf_sites', readRoles:['role_managers','role_technicians','role_auditors'],
+      fields:[ {key:'region',type:'text',label:'Region'},{key:'access_notes',type:'text',label:'Access notes'} ] },
+    { id:'rt_work_orders', name:'Work orders', workflow:'wf_work_orders', readRoles:['role_managers','role_dispatchers','role_technicians'],
+      fields:[ {key:'status',type:'text',label:'Status'},{key:'priority',type:'list',label:'Priority'},
+               {key:'asset_id',type:'fk',label:'Asset'},{key:'crew_id',type:'fk',label:'Crew'} ] },
+    { id:'rt_inspections', name:'Inspections', workflow:'wf_inspections', readRoles:['role_managers','role_technicians','role_auditors'],
+      fields:[ {key:'outcome',type:'list',label:'Outcome'},{key:'asset_id',type:'fk',label:'Asset'} ] },
+    { id:'rt_crews', name:'Crews', workflow:'wf_crews', readRoles:['role_managers','role_dispatchers'],
+      fields:[ {key:'shift',type:'list',label:'Shift'},{key:'depot',type:'text',label:'Depot'} ] }
+  ],
+  attributes:[
+    { key:'at_asset_tag', label:'Asset tag', type:'text', multi:false, multiline:false },
+    { key:'at_site', label:'Site', type:'fk', fk:'rt_sites', multi:false },
+    { key:'at_condition', label:'Condition', type:'list', options:['Good','Fair','Poor','Failed'], multi:false },
+    { key:'at_meter_reading', label:'Meter reading', type:'number', multi:false },
+    { key:'at_inspected_at', label:'Inspected at', type:'date', multi:false },
+    { key:'at_photos', label:'Photos', type:'photo', multi:true },
+    { key:'at_defect_notes', label:'Defect notes', type:'text', multi:false, multiline:true },
+    { key:'at_crew', label:'Crew', type:'fk', fk:'rt_crews', multi:false },
+    { key:'at_signature', label:'Technician signature', type:'file', multi:false }
+  ],
+  workflows:[
+    { id:'wf_assets', name:'Assets', description:'Registration through decommissioning',
+      activities:[
+        { id:'act_register_assets', name:'Register asset', description:'Bring an asset onto the register', sort:10, recordMap:'rt_assets',
+          showCondition:'', usages:[ {kind:'section',label:'Identity'},{kind:'attr',key:'at_asset_tag',required:true},
+            {kind:'attr',key:'at_site',required:true},{kind:'section',label:'Condition'},
+            {kind:'attr',key:'at_condition',required:true},{kind:'attr',key:'at_photos',required:false} ],
+          before:'', after:"records.rt_assets.set({ status: 'In service' })" },
+        { id:'act_inspect_assets', name:'Inspect asset', description:'Record a routine inspection', sort:20, recordMap:'rt_inspections',
+          showCondition:"ctx.record.status != 'Decommissioned'", usages:[ {kind:'attr',key:'at_inspected_at',required:true},
+            {kind:'attr',key:'at_condition',required:true},{kind:'attr',key:'at_meter_reading',required:false},
+            {kind:'section',label:'Evidence'},{kind:'attr',key:'at_photos',required:false},
+            {kind:'attr',key:'at_defect_notes',required:false},{kind:'attr',key:'at_signature',required:true} ],
+          before:'', after:'' },
+        { id:'act_decommission_assets', name:'Decommission asset', description:'Retire an asset from service', sort:30, recordMap:'rt_assets',
+          showCondition:"ctx.record.status == 'In service'", usages:[ {kind:'attr',key:'at_defect_notes',required:true} ],
+          before:'', after:"records.rt_assets.set({ status: 'Decommissioned' })" } ] },
+    { id:'wf_work_orders', name:'Work orders', description:'Raise, dispatch, close',
+      activities:[
+        { id:'act_raise_work_orders', name:'Raise work order', description:'Open work against an asset', sort:10, recordMap:'rt_work_orders',
+          showCondition:'', usages:[ {kind:'attr',key:'at_site',required:true},{kind:'attr',key:'at_defect_notes',required:true} ], before:'', after:'' },
+        { id:'act_dispatch_work_orders', name:'Dispatch work order', description:'Assign a crew', sort:20, recordMap:'rt_work_orders',
+          showCondition:"ctx.record.status == 'Unassigned'", usages:[ {kind:'attr',key:'at_crew',required:true} ], before:'', after:'' },
+        { id:'act_close_work_orders', name:'Close work order', description:'Sign the job off', sort:30, recordMap:'rt_work_orders',
+          showCondition:"ctx.record.status == 'On site'", usages:[ {kind:'attr',key:'at_defect_notes',required:false},{kind:'attr',key:'at_signature',required:true} ], before:'', after:'' } ] },
+    { id:'wf_inspections', name:'Inspections', description:'Inspection lifecycle', activities:[
+        { id:'act_amend_inspections', name:'Amend inspection', description:'Correct a filed inspection', sort:10, recordMap:'rt_inspections', showCondition:'', usages:[{kind:'attr',key:'at_defect_notes',required:true}], before:'', after:'' } ] },
+    { id:'wf_sites', name:'Sites', description:'Site register', activities:[
+        { id:'act_register_sites', name:'Register site', description:'Add a site', sort:10, recordMap:'rt_sites', showCondition:'', usages:[{kind:'attr',key:'at_asset_tag',required:false}], before:'', after:'' } ] },
+    { id:'wf_crews', name:'Crews', description:'Crew roster', activities:[
+        { id:'act_register_crews', name:'Register crew', description:'Add a crew', sort:10, recordMap:'rt_crews', showCondition:'', usages:[{kind:'attr',key:'at_crew',required:false}], before:'', after:'' } ] }
+  ],
+  pages:[
+    { path:'dispatch/board',  name:'Dispatch board',  draft:true,  version:3, access:['role_dispatchers','role_managers'] },
+    { path:'assets/register', name:'Asset register',  draft:true,  version:5, access:['role_technicians','role_managers','role_auditors'] },
+    { path:'assets/detail',   name:'Asset detail',    draft:true,  version:2, access:['role_technicians','role_managers','role_auditors'] },
+    { path:'admin/crews',     name:'Crews',           draft:true,  version:1, access:['role_managers'] },
+    { path:'admin/sites',     name:'Sites',           draft:true,  version:1, access:['role_managers'] },
+    { path:'reports/uptime',  name:'Uptime report',   draft:true,  version:0, access:['role_managers','role_auditors'] }
+  ],
+  pageVersions:{
+    'dispatch/board':[
+      { v:3, readme:'Split the board by crew shift; overdue work orders now surface a severity stripe.', by:'a.okafor', at:'2026-07-28 09:14' },
+      { v:2, readme:'Added the Unassigned column and the raise-work-order action.', by:'a.okafor', at:'2026-07-21 16:02' },
+      { v:1, readme:'First cut of the dispatch board.', by:'m.novak', at:'2026-07-14 11:40' } ],
+    'assets/register':[
+      { v:5, readme:'Criticality column + filter by site.', by:'p.ramesh', at:'2026-07-29 08:31' },
+      { v:4, readme:'Last-inspected column pulled from the inspections workflow.', by:'p.ramesh', at:'2026-07-24 13:55' } ]
+  },
+  configVersions:[
+    { v:4, readme:'Added rt_crews + the dispatch workflow; at_signature required on close.', by:'a.okafor', at:'2026-07-29 17:20' },
+    { v:3, readme:'Inspection outcomes moved to a list attribute; photos now multi.', by:'p.ramesh', at:'2026-07-22 10:08' },
+    { v:2, readme:'Sites record type and its FK from assets.', by:'m.novak', at:'2026-07-15 15:44' },
+    { v:1, readme:'Initial model: assets, inspections, work orders.', by:'m.novak', at:'2026-07-09 09:00' }
+  ],
+  defaultMenu:[
+    { label:'Dispatch', page:'dispatch/board', roles:['role_dispatchers','role_managers'] },
+    { label:'Assets',   page:'assets/register', roles:['role_technicians','role_managers','role_auditors'] },
+    { label:'Admin',    roles:['role_managers'], items:[
+        { label:'Crews', page:'admin/crews', roles:['role_managers'] },
+        { label:'Sites', page:'admin/sites', roles:['role_managers'] } ] }
+  ],
+  opMenus:{
+    op_western:[
+      { label:'Dispatch', page:'dispatch/board', roles:['role_dispatchers','role_managers'] },
+      { label:'Assets',   page:'assets/register', roles:['role_technicians','role_managers'] },
+      { label:'Compliance', page:'admin/sites', roles:['role_auditors','role_managers'] } ]
+  },
+  assignments:[
+    { userId:'u_okafor',   operationId:'op_western', roles:['role_managers','role_dispatchers'] },
+    { userId:'u_novak',    operationId:'op_western', roles:['role_technicians'] },
+    { userId:'u_ramesh',   operationId:'op_western', roles:['role_dispatchers'] },
+    { userId:'u_beaulieu', operationId:'op_northern', roles:['role_auditors'] }
+  ],
+  implementers:[
+    { userId:'u_okafor', solutionId:'sol_asset_maintenance', level:'admin' },
+    { userId:'u_ramesh', solutionId:'sol_asset_maintenance', level:'write' },
+    { userId:'u_novak',  solutionId:'sol_field_dispatch',    level:'write' },
+    { userId:'u_beaulieu', solutionId:'sol_asset_maintenance', level:'read' }
+  ],
+  records:{
+    op_western:{
+      rt_assets:[
+        { id:'AST-1042', name:'Pump station 4', status:'In service', criticality:'High', last_inspected_at:'2026-07-12', site_id:'SITE-W3' },
+        { id:'AST-1077', name:'Transformer T-19', status:'In service', criticality:'Critical', last_inspected_at:'2026-06-30', site_id:'SITE-W1' },
+        { id:'AST-1103', name:'Valve chamber 12', status:'Out of service', criticality:'Medium', last_inspected_at:'2026-07-25', site_id:'SITE-W3' },
+        { id:'AST-1188', name:'Reservoir gauge', status:'In service', criticality:'Low', last_inspected_at:'2026-05-18', site_id:'SITE-W7' },
+        { id:'AST-1204', name:'Booster pump 2', status:'Decommissioned', criticality:'Low', last_inspected_at:'2026-02-04', site_id:'SITE-W1' }
+      ],
+      rt_work_orders:[
+        { id:'WO-3391', name:'Seal leak at chamber 12', status:'On site', priority:'High', asset_id:'AST-1103', crew_id:'CRW-2' },
+        { id:'WO-3402', name:'Transformer thermal scan', status:'Dispatched', priority:'Critical', asset_id:'AST-1077', crew_id:'CRW-1' },
+        { id:'WO-3410', name:'Gauge recalibration', status:'Unassigned', priority:'Low', asset_id:'AST-1188', crew_id:'' },
+        { id:'WO-3377', name:'Pump bearing replacement', status:'Complete', priority:'Medium', asset_id:'AST-1042', crew_id:'CRW-2' }
+      ],
+      rt_sites:[
+        { id:'SITE-W1', name:'Kingsley depot', region:'Western', access_notes:'Gate code at guardhouse' },
+        { id:'SITE-W3', name:'Riverside works', region:'Western', access_notes:'Confined space permit required' },
+        { id:'SITE-W7', name:'Hilltop reservoir', region:'Western', access_notes:'4WD access only in winter' }
+      ],
+      rt_inspections:[
+        { id:'INS-8821', name:'AST-1103 quarterly', outcome:'Defect found', asset_id:'AST-1103' },
+        { id:'INS-8802', name:'AST-1042 quarterly', outcome:'Pass', asset_id:'AST-1042' }
+      ],
+      rt_crews:[
+        { id:'CRW-1', name:'Kingsley A', shift:'Day', depot:'Kingsley depot' },
+        { id:'CRW-2', name:'Riverside B', shift:'Night', depot:'Riverside works' }
+      ]
+    },
+    op_northern:{ rt_assets:[
+        { id:'AST-2001', name:'Northern intake pump', status:'In service', criticality:'High', last_inspected_at:'2026-07-02', site_id:'SITE-N1' } ],
+      rt_work_orders:[], rt_sites:[{ id:'SITE-N1', name:'Fairview intake', region:'Northern', access_notes:'—' }], rt_inspections:[], rt_crews:[] },
+    op_dispatch_pilot:{ rt_assets:[], rt_work_orders:[], rt_sites:[], rt_inspections:[], rt_crews:[] }
+  }
+};
+
+const SECTIONS = {
+  workspace:[
+    { id:'organisation', label:'Organisation', ico:'◉' },
+    { id:'solutions',    label:'Solutions',    ico:'▤' },
+    { id:'operations',   label:'Operations',   ico:'▶' },
+    { id:'implementers', label:'Implementer levels', ico:'◈' }
+  ],
+  solution:[
+    { id:'overview',     label:'Overview',    ico:'◍' },
+    { id:'pages',        label:'Pages',       ico:'❐' },
+    { id:'record-types', label:'Record types',ico:'▦', group:'Shared Data Model' },
+    { id:'attributes',   label:'Attributes',  ico:'▪', group:'Shared Data Model' },
+    { id:'workflows',    label:'Workflows',   ico:'⇉', group:'Shared Data Model' },
+    { id:'roles',        label:'Roles',       ico:'◔', group:'Shared Data Model' },
+    { id:'menu',         label:'Menu',        ico:'☰', group:'Shared Data Model' },
+    { id:'workbench',    label:'Workbench',   ico:'⚒' }
+  ]
+};
+const SDM_SECTIONS = ['record-types','attributes','workflows','roles','menu'];
+
+/* ══ state ══════════════════════════════════════════════════════════ */
+const S = {
+  app:'console',
+  console:{
+    scope:'workspace', section:'organisation', solutionId:null,
+    dataOperationId:'op_western',
+    openMenu:null,                       // 'crumb' | 'data' | null
+    selOperation:'op_western', opTab:'overview',
+    selRecordType:'rt_assets', selAttribute:'at_asset_tag',
+    selWorkflow:'wf_assets', selActivity:'act_register_assets',
+    sdmDirty:false,
+    orgForm:{ name:DB.org.name, contactEmail:DB.org.contactEmail }, orgDirty:false,
+    openTabs:['dispatch/board'], activeTab:'dispatch/board', dirtyTabs:['dispatch/board'],
+    sidePanel:'components',              // 'components' | 'search' | null
+    consoleOpen:true,
+    log:[ {t:'ready', m:'page-runtime cluster mounted · draft dispatch/board'},
+          {t:'info',  m:'engine.openSolution(sol_asset_maintenance, op_western) → scopeVersion 4'} ],
+    pendingNav:null,
+    dialog:null, toasts:[]
+  },
+  runtime:{
+    operationId:'op_western', role:'role_dispatchers', userId:'u_okafor',
+    navCollapsed:false, page:'dispatch/board', menuOpen:false, uat:false, signedIn:true,
+    selAsset:null
+  }
+};
+
+/* ══ helpers ════════════════════════════════════════════════════════ */
+const sol   = id => DB.solutions.find(s=>s.id===id);
+const op    = id => DB.operations.find(o=>o.id===id);
+const user  = id => DB.users.find(u=>u.id===id);
+const role  = id => DB.roles.find(r=>r.id===id);
+const rt    = id => DB.recordTypes.find(r=>r.id===id);
+const attr  = k  => DB.attributes.find(a=>a.key===k);
+const wf    = id => DB.workflows.find(w=>w.id===id);
+const opsFor= sid=> DB.operations.filter(o=>o.solutionId===sid);
+const page  = p  => DB.pages.find(x=>x.path===p);
+const publishedPages = () => DB.pages.filter(p=>p.version>0);
+const effectiveMenu = opId => DB.opMenus[opId] ?? DB.defaultMenu;
+const rolesOf = (uid,opId) => (DB.assignments.find(a=>a.userId===uid&&a.operationId===opId)||{roles:[]}).roles;
+
+function toast(msg, meta){
+  const t={ id:Math.random().toString(36).slice(2), msg, meta };
+  S.console.toasts.push(t); render();
+  setTimeout(()=>{ S.console.toasts=S.console.toasts.filter(x=>x.id!==t.id); render(); }, 3800);
+}
+function log(t,m){ S.console.log.push({t,m}); }
+
+/* ══ routing readout ════════════════════════════════════════════════ */
+function currentUrl(){
+  if(S.app==='runtime') return `runtime.fluxus.app/?operation=${S.runtime.operationId}`;
+  const c=S.console;
+  return 'console.fluxus.app/' + (c.scope==='workspace' ? `#/${c.section}` : `#/s/${c.solutionId}/${c.section}`);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CONSOLE
+   ══════════════════════════════════════════════════════════════════════ */
+function consoleHeader(){
+  const c=S.console, s=c.solutionId?sol(c.solutionId):null;
+  const crumbMenu = c.openMenu==='crumb' ? `
+    <div class="menu" style="left:150px">
+      <div class="menu-h">Solutions in ${esc(DB.org.name)}</div>
+      ${DB.solutions.map(x=>`<button data-act="open-solution" data-id="${x.id}" aria-current="${x.id===c.solutionId}">
+        <span>${esc(x.name)}</span><span class="spacer"></span><span class="sub">${esc(x.id)}</span></button>`).join('')}
+      <div class="rule"></div>
+      <button data-act="exit-solution">← All solutions</button>
+    </div>` : '';
+  const dataOps = c.solutionId ? opsFor(c.solutionId) : [];
+  const dataMenu = c.openMenu==='data' ? `
+    <div class="menu" style="right:12px">
+      <div class="menu-h">Data operation — records Console builds against</div>
+      ${dataOps.length ? dataOps.map(o=>`<button data-act="set-data-op" data-id="${o.id}" aria-current="${o.id===c.dataOperationId}">
+        <span>${esc(o.name)}</span><span class="spacer"></span><span class="sub">${esc(o.id)}</span></button>`).join('')
+        : '<div class="menu-h" style="text-transform:none;letter-spacing:0;font-family:var(--ui);font-size:12px">No operations on this solution — it opens with no records.</div>'}
+      <div class="rule"></div>
+      <div class="menu-h" style="text-transform:none;letter-spacing:0;font-family:var(--ui);font-size:11.5px;color:var(--dim)">Remembered per solution in <span class="mono">fluxus:page-builder:data-operation</span></div>
+    </div>` : '';
+  return `
+  <header class="chdr">
+    <div class="logo" aria-hidden="true"></div>
+    <div class="crumb">
+      <span class="org">Fluxus · ${esc(DB.org.name)}</span>
+      ${s?`<span class="sep">/</span>
+        <button class="crumb-btn" data-act="toggle-menu" data-v="crumb" aria-expanded="${c.openMenu==='crumb'}">
+          <span>${esc(s.name)}</span><span class="caret">▾</span></button>`:''}
+    </div>
+    ${crumbMenu}
+    <div class="spacer"></div>
+    ${s?`<button class="btn sm" data-act="toggle-menu" data-v="data" aria-expanded="${c.openMenu==='data'}">
+        Data: ${esc(c.dataOperationId&&op(c.dataOperationId)&&op(c.dataOperationId).solutionId===s.id?op(c.dataOperationId).name:'none')} ▾</button>`:''}
+    ${dataMenu}
+    <span class="pill">implementer: admin</span>
+    <span class="chip">a.okafor</span>
+  </header>`;
+}
+
+function consoleNav(){
+  const c=S.console, set=SECTIONS[c.scope];
+  let out='', lastGroup=null;
+  if(c.scope==='workspace') out+=`<div class="nav-h">Workspace</div>`;
+  set.forEach(sec=>{
+    if(sec.group && sec.group!==lastGroup){ out+=`<div class="nav-h">${esc(sec.group)}</div>`; lastGroup=sec.group; }
+    if(!sec.group && lastGroup){ out+=`<div style="height:6px"></div>`; lastGroup=null; }
+    out+=`<button class="nav-i" data-act="section" data-id="${sec.id}" aria-current="${sec.id===c.section}">
+      <span class="ico">${sec.ico}</span><span>${esc(sec.label)}</span>
+      ${sec.id==='workbench'?'<span class="spacer"></span><span class="pill" style="font-size:10px">M15</span>':''}
+    </button>`;
+  });
+  return `<nav class="cnav">${out}
+    <div class="nav-foot">${c.scope==='workspace'?'section registry · workspace':'section registry · solution'}<br>shell/sections.tsx</div>
+  </nav>`;
+}
+
+/* ── workspace: organisation ── */
+function viewOrganisation(){
+  const o=DB.org, f=S.console.orgForm;
+  return `<div class="view">
+    <div class="vh"><h1>Organisation</h1></div>
+    <p class="vsub">The tenant everything hangs under. Solutions and operations are created inside it. <span class="mono">orgs.get</span> / <span class="mono">orgs.putProfile</span> — there is no <span class="mono">orgs.create</span>: signup is not built.</p>
+    <div class="grid2">
+      <div class="card">
+        <div class="card-h">Profile ${S.console.orgDirty?'<span class="pill warn">unsaved</span>':''}</div>
+        <div class="card-b">
+          <label class="f"><span>Organisation name</span>
+            <input class="inp" data-bind="org.name" value="${esc(f.name)}"></label>
+          <label class="f"><span>Contact email</span>
+            <input class="inp" data-bind="org.contactEmail" value="${esc(f.contactEmail)}"></label>
+          <div class="btnrow">
+            <button class="btn pri" data-act="save-org">Save profile</button>
+            <button class="btn ghost" data-act="reset-org">Reset</button>
+          </div>
+          <p class="hint">Name and contact email only. Plan and status are set by Fluxus and are not writable through the API.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h">Plan <span class="pill">read-only</span></div>
+        <div class="card-b">
+          <div class="ro"><span>Plan</span><b>${esc(o.plan)}</b></div>
+          <div class="ro"><span>Status</span><span class="pill pos">${esc(o.status)}</span></div>
+          <div class="ro"><span>Registered</span><span class="mono">${esc(o.createdAt)}</span></div>
+          <div class="ro"><span>Organisation id</span><span class="mono">${esc(o.id)}</span></div>
+          <div class="ro"><span>Solutions</span><span class="num">${DB.solutions.length}</span></div>
+          <div class="ro"><span>Operations</span><span class="num">${DB.operations.length}</span></div>
+          <p class="hint" style="margin-top:12px">Billing is not built. Changing plan is a Fluxus-side action.</p>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── workspace: solutions ── */
+function viewSolutions(){
+  return `<div class="view">
+    <div class="vh"><h1>Solutions</h1><div class="spacer"></div>
+      <button class="btn pri" data-act="dlg" data-v="new-solution">New solution</button></div>
+    <p class="vsub">A solution is the design artifact — model, pages, roles, default menu. No data, no users. <b>Open</b> designs it here in the Console.</p>
+    <div class="card"><div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Name</th><th>Id</th><th>Origin</th><th>Operations</th><th>Created</th><th></th></tr></thead>
+      <tbody>${DB.solutions.map(s=>{
+        const n=opsFor(s.id).length;
+        return `<tr>
+          <td><b>${esc(s.name)}</b></td>
+          <td class="id">${esc(s.id)}</td>
+          <td><span class="pill ${s.origin}">${esc(s.origin)}</span>${s.originRef?`<div class="id" style="margin-top:3px">${esc(s.originRef)}</div>`:''}</td>
+          <td class="num">${n}${n===0?' <span class="pill" style="margin-left:6px">no data</span>':''}</td>
+          <td class="id">${esc(s.created)}</td>
+          <td style="text-align:right"><button class="btn sm" data-act="open-solution" data-id="${s.id}">Open</button></td>
+        </tr>`;}).join('')}</tbody>
+    </table></div></div>
+    <p class="hint" style="margin-top:12px">An installed solution carries its catalogue lineage in <span class="mono">origin_ref</span>. There is no install path yet — the column exists so nothing assumes every solution was authored here.</p>
+  </div>`;
+}
+
+/* ── workspace: operations (master/detail) ── */
+function viewOperations(){
+  const c=S.console, o=op(c.selOperation);
+  return `<div class="md">
+    <div class="md-list">
+      <div class="md-list-h"><span class="t">Operations</span><span class="spacer"></span>
+        <button class="btn sm" data-act="dlg" data-v="new-operation">New</button></div>
+      ${DB.operations.map(x=>`<button class="li" data-act="sel-operation" data-id="${x.id}" aria-current="${x.id===c.selOperation}">
+        <div class="n">${esc(x.name)}</div>
+        <div class="s">${esc(x.id)} · ${esc(sol(x.solutionId).name)}</div>
+      </button>`).join('')}
+    </div>
+    <div class="md-detail">
+      ${o?`
+      <div class="view" style="padding-bottom:0">
+        <div class="vh"><h1>${esc(o.name)}</h1><div class="spacer"></div>
+          <button class="btn pri" data-act="open-runtime" data-id="${o.id}">Open in Runtime ↗</button></div>
+        <p class="vsub"><span class="mono">${esc(o.id)}</span> · linked to <b>${esc(sol(o.solutionId).name)}</b></p>
+      </div>
+      <div class="tabs">
+        ${[['overview','Overview'],['menu','Menu'],['assignments','Role assignments']].map(([id,l])=>
+          `<button class="tab" data-act="op-tab" data-id="${id}" aria-selected="${c.opTab===id}">${l}</button>`).join('')}
+      </div>
+      ${c.opTab==='overview'?opOverview(o):c.opTab==='menu'?opMenu(o):opAssignments(o)}
+      `:'<div class="empty"><h3>No operation selected</h3><p>Pick one from the list.</p></div>'}
+    </div>
+  </div>`;
+}
+function opOverview(o){
+  const recs=DB.records[o.id]||{};
+  const total=Object.values(recs).reduce((n,a)=>n+a.length,0);
+  return `<div class="view"><div class="grid2">
+    <div class="card"><div class="card-h">Operation</div><div class="card-b">
+      <div class="ro"><span>Name</span><b>${esc(o.name)}</b></div>
+      <div class="ro"><span>Id</span><span class="mono">${esc(o.id)}</span></div>
+      <div class="ro"><span>Organisation</span>${esc(DB.org.name)}</div>
+      <div class="ro"><span>Linked solution</span><b>${esc(sol(o.solutionId).name)}</b></div>
+      <div class="ro"><span>Created</span><span class="mono">${esc(o.created)}</span></div>
+      <div class="ro"><span>Records</span><span class="num">${total}</span></div>
+    </div></div>
+    <div class="card"><div class="card-h">Solution link</div><div class="card-b">
+      <div class="notice">The link to <b>${esc(sol(o.solutionId).name)}</b> is binding and permanent. Record partition, role assignments and the menu override are all written against that model, so there is no re-point path — in the router, the host or the client.</div>
+      <div class="btnrow" style="margin-top:14px">
+        <button class="btn" data-act="open-solution" data-id="${o.solutionId}">Design this solution</button>
+        <button class="btn" data-act="open-runtime" data-id="${o.id}">Open in Runtime ↗</button>
+      </div>
+    </div></div>
+  </div></div>`;
+}
+function opMenu(o){
+  const overridden=!!DB.opMenus[o.id];
+  const items=overridden?DB.opMenus[o.id]:DB.defaultMenu;
+  return `<div class="view">
+    <div class="card">
+      <div class="card-h">
+        ${overridden?'<span class="pill warn">override</span>':'<span class="pill">inheriting solution default</span>'}
+        <span class="spacer"></span>
+        ${overridden
+          ? `<button class="btn" data-act="revert-menu" data-id="${o.id}">Revert to inherit</button>`
+          : `<button class="btn pri" data-act="override-menu" data-id="${o.id}">Override</button>`}
+      </div>
+      <div class="card-b">
+        <p class="hint" style="margin:0 0 12px">Effective menu = <span class="mono">operation.config.menu ?? solution.default_menu ?? []</span>. Override replaces the whole menu — per-item merge is ruled out.</p>
+        ${menuItemsEditor(items, overridden, o.id)}
+      </div>
+    </div>
+  </div>`;
+}
+function menuItemsEditor(items, editable, opId){
+  const row = (it,depth,idx,parent) => `
+    <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;margin-left:${depth*20}px;background:${depth?'#101719':'var(--panel2)'}">
+      <span class="mono" style="color:var(--dim2);font-size:10.5px">${it.items?'group':'item'}</span>
+      <b style="font-size:12.5px">${esc(it.label)}</b>
+      ${it.page?`<span class="chip">${esc(it.page)}${page(it.page)&&page(it.page).version>0?'':' <span style="color:var(--danger)">unpublished</span>'}</span>`:''}
+      <span class="spacer"></span>
+      <span class="chips">${(it.roles||[]).map(r=>`<span class="chip on">${esc(role(r)?role(r).name:r)}</span>`).join('')||'<span class="chip" style="color:var(--danger)">no roles → hidden</span>'}</span>
+      ${editable?`<button class="btn sm ghost" data-act="menu-noop" title="Reorder">↕</button>
+                  <button class="btn sm ghost danger" data-act="menu-remove" data-scope="${opId||'default'}" data-i="${idx}" data-p="${parent}">✕</button>`:''}
+    </div>`;
+  let out='';
+  items.forEach((it,i)=>{ out+=row(it,0,i,-1); (it.items||[]).forEach((ch,j)=>{ out+=row(ch,1,j,i); }); });
+  if(!items.length) out=`<div class="hint">Empty menu — the Runtime app shows its no-menu fallback.</div>`;
+  if(editable) out+=`<div class="btnrow" style="margin-top:10px">
+      <button class="btn sm" data-act="menu-add" data-scope="${opId||'default'}">Add item</button>
+      <button class="btn sm" data-act="menu-add-group" data-scope="${opId||'default'}">Add group</button>
+      <span class="hint" style="margin:0">One level of nesting max. Paths must resolve to published versions.</span></div>`;
+  return out;
+}
+function opAssignments(o){
+  const rows=DB.assignments.filter(a=>a.operationId===o.id);
+  return `<div class="view">
+    <div class="card">
+      <div class="card-h">Role assignments <span class="pill">${esc(o.name)}</span><span class="spacer"></span>
+        <button class="btn sm" data-act="dlg" data-v="new-assignment">Assign user</button></div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>User</th><th>Email</th><th>Roles in this operation</th></tr></thead>
+        <tbody>${rows.length?rows.map(a=>`<tr>
+          <td><b>${esc(user(a.userId).name)}</b></td>
+          <td class="id">${esc(user(a.userId).email)}</td>
+          <td><div class="chips">${DB.roles.map(r=>`
+            <button class="chip ${a.roles.includes(r.id)?'on':''}" data-act="toggle-role" data-u="${a.userId}" data-o="${o.id}" data-r="${r.id}">${esc(r.name)}</button>`).join('')}</div></td>
+        </tr>`).join(''):`<tr><td colspan="3"><div class="empty"><h3>Nobody assigned</h3><p>Menus are deny-default: an unassigned user sees an empty app.</p></div></td></tr>`}</tbody>
+      </table></div>
+    </div>
+    <p class="hint" style="margin-top:10px">Keyed <span class="mono">(org, operation, user) → roleIds</span>. Roles are declared by the linked solution.</p>
+  </div>`;
+}
+
+/* ── workspace: implementer levels ── */
+function viewImplementers(){
+  const levels=['none','read','write','admin'];
+  return `<div class="view">
+    <div class="vh"><h1>Implementer levels</h1></div>
+    <p class="vsub">Design-plane access, keyed <span class="mono">(user, solution) → level</span>. Ranks <span class="mono">none &lt; read &lt; write &lt; admin</span>. Write gates config/page save and publish; admin gates operations and governance. No rows declared for a solution ⇒ everyone is admin.</p>
+    <div class="card"><div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>User</th><th>Solution</th><th>Level</th><th></th></tr></thead>
+      <tbody>${DB.implementers.map((im,i)=>`<tr>
+        <td><b>${esc(user(im.userId).name)}</b><div class="id">${esc(user(im.userId).email)}</div></td>
+        <td>${esc(sol(im.solutionId).name)}<div class="id">${esc(im.solutionId)}</div></td>
+        <td><select class="inp" style="width:auto" data-act="set-level" data-i="${i}">
+          ${levels.map(l=>`<option ${l===im.level?'selected':''}>${l}</option>`).join('')}</select></td>
+        <td style="text-align:right"><button class="btn sm ghost danger" data-act="rm-implementer" data-i="${i}">Remove</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div></div>
+  </div>`;
+}
+
+/* ── solution: overview ── */
+function viewOverview(){
+  const s=sol(S.console.solutionId), ops=opsFor(s.id);
+  const dataOp=ops.find(o=>o.id===S.console.dataOperationId);
+  return `<div class="view">
+    <div class="vh"><h1>${esc(s.name)}</h1><span class="pill ${s.origin}">${esc(s.origin)}</span></div>
+    <p class="vsub"><span class="mono">${esc(s.id)}</span> · created ${esc(s.created)} · model version <b>${DB.configVersions[0].v}</b> published ${esc(DB.configVersions[0].at)}</p>
+    <div class="grid2">
+      <div class="card"><div class="card-h">Operations running this solution</div><div class="card-b">
+        ${ops.length?ops.map(o=>`<div class="ro"><span>${esc(o.name)} <span class="mono" style="color:var(--dim2)">${esc(o.id)}</span></span>
+          <span>${o.id===S.console.dataOperationId?'<span class="pill acc">data operation</span>':`<button class="btn sm" data-act="set-data-op" data-id="${o.id}">Build against this</button>`}</span></div>`).join('')
+         :'<div class="hint">None yet. The solution still opens — authoring is never gated on data.</div>'}
+        <p class="hint" style="margin-top:12px">Console reads records from the data operation${dataOp?` (<b>${esc(dataOp.name)}</b>)`:''} so the SDM editor and page preview show what the Runtime host shows.</p>
+      </div></div>
+      <div class="card"><div class="card-h">Design artifacts</div><div class="card-b">
+        <div class="ro"><span>Pages (draft)</span><span class="num">${DB.pages.length}</span></div>
+        <div class="ro"><span>Published paths</span><span class="num">${publishedPages().length}</span></div>
+        <div class="ro"><span>Record types</span><span class="num">${DB.recordTypes.length}</span></div>
+        <div class="ro"><span>Attributes in pool</span><span class="num">${DB.attributes.length}</span></div>
+        <div class="ro"><span>Workflows</span><span class="num">${DB.workflows.length}</span></div>
+        <div class="ro"><span>Roles</span><span class="num">${DB.roles.length}</span></div>
+        <div class="btnrow" style="margin-top:14px">
+          ${['pages','record-types','workflows','menu','workbench'].map(id=>
+            `<button class="btn sm" data-act="section" data-id="${id}">${esc(SECTIONS.solution.find(x=>x.id===id).label)}</button>`).join('')}
+        </div>
+      </div></div>
+    </div>
+  </div>`;
+}
+
+/* ── solution: SDM toolbar shared by SDM sections ── */
+function sdmToolbar(){
+  const c=S.console;
+  return `<div class="toolbar">
+    <span class="lbl">Shared Data Model</span>
+    <span class="pill">draft v${DB.configVersions[0].v}+</span>
+    ${c.sdmDirty?'<span class="pill warn">unsaved draft</span>':'<span class="pill pos">saved</span>'}
+    <div class="spacer"></div>
+    <button class="btn" data-act="save-config" ${c.sdmDirty?'':'disabled'}>Save draft</button>
+    <button class="btn" data-act="dlg" data-v="config-versions">Versions</button>
+    <button class="btn pri" data-act="dlg" data-v="publish-config">Publish model</button>
+  </div>`;
+}
+
+/* ── solution: record types ── */
+function viewRecordTypes(){
+  const c=S.console, r=rt(c.selRecordType);
+  return sdmToolbar()+`<div class="md" style="height:calc(100% - 41px)">
+    <div class="md-list">
+      <div class="md-list-h"><span class="t">Record types</span><span class="spacer"></span>
+        <button class="btn sm" data-act="add-record-type">New</button></div>
+      ${DB.recordTypes.map(x=>`<button class="li" data-act="sel-rt" data-id="${x.id}" aria-current="${x.id===c.selRecordType}">
+        <div class="n">${esc(x.name)}</div><div class="s">${esc(x.id)} · ${x.fields.length} fields</div></button>`).join('')}
+    </div>
+    <div class="md-detail"><div class="view">
+      <div class="vh"><h1>${esc(r.name)}</h1><span class="pill">${esc(r.id)}</span></div>
+      <p class="vsub">Records are never edited directly — every mutation flows through this type's workflow activities.</p>
+      <div class="grid2">
+        <div class="card"><div class="card-h">Definition</div><div class="card-b">
+          <label class="f"><span>Display name</span><input class="inp" value="${esc(r.name)}" data-bind="sdm"></label>
+          <label class="f"><span>Id</span><input class="inp mono" value="${esc(r.id)}" disabled></label>
+          <label class="f"><span>Workflow binding <span style="color:var(--amber)">required</span></span>
+            <select class="inp" data-act="bind-wf">${DB.workflows.map(w=>`<option value="${w.id}" ${w.id===r.workflow?'selected':''}>${esc(w.name)} — ${esc(w.id)}</option>`).join('')}</select></label>
+          <p class="hint">A record type without a workflow has no way to be created or changed, so the editor will not save one.</p>
+        </div></div>
+        <div class="card"><div class="card-h">Custom fields <span class="pill">${r.fields.length}</span></div><div class="card-b">
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>Key</th><th>Label</th><th>Type</th><th></th></tr></thead>
+            <tbody>${r.fields.map((f,i)=>`<tr><td class="id">${esc(f.key)}</td><td>${esc(f.label)}</td>
+              <td><span class="chip">${esc(f.type)}</span></td>
+              <td style="text-align:right"><button class="btn sm ghost danger" data-act="rm-field" data-i="${i}">✕</button></td></tr>`).join('')}</tbody>
+          </table></div>
+          <div class="btnrow" style="margin-top:10px"><button class="btn sm" data-act="add-field">Add field</button></div>
+          <p class="hint">Activity attribute → field mapping is exact-key only. Unmatched captured attributes are dropped on purpose.</p>
+        </div></div>
+        <div class="card"><div class="card-h">Read access (RBAC)</div><div class="card-b">
+          <div class="chips">${DB.roles.map(x=>`<button class="chip ${r.readRoles.includes(x.id)?'on':''}" data-act="toggle-read-role" data-r="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+          <p class="hint">Default-deny once the solution declares roles. The partition filter runs server-side; an unreadable record answers <span class="mono">not found</span>.</p>
+        </div></div>
+      </div>
+    </div></div>
+  </div>`;
+}
+
+/* ── solution: attributes ── */
+function viewAttributes(){
+  const c=S.console, a=attr(c.selAttribute);
+  const types=['text','number','date','list','fk','photo','file','composite'];
+  return sdmToolbar()+`<div class="md" style="height:calc(100% - 41px)">
+    <div class="md-list">
+      <div class="md-list-h"><span class="t">Attribute pool</span><span class="spacer"></span>
+        <button class="btn sm" data-act="add-attribute">New</button></div>
+      ${DB.attributes.map(x=>`<button class="li" data-act="sel-attr" data-id="${x.key}" aria-current="${x.key===c.selAttribute}">
+        <div class="n">${esc(x.label)}</div><div class="s">${esc(x.key)} · ${esc(x.type)}${x.multi?' · multi':''}</div></button>`).join('')}
+    </div>
+    <div class="md-detail"><div class="view">
+      <div class="vh"><h1>${esc(a.label)}</h1><span class="pill">${esc(a.type)}</span></div>
+      <p class="vsub">One pool, shared by every activity that captures this thing. <span class="mono">${esc(a.key)}</span></p>
+      <div class="grid2">
+        <div class="card"><div class="card-h">Attribute</div><div class="card-b">
+          <label class="f"><span>Key</span><input class="inp mono" value="${esc(a.key)}" data-bind="sdm"></label>
+          <label class="f"><span>Label</span><input class="inp" value="${esc(a.label)}" data-bind="sdm"></label>
+          <label class="f"><span>Type</span>
+            <select class="inp" data-act="set-attr-type">${types.map(t=>`<option ${t===a.type?'selected':''}>${t}</option>`).join('')}</select></label>
+          <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim)">
+            <input type="checkbox" ${a.multi?'checked':''} data-act="toggle-multi"> Multi — capture many values
+          </label>
+        </div></div>
+        <div class="card"><div class="card-h">Type configuration</div><div class="card-b">
+          ${a.type==='fk'?`<label class="f"><span>Target record type</span>
+              <select class="inp" data-act="set-fk">${DB.recordTypes.map(r=>`<option value="${r.id}" ${r.id===a.fk?'selected':''}>${esc(r.name)} — ${esc(r.id)}</option>`).join('')}</select></label>
+            <p class="hint">Renders as a record picker; the value stored is the target record id.</p>`
+          : a.type==='list'?`<label class="f"><span>Options — one per line</span>
+              <textarea class="inp" rows="5" data-bind="sdm">${esc((a.options||[]).join('\n'))}</textarea></label>`
+          : a.type==='text'?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim)">
+              <input type="checkbox" ${a.multiline?'checked':''} data-act="toggle-multiline"> Multiline</label>
+            <p class="hint">Multiline renders a textarea in the activity form.</p>`
+          : (a.type==='photo'||a.type==='file')?`<p class="hint" style="margin:0">Uploads go through the client's upload seam and are stored by value descriptor. Multi is configuration, not a separate type.</p>
+            <div class="ro" style="margin-top:10px"><span>Accepted</span><span class="mono">${a.type==='photo'?'image/*':'any'}</span></div>
+            <div class="ro"><span>Descriptor</span><span class="mono">{ url, name, size, taken_at? }</span></div>`
+          : a.type==='composite'?`<p class="hint" style="margin:0">A composite is a row of sub-attribute references plus section markers, composed from this same pool.</p>`
+          : `<p class="hint" style="margin:0">No extra configuration for <span class="mono">${esc(a.type)}</span>.</p>`}
+        </div></div>
+        <div class="card"><div class="card-h">Used by</div><div class="card-b">
+          ${usedBy(a.key).length?usedBy(a.key).map(u=>`<div class="ro"><span>${esc(u.wf)} · ${esc(u.act)}</span>
+            <span>${u.required?'<span class="pill warn">required</span>':'<span class="pill">optional</span>'}</span></div>`).join('')
+            :'<div class="hint">Not used by any activity yet.</div>'}
+        </div></div>
+      </div>
+    </div></div>
+  </div>`;
+}
+function usedBy(key){
+  const out=[];
+  DB.workflows.forEach(w=>w.activities.forEach(a=>a.usages.forEach(u=>{
+    if(u.kind==='attr'&&u.key===key) out.push({wf:w.name, act:a.name, required:u.required});
+  })));
+  return out;
+}
+
+/* ── solution: workflows (three-level) ── */
+function viewWorkflows(){
+  const c=S.console, w=wf(c.selWorkflow), a=w.activities.find(x=>x.id===c.selActivity)||w.activities[0];
+  return sdmToolbar()+`<div style="display:grid;grid-template-columns:210px 210px 1fr;height:calc(100% - 41px);min-height:0">
+    <div class="md-list">
+      <div class="md-list-h"><span class="t">Workflows</span><span class="spacer"></span>
+        <button class="btn sm" data-act="add-workflow">New</button></div>
+      ${DB.workflows.map(x=>`<button class="li" data-act="sel-wf" data-id="${x.id}" aria-current="${x.id===c.selWorkflow}">
+        <div class="n">${esc(x.name)}</div><div class="s">${esc(x.id)} · ${x.activities.length} activities</div></button>`).join('')}
+    </div>
+    <div class="md-list">
+      <div class="md-list-h"><span class="t">Activities</span><span class="spacer"></span>
+        <button class="btn sm" data-act="add-activity">New</button></div>
+      ${w.activities.map(x=>`<button class="li" data-act="sel-act" data-id="${x.id}" aria-current="${a&&x.id===a.id}">
+        <div class="n">${esc(x.name)}</div><div class="s">${esc(x.id)}</div></button>`).join('')}
+    </div>
+    <div class="md-detail">${a?activityEditor(w,a):'<div class="empty"><h3>No activities</h3><p>Add one to start.</p></div>'}</div>
+  </div>`;
+}
+function activityEditor(w,a){
+  return `<div class="view">
+    <div class="vh"><h1>${esc(a.name)}</h1><span class="pill">${esc(a.id)}</span></div>
+    <p class="vsub">${esc(w.name)} workflow · display name singular, acts on one instance.</p>
+    <div class="grid2">
+      <div class="card"><div class="card-h">Activity</div><div class="card-b">
+        <label class="f"><span>Display name</span><input class="inp" value="${esc(a.name)}" data-bind="sdm"></label>
+        <label class="f"><span>Id</span><input class="inp mono" value="${esc(a.id)}" data-bind="sdm"></label>
+        <label class="f"><span>Description</span><input class="inp" value="${esc(a.description)}" data-bind="sdm"></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <label class="f"><span>Sort order</span><input class="inp" value="${a.sort}" data-bind="sdm"></label>
+          <label class="f"><span>Record map</span>
+            <select class="inp" data-bind="sdm">${DB.recordTypes.map(r=>`<option ${r.id===a.recordMap?'selected':''}>${esc(r.id)}</option>`).join('')}</select></label>
+        </div>
+        <label class="f"><span>Show condition — FluxScript</span>
+          <textarea class="inp" rows="2" placeholder="always shown when empty" data-bind="sdm">${esc(a.showCondition)}</textarea></label>
+      </div></div>
+
+      <div class="card"><div class="card-h">Attribute usage <span class="pill">${a.usages.filter(u=>u.kind==='attr').length} attributes</span></div><div class="card-b">
+        ${a.usages.map((u,i)=>u.kind==='section'
+          ? `<div style="display:flex;align-items:center;gap:9px;padding:6px 10px;margin-bottom:6px;border-left:2px solid var(--acc);background:#101719">
+               <span class="mono" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim2)">section</span>
+               <b style="font-size:12.5px">${esc(u.label)}</b><span class="spacer"></span>
+               <button class="btn sm ghost" data-act="usage-up" data-i="${i}">↑</button>
+               <button class="btn sm ghost" data-act="usage-down" data-i="${i}">↓</button>
+               <button class="btn sm ghost danger" data-act="usage-rm" data-i="${i}">✕</button></div>`
+          : `<div style="display:flex;align-items:center;gap:9px;padding:7px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:6px;background:var(--panel2)">
+               <b style="font-size:12.5px">${esc(attr(u.key)?attr(u.key).label:u.key)}</b>
+               <span class="chip">${esc(u.key)}</span>
+               <span class="chip">${esc(attr(u.key)?attr(u.key).type:'?')}</span>
+               <span class="spacer"></span>
+               <button class="chip ${u.required?'on':''}" data-act="usage-req" data-i="${i}">${u.required?'required':'optional'}</button>
+               <button class="btn sm ghost" data-act="usage-up" data-i="${i}">↑</button>
+               <button class="btn sm ghost" data-act="usage-down" data-i="${i}">↓</button>
+               <button class="btn sm ghost danger" data-act="usage-rm" data-i="${i}">✕</button></div>`).join('')}
+        <div class="btnrow" style="margin-top:10px">
+          <select class="inp" style="width:auto" id="usage-pick">
+            ${DB.attributes.map(x=>`<option value="${x.key}">${esc(x.label)} — ${esc(x.key)}</option>`).join('')}</select>
+          <button class="btn sm" data-act="usage-add">Add attribute</button>
+          <button class="btn sm" data-act="usage-section">Insert section</button>
+        </div>
+      </div></div>
+
+      <div class="card" style="grid-column:1/-1"><div class="card-h">Hooks <span class="pill">FluxScript</span>
+        <span class="spacer"></span><span class="hint" style="margin:0">Scope-blind: never name an org, operation or project — scope arrives through <span class="mono">ctx · attrs · records · services</span>.</span></div>
+        <div class="card-b" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <label class="f" style="margin:0"><span>Before</span>
+            <textarea class="inp" rows="5" placeholder="// runs before the activity commits" data-bind="sdm">${esc(a.before)}</textarea></label>
+          <label class="f" style="margin:0"><span>After</span>
+            <textarea class="inp" rows="5" placeholder="// runs after the activity commits" data-bind="sdm">${esc(a.after)}</textarea></label>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── solution: roles ── */
+function viewRoles(){
+  return sdmToolbar()+`<div class="view">
+    <div class="vh"><h1>Roles</h1><div class="spacer"></div><button class="btn" data-act="add-role">Add role</button></div>
+    <p class="vsub">Declared by the solution, assigned per operation. Menu visibility and page <span class="mono">access.open</span> both reference these ids — two deny-default layers.</p>
+    <div class="card"><div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Name</th><th>Id</th><th>Description</th><th>Pages opened</th><th>Assigned (all ops)</th></tr></thead>
+      <tbody>${DB.roles.map(r=>{
+        const pages=DB.pages.filter(p=>p.access.includes(r.id)).length;
+        const asg=DB.assignments.filter(a=>a.roles.includes(r.id)).length;
+        return `<tr><td><b>${esc(r.name)}</b></td><td class="id">${esc(r.id)}</td><td>${esc(r.description)}</td>
+          <td class="num">${pages}</td><td class="num">${asg}</td></tr>`;}).join('')}</tbody>
+    </table></div></div>
+  </div>`;
+}
+
+/* ── solution: menu (default_menu) ── */
+function viewMenu(){
+  return sdmToolbar()+`<div class="view">
+    <div class="vh"><h1>Default menu</h1></div>
+    <p class="vsub">The solution's <span class="mono">default_menu</span>, versioned and published with the model — so a prebuilt solution ships working navigation. Operations may replace it wholesale.</p>
+    <div class="card"><div class="card-h">Items <span class="spacer"></span>
+      <span class="hint" style="margin:0">Validated at <span class="mono">config.put</span>: published pages, declared roles, one level of nesting.</span></div>
+      <div class="card-b">${menuItemsEditor(DB.defaultMenu, true, null)}</div>
+    </div>
+    <div class="card" style="margin-top:14px"><div class="card-h">Where this menu is in force</div><div class="card-b">
+      ${opsFor(S.console.solutionId).map(o=>`<div class="ro"><span>${esc(o.name)}</span>
+        <span>${DB.opMenus[o.id]?'<span class="pill warn">overridden</span>':'<span class="pill pos">inheriting</span>'}</span></div>`).join('')||'<div class="hint">No operations yet.</div>'}
+    </div></div>
+  </div>`;
+}
+
+/* ── solution: pages (the one document editor) ── */
+function viewPages(){
+  const c=S.console;
+  const folders={};
+  DB.pages.forEach(p=>{ const [f]=p.path.split('/'); (folders[f]=folders[f]||[]).push(p); });
+  const tree=Object.entries(folders).map(([f,ps])=>`
+    <div class="pfolder">${esc(f)}/</div>
+    ${ps.map(p=>`<button class="pnode" data-act="open-page" data-id="${p.path}" aria-current="${p.path===c.activeTab}">
+      <span>${esc(p.path.split('/')[1])}</span><span class="spacer"></span>
+      ${p.version>0?`<span style="color:var(--dim2)">v${p.version}</span>`:'<span style="color:var(--amber)">draft</span>'}
+    </button>`).join('')}`).join('');
+
+  const active=c.activeTab?page(c.activeTab):null;
+  const side = c.sidePanel==='components' ? `
+    <div class="pside">
+      <div class="ptree-h"><span class="t">Components</span><span class="spacer"></span>
+        <button class="btn sm ghost" data-act="side" data-v="">✕</button></div>
+      ${[['▤','Record grid','rows from a record type'],['▭','Record view','one record + its activities'],
+         ['⌗','Board','group records by a field'],['◫','Form','activity capture surface'],
+         ['◷','Metric','single aggregate'],['⤢','Splitter','two panes, resizable'],
+         ['☰','Menu nav','role-filtered menu'],['⬓','Tabs','switch between slots']]
+        .map(([g,n,d])=>`<div class="comp"><div class="g">${g}</div><div><div class="n">${esc(n)}</div><div class="d">${esc(d)}</div></div></div>`).join('')}
+    </div>` : c.sidePanel==='search' ? `
+    <div class="pside">
+      <div class="ptree-h"><span class="t">Search</span><span class="spacer"></span>
+        <button class="btn sm ghost" data-act="side" data-v="">✕</button></div>
+      <div style="padding:10px"><input class="inp" placeholder="Find in pages…" value="crew"></div>
+      <div style="padding:0 10px 10px">
+        ${[['dispatch/board','crew_id column binding'],['dispatch/board','group by crew shift'],
+           ['admin/crews','crew roster grid'],['assets/register','crew last on site']]
+          .map(([p,m])=>`<div style="padding:7px 0;border-bottom:1px solid var(--line)">
+            <div class="mono" style="font-size:11px;color:#7FD0E0">${esc(p)}</div>
+            <div style="font-size:11.5px;color:var(--dim)">${esc(m)}</div></div>`).join('')}
+      </div>
+    </div>` : '';
+
+  return `<div class="pages" style="grid-template-columns:206px 1fr ${c.sidePanel?'auto':'0'}">
+    <div class="ptree">
+      <div class="ptree-h"><span class="t">Pages</span><span class="spacer"></span>
+        <button class="btn sm ghost" data-act="side" data-v="components" title="Components">◫</button>
+        <button class="btn sm ghost" data-act="side" data-v="search" title="Search">⌕</button>
+      </div>
+      ${tree}
+    </div>
+    <div class="pmid">
+      <div class="ptabs">
+        ${c.openTabs.map(p=>`<button class="ptab" data-act="tab" data-id="${p}" aria-selected="${p===c.activeTab}">
+          ${c.dirtyTabs.includes(p)?'<span class="dot"></span>':''}<span>${esc(p)}</span>
+          <span class="x" data-act="close-tab" data-id="${p}">✕</span></button>`).join('')||'<div style="padding:8px 12px;color:var(--dim2);font-size:12px">No page open</div>'}
+        <div class="spacer"></div>
+        ${active?`<div class="btnrow" style="padding:0 10px">
+          <button class="btn sm" data-act="dlg" data-v="page-versions">Versions (${(DB.pageVersions[active.path]||[]).length})</button>
+          <button class="btn sm pri" data-act="dlg" data-v="publish-page">Publish</button></div>`:''}
+      </div>
+      <div class="pcanvas">${active?pagePreview(active):`
+        <div class="empty"><h3>Nothing open</h3><p>Pick a page from the tree. Drafts live in the <span class="mono">pages</span> table; the Runtime app never sees them.</p></div>`}</div>
+      ${c.consoleOpen?`<div class="pconsole">
+        <div class="pconsole-h"><span class="lbl mono" style="font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)">Console</span>
+          <span class="pill">${S.console.log.length} lines</span><div class="spacer"></div>
+          <button class="btn sm ghost" data-act="clear-log">Clear</button>
+          <button class="btn sm ghost" data-act="toggle-console">Hide</button></div>
+        <div class="pconsole-b plog">${S.console.log.map(l=>`<div><b>[${esc(l.t)}]</b> ${esc(l.m)}</div>`).join('')}</div>
+      </div>`:`<div class="pconsole" style="height:auto"><div class="pconsole-h">
+          <span class="mono" style="font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)">Console</span>
+          <div class="spacer"></div><button class="btn sm ghost" data-act="toggle-console">Show</button></div></div>`}
+    </div>
+    ${side}
+  </div>`;
+}
+function pagePreview(p){
+  const recs=DB.records[S.console.dataOperationId]||{};
+  const wos=recs.rt_work_orders||[], assets=recs.rt_assets||[];
+  const body = p.path==='dispatch/board' ? `
+      <div class="board">
+        ${['Unassigned','Dispatched','On site','Complete'].map(col=>`
+          <div class="col"><h5>${col}</h5>
+            ${wos.filter(w=>w.status===col).map(w=>`<div class="wo"><b>${esc(w.id)}</b>${esc(w.name)}</div>`).join('')||'<div style="font-size:11px;color:#7A8A87">—</div>'}
+          </div>`).join('')}
+      </div>`
+    : p.path==='assets/register' ? `
+      <table><thead><tr><th>Tag</th><th>Asset</th><th>Status</th><th>Criticality</th><th>Last inspected</th></tr></thead>
+      <tbody>${assets.map(a=>`<tr><td>${esc(a.id)}</td><td>${esc(a.name)}</td><td>${esc(a.status)}</td><td>${esc(a.criticality)}</td><td>${esc(a.last_inspected_at)}</td></tr>`).join('')}</tbody></table>`
+    : p.path==='admin/crews' ? `
+      <table><thead><tr><th>Crew</th><th>Shift</th><th>Depot</th></tr></thead>
+      <tbody>${(recs.rt_crews||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.shift)}</td><td>${esc(c.depot)}</td></tr>`).join('')}</tbody></table>`
+    : p.path==='admin/sites' ? `
+      <table><thead><tr><th>Site</th><th>Region</th><th>Access</th></tr></thead>
+      <tbody>${(recs.rt_sites||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.region)}</td><td>${esc(c.access_notes)}</td></tr>`).join('')}</tbody></table>`
+    : `<div style="color:#5A6B68;font-size:12px">Composition in progress — no components placed yet.</div>`;
+  return `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <span class="mono" style="font-size:11px;color:var(--dim2)">draft preview · page-runtime · records from ${esc(op(S.console.dataOperationId)?op(S.console.dataOperationId).name:'—')}</span>
+      <div class="spacer"></div>
+      <span class="chips">${p.access.map(r=>`<span class="chip on">${esc(role(r).name)}</span>`).join('')}</span>
+      <span class="pill">${p.version>0?`published v${p.version}`:'never published'}</span>
+    </div>
+    <div class="prev"><h4>${esc(p.name)}</h4>${body}</div>`;
+}
+
+/* ── solution: workbench (light component in the dark shell) ── */
+function viewWorkbench(){
+  const c=S.console, dataOp=op(c.dataOperationId);
+  if(!dataOp || dataOp.solutionId!==c.solutionId) return `<div class="view">
+    <div class="notice">No data operation. This solution has no operation linked to it yet, so there are no records to work against. Create one under Operations, then pick it in the header's Data menu.</div></div>`;
+  const r=rt(c.selRecordType), rows=(DB.records[dataOp.id]||{})[r.id]||[];
+  const acts=wf(r.workflow).activities;
+  const sel=rows[0];
+  return `<div class="workbench">
+    <div class="wb-list">
+      <div class="wb-h">Record types</div>
+      ${DB.recordTypes.map(x=>{const n=((DB.records[dataOp.id]||{})[x.id]||[]).length;
+        return `<button class="wb-i" data-act="sel-rt" data-id="${x.id}" aria-current="${x.id===c.selRecordType}">
+        ${esc(x.name)} <span class="s">· ${n}</span><div class="s">${esc(x.id)}</div></button>`;}).join('')}
+    </div>
+    <div class="wb-main">
+      <div class="wb-bar">
+        <b>${esc(r.name)}</b><span class="s" style="font-family:var(--mono);font-size:10.5px;color:#6B7B78">${esc(dataOp.name)} · ${rows.length} records</span>
+        <span class="spacer"></span>
+        <button class="wbtn" data-act="wb-schema">Schema navigator</button>
+        <button class="wbtn" data-act="wb-csv">Import CSV</button>
+        ${acts.map(a=>`<button class="wbtn pri" data-act="wb-run" data-id="${a.id}">${esc(a.name)}</button>`).join('')}
+      </div>
+      ${rows.length?`<table><thead><tr><th>Id</th><th>Name</th>${r.fields.map(f=>`<th>${esc(f.label)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row,i)=>`<tr aria-selected="${i===0}">
+          <td class="mono" style="font-family:var(--mono);font-size:11px;color:#1F6F7A">${esc(row.id)}</td>
+          <td>${esc(row.name)}</td>
+          ${r.fields.map(f=>`<td>${esc(row[f.key]??'—')}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+        :`<div style="padding:30px;text-align:center;color:#6B7B78">No records of this type in ${esc(dataOp.name)}.</div>`}
+      ${sel?`<div class="wb-rec">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <b>${esc(sel.name)}</b><span style="font-family:var(--mono);font-size:11px;color:#6B7B78">${esc(sel.id)}</span>
+          <span class="spacer"></span>
+          <span style="font-size:11px;color:#6B7B78">activities available on this record</span>
+        </div>
+        ${r.fields.map(f=>`<div class="fr"><span>${esc(f.label)}</span><span>${esc(sel[f.key]??'—')}</span></div>`).join('')}
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          ${acts.map(a=>`<button class="wbtn" data-act="wb-run" data-id="${a.id}">${esc(a.name)}</button>`).join('')}
+        </div>
+      </div>`:''}
+    </div>
+  </div>`;
+}
+
+/* ── console assembly ── */
+function renderConsole(){
+  const c=S.console;
+  const body = c.scope==='workspace'
+    ? ({ organisation:viewOrganisation, solutions:viewSolutions, operations:viewOperations, implementers:viewImplementers }[c.section]||viewOrganisation)()
+    : ({ overview:viewOverview, pages:viewPages, 'record-types':viewRecordTypes, attributes:viewAttributes,
+         workflows:viewWorkflows, roles:viewRoles, menu:viewMenu, workbench:viewWorkbench }[c.section]||viewOverview)();
+  const flush=['pages','workbench','operations','record-types','attributes','workflows'].includes(c.section);
+  return `<div class="app console">
+    ${consoleHeader()}
+    <div class="cbody">${consoleNav()}
+      <main class="cmain" ${flush?'style="overflow:hidden"':''}>${body}</main></div>
+    ${dialogHtml()}
+    <div class="toasts">${c.toasts.map(t=>`<div class="toast">${esc(t.msg)}${t.meta?`<div class="m">${esc(t.meta)}</div>`:''}</div>`).join('')}</div>
+  </div>`;
+}
+
+/* ══ dialogs ════════════════════════════════════════════════════════ */
+function dialogHtml(){
+  const d=S.console.dialog; if(!d) return '';
+  const body = {
+    'new-solution':()=>`<div class="dlg-b">
+        <label class="f"><span>Name</span><input class="inp" id="dlg-name" placeholder="Meter Replacement" autofocus></label>
+        <label class="f"><span>Id</span><input class="inp mono" id="dlg-id" placeholder="sol_meter_replacement"></label>
+        <p class="hint">Created as <span class="mono">origin: authored</span>. It opens with no operations and no records — authoring is never gated on data.</p>
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" data-act="create-solution">Create solution</button></div>`,
+    'new-operation':()=>`<div class="dlg-b">
+        <label class="f"><span>Name</span><input class="inp" id="dlg-name" placeholder="Southern Region" autofocus></label>
+        <label class="f"><span>Solution</span><select class="inp" id="dlg-sol">
+          ${DB.solutions.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+        <div class="notice">This link is permanent. An operation is never re-pointed at another solution — its records, role assignments and menu override are all written against that model.</div>
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" data-act="create-operation">Create operation</button></div>`,
+    'new-assignment':()=>`<div class="dlg-b">
+        <label class="f"><span>User</span><select class="inp" id="dlg-user">
+          ${DB.users.map(u=>`<option value="${u.id}">${esc(u.name)} — ${esc(u.email)}</option>`).join('')}</select></label>
+        <label class="f"><span>Roles</span><div class="chips" id="dlg-roles">
+          ${DB.roles.map(r=>`<button class="chip" data-act="dlg-role" data-r="${r.id}">${esc(r.name)}</button>`).join('')}</div></label>
+        <p class="hint">Deny-default: a user with no roles sees no menu items and can open no pages.</p>
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" data-act="create-assignment">Assign</button></div>`,
+    'publish-page':()=>{ const p=page(S.console.activeTab);
+      return `<div class="dlg-b">
+        <div class="ro"><span>Page</span><span class="mono">${esc(p.path)}</span></div>
+        <div class="ro"><span>New version</span><b>v${p.version+1}</b></div>
+        <label class="f" style="margin-top:14px"><span>Release notes — required, markdown</span>
+          <textarea class="inp" rows="5" id="dlg-readme" placeholder="What changed and why…"></textarea></label>
+        <p class="hint">Snapshots the draft into <span class="mono">page_versions</span>. Append-only: rollback republishes an older def as a new version — nothing is deleted or edited.</p>
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" id="dlg-go" data-act="publish-page" disabled>Publish v${p.version+1}</button></div>`; },
+    'page-versions':()=>{ const p=page(S.console.activeTab), vs=DB.pageVersions[p.path]||[];
+      return `<div class="dlg-b">
+        ${vs.length?vs.map(v=>`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+          <div style="display:flex;gap:9px;align-items:center">
+            <b>v${v.v}</b>${v.v===p.version?'<span class="pill pos">live</span>':''}
+            <span class="spacer"></span><span class="mono" style="font-size:11px;color:var(--dim2)">${esc(v.by)} · ${esc(v.at)}</span>
+            ${v.v!==p.version?`<button class="btn sm" data-act="rollback-page" data-v="${v.v}">Republish</button>`:''}
+          </div>
+          <div style="font-size:12.5px;color:var(--dim);margin-top:4px">${esc(v.readme)}</div>
+        </div>`).join(''):'<div class="hint">Never published.</div>'}
+        <p class="hint" style="margin-top:12px">Diffing is a non-goal. The readme is the record of what changed.</p>
+      </div><div class="dlg-f"><button class="btn" data-act="close-dlg">Close</button></div>`; },
+    'publish-config':()=>`<div class="dlg-b">
+        <div class="ro"><span>Solution</span><b>${esc(sol(S.console.solutionId).name)}</b></div>
+        <div class="ro"><span>New model version</span><b>v${DB.configVersions[0].v+1}</b></div>
+        <label class="f" style="margin-top:14px"><span>Release notes — required</span>
+          <textarea class="inp" rows="5" id="dlg-readme" placeholder="Model changes in this version…"></textarea></label>
+        <p class="hint">Snapshots the whole config into <span class="mono">sdm_config_versions</span>, <span class="mono">default_menu</span> included. Every host evaluates against the draft, so rollback also restores the draft.</p>
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" id="dlg-go" data-act="publish-config" disabled>Publish model</button></div>`,
+    'config-versions':()=>`<div class="dlg-b">
+        ${DB.configVersions.map((v,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+          <div style="display:flex;gap:9px;align-items:center">
+            <b>v${v.v}</b>${i===0?'<span class="pill pos">latest</span>':''}
+            <span class="spacer"></span><span class="mono" style="font-size:11px;color:var(--dim2)">${esc(v.by)} · ${esc(v.at)}</span>
+            ${i!==0?`<button class="btn sm" data-act="rollback-config" data-v="${v.v}">Roll back</button>`:''}
+          </div>
+          <div style="font-size:12.5px;color:var(--dim);margin-top:4px">${esc(v.readme)}</div>
+        </div>`).join('')}
+      </div><div class="dlg-f"><button class="btn" data-act="close-dlg">Close</button></div>`,
+    'leave-guard':()=>`<div class="dlg-b">
+        <p style="margin:0 0 10px;font-size:13px">The model draft has unsaved changes. Leaving <b>${esc(SECTIONS.solution.find(s=>s.id===S.console.section).label)}</b> discards them.</p>
+        <p class="hint">Saving persists the whole config, reloads the solution to rebuild the model, and remounts every view.</p>
+      </div><div class="dlg-f">
+        <button class="btn ghost" data-act="close-dlg">Stay here</button>
+        <button class="btn danger" data-act="leave-discard">Discard and leave</button>
+        <button class="btn pri" data-act="leave-save">Save and leave</button></div>`,
+    'run-activity':()=>{ const a=findActivity(d.activityId);
+      return `<div class="dlg-b">
+        <p class="hint" style="margin:0 0 14px">Running an activity in the Console is how you test a workflow — it writes to <b>${esc(op(S.console.dataOperationId).name)}</b>, the same partition the Runtime app reads.</p>
+        ${a.usages.map(u=>u.kind==='section'
+          ? `<div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim2);margin:14px 0 6px">${esc(u.label)}</div>`
+          : `<label class="f"><span>${esc(attr(u.key).label)} ${u.required?'<span style="color:var(--amber)">required</span>':''}</span>
+              ${attr(u.key).type==='list'
+                ? `<select class="inp">${(attr(u.key).options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`
+                : attr(u.key).type==='fk'
+                ? `<select class="inp">${((DB.records[S.console.dataOperationId]||{})[attr(u.key).fk]||[]).map(r=>`<option>${esc(r.name)}</option>`).join('')}</select>`
+                : (attr(u.key).type==='photo'||attr(u.key).type==='file')
+                ? `<div class="inp" style="color:var(--dim2)">Choose file${attr(u.key).multi?'s':''}…</div>`
+                : attr(u.key).multiline
+                ? `<textarea class="inp" rows="3"></textarea>`
+                : `<input class="inp" type="${attr(u.key).type==='date'?'date':attr(u.key).type==='number'?'number':'text'}">`}
+            </label>`).join('')}
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" data-act="run-activity">${esc(a.name)}</button></div>`; },
+    'csv':()=>`<div class="dlg-b">
+        <label class="f"><span>Record type</span><select class="inp"><option>${esc(rt(S.console.selRecordType).name)}</option></select></label>
+        <div style="border:1px dashed var(--line2);border-radius:7px;padding:26px;text-align:center;color:var(--dim)">Drop a CSV here, or choose a file</div>
+        <p class="hint">Columns map to the record type's custom fields by exact key. Unmatched columns are dropped.</p>
+      </div><div class="dlg-f"><button class="btn ghost" data-act="close-dlg">Cancel</button>
+        <button class="btn pri" data-act="close-dlg">Import</button></div>`,
+    'schema':()=>`<div class="dlg-b">
+        <div style="display:flex;align-items:center;justify-content:center;gap:16px;padding:12px 0;flex-wrap:wrap">
+          <div style="text-align:right">
+            ${DB.recordTypes.filter(r=>r.fields.some(f=>f.type==='fk')&&r.id!==S.console.selRecordType).slice(0,2)
+              .map(r=>`<div class="chip" style="margin-bottom:6px">${esc(r.name)} →</div>`).join('')}
+          </div>
+          <div style="border:1px solid var(--acc);background:var(--acc-soft);border-radius:8px;padding:12px 18px;text-align:center">
+            <b>${esc(rt(S.console.selRecordType).name)}</b>
+            <div class="mono" style="font-size:10.5px;color:var(--dim)">${esc(S.console.selRecordType)}</div>
+          </div>
+          <div>
+            ${rt(S.console.selRecordType).fields.filter(f=>f.type==='fk')
+              .map(f=>`<div class="chip" style="margin-bottom:6px">→ ${esc(f.label)}</div>`).join('')||'<div class="hint">No outbound references</div>'}
+          </div>
+        </div>
+        <p class="hint" style="text-align:center">Click a neighbour to recentre. Inbound references on the left, outbound on the right.</p>
+      </div><div class="dlg-f"><button class="btn" data-act="close-dlg">Close</button></div>`
+  }[d.kind];
+  if(!body) return '';
+  const titles={ 'new-solution':'New solution','new-operation':'New operation','new-assignment':'Assign a user',
+    'publish-page':'Publish page','page-versions':'Version history','publish-config':'Publish model',
+    'config-versions':'Model version history','leave-guard':'Unsaved model changes','run-activity':'Run activity','csv':'Import CSV','schema':'Schema navigator' };
+  return `<div class="scrim" data-act="close-dlg-bg"><div class="dlg" role="dialog" aria-modal="true">
+    <div class="dlg-h">${esc(titles[d.kind]||'')}</div>${body()}</div></div>`;
+}
+function findActivity(id){
+  for(const w of DB.workflows){ const a=w.activities.find(x=>x.id===id); if(a) return a; }
+  return DB.workflows[0].activities[0];
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   RUNTIME
+   ══════════════════════════════════════════════════════════════════════ */
+function renderRuntime(){
+  const r=S.runtime, o=op(r.operationId), s=sol(o.solutionId);
+  if(!r.signedIn) return `<div class="app runtime"><div class="signin"><div class="box">
+      <div class="logo" style="margin:0 auto;width:26px;height:26px"></div>
+      <h2>${esc(s.name)}</h2><p>${esc(DB.org.name)}</p>
+      <input class="rinp" value="a.okafor@northwind-utilities.com" aria-label="Email">
+      <input class="rinp" type="password" value="••••••••••" aria-label="Password">
+      <button class="rbtn" data-act="sign-in">Sign in</button>
+      <p style="margin-top:16px;font-size:10.5px;letter-spacing:.08em;color:#8B9995;font-family:var(--mono)">POWERED BY FLUXUS</p>
+    </div></div></div>`;
+
+  const menu = visibleMenu(effectiveMenu(r.operationId), r.role);
+  const hasPublished = publishedPages().length>0 && r.operationId!=='op_dispatch_pilot';
+  const navItems = menu.length ? menu.map(it=>it.items
+      ? `<div class="rnav-g">${r.navCollapsed?'···':esc(it.label)}</div>
+         ${it.items.map(ch=>`<button class="rnav-i rnav-sub" data-act="rt-page" data-id="${ch.page}" aria-current="${ch.page===r.page}">
+            <span class="ico">▪</span>${r.navCollapsed?'':`<span>${esc(ch.label)}</span>`}</button>`).join('')}`
+      : `<button class="rnav-i" data-act="rt-page" data-id="${it.page}" aria-current="${it.page===r.page}">
+           <span class="ico">${it.label==='Dispatch'?'⇉':it.label==='Assets'?'▦':'◔'}</span>${r.navCollapsed?'':`<span>${esc(it.label)}</span>`}</button>`).join('')
+    : (hasPublished
+        ? `<div class="rnav-g">Pages</div>` + publishedPages().map(p=>`
+            <button class="rnav-i" data-act="rt-page" data-id="${p.path}" aria-current="${p.path===r.page}">
+              <span class="ico">❐</span>${r.navCollapsed?'':`<span>${esc(p.name)}</span>`}</button>`).join('')
+        : '');
+
+  return `<div class="app runtime">
+    <header class="rhdr">
+      <button class="icobtn" data-act="rt-nav" title="Toggle navigation">☰</button>
+      <div class="ident"><span class="org">${esc(DB.org.name)}</span><span class="dot">·</span><span class="sol">${esc(s.name)}</span></div>
+      <div class="spacer"></div>
+      <div class="uat"><span>UAT</span><button class="sw" data-act="rt-uat" aria-pressed="${r.uat}" aria-label="UAT mode"></button></div>
+      <button class="icobtn" data-act="rt-bell" title="Notifications">🔔<span class="badge">3</span></button>
+      <span class="opchip"><span class="led"></span>${esc(o.name)}</span>
+      <button class="icobtn" data-act="rt-menu" aria-expanded="${r.menuOpen}"><span class="avatar">${initials(user(r.userId).name)}</span></button>
+      ${r.menuOpen?`<div class="rmenu">
+        <div class="who"><div class="n">${esc(user(r.userId).name)}</div><div class="e">${esc(user(r.userId).email)}</div>
+          <div style="margin-top:6px" class="chips">${rolesOf(r.userId,r.operationId).map(x=>`<span class="rpill">${esc(role(x).name)}</span>`).join('')||'<span class="rpill">no roles</span>'}</div></div>
+        <button>Profile</button><button>Notification settings</button>
+        <button data-act="sign-out">Sign out</button>
+      </div>`:''}
+    </header>
+    ${r.uat?'<div class="uatstrip">UAT — this operation is running against acceptance data</div>':''}
+    <div class="rbody">
+      <nav class="rnav ${r.navCollapsed?'collapsed':''}">
+        <div class="rnav-items">${navItems||`<div class="rnav-g">Menu</div><div style="padding:10px;font-size:11.5px;color:var(--r-dim)">${r.navCollapsed?'':'Nothing visible for your roles.'}</div>`}</div>
+        <div class="rnav-foot">${r.navCollapsed?'ƒ':'POWERED BY FLUXUS'}</div>
+      </nav>
+      <main class="rmain">${runtimeContent(menu, hasPublished)}</main>
+    </div>
+  </div>`;
+}
+function initials(n){ return n.split(' ').map(x=>x[0]).join(''); }
+function visibleMenu(items, roleId){
+  return items.filter(it=>{
+    const ok=(it.roles||[]).includes(roleId);
+    if(it.items){ const kids=it.items.filter(c=>(c.roles||[]).includes(roleId)); it._kids=kids; return ok&&kids.length; }
+    return ok;
+  }).map(it=>it.items?{...it, items:it._kids}:it);
+}
+function runtimeContent(menu, hasPublished){
+  const r=S.runtime;
+  if(!hasPublished) return `<div class="rempty"><div>
+    <div class="t">Nothing published yet</div>
+    <div class="d">This operation's solution has no published pages. An implementer publishes a page in the Console and it appears here — there is no workbench escape hatch in the Runtime app.</div></div></div>`;
+  const flat=[]; menu.forEach(it=>it.items?it.items.forEach(c=>flat.push(c)):flat.push(it));
+  const current=flat.find(x=>x.page===r.page)||flat[0];
+  if(!current) return `<div class="rempty"><div>
+    <div class="t">Nothing open</div>
+    <div class="d">No menu item is visible for your roles in ${esc(op(r.operationId).name)}. Menus are deny-default — an operation admin assigns roles in the Console.</div></div></div>`;
+  const recs=DB.records[r.operationId]||{};
+  if(current.page==='dispatch/board') return rtBoard(recs);
+  if(current.page==='assets/register') return rtAssets(recs);
+  if(current.page==='admin/crews') return rtSimple('Crews','Roster for this operation', recs.rt_crews||[], [['name','Crew'],['shift','Shift'],['depot','Depot']]);
+  if(current.page==='admin/sites') return rtSimple('Sites','Where the assets live', recs.rt_sites||[], [['name','Site'],['region','Region'],['access_notes','Access notes']]);
+  return `<div class="rempty"><div><div class="t">${esc(current.label)}</div><div class="d">This page has no published composition.</div></div></div>`;
+}
+function rtBoard(recs){
+  const wos=recs.rt_work_orders||[], cols=['Unassigned','Dispatched','On site','Complete'];
+  const sev=w=>w.priority==='Critical'||w.priority==='High'?'hi':w.priority==='Medium'?'med':'lo';
+  return `<div class="rpage">
+    <h1>Dispatch board</h1><p class="rsub">Work orders across ${esc(op(S.runtime.operationId).name)} · ${wos.length} open items</p>
+    <div class="board">${cols.map(c=>{
+      const items=wos.filter(w=>w.status===c);
+      return `<div class="bcol"><h3>${c}<span>${items.length}</span></h3>
+        ${items.map(w=>`<div class="wo"><span class="sev ${sev(w)}"></span>
+          <div class="id">${esc(w.id)}</div><div class="t">${esc(w.name)}</div>
+          <div class="m"><span>${esc(w.asset_id)}</span><span>${esc(w.crew_id||'unassigned')}</span></div></div>`).join('')
+          ||'<div style="font-size:11.5px;color:var(--r-dim);padding:4px 2px">Nothing here</div>'}
+      </div>`;}).join('')}</div>
+    <p class="rsub" style="margin-top:18px">Published <span class="mono">dispatch/board</span> v${page('dispatch/board').version} · drafts never leave the Console.</p>
+  </div>`;
+}
+function rtAssets(recs){
+  const assets=recs.rt_assets||[];
+  const pill=a=>a.status==='In service'?'ok':a.status==='Out of service'?'crit':'warn';
+  return `<div class="rpage">
+    <h1>Asset register</h1><p class="rsub">${assets.length} assets in ${esc(op(S.runtime.operationId).name)}</p>
+    <div class="rcard"><div class="rcard-h">Assets<span class="spacer"></span>
+      <span class="rpill">${assets.filter(a=>a.criticality==='Critical').length} critical</span></div>
+      <table class="rtbl"><thead><tr><th>Tag</th><th>Asset</th><th>Status</th><th>Criticality</th><th>Site</th><th>Last inspected</th></tr></thead>
+        <tbody>${assets.map(a=>`<tr><td class="mono" style="font-family:var(--mono);font-size:11.5px;color:var(--r-acc)">${esc(a.id)}</td>
+          <td><b>${esc(a.name)}</b></td><td><span class="rpill ${pill(a)}">${esc(a.status)}</span></td>
+          <td>${esc(a.criticality)}</td><td>${esc(a.site_id)}</td>
+          <td style="font-variant-numeric:tabular-nums">${esc(a.last_inspected_at)}</td></tr>`).join('')}</tbody></table>
+    </div>
+  </div>`;
+}
+function rtSimple(title,sub,rows,cols){
+  return `<div class="rpage"><h1>${esc(title)}</h1><p class="rsub">${esc(sub)}</p>
+    <div class="rcard"><table class="rtbl">
+      <thead><tr>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr></thead>
+      <tbody>${rows.length?rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c[0]]??'—')}</td>`).join('')}</tr>`).join('')
+        :`<tr><td colspan="${cols.length}" style="color:var(--r-dim);text-align:center;padding:24px">No records</td></tr>`}</tbody>
+    </table></div></div>`;
+}
+
+/* ══ frame controls ═════════════════════════════════════════════════ */
+function frameCtls(){
+  if(S.app==='console') return `
+    <span class="ctl-label">Prototype</span>
+    <select data-act="jump">
+      <option value="">Jump to…</option>
+      <option value="w:organisation">Workspace · Organisation</option>
+      <option value="w:solutions">Workspace · Solutions</option>
+      <option value="w:operations">Workspace · Operations</option>
+      <option value="w:implementers">Workspace · Implementer levels</option>
+      <option value="s:overview">Solution · Overview</option>
+      <option value="s:pages">Solution · Pages</option>
+      <option value="s:record-types">Solution · Record types</option>
+      <option value="s:attributes">Solution · Attributes</option>
+      <option value="s:workflows">Solution · Workflows</option>
+      <option value="s:roles">Solution · Roles</option>
+      <option value="s:menu">Solution · Menu</option>
+      <option value="s:workbench">Solution · Workbench</option>
+    </select>`;
+  const r=S.runtime;
+  return `<span class="ctl-label">Signed in as</span>
+    <select data-act="rt-role">
+      ${DB.roles.map(x=>`<option value="${x.id}" ${x.id===r.role?'selected':''}>${esc(x.name)}</option>`).join('')}
+    </select>
+    <span class="ctl-label">Operation</span>
+    <select data-act="rt-op">
+      ${DB.operations.map(o=>`<option value="${o.id}" ${o.id===r.operationId?'selected':''}>${esc(o.name)}</option>`).join('')}
+    </select>`;
+}
+const NOTES = {
+  console:'Console — the design plane. Breadcrumb switches solutions from anywhere; the left nav renders from the section registry and swaps its contents with scope. Try: Solutions → Open, then edit the model (the toolbar goes dirty), then navigate away to meet the leave guard.',
+  runtime:'Runtime — the run plane, published pages only. The role and operation selectors above are prototype controls, not product chrome: the header operation chip is display-only by design. Western Region overrides the menu, Northern Region inherits the solution default, Dispatch Pilot has nothing published.'
+};
+
+/* ══ render ═════════════════════════════════════════════════════════ */
+function render(){
+  document.getElementById('stage').innerHTML = S.app==='console' ? renderConsole() : renderRuntime();
+  document.getElementById('urlbar').textContent = currentUrl();
+  document.getElementById('frame-ctls').innerHTML = frameCtls();
+  document.getElementById('frame-note').textContent = NOTES[S.app];
+  document.querySelectorAll('.seg [data-act="app"]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.v===S.app)));
+  const go=document.getElementById('dlg-go');
+  if(go){ const ta=document.getElementById('dlg-readme'); if(ta) ta.addEventListener('input',()=>{ go.disabled=!ta.value.trim(); }); }
+}
+
+/* ══ navigation with the canLeave guard ═════════════════════════════ */
+function goSection(id){
+  const c=S.console;
+  if(c.sdmDirty && SDM_SECTIONS.includes(c.section) && id!==c.section){ c.pendingNav={kind:'section',id}; c.dialog={kind:'leave-guard'}; return render(); }
+  c.section=id; c.openMenu=null; render();
+}
+function openSolution(id){
+  const c=S.console;
+  if(c.sdmDirty && SDM_SECTIONS.includes(c.section)){ c.pendingNav={kind:'solution',id}; c.dialog={kind:'leave-guard'}; return render(); }
+  c.scope='solution'; c.solutionId=id; c.section='overview'; c.openMenu=null;
+  const ops=opsFor(id); c.dataOperationId=ops.length?ops[0].id:null;
+  log('info',`engine.openSolution(${id}${c.dataOperationId?', '+c.dataOperationId:''}) → connectSolution → scopeVersion++`);
+  render();
+}
+function exitSolution(){
+  const c=S.console;
+  if(c.sdmDirty && SDM_SECTIONS.includes(c.section)){ c.pendingNav={kind:'exit'}; c.dialog={kind:'leave-guard'}; return render(); }
+  c.scope='workspace'; c.solutionId=null; c.section='solutions'; c.openMenu=null; render();
+}
+function resumeNav(){
+  const c=S.console, p=c.pendingNav; c.pendingNav=null; c.dialog=null;
+  if(!p) return render();
+  if(p.kind==='section'){ c.section=p.id; }
+  else if(p.kind==='solution'){ c.scope='solution'; c.solutionId=p.id; c.section='overview'; const ops=opsFor(p.id); c.dataOperationId=ops.length?ops[0].id:null; }
+  else { c.scope='workspace'; c.solutionId=null; c.section='solutions'; }
+  c.openMenu=null; render();
+}
+
+/* ══ events ═════════════════════════════════════════════════════════ */
+const stage=document.getElementById('stage');
+document.addEventListener('click', e=>{
+  const t=e.composedPath()[0];
+  const el=t.closest?.('[data-act]'); const c=S.console, r=S.runtime;
+
+  /* outside-click closes open menus */
+  if(!el || !['toggle-menu','rt-menu'].includes(el.dataset.act)){
+    if(c.openMenu && !t.closest?.('.menu')) { c.openMenu=null; if(!el) return render(); }
+    if(r.menuOpen && !t.closest?.('.rmenu')) { r.menuOpen=false; if(!el) return render(); }
+  }
+  if(!el) return;
+  const a=el.dataset.act, id=el.dataset.id, v=el.dataset.v;
+
+  switch(a){
+    /* frame */
+    case 'app': S.app=v; render(); break;
+
+    /* console shell */
+    case 'toggle-menu': c.openMenu = c.openMenu===v?null:v; render(); break;
+    case 'section': goSection(id); break;
+    case 'open-solution': openSolution(id); break;
+    case 'exit-solution': exitSolution(); break;
+    case 'set-data-op':
+      c.dataOperationId=id; c.openMenu=null;
+      log('info',`data operation → ${id} · reconnect + remount`);
+      toast(`Building against ${op(id).name}`, 'connectSolution({ solutionId, operationId }) · views remounted'); break;
+    case 'open-runtime':
+      S.app='runtime'; r.operationId=id; r.page=(effectiveMenu(id)[0]||{}).page||'dispatch/board';
+      r.selAsset=null; render(); break;
+
+    /* organisation */
+    case 'save-org':
+      DB.org.name=c.orgForm.name; DB.org.contactEmail=c.orgForm.contactEmail; c.orgDirty=false;
+      toast('Organisation profile saved','orgs.putProfile — name + contact email only'); break;
+    case 'reset-org': c.orgForm={name:DB.org.name, contactEmail:DB.org.contactEmail}; c.orgDirty=false; render(); break;
+
+    /* operations */
+    case 'sel-operation': c.selOperation=id; c.opTab='overview'; render(); break;
+    case 'op-tab': c.opTab=id; render(); break;
+    case 'override-menu':
+      DB.opMenus[id]=JSON.parse(JSON.stringify(DB.defaultMenu));
+      toast('Menu overridden','Solution default copied into the operation — whole-menu replacement'); break;
+    case 'revert-menu':
+      delete DB.opMenus[id];
+      toast('Reverted to inherit','operations.putConfig — menu key removed'); break;
+    case 'menu-remove':{
+      const list = el.dataset.scope==='default'?DB.defaultMenu:DB.opMenus[el.dataset.scope];
+      const p=+el.dataset.p, i=+el.dataset.i;
+      if(p<0) list.splice(i,1); else list[p].items.splice(i,1);
+      render(); break; }
+    case 'menu-add':{
+      const list = el.dataset.scope==='default'?DB.defaultMenu:DB.opMenus[el.dataset.scope];
+      list.push({ label:'Inspections', page:'assets/detail', roles:['role_technicians'] });
+      toast('Item added','Path checked against published versions at save'); break; }
+    case 'menu-add-group':{
+      const list = el.dataset.scope==='default'?DB.defaultMenu:DB.opMenus[el.dataset.scope];
+      list.push({ label:'Reports', roles:['role_auditors'], items:[{ label:'Uptime', page:'reports/uptime', roles:['role_auditors'] }] });
+      toast('Group added','reports/uptime is unpublished — save will reject it until it is'); break; }
+    case 'toggle-role':{
+      const as=DB.assignments.find(x=>x.userId===el.dataset.u&&x.operationId===el.dataset.o);
+      as.roles = as.roles.includes(el.dataset.r) ? as.roles.filter(x=>x!==el.dataset.r) : [...as.roles, el.dataset.r];
+      render(); break; }
+    case 'set-level': break;
+    case 'rm-implementer': DB.implementers.splice(+el.dataset.i,1); toast('Implementer level removed','implementers.put'); break;
+
+    /* sdm */
+    case 'sel-rt': c.selRecordType=id; render(); break;
+    case 'sel-attr': c.selAttribute=id; render(); break;
+    case 'sel-wf': c.selWorkflow=id; c.selActivity=(wf(id).activities[0]||{}).id; render(); break;
+    case 'sel-act': c.selActivity=id; render(); break;
+    case 'add-field': rt(c.selRecordType).fields.push({key:'new_field',type:'text',label:'New field'}); c.sdmDirty=true; render(); break;
+    case 'rm-field': rt(c.selRecordType).fields.splice(+el.dataset.i,1); c.sdmDirty=true; render(); break;
+    case 'toggle-read-role':{
+      const rec=rt(c.selRecordType), k=el.dataset.r;
+      rec.readRoles = rec.readRoles.includes(k)?rec.readRoles.filter(x=>x!==k):[...rec.readRoles,k];
+      c.sdmDirty=true; render(); break; }
+    case 'add-record-type':
+      DB.recordTypes.push({id:'rt_new_type',name:'New type',workflow:'wf_assets',readRoles:[],fields:[]});
+      c.selRecordType='rt_new_type'; c.sdmDirty=true; render(); break;
+    case 'add-attribute':
+      DB.attributes.push({key:'at_new_attribute',label:'New attribute',type:'text',multi:false,multiline:false});
+      c.selAttribute='at_new_attribute'; c.sdmDirty=true; render(); break;
+    case 'add-workflow':
+      DB.workflows.push({id:'wf_new',name:'New workflow',description:'',activities:[]});
+      c.selWorkflow='wf_new'; c.selActivity=null; c.sdmDirty=true; render(); break;
+    case 'add-activity':{
+      const w=wf(c.selWorkflow);
+      w.activities.push({id:'act_new_'+w.id.replace('wf_',''),name:'New activity',description:'',sort:(w.activities.length+1)*10,
+        recordMap:DB.recordTypes[0].id,showCondition:'',usages:[],before:'',after:''});
+      c.selActivity=w.activities[w.activities.length-1].id; c.sdmDirty=true; render(); break; }
+    case 'add-role': DB.roles.push({id:'role_new',name:'New role',description:''}); c.sdmDirty=true; render(); break;
+    case 'usage-add':{
+      const sel=document.getElementById('usage-pick');
+      findActivity(c.selActivity).usages.push({kind:'attr',key:sel.value,required:false}); c.sdmDirty=true; render(); break; }
+    case 'usage-section':
+      findActivity(c.selActivity).usages.push({kind:'section',label:'New section'}); c.sdmDirty=true; render(); break;
+    case 'usage-req':{
+      const u=findActivity(c.selActivity).usages[+el.dataset.i]; u.required=!u.required; c.sdmDirty=true; render(); break; }
+    case 'usage-rm': findActivity(c.selActivity).usages.splice(+el.dataset.i,1); c.sdmDirty=true; render(); break;
+    case 'usage-up':{ const us=findActivity(c.selActivity).usages, i=+el.dataset.i;
+      if(i>0){ [us[i-1],us[i]]=[us[i],us[i-1]]; c.sdmDirty=true; } render(); break; }
+    case 'usage-down':{ const us=findActivity(c.selActivity).usages, i=+el.dataset.i;
+      if(i<us.length-1){ [us[i+1],us[i]]=[us[i],us[i+1]]; c.sdmDirty=true; } render(); break; }
+    case 'save-config':
+      c.sdmDirty=false;
+      log('info','config.put → solution reloaded, model rebuilt, scopeVersion++');
+      toast('Model draft saved','config.put · solution reloaded · every view remounted'); break;
+
+    /* pages */
+    case 'open-page':
+      if(!c.openTabs.includes(id)) c.openTabs.push(id);
+      c.activeTab=id; render(); break;
+    case 'tab': c.activeTab=id; render(); break;
+    case 'close-tab':
+      e.stopPropagation();
+      c.openTabs=c.openTabs.filter(x=>x!==id);
+      if(c.activeTab===id) c.activeTab=c.openTabs[c.openTabs.length-1]||null;
+      render(); break;
+    case 'side': c.sidePanel = v||null; render(); break;
+    case 'toggle-console': c.consoleOpen=!c.consoleOpen; render(); break;
+    case 'clear-log': c.log=[]; render(); break;
+
+    /* dialogs */
+    case 'dlg': c.dialog={kind:v}; render(); break;
+    case 'close-dlg': c.dialog=null; render(); break;
+    case 'close-dlg-bg': if(t.classList.contains('scrim')){ c.dialog=null; render(); } break;
+    case 'leave-discard': c.sdmDirty=false; resumeNav(); toast('Draft changes discarded','canLeave guard'); break;
+    case 'leave-save': c.sdmDirty=false; resumeNav(); toast('Model draft saved','config.put · then navigation resumed'); break;
+
+    case 'create-solution':{
+      const n=document.getElementById('dlg-name').value.trim()||'Untitled solution';
+      const sid=document.getElementById('dlg-id').value.trim()||('sol_'+n.toLowerCase().replace(/\W+/g,'_'));
+      DB.solutions.push({id:sid,name:n,origin:'authored',originRef:null,created:'2026-07-30'});
+      c.dialog=null; toast(`${n} created`,'solutions.create — no operations, no records yet'); break; }
+    case 'create-operation':{
+      const n=document.getElementById('dlg-name').value.trim()||'New operation';
+      const sid=document.getElementById('dlg-sol').value;
+      const oid='op_'+n.toLowerCase().replace(/\W+/g,'_');
+      DB.operations.push({id:oid,name:n,solutionId:sid,created:'2026-07-30',menuOverride:false});
+      DB.records[oid]={rt_assets:[],rt_work_orders:[],rt_sites:[],rt_inspections:[],rt_crews:[]};
+      c.selOperation=oid; c.dialog=null;
+      toast(`${n} created`,`Linked to ${sol(sid).name} — permanently`); break; }
+    case 'create-assignment':{
+      const uid=document.getElementById('dlg-user').value;
+      const roles=[...document.querySelectorAll('#dlg-roles .chip.on')].map(x=>x.dataset.r);
+      const ex=DB.assignments.find(x=>x.userId===uid&&x.operationId===c.selOperation);
+      if(ex) ex.roles=roles; else DB.assignments.push({userId:uid,operationId:c.selOperation,roles});
+      c.dialog=null; toast('Roles assigned','assignments.put — (org, operation, user) → roleIds'); break; }
+    case 'dlg-role': el.classList.toggle('on'); break;
+
+    case 'publish-page':{
+      const p=page(c.activeTab), readme=document.getElementById('dlg-readme').value.trim();
+      p.version+=1; (DB.pageVersions[p.path]=DB.pageVersions[p.path]||[]).unshift({v:p.version,readme,by:'a.okafor',at:'2026-07-30 14:02'});
+      c.dirtyTabs=c.dirtyTabs.filter(x=>x!==p.path); c.dialog=null;
+      log('info',`pages.publish(${p.path}) → page_versions v${p.version}`);
+      toast(`${p.path} published v${p.version}`,'Snapshotted into page_versions — append-only'); break; }
+    case 'rollback-page':{
+      const p=page(c.activeTab), from=+v;
+      const src=(DB.pageVersions[p.path]||[]).find(x=>x.v===from);
+      p.version+=1; DB.pageVersions[p.path].unshift({v:p.version,readme:`Republished v${from}: ${src.readme}`,by:'a.okafor',at:'2026-07-30 14:06'});
+      c.dialog=null; toast(`v${from} republished as v${p.version}`,'Rollback never deletes or edits a version'); break; }
+    case 'publish-config':{
+      const readme=document.getElementById('dlg-readme').value.trim();
+      DB.configVersions.unshift({v:DB.configVersions[0].v+1,readme,by:'a.okafor',at:'2026-07-30 14:09'});
+      c.sdmDirty=false; c.dialog=null;
+      log('info',`config.publish → sdm_config_versions v${DB.configVersions[0].v}`);
+      toast(`Model published v${DB.configVersions[0].v}`,'default_menu travels with the model'); break; }
+    case 'rollback-config':{
+      const from=+v, src=DB.configVersions.find(x=>x.v===from);
+      DB.configVersions.unshift({v:DB.configVersions[0].v+1,readme:`Rolled back to v${from}: ${src.readme}`,by:'a.okafor',at:'2026-07-30 14:11'});
+      c.dialog=null; toast(`Rolled back to v${from}`,'Republished as the latest version and restored as the draft'); break; }
+
+    /* workbench */
+    case 'wb-run': c.dialog={kind:'run-activity',activityId:id}; render(); break;
+    case 'wb-csv': c.dialog={kind:'csv'}; render(); break;
+    case 'wb-schema': c.dialog={kind:'schema'}; render(); break;
+    case 'run-activity':{
+      const act=findActivity(c.dialog.activityId); c.dialog=null;
+      log('info',`engine.runActivity(${act.id}) → committed to ${c.dataOperationId}`);
+      toast(`${act.name} ran`,`Committed to ${op(c.dataOperationId).name} — the Runtime app sees it too`); break; }
+
+    /* runtime */
+    case 'rt-nav': r.navCollapsed=!r.navCollapsed; render(); break;
+    case 'rt-menu': r.menuOpen=!r.menuOpen; render(); break;
+    case 'rt-uat': r.uat=!r.uat; render(); break;
+    case 'rt-bell': render(); break;
+    case 'rt-page': r.page=id; render(); break;
+    case 'sign-out': r.signedIn=false; r.menuOpen=false; render(); break;
+    case 'sign-in': r.signedIn=true; render(); break;
+  }
+});
+
+/* live-bound inputs (no re-render, so typing keeps focus) */
+document.addEventListener('input', e=>{
+  const el=e.target.closest?.('[data-bind]'); if(!el) return;
+  const b=el.dataset.bind;
+  if(b==='org.name'){ S.console.orgForm.name=el.value; markOrgDirty(); }
+  else if(b==='org.contactEmail'){ S.console.orgForm.contactEmail=el.value; markOrgDirty(); }
+  else if(b==='sdm'){ if(!S.console.sdmDirty){ S.console.sdmDirty=true; render(); } }
+});
+function markOrgDirty(){ if(!S.console.orgDirty){ S.console.orgDirty=true; render(); } }
+
+/* selects that need model writes */
+document.addEventListener('change', e=>{
+  const el=e.target.closest?.('[data-act]'); if(!el) return;
+  const c=S.console;
+  switch(el.dataset.act){
+    case 'jump':{
+      const [scope,sec]=el.value.split(':'); if(!sec) return;
+      if(scope==='w'){ c.scope='workspace'; c.solutionId=null; c.section=sec; }
+      else { c.scope='solution'; c.solutionId=c.solutionId||'sol_asset_maintenance';
+             const ops=opsFor(c.solutionId); c.dataOperationId=ops.length?ops[0].id:null; c.section=sec; }
+      c.sdmDirty=false; render(); break; }
+    case 'bind-wf': rt(c.selRecordType).workflow=el.value; c.sdmDirty=true; render(); break;
+    case 'set-attr-type': attr(c.selAttribute).type=el.value; c.sdmDirty=true; render(); break;
+    case 'set-fk': attr(c.selAttribute).fk=el.value; c.sdmDirty=true; render(); break;
+    case 'toggle-multi': attr(c.selAttribute).multi=el.checked; c.sdmDirty=true; render(); break;
+    case 'toggle-multiline': attr(c.selAttribute).multiline=el.checked; c.sdmDirty=true; render(); break;
+    case 'set-level': DB.implementers[+el.dataset.i].level=el.value; toast('Implementer level updated','implementers.put — admin gated'); break;
+    case 'rt-role': S.runtime.role=el.value; render(); break;
+    case 'rt-op':{
+      S.runtime.operationId=el.value;
+      const m=visibleMenu(effectiveMenu(el.value), S.runtime.role);
+      S.runtime.page=(m[0]&&(m[0].page||(m[0].items&&m[0].items[0].page)))||'dispatch/board';
+      render(); break; }
+  }
+});
+
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ S.console.dialog=null; S.console.openMenu=null; S.runtime.menuOpen=false; render(); } });
+
+render();
+</script>

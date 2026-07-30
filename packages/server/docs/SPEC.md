@@ -54,7 +54,8 @@ src/host.ts            — loadOperationHost (resolve operation → solution, th
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig/seedOperationRecords)
-src/router.ts          — the tRPC router: orgs.get/putProfile, solutions.list,
+src/router.ts          — the tRPC router: orgs.get/putProfile,
+                         solutions.list/create/update/delete,
                          operations.list/get/create/putConfig, config.get/put,
                          pages.*, records.*, activities.run, files.*;
                          DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
@@ -86,7 +87,19 @@ takes `operationId?` (both default `demo/sdm`):
   `{ orgId?, name, contactEmail }` — name and contact email only. There is
   deliberately **no `orgs.create`** (signup needs user → org resolution) and
   `plan`/`status` are not writable: they are ours to set, not the org's.
-- **`solutions.list`** → `{ id, name }[]` and **`operations.list`** →
+- **`solutions.list`** → `{ id, name, origin }[]` / **`solutions.create`**
+  `{ id, name }` (ungated — nothing exists to grant a level on yet) /
+  **`solutions.update`** `{ solutionId, name }` (implementer `admin`) — **name
+  only**: the id is permanent, since config, pages, versions, implementer
+  levels and every operation are keyed on it. Called `update`, not `rename`,
+  because the profile will grow. / **`solutions.delete`** `{ solutionId }`
+  (implementer `admin`) — **wired but not implemented**: it validates the
+  solution exists and then throws `NotImplementedError` → `NOT_IMPLEMENTED`,
+  destroying nothing. The ruling it waits on is a **cascade** (2026-07-31:
+  deleting a solution deletes the operations running it, records included), and
+  `host.deleteSolution` carries the TODO listing every table that has to go and
+  the two open questions (R2 blobs, whether a deletion is recorded).
+- **`operations.list`** →
   `OperationRow[]` / **`operations.get`** `{ operationId? }` →
   `{ id, orgId, solutionId, name, config, solutionName, orgName }` (the display
   names ride along for the Runtime header's identity line — solution M10, org

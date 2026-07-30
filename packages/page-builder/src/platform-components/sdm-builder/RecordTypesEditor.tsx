@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import type { ConfigRaw, CustomFieldDef, RecordTypeDef } from '@fluxus/engine';
 import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
+import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'fk_ref'];
 
@@ -68,25 +69,24 @@ export function RecordTypesEditor() {
   const idErr = idProblems(rts.map((r) => r.id));
 
   return (
-    <div className="admin-panel">
-      <div className="admin-panel-head">
-        <h2 className="admin-title">Record types</h2>
-        <p className="admin-sub">The entities this solution's model tracks. Records mutate only through activities.</p>
-      </div>
+    <>
+      {/* The list is the shell's inner panel (M17); it lists the *draft*, so a
+          rename or an addition shows before it is saved. */}
+      <InnerPanel title="Record types" actions={<button className="panel-btn" onClick={add}>New</button>}>
+        {rts.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
+        {rts.map((r, i) => (
+          <PanelItem key={i} name={r.name || '(unnamed)'} sub={r.id || '(new)'} active={i === sel} onClick={() => select(i)} />
+        ))}
+      </InnerPanel>
 
-      {error && <div className="admin-error">{error}</div>}
-      {idErr && <div className="admin-error">{idErr}</div>}
-
-      <div className="sdm-split">
-        <div className="sdm-list">
-          {rts.map((r, i) => (
-            <button key={i} className={`sdm-list-item${i === sel ? ' active' : ''}`} onClick={() => select(i)}>
-              <span className="admin-mono">{r.id || '(new)'}</span>
-              <span className="sdm-list-sub">{r.name}</span>
-            </button>
-          ))}
-          <button className="admin-btn admin-btn-ghost" onClick={add}>+ Add record type</button>
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <h2 className="admin-title">Record types</h2>
+          <p className="admin-sub">The entities this solution's model tracks. Records mutate only through activities.</p>
         </div>
+
+        {error && <div className="admin-error">{error}</div>}
+        {idErr && <div className="admin-error">{idErr}</div>}
 
         {cur && (
           <div className="sdm-detail">
@@ -167,11 +167,11 @@ export function RecordTypesEditor() {
               {armed ? 'Really remove?' : 'Remove record type'}</button>
           </div>
         )}
-      </div>
 
-      <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save record types'}</button>
+        <div className="admin-actions">
+          <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save record types'}</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

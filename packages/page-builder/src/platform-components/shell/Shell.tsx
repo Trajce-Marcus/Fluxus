@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useShellState } from './useShellState';
 import { HeaderBar, css as headerBarCss } from './HeaderBar';
 import { SideNav, css as sideNavCss } from './SideNav';
+import { InnerPanelSlot, css as innerPanelCss } from './InnerPanel';
 import { ContentArea, css as contentAreaCss } from './ContentArea';
 import { initRouter } from './router';
 import { css as pagesSectionCss } from '../page-builder/PagesSection';
@@ -32,6 +33,9 @@ function ShellComponent() {
         <div className="shell-nav">
           <SideNav />
         </div>
+        {/* The active section's list, when it has one (M17) — the section
+            portals into this column; empty sections collapse it. */}
+        <InnerPanelSlot />
         <div className="shell-main">
           <ContentArea />
         </div>
@@ -43,6 +47,7 @@ function ShellComponent() {
 const css = `
   ${headerBarCss}
   ${sideNavCss}
+  ${innerPanelCss}
   ${contentAreaCss}
   ${pagesSectionCss}
   ${adminViewCss}

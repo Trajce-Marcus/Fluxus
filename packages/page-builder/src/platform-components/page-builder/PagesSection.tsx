@@ -1,10 +1,13 @@
 // The Pages section (M16) — the Console's one document-editor surface. It owns
-// everything editor-shaped the shell used to carry: the inner panel (page
-// tree / components / search), the open-page tab strip, the editor and the
-// bottom console. Other sections are plain pages; none of this leaks out.
+// everything editor-shaped the shell used to carry: the page tree / components
+// / search panel, the open-page tab strip, the editor and the bottom console.
+// Other sections are plain pages; none of this leaks out. Since M17 the panel
+// goes into the shell's inner-panel column like every other section's list —
+// the tab strip inside it is this section's own affair.
 
 import { useState } from 'react';
 import { useShellState } from '../shell/useShellState';
+import { InnerPanel } from '../shell/InnerPanel';
 import { TabBar, css as tabBarCss } from '../shell/TabBar';
 import { ConsolePanel, css as consolePanelCss } from '../shell/ConsolePanel';
 import { PageEditor, css as pageEditorCss } from './PageEditor';
@@ -26,24 +29,29 @@ function PagesSectionComponent() {
 
   return (
     <div className="pages-section">
-      <div className="pages-panel">
-        <div className="pages-panel-tabs">
-          {PANELS.map((p) => (
-            <button
-              key={p.id}
-              className={`pages-panel-tab${panel === p.id ? ' active' : ''}`}
-              onClick={() => setPanel(p.id)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      <InnerPanel
+        title="Pages"
+        flush
+        head={
+          <div className="pages-panel-tabs">
+            {PANELS.map((p) => (
+              <button
+                key={p.id}
+                className={`pages-panel-tab${panel === p.id ? ' active' : ''}`}
+                onClick={() => setPanel(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        }
+      >
         <div className="pages-panel-body">
           {panel === 'pages' && <PageExplorer />}
           {panel === 'components' && <ComponentsPanel />}
           {panel === 'search' && <SearchPanel />}
         </div>
-      </div>
+      </InnerPanel>
       <div className="pages-main">
         <TabBar />
         <div className="pages-editor">
@@ -74,15 +82,6 @@ export const css = `
     flex-direction: row;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
-  }
-  .pages-panel {
-    display: flex;
-    flex-direction: column;
-    width: 240px;
-    flex-shrink: 0;
-    background: var(--color-sidebar);
-    border-right: 1px solid var(--color-border);
     overflow: hidden;
   }
   .pages-panel-tabs {

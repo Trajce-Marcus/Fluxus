@@ -1,11 +1,11 @@
-// Console operations admin (CONSOLE_RUNTIME_SPEC §3): list operations, create
-// new ones against an existing solution, and **Open** one — which launches the
-// **Runtime app** on it (ruled 2026-07-26), not a Console design scope. The two
-// Opens follow the two planes: a solution opens the Console (author the model),
-// an operation opens the app (run it). Since M11 this panel is master/detail:
-// **Admin** on a row opens the operation view — Overview + the operation-scoped
-// admin (menu override, role assignments) that used to be separate
-// picker-driven panels. Runtime host URL comes from VITE_FLUXUS_RUNTIME_URL,
+// Console operations admin (CONSOLE_RUNTIME_SPEC §3): the org's operations in
+// the inner panel (M17), the selected one's view in the main area — Overview +
+// the operation-scoped admin (menu override, role assignments) that M11
+// consolidated here out of separate picker-driven panels. **Open** launches the
+// **Runtime app** on the operation (ruled 2026-07-26), not a Console design
+// scope: the two Opens follow the two planes — a solution opens the Console
+// (author the model), an operation opens the app (run it).
+// Runtime host URL comes from VITE_FLUXUS_RUNTIME_URL,
 // localhost:5173 in dev. Plain functional form over the ConsoleClient's
 // operations/solutions CRUD — no SDM, no activities. RBAC stage-2 gates
 // operations.create on implementer `admin`; until then it's open per the env
@@ -16,6 +16,7 @@ import type { OperationRow } from '@fluxus/client';
 import { consoleClient } from '../../sdm-runtime/engine';
 import { OperationMenuSection } from './OperationMenuSection';
 import { AssignmentsSection } from './AssignmentsSection';
+import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 /** The Runtime app's address; `?operation=<id>` selects what it runs. */
 const RUNTIME_URL = import.meta.env.VITE_FLUXUS_RUNTIME_URL ?? 'http://localhost:5173';
@@ -25,44 +26,50 @@ function slug(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-export function OperationsAdmin() {
+/** Scoped to one solution (M17): the Console administers operations from
+ *  inside the solution they run, so the list is filtered and the create form
+ *  has no solution picker — the link is fixed by where you are. */
+export function OperationsAdmin({ solutionId: scopeSolutionId }: { solutionId: string }) {
   const [operations, setOperations] = useState<OperationRow[] | null>(null);
-  const [solutions, setSolutions] = useState<{ id: string; name: string }[]>([]);
+  const [solutionName, setSolutionName] = useState(scopeSolutionId);
   const [error, setError] = useState<string | null>(null);
-  /** The operation view (M11): the selected operation, or null for the list. */
-  const [selected, setSelected] = useState<OperationRow | null>(null);
+  /** The operation view (M11): which operation the main area shows. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // Create form.
   const [name, setName] = useState('');
   const [id, setId] = useState('');
   const [idEdited, setIdEdited] = useState(false);
-  const [solutionId, setSolutionId] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function reload() {
     setError(null);
     try {
-      const [ops, sols] = await Promise.all([consoleClient.listOperations(), consoleClient.listSolutions()]);
+      const [allOps, sols] = await Promise.all([consoleClient.listOperations(), consoleClient.listSolutions()]);
+      const ops = allOps.filter((o) => o.solutionId === scopeSolutionId);
       setOperations(ops);
-      setSolutions(sols);
-      if (!solutionId && sols.length > 0) setSolutionId(sols[0].id);
+      setSolutionName(sols.find((s) => s.id === scopeSolutionId)?.name ?? scopeSolutionId);
+      if (ops.length > 0) setSelectedId((cur) => cur ?? ops[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  useEffect(() => { void reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void reload(); }, [scopeSolutionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
     const opId = idEdited ? id.trim() : slug(name);
-    if (!name.trim() || !opId || !solutionId) return;
+    if (!name.trim() || !opId) return;
     setBusy(true);
     setError(null);
     try {
-      await consoleClient.createOperation({ id: opId, solutionId, name: name.trim() });
+      await consoleClient.createOperation({ id: opId, solutionId: scopeSolutionId, name: name.trim() });
       setName(''); setId(''); setIdEdited(false);
       await reload();
+      setCreating(false);
+      setSelectedId(opId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -70,103 +77,95 @@ export function OperationsAdmin() {
     }
   }
 
-  const solName = (sid: string) => solutions.find((s) => s.id === sid)?.name ?? sid;
-
   /** Launch the Runtime app on this operation — a new tab: Console is a
    *  workbench you keep open while the app runs beside it. */
   function open(op: OperationRow) {
     window.open(`${RUNTIME_URL}/?operation=${encodeURIComponent(op.id)}`, '_blank', 'noopener');
   }
 
-  // The operation view (M11): overview + the operation-scoped admin sections.
-  if (selected) {
-    return (
-      <div className="admin-panel">
-        <div className="admin-panel-head">
-          <button className="admin-link" onClick={() => setSelected(null)}>← Operations</button>
-          <h2 className="admin-title" style={{ marginTop: 6 }}>{selected.name}</h2>
-          <p className="admin-sub">
-            <span className="admin-mono">{selected.id}</span>
-            {' · runs '}
-            <strong>{solName(selected.solutionId)}</strong>{' '}
-            <span className="admin-mono">({selected.solutionId})</span>
-          </p>
-        </div>
-        <div className="admin-section">
-          <button className="admin-btn" onClick={() => open(selected)} title="Run this operation in the Runtime app">
-            Open in Runtime app
-          </button>
-        </div>
-        <OperationMenuSection operationId={selected.id} solutionId={selected.solutionId} />
-        <AssignmentsSection operationId={selected.id} />
-      </div>
-    );
-  }
+  const selected = operations?.find((op) => op.id === selectedId) ?? null;
 
   return (
-    <div className="admin-panel">
-      <div className="admin-panel-head">
-        <h2 className="admin-title">Operations</h2>
-        <p className="admin-sub">Runtime units. Each links to one solution and owns its own data, users and menu. <strong>Open</strong> runs it in the Runtime app; <strong>Admin</strong> manages its menu and role assignments.</p>
-      </div>
+    <>
+      <InnerPanel
+        title="Operations"
+        actions={<button className="panel-btn" onClick={() => { setCreating(true); setSelectedId(null); }}>New</button>}
+      >
+        {operations === null && <p className="panel-empty">Loading…</p>}
+        {operations?.length === 0 && <p className="panel-empty">None yet — New creates one.</p>}
+        {operations?.map((op) => (
+          <PanelItem
+            key={op.id}
+            name={op.name}
+            sub={op.id}
+            active={!creating && op.id === selectedId}
+            onClick={() => { setCreating(false); setSelectedId(op.id); }}
+          />
+        ))}
+      </InnerPanel>
 
-      {error && <div className="admin-error">{error}</div>}
+      <div className="admin-panel">
+        {error && <div className="admin-error">{error}</div>}
 
-      <div className="admin-section">
-        {operations === null ? (
-          <p className="admin-muted">Loading…</p>
-        ) : operations.length === 0 ? (
-          <p className="admin-muted">No operations yet — create one below.</p>
+        {creating ? (
+          <>
+            <div className="admin-panel-head">
+              <h2 className="admin-title">New operation</h2>
+              <p className="admin-sub">
+                A runtime unit of <strong>{solutionName}</strong>: its own data, users and menu.
+                The link to this solution is permanent.
+              </p>
+            </div>
+            <form className="admin-form" onSubmit={create}>
+              <label className="admin-field">
+                <span>Name</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North depot" autoFocus />
+              </label>
+              <label className="admin-field">
+                <span>Id</span>
+                <input
+                  value={idEdited ? id : slug(name)}
+                  onChange={(e) => { setIdEdited(true); setId(e.target.value); }}
+                  placeholder="north-depot"
+                  className="admin-mono"
+                />
+              </label>
+              <div className="admin-row">
+                <button type="submit" className="admin-btn" disabled={busy || !name.trim()}>
+                  {busy ? 'Creating…' : 'Create operation'}
+                </button>
+                <button type="button" className="admin-link" onClick={() => setCreating(false)}>Cancel</button>
+              </div>
+            </form>
+          </>
+        ) : selected ? (
+          <>
+            <div className="admin-panel-head">
+              <h2 className="admin-title">{selected.name}</h2>
+              <p className="admin-sub">
+                <span className="admin-mono">{selected.id}</span>
+                {' · runs '}<strong>{solutionName}</strong>
+              </p>
+            </div>
+            <div className="admin-section">
+              <button className="admin-btn" onClick={() => open(selected)} title="Run this operation in the Runtime app">
+                Open in Runtime app
+              </button>
+            </div>
+            <OperationMenuSection operationId={selected.id} solutionId={selected.solutionId} />
+            <AssignmentsSection operationId={selected.id} />
+          </>
         ) : (
-          <table className="admin-table">
-            <thead>
-              <tr><th>Name</th><th>Id</th><th>Solution</th><th>Org</th><th /></tr>
-            </thead>
-            <tbody>
-              {operations.map((op) => (
-                <tr key={op.id}>
-                  <td>{op.name}</td>
-                  <td className="admin-mono">{op.id}</td>
-                  <td>{solName(op.solutionId)}</td>
-                  <td className="admin-mono">{op.orgId}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="admin-btn" onClick={() => open(op)} title="Run this operation in the Runtime app">Open</button>{' '}
-                    <button className="admin-btn admin-btn-ghost" onClick={() => setSelected(op)} title="Menu and role assignments">Admin</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="admin-panel-head">
+            <h2 className="admin-title">Operations</h2>
+            <p className="admin-sub">
+              What runs <strong>{solutionName}</strong> — each owns its own records, users and menu.
+              Pick one from the list, or create a new one.
+            </p>
+          </div>
         )}
       </div>
-
-      <form className="admin-form" onSubmit={create}>
-        <h3 className="admin-form-title">New operation</h3>
-        <label className="admin-field">
-          <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North depot" />
-        </label>
-        <label className="admin-field">
-          <span>Id</span>
-          <input
-            value={idEdited ? id : slug(name)}
-            onChange={(e) => { setIdEdited(true); setId(e.target.value); }}
-            placeholder="north-depot"
-            className="admin-mono"
-          />
-        </label>
-        <label className="admin-field">
-          <span>Solution</span>
-          <select value={solutionId} onChange={(e) => setSolutionId(e.target.value)}>
-            {solutions.length === 0 && <option value="">No solutions</option>}
-            {solutions.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}
-          </select>
-        </label>
-        <button type="submit" className="admin-btn" disabled={busy || !name.trim() || solutions.length === 0}>
-          {busy ? 'Creating…' : 'Create operation'}
-        </button>
-      </form>
-    </div>
+    </>
   );
 }
 
@@ -220,4 +219,20 @@ export const css = `
   .admin-check { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--color-text); cursor: pointer; }
   .admin-check input { width: 14px; height: 14px; }
   .admin-hint { margin: 2px 0 0; font-size: 0.72rem; color: var(--color-text-muted); }
+  .admin-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .admin-head-row .admin-btn { margin-top: 0; }
+
+  /* Modal dialogs over an admin list (same shape as the publish dialog). */
+  .admin-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .admin-modal {
+    background: var(--color-sidebar); border: 1px solid var(--color-border);
+    border-radius: 6px; padding: 18px 20px; width: 420px; max-width: 90vw;
+    max-height: 80vh; overflow-y: auto; color: var(--color-text);
+  }
+  .admin-modal-title { margin: 0 0 4px; font-size: 0.95rem; }
+  .admin-modal-form { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .admin-modal-actions { margin-top: 4px; }
 `;

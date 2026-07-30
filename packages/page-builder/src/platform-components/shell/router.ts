@@ -13,16 +13,21 @@ interface Route {
   section: string;
 }
 
+// Solution ids may contain slashes (`demo/sdm`), so the id segment is
+// percent-encoded — unencoded it re-parses as a different solution and the
+// Console opens an empty model instead of the one you asked for.
 function parseHash(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 's' && parts[1]) {
-    return { solutionId: parts[1], section: parts[2] ?? 'overview' };
+    return { solutionId: decodeURIComponent(parts[1]), section: parts[2] ?? 'overview' };
   }
   return { solutionId: null, section: parts[0] || 'solutions' };
 }
 
 function hashFor(route: Route): string {
-  return route.solutionId ? `#/s/${route.solutionId}/${route.section}` : `#/${route.section}`;
+  return route.solutionId
+    ? `#/s/${encodeURIComponent(route.solutionId)}/${route.section}`
+    : `#/${route.section}`;
 }
 
 function currentRoute(): Route {

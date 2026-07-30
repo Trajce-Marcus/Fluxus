@@ -10,6 +10,8 @@ import { SdmView } from '../sdm-builder/SdmView';
 import { WorkbenchView } from '../workbench/WorkbenchView';
 import { PagesSection } from '../page-builder/PagesSection';
 import { OverviewSection } from './OverviewSection';
+import { SolutionOperationsSection } from './SolutionOperationsSection';
+import { SolutionSettingsSection } from './SolutionSettingsSection';
 import { sdmDirty, setSdmDirty } from '../sdm-builder/useSolutionConfig';
 
 export interface ConsoleSection {
@@ -32,23 +34,32 @@ function canLeaveSdm(): boolean {
 }
 
 const SDM_GROUP = 'Shared Data Model';
+const ORG_GROUP = 'Organisation';
+const SOLUTION_GROUP = 'Solution';
+const DATA_GROUP = 'Data';
 
+/** The organisation home (M17) — the tenant's own surfaces. Solutions is our
+ *  Projects; People/Billing/Integrations are the IA the org tier implies, with
+ *  placeholder content where nothing is built (§1a: no signup, no billing). */
 export const WORKSPACE_SECTIONS: ConsoleSection[] = [
-  { id: 'organisation', label: 'Organisation', render: () => <AdminView tab="organisation" /> },
-  { id: 'solutions', label: 'Solutions', render: () => <AdminView tab="solutions" /> },
-  { id: 'operations', label: 'Operations', render: () => <AdminView tab="operations" /> },
-  { id: 'implementers', label: 'Implementer levels', render: () => <AdminView tab="implementers" /> },
+  { id: 'solutions', label: 'Solutions', group: ORG_GROUP, render: () => <AdminView tab="solutions" /> },
+  { id: 'people', label: 'People', group: ORG_GROUP, render: () => <AdminView tab="people" /> },
+  { id: 'billing', label: 'Billing', group: ORG_GROUP, render: () => <AdminView tab="billing" /> },
+  { id: 'integrations', label: 'Integrations', group: ORG_GROUP, render: () => <AdminView tab="integrations" /> },
+  { id: 'settings', label: 'Settings', group: ORG_GROUP, render: () => <AdminView tab="settings" /> },
 ];
 
 export const SOLUTION_SECTIONS: ConsoleSection[] = [
-  { id: 'overview', label: 'Overview', render: () => <OverviewSection /> },
-  { id: 'pages', label: 'Pages', render: () => <PagesSection /> },
+  { id: 'overview', label: 'Overview', group: SOLUTION_GROUP, render: () => <OverviewSection /> },
+  { id: 'operations', label: 'Operations', group: SOLUTION_GROUP, render: () => <SolutionOperationsSection /> },
+  { id: 'pages', label: 'Pages', group: SOLUTION_GROUP, render: () => <PagesSection /> },
+  { id: 'settings', label: 'Settings', group: SOLUTION_GROUP, render: () => <SolutionSettingsSection /> },
   { id: 'record-types', label: 'Record types', group: SDM_GROUP, render: () => <SdmView tab="record-types" />, canLeave: canLeaveSdm },
   { id: 'attributes', label: 'Attributes', group: SDM_GROUP, render: () => <SdmView tab="attributes" />, canLeave: canLeaveSdm },
   { id: 'workflows', label: 'Workflows', group: SDM_GROUP, render: () => <SdmView tab="workflows" />, canLeave: canLeaveSdm },
   { id: 'roles', label: 'Roles', group: SDM_GROUP, render: () => <SdmView tab="roles" />, canLeave: canLeaveSdm },
   { id: 'menu', label: 'Menu', group: SDM_GROUP, render: () => <SdmView tab="menu" />, canLeave: canLeaveSdm },
-  { id: 'workbench', label: 'Workbench', render: () => <WorkbenchView /> },
+  { id: 'workbench', label: 'Workbench', group: DATA_GROUP, render: () => <WorkbenchView /> },
 ];
 
 export function sectionsForScope(solutionOpen: boolean): ConsoleSection[] {

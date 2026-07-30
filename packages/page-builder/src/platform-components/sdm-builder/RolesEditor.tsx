@@ -5,9 +5,11 @@
 import { useState } from 'react';
 import type { ConfigRaw, RoleDef } from '@fluxus/engine';
 import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
+import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 export function RolesEditor() {
   const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
+  const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();
@@ -24,6 +26,16 @@ export function RolesEditor() {
     setRoles(roles.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }
 
+  function add() {
+    setRoles([...roles, { id: 'role_', name: '' }]);
+    setSel(roles.length);
+  }
+
+  function remove(i: number) {
+    setRoles(roles.filter((_, j) => j !== i));
+    setSel((s) => Math.max(0, s > i ? s - 1 : s));
+  }
+
   async function save() {
     setBusy(true);
     setError(null);
@@ -37,39 +49,42 @@ export function RolesEditor() {
     }
   }
 
+  const cur: RoleDef | undefined = roles[sel];
+
   return (
-    <div className="admin-panel">
-      <div className="admin-panel-head">
-        <h2 className="admin-title">Roles</h2>
-        <p className="admin-sub">Role defs for this solution — pages and record types reference them; operations assign them.</p>
-      </div>
+    <>
+      <InnerPanel title="Roles" actions={<button className="panel-btn" onClick={add}>New</button>}>
+        {roles.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
+        {roles.map((r, i) => (
+          <PanelItem key={i} name={r.name || '(unnamed)'} sub={r.id || '(new)'} active={i === sel} onClick={() => setSel(i)} />
+        ))}
+      </InnerPanel>
 
-      {error && <div className="admin-error">{error}</div>}
-      {idErr && <div className="admin-error">{idErr}</div>}
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <h2 className="admin-title">Roles</h2>
+          <p className="admin-sub">Role defs for this solution — pages and record types reference them; operations assign them.</p>
+        </div>
 
-      <div className="admin-section">
-        {roles.length === 0 ? (
-          <p className="admin-muted">No roles yet — add one below.</p>
+        {error && <div className="admin-error">{error}</div>}
+        {idErr && <div className="admin-error">{idErr}</div>}
+
+        {cur ? (
+          <div className="sdm-detail">
+            <label className="admin-field"><span>Id</span>
+              <input className="admin-mono" value={cur.id} onChange={(e) => edit(sel, { id: e.target.value })} placeholder="role_dispatchers" /></label>
+            <label className="admin-field"><span>Name</span>
+              <input value={cur.name} onChange={(e) => edit(sel, { name: e.target.value })} placeholder="Dispatchers" /></label>
+            <button className="admin-btn admin-btn-ghost" onClick={() => remove(sel)}>Remove role</button>
+          </div>
         ) : (
-          <table className="admin-table">
-            <thead><tr><th>Id</th><th>Name</th><th /></tr></thead>
-            <tbody>
-              {roles.map((r, i) => (
-                <tr key={i}>
-                  <td><input className="admin-mono" value={r.id} onChange={(e) => edit(i, { id: e.target.value })} /></td>
-                  <td><input value={r.name} onChange={(e) => edit(i, { name: e.target.value })} /></td>
-                  <td><button className="admin-btn admin-btn-ghost" onClick={() => setRoles(roles.filter((_, j) => j !== i))}>Remove</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p className="admin-muted">No roles yet — New adds one.</p>
         )}
-        <button className="admin-btn admin-btn-ghost" onClick={() => setRoles([...roles, { id: 'role_', name: '' }])}>+ Add role</button>
-      </div>
 
-      <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save roles'}</button>
+        <div className="admin-actions">
+          <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save roles'}</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -469,6 +469,45 @@ export async function createSolution(db: Db, input: { id: string; name: string }
   await db.insert(solutions).values({ id: input.id, name: input.name });
 }
 
+/** Edit a solution's profile. **Name only** — the id is permanent: the config,
+ *  page drafts and versions, implementer levels and every operation are keyed
+ *  on it, so a rename would orphan all of them (the `operations.solution_id`
+ *  reasoning, §1a). `origin`/`origin_ref` are provenance, not user data. */
+export async function updateSolution(db: Db, input: { solutionId: string; name: string }): Promise<void> {
+  const rows = await db.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, input.solutionId));
+  if (rows.length === 0) throw new SolutionNotFoundError(input.solutionId);
+  await db.update(solutions).set({ name: input.name }).where(eq(solutions.id, input.solutionId));
+}
+
+export class NotImplementedError extends Error {}
+
+/**
+ * Delete a solution — **the destructive half is deliberately not written yet**
+ * (ruled 2026-07-31). The endpoint exists so the Console's danger zone is wired
+ * end to end; calling it fails loudly instead of destroying anything.
+ *
+ * TODO — deleting a solution **cascades to its operations** (user ruling
+ * 2026-07-31: "deleting solution means deleting all operations"), so the
+ * implementation has to remove, in one transaction:
+ *   - per operation: `records`, `rpt_attributes` → `rpt_activities`,
+ *     `role_assignments`, `attachments` (and the blobs behind them), then the
+ *     `operations` row;
+ *   - then the design artifacts: `page_versions`, `pages`,
+ *     `sdm_config_versions`, `sdm_configs`, `implementer_levels`;
+ *   - then the `solutions` row.
+ * Open questions to settle first: whether stored files are deleted from R2 or
+ * left to a sweeper, and whether a delete is recorded anywhere (nothing in this
+ * schema is append-only about *deletion* yet).
+ */
+export async function deleteSolution(db: Db, solutionId: string): Promise<void> {
+  const rows = await db.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, solutionId));
+  if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
+  throw new NotImplementedError(
+    `Deleting a solution is not implemented yet — it must cascade to the operations running it, ` +
+    `and their records. Nothing was deleted.`,
+  );
+}
+
 export async function listOperations(db: Db): Promise<OperationRow[]> {
   const rows = await db.select().from(operations);
   return rows.map((r) => ({ id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, config: r.config }));

@@ -17,6 +17,7 @@ import type {
   WorkflowRawDef,
 } from '@fluxus/engine';
 import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
+import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 type UsageItem = AttributeUsageDef | SectionMarkerDef;
 const isUsage = (it: UsageItem): it is AttributeUsageDef => 'attribute_ref' in it;
@@ -139,25 +140,24 @@ export function WorkflowsEditor() {
   const idErr = [wfIdErr && `Workflows — ${wfIdErr}`, actIdErr && `Activities — ${actIdErr}`].filter(Boolean).join(' · ');
 
   return (
-    <div className="admin-panel">
-      <div className="admin-panel-head">
-        <h2 className="admin-title">Workflows</h2>
-        <p className="admin-sub">A workflow bundles the activities that mutate a record type's records. Record types bind one workflow each.</p>
-      </div>
+    <>
+      {/* Workflows list the inner panel; their activities stay nested in the
+          detail — one panel level, as the shell's frame allows. */}
+      <InnerPanel title="Workflows" actions={<button className="panel-btn" onClick={addWf}>New</button>}>
+        {wfs.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
+        {wfs.map((w, i) => (
+          <PanelItem key={i} name={w.name || '(unnamed)'} sub={w.id || '(new)'} active={i === selWf} onClick={() => selectWf(i)} />
+        ))}
+      </InnerPanel>
 
-      {error && <div className="admin-error">{error}</div>}
-      {idErr && <div className="admin-error">{idErr}</div>}
-
-      <div className="sdm-split">
-        <div className="sdm-list">
-          {wfs.map((w, i) => (
-            <button key={i} className={`sdm-list-item${i === selWf ? ' active' : ''}`} onClick={() => selectWf(i)}>
-              <span className="admin-mono">{w.id || '(new)'}</span>
-              <span className="sdm-list-sub">{w.name}</span>
-            </button>
-          ))}
-          <button className="admin-btn admin-btn-ghost" onClick={addWf}>+ Add workflow</button>
+      <div className="admin-panel">
+        <div className="admin-panel-head">
+          <h2 className="admin-title">Workflows</h2>
+          <p className="admin-sub">A workflow bundles the activities that mutate a record type's records. Record types bind one workflow each.</p>
         </div>
+
+        {error && <div className="admin-error">{error}</div>}
+        {idErr && <div className="admin-error">{idErr}</div>}
 
         {wf && (
           <div className="sdm-detail">
@@ -245,11 +245,11 @@ export function WorkflowsEditor() {
               {armed === 'wf' ? 'Really remove?' : 'Remove workflow'}</button>
           </div>
         )}
-      </div>
 
-      <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save workflows'}</button>
+        <div className="admin-actions">
+          <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save workflows'}</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

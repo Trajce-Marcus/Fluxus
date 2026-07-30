@@ -6,6 +6,7 @@ import { useShellState } from './useShellState';
 import { sectionsForScope } from './sections';
 import { css as workbenchCss } from '../workbench/WorkbenchView';
 import { css as overviewCss } from './OverviewSection';
+import { css as solutionSettingsCss } from './SolutionSettingsSection';
 
 function ContentAreaComponent() {
   const { solutionId, activeSection } = useShellState(['solutionId', 'activeSection']);
@@ -27,6 +28,7 @@ function ContentAreaComponent() {
 export const css = `
   ${workbenchCss}
   ${overviewCss}
+  ${solutionSettingsCss}
 
   .content-area {
     flex: 1;

@@ -88,7 +88,11 @@ function HeaderBarComponent() {
 
   return (
     <div className="header-bar">
-      <span className="header-logo">Fluxus</span>
+      {/* The wordmark is the way home: back out of any solution to the
+          organisation (M17). */}
+      <button className="header-logo" onClick={() => exitToWorkspace()} title="Back to the organisation">
+        Fluxus
+      </button>
       {orgName && <span className="header-org" title="Organisation">{orgName}</span>}
       {solutionId && <SolutionCrumb solutionId={solutionId} solutionName={solutionName} />}
       <div className="header-spacer" />
@@ -131,6 +135,11 @@ export const css = `
     border-bottom: 1px solid var(--color-border);
   }
   .header-logo {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
     font-size: 0.8rem;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -138,7 +147,9 @@ export const css = `
     color: var(--color-text);
     white-space: nowrap;
     flex-shrink: 0;
+    padding: 3px 6px;
   }
+  .header-logo:hover { background: rgba(255,255,255,0.06); border-color: var(--color-border); }
   .header-org {
     font-size: 0.8rem;
     font-weight: 600;
