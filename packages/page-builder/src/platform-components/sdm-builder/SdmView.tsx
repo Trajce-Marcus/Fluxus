@@ -8,6 +8,7 @@ import { RolesEditor } from './RolesEditor';
 import { MenuEditor } from './MenuEditor';
 import { ConfigPublishControl } from './ConfigPublishControl';
 import { css as publishControlCss } from '../page-builder/PublishControl';
+import { css as rolesEditorCss } from './RolesEditor';
 
 /** Every SDM section sits under one model-level toolbar — publish/versions act
  *  on the solution's config as a whole, not on the section you happen to be in. */
@@ -85,4 +86,5 @@ export const css = `
   }
   .sdm-view-body { flex: 1; min-height: 0; overflow: auto; }
   ${publishControlCss}
+  ${rolesEditorCss}
 `;

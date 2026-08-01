@@ -1,12 +1,10 @@
 import { useWorkbench } from '../WorkbenchContext';
-import { ComponentLabel } from '../../context/UatLabels';
 
 export function RecordTypeList() {
   const { recordTypes, selectedRecordType, selectRecordType } = useWorkbench();
 
   return (
     <div style={{ position: 'relative' }}>
-      <ComponentLabel name="RecordTypeList" />
       <div style={{
         padding: '12px 16px',
         fontSize: 11,

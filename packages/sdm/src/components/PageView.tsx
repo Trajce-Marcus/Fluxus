@@ -5,14 +5,12 @@
 
 import { PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
 import { pageRuntime } from '../host';
-import { ComponentLabel } from '../context/UatLabels';
 
 export function PageView({ path }: { path: string }) {
   const def = pageRuntime.getPage(path);
 
   return (
     <div className="panel" style={{ position: 'relative' }}>
-      <ComponentLabel name="PageView" />
       <style>{pageRendererCss}</style>
       {def ? (
         <PageRenderer

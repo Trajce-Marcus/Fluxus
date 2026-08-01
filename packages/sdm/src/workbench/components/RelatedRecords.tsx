@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
-import { ComponentLabel } from '../../context/UatLabels';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -29,7 +28,6 @@ export function RelatedRecords({ typeId, recordId, navigateTo }: Props) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <ComponentLabel name="RelatedRecords" />
       <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         Related Records
       </h3>

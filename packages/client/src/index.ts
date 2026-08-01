@@ -70,6 +70,9 @@ export const DEFAULT_OPERATION = 'demo/sdm';
 
 /** operations.config menu (server schema §5) — snapshotted at connect. */
 export interface MenuItem {
+  /** Stable identity, independent of the label (2026-08-01) — the Console's
+   *  menu editor selects and reorders by it. Optional: older menus lack it. */
+  id?: string;
   label: string;
   page?: string;
   roles?: string[];

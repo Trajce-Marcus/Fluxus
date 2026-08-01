@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
-import { ComponentLabel } from '../../context/UatLabels';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
 import { CsvImportModal } from './CsvImportModal';
+import { NoOperationNotice } from './OperationPicker';
 import { PhotoCountCell, isDescriptorValue } from './attributeWidgets';
 import { exportToCSV, exportToJSON } from '../export';
 import type { RecordInstance } from '@fluxus/engine';
@@ -16,6 +16,7 @@ interface Props {
 
 export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
   const {
+    operationId,
     selectedRecordType,
     selectedRecord,
     selectRecord,
@@ -69,6 +70,16 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
 
   const pickerMode = !!onRecordSelected;
   const typeDef = typeId ? getRecordTypeDef(typeId) : selectedRecordType;
+
+  // No operation, no records — and no create/import either: every activity
+  // writes into a partition, and there isn't one until you pick it.
+  if (!operationId) {
+    return (
+      <div className={pickerMode ? undefined : 'panel-body'}>
+        <NoOperationNotice what={typeDef ? `${typeDef.name} records` : 'records'} />
+      </div>
+    );
+  }
 
   if (!typeDef) {
     return (
@@ -433,7 +444,6 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
   return (
     <>
       <div className="panel-header">
-        <ComponentLabel name="RecordsGrid" />
         {headerRow}
       </div>
       {/* Flush top so the sticky column headers pin directly under the toolbar */}

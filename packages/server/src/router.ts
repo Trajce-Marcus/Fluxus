@@ -174,6 +174,9 @@ const orgInput = z.string().min(1).default(DEFAULT_ORG);
 // (page paths resolve to published versions; role ids exist) lands with M4.
 const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
   z.object({
+    // Zod strips unknown keys, so the stable id has to be declared here or a
+    // saved override would come back without ids.
+    id: z.string().min(1).optional(),
     label: z.string().min(1),
     page: z.string().min(1).optional(),
     roles: z.array(z.string().min(1)).optional(),

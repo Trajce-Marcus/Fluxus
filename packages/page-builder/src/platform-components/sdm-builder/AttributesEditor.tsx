@@ -96,7 +96,7 @@ export function AttributesEditor() {
                 <input value={(cur.type_config?.values ?? []).join(', ')} onChange={(e) => editCfg({ values: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} /></label>
             )}
 
-            <button className="admin-btn admin-btn-ghost" onClick={() => remove(sel)}>Remove attribute</button>
+            <button className="admin-btn admin-btn-ghost" onClick={() => remove(sel)}>Delete attribute</button>
           </div>
         )}
 

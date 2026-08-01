@@ -164,12 +164,13 @@ Since M15 the package ships **two** surfaces: the Runtime app (`main.tsx` →
 
 ```
 Runtime app — src/App.tsx
-Header (identity line, UAT Labels toggle, notification bell, user menu)
+Header (identity line, notification bell, user menu)
 ├── Side panel — MenuNav; PagesList only as the no-menu fallback
 └── Content — PageView for the open page, else the empty state
       ("Nothing published yet" / "Nothing open")
 
-<Workbench client user? /> — src/workbench/Workbench.tsx
+<Workbench client user? operationId? operations? onSelectOperation? /> — src/workbench/Workbench.tsx
+├── OperationPicker (side menu, above the types — whose data am I looking at)
 ├── RecordTypeList (its own nav pane — retired from the Runtime shell at M15)
 ├── RecordsGrid — sort, search, count, CSV import/export, FK links, CREATE launch
 └── RecordView — owns back/forward nav state (viewedTypeId derived from record.typeRef)
@@ -183,7 +184,7 @@ Header (identity line, UAT Labels toggle, notification bell, user menu)
 
 **Pages (2026-07-19, extended M15):** pages render via `@fluxus/page-runtime` (`PageView` — plain `<style>` tag for the renderer css, no shadow DOM). The "Pages" listing that introduced them is now the **no-menu fallback only**; with a menu effective, `MenuNav` addresses pages. The open page lives in `RuntimeContext` — since M15 there is no record selection beside it to return to.
 
-**Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the UAT toggle, the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` (the role-filtered effective menu, `client.visibleMenu()`) is primary; without a menu (demo/adoption posture) the pages listing is the fallback. *Amended M15:* the record-type list is gone from this nav entirely — it belongs to `<Workbench>` now — and so is the "Workbench" menu item.
+**Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` (the role-filtered effective menu, `client.visibleMenu()`) is primary; without a menu (demo/adoption posture) the pages listing is the fallback. *Amended M15:* the record-type list is gone from this nav entirely — it belongs to `<Workbench>` now — and so is the "Workbench" menu item.
 
 **Identity line (M13, 2026-07-27):** the header answers who you work for, which app you are in, whose data it runs on, who you are, and whose platform this is. Left: **org name** `·` **solution name** (`.app-org` / `.app-header-sep` / `.app-title`). Right, before the toggles: the **operation name** as a context chip (`.op-chip`) — display-only, since switching operations in-session needs a memberships list that does not exist. All three come off `FluxusClient` (`orgName` / `solutionName` / `operationName`, resolved at connect from `operations.get`). Platform attribution is one **"Powered by Fluxus"** line pinned to the foot of the nav (`.powered-by`; `.side-panel` is now a column with a scrolling `.side-panel-nav`) — at the edge, never competing with the tenant's branding in the bar. Demo tenancy names come from the seed: Northwind Utilities / Asset Maintenance / Western Region.
 
@@ -195,13 +196,15 @@ Header (identity line, UAT Labels toggle, notification bell, user menu)
 - **Styling travels in the tree, not in a stylesheet import.** `Workbench.tsx` exports its css as a string and renders `<style>{css}</style>` inside its own subtree (also exported as `workbenchCss` for a host with its own injection channel). A `.css` file import was the first cut and was **wrong**: the Console mounts its shell in a **shadow root**, which a bundler-injected document-level stylesheet never reaches. The failure mode was quiet — the workbench rendered its data as near-black text (`#0f172a`) on the Console's `#1e1e1e` shell with no background of its own, so it read as "no data". Same reasoning as `PageView`'s `<style>{pageRendererCss}</style>`; a `<style>` element applies in both a shadow root and the light DOM. All rules are scoped under `.workbench`. Known cosmetic: the workbench is light and the Console is dark — a themed workbench waits on the branding config (CONSOLE_RUNTIME_SPEC §10).
 - **Consequences, by design**: no "Workbench" menu item, no record-type list in the Runtime nav, and an operation whose solution has no published pages shows an empty app. The escape hatch is gone deliberately.
 
+**The workbench picks its own operation (ruled 2026-07-31):** the workbench's *model* — record types, workflows, activities — is the solution's; its *records* are one operation's partition, and two operations running the same solution hold entirely different data. That split was invisible while the choice lived in the Console header, so the picker moved into the workbench's side menu, above the record types, and the header's **Data** picker is gone. The component takes `operationId` (`null` = none picked), `operations`, `onSelectOperation` and `operationError`; omit `onSelectOperation` and the picker hides, for a host that binds the operation itself. `operationError` is not optional in practice: the `<select>` is controlled by the *committed* choice, so a re-scope that fails snaps it back to the previous operation and reads as a picker that does nothing — the host catches and passes the reason, which renders under the control. **Nothing is auto-selected** — with no operation the record types still list (they are the model), while the grid and the record pane say *"No operation selected — pick one above"* and no activity can run, because every activity writes into a partition. The choice stays **solution-wide**: the Console remembers it at `fluxus:page-builder:workbench-operation:<solutionId>` and the page preview reads the same one, so Console and Runtime never disagree about what exists (the M9 ruling, CONSOLE_RUNTIME_SPEC §3).
+
 Schema Navigator: org-chart-style record-type relationship viewer — focal type centred, FK targets one side, reverse FKs the other, click to recentre; launched from the RecordView header.
 
 Panel layout (July 2026 UX pass): each content panel is a fixed `panel-header` strip over a scrolling `panel-body` (`App.css`), so the grid toolbar and the record header stay pinned; the grid's column headers are additionally `position: sticky` inside the scrolling body (which requires `border-collapse: separate` — collapsed borders don't stick). The picker dialog reuses RecordsGrid without this structure (`pickerMode`).
 
 **CREATE selects its record:** after a successful Insert-row CREATE, the grid selects the new record via `RunActivityResult.recordId` (clearing any search filter that would hide it) and scrolls its row into view; the detail view follows the selection. CSV import deliberately leaves selection alone.
 
-**UAT component labels:** the header "Labels" toggle (`context/UatLabels.tsx`, persisted at `fluxus:sdm:uat-labels`) overlays a corner badge with the component name on each major region — RecordTypeList, PagesList, RecordsGrid, RecordView, PageView, AvailableActivities, RecordDetails, RelatedRecords, ActivityHistoryList, NotificationCentre, SchemaNavigator, AttributesForm — so UAT feedback can name components precisely. UAT aid only; off by default.
+**UAT component labels: removed 2026-08-01.** The header "Labels" toggle and `context/UatLabels.tsx` overlaid each region with its component name for UAT feedback. Deleted along with every `ComponentLabel` usage and the `fluxus:sdm:uat-labels` key.
 
 ## Naming conventions
 

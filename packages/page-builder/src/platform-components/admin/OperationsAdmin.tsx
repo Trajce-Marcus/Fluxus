@@ -1,7 +1,8 @@
-// Console operations admin (CONSOLE_RUNTIME_SPEC §3): the org's operations in
-// the inner panel (M17), the selected one's view in the main area — Overview +
-// the operation-scoped admin (menu override, role assignments) that M11
-// consolidated here out of separate picker-driven panels. **Open** launches the
+// Console operations admin (CONSOLE_RUNTIME_SPEC §3): the solution's operations
+// in the inner panel (M17), the selected one's view in the main area — that
+// view is `OperationView`, a tab strip over the operation-scoped admin (menu
+// override, role assignments) M11 consolidated here out of separate
+// picker-driven panels. **Open** launches the
 // **Runtime app** on the operation (ruled 2026-07-26), not a Console design
 // scope: the two Opens follow the two planes — a solution opens the Console
 // (author the model), an operation opens the app (run it).
@@ -14,8 +15,7 @@
 import { useEffect, useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { consoleClient } from '../../sdm-runtime/engine';
-import { OperationMenuSection } from './OperationMenuSection';
-import { AssignmentsSection } from './AssignmentsSection';
+import { OperationView } from './OperationView';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 /** The Runtime app's address; `?operation=<id>` selects what it runs. */
@@ -104,58 +104,45 @@ export function OperationsAdmin({ solutionId: scopeSolutionId }: { solutionId: s
         ))}
       </InnerPanel>
 
-      <div className="admin-panel">
-        {error && <div className="admin-error">{error}</div>}
-
-        {creating ? (
-          <>
-            <div className="admin-panel-head">
-              <h2 className="admin-title">New operation</h2>
-              <p className="admin-sub">
-                A runtime unit of <strong>{solutionName}</strong>: its own data, users and menu.
-                The link to this solution is permanent.
-              </p>
-            </div>
-            <form className="admin-form" onSubmit={create}>
-              <label className="admin-field">
-                <span>Name</span>
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North depot" autoFocus />
-              </label>
-              <label className="admin-field">
-                <span>Id</span>
-                <input
-                  value={idEdited ? id : slug(name)}
-                  onChange={(e) => { setIdEdited(true); setId(e.target.value); }}
-                  placeholder="north-depot"
-                  className="admin-mono"
-                />
-              </label>
-              <div className="admin-row">
-                <button type="submit" className="admin-btn" disabled={busy || !name.trim()}>
-                  {busy ? 'Creating…' : 'Create operation'}
-                </button>
-                <button type="button" className="admin-link" onClick={() => setCreating(false)}>Cancel</button>
-              </div>
-            </form>
-          </>
-        ) : selected ? (
-          <>
-            <div className="admin-panel-head">
-              <h2 className="admin-title">{selected.name}</h2>
-              <p className="admin-sub">
-                <span className="admin-mono">{selected.id}</span>
-                {' · runs '}<strong>{solutionName}</strong>
-              </p>
-            </div>
-            <div className="admin-section">
-              <button className="admin-btn" onClick={() => open(selected)} title="Run this operation in the Runtime app">
-                Open in Runtime app
+      {creating ? (
+        <div className="admin-panel">
+          {error && <div className="admin-error">{error}</div>}
+          <div className="admin-panel-head">
+            <h2 className="admin-title">New operation</h2>
+            <p className="admin-sub">
+              A runtime unit of <strong>{solutionName}</strong>: its own data, users and menu.
+              The link to this solution is permanent.
+            </p>
+          </div>
+          <form className="admin-form" onSubmit={create}>
+            <label className="admin-field">
+              <span>Name</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North depot" autoFocus />
+            </label>
+            <label className="admin-field">
+              <span>Id</span>
+              <input
+                value={idEdited ? id : slug(name)}
+                onChange={(e) => { setIdEdited(true); setId(e.target.value); }}
+                placeholder="north-depot"
+                className="admin-mono"
+              />
+            </label>
+            <div className="admin-row">
+              <button type="submit" className="admin-btn" disabled={busy || !name.trim()}>
+                {busy ? 'Creating…' : 'Create operation'}
               </button>
+              <button type="button" className="admin-link" onClick={() => setCreating(false)}>Cancel</button>
             </div>
-            <OperationMenuSection operationId={selected.id} solutionId={selected.solutionId} />
-            <AssignmentsSection operationId={selected.id} />
-          </>
-        ) : (
+          </form>
+        </div>
+      ) : selected ? (
+        /* The operation view — keyed so switching operations resets its tab
+           and every tab's own fetch. */
+        <OperationView key={selected.id} operation={selected} solutionName={solutionName} onOpenRuntime={open} />
+      ) : (
+        <div className="admin-panel">
+          {error && <div className="admin-error">{error}</div>}
           <div className="admin-panel-head">
             <h2 className="admin-title">Operations</h2>
             <p className="admin-sub">
@@ -163,8 +150,8 @@ export function OperationsAdmin({ solutionId: scopeSolutionId }: { solutionId: s
               Pick one from the list, or create a new one.
             </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </>
   );
 }

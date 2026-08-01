@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
 import { AttributesForm } from './AttributesForm';
 import { Modal } from './Modal';
-import { ComponentLabel } from '../../context/UatLabels';
 import type { ActivityDef, RecordInstance, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -25,7 +24,6 @@ export function AvailableActivities({ record, workflow }: Props) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <ComponentLabel name="AvailableActivities" />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {activities.map(a => (
           <button

@@ -14,12 +14,20 @@ export function Placeholder({ title, sub, items }: {
         <h2 className="admin-title">{title}</h2>
         <p className="admin-sub">{sub}</p>
       </div>
-      <div className="placeholder-card">
-        <div className="placeholder-badge">Not built yet</div>
-        <ul className="placeholder-list">
-          {items.map((it) => <li key={it}>{it}</li>)}
-        </ul>
-      </div>
+      <PlaceholderCard items={items} />
+    </div>
+  );
+}
+
+/** The card alone — for a *part* of a built surface that isn't built yet (a
+ *  tab in the operation view), where the section already has its own heading. */
+export function PlaceholderCard({ items }: { items: string[] }) {
+  return (
+    <div className="placeholder-card">
+      <div className="placeholder-badge">Not built yet</div>
+      <ul className="placeholder-list">
+        {items.map((it) => <li key={it}>{it}</li>)}
+      </ul>
     </div>
   );
 }

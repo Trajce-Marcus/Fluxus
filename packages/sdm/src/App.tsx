@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { RuntimeProvider, useRuntime } from './context/RuntimeContext';
-import { UatLabelsProvider, UatLabelsToggle } from './context/UatLabels';
 import { MenuNav } from './components/MenuNav';
 import { PagesList } from './components/PagesList';
 import { PageView } from './components/PageView';
@@ -96,7 +95,6 @@ function Shell() {
         {/* Which business unit's data this app is running on. Not switchable
             yet — one operation per session until memberships land. */}
         <span className="op-chip" title="Operation">{operationName}</span>
-        <UatLabelsToggle />
         <NotificationCentre />
         <UserMenu />
       </header>
@@ -112,10 +110,8 @@ function Shell() {
 
 export default function App() {
   return (
-    <UatLabelsProvider>
-      <RuntimeProvider>
-        <Shell />
-      </RuntimeProvider>
-    </UatLabelsProvider>
+    <RuntimeProvider>
+      <Shell />
+    </RuntimeProvider>
   );
 }

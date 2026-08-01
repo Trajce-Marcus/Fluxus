@@ -1,35 +1,62 @@
+import { useState } from 'react';
 import { Workbench } from '@fluxus/sdm';
-import { currentOperationId, currentSession, sdmClient } from '../../sdm-runtime/engine';
+import { currentSession, openSolution, sdmClient } from '../../sdm-runtime/engine';
+import { shellStore } from '../shell/store';
+import { useShellState } from '../shell/useShellState';
 
 // The workbench, hosted in the Console (CONSOLE_RUNTIME_SPEC §4, M15). It came
 // out of the Runtime app because raw record access, running any activity, CSV
 // import and the schema navigator are implementer work — and because the SDM
 // editor two clicks away was authoring blind against data it could not see.
-// The component owns everything record-shaped; all this host does is hand over
-// the design scope's client. It runs against the solution's current data
-// operation (the header's Data picker, M9), so switching there switches the
-// records here — the shell remounts on scopeVersion.
+// The component owns everything record-shaped; this host hands over the design
+// scope's client and the operation choice. **The operation picker lives in the
+// workbench's own side menu** (ruled 2026-07-31 — it moved out of the header):
+// the model is the solution's, the records are one operation's, and the control
+// belongs next to the data it governs. The choice stays solution-wide (the page
+// preview reads it too) and nothing is auto-picked — a solution opens with no
+// operation until someone chooses.
 
 function WorkbenchViewComponent() {
-  if (!currentOperationId) {
-    return (
-      <div className="workbench-host workbench-host-empty">
-        <p className="workbench-host-title">No data operation</p>
-        <p className="workbench-host-hint">
-          The workbench reads and writes an operation's records. This solution has no
-          operations yet — create one under Workspace → Operations, then reopen the solution.
-        </p>
-      </div>
-    );
-  }
+  const { solutionId, dataOperationId, dataOperations } = useShellState([
+    'solutionId', 'dataOperationId', 'dataOperations',
+  ]);
+  const [error, setError] = useState<string | null>(null);
 
   const user = currentSession
     ? { id: currentSession.id, name: currentSession.name, email: currentSession.email, roles: [] }
     : undefined;
 
+  // Picking an operation re-opens the solution against that partition and bumps
+  // scopeVersion, so every solution-scoped view (this one, the page preview)
+  // remounts on the same data. The model and draft pages are untouched — they
+  // are solution-scoped. Selecting none reconnects with no partition.
+  //
+  // A failed switch must SAY so: the `<select>` is controlled by the committed
+  // choice, so a rejected re-open silently snaps it back to the old operation
+  // and reads as "the picker doesn't work".
+  async function selectOperation(operationId: string | null) {
+    if (!solutionId) return;
+    setError(null);
+    try {
+      await openSolution(solutionId, operationId);
+      shellStore.set((prev) => ({ ...prev, dataOperationId: operationId, scopeVersion: prev.scopeVersion + 1 }));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('[workbench] switching operation failed', e);
+      setError(message);
+    }
+  }
+
   return (
     <div className="workbench-host">
-      <Workbench client={sdmClient} user={user} />
+      <Workbench
+        client={sdmClient}
+        user={user}
+        operationId={dataOperationId}
+        operations={dataOperations}
+        operationError={error}
+        onSelectOperation={(id) => void selectOperation(id)}
+      />
     </div>
   );
 }

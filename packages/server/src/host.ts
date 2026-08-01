@@ -7,7 +7,7 @@
 // Concurrency is last-write-wins per record for now (single-writer dev
 // deployments); optimistic versioning slots into writeBack when it matters.
 
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   createEngine,
   MemoryAdapter,
@@ -453,7 +453,7 @@ export async function putOrgProfile(db: Db, orgId: string, input: { name: string
 }
 
 export async function listSolutions(db: Db): Promise<{ id: string; name: string; origin: string }[]> {
-  const rows = await db.select().from(solutions);
+  const rows = await db.select().from(solutions).orderBy(asc(solutions.name));
   return rows.map((r) => ({ id: r.id, name: r.name, origin: r.origin }));
 }
 
@@ -509,7 +509,11 @@ export async function deleteSolution(db: Db, solutionId: string): Promise<void> 
 }
 
 export async function listOperations(db: Db): Promise<OperationRow[]> {
-  const rows = await db.select().from(operations);
+  // Ordered, and it matters: the Console binds its **data operation** to the
+  // first operation of a solution when nothing is remembered locally, so an
+  // unordered read (Postgres heap order, which moves as rows are written) made
+  // "which records the workbench shows" nondeterministic between loads.
+  const rows = await db.select().from(operations).orderBy(asc(operations.name));
   return rows.map((r) => ({ id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, config: r.config }));
 }
 
@@ -545,8 +549,15 @@ export async function validateOperationMenu(db: Db, solutionId: string, menu: Me
   const config = rolesFrom ?? (await getSolutionConfig(db, solutionId));
   const roleIds = new Set((config.access?.roles ?? []).map((r) => r.id));
   const errors: string[] = [];
+  // Item ids must be unique across the whole menu — they identify an item for
+  // selection, reordering and (§5a) an operation's per-item overrides.
+  const seenIds = new Set<string>();
   const walk = (items: MenuItem[], depth: number) => {
     for (const it of items) {
+      if (it.id) {
+        if (seenIds.has(it.id)) errors.push(`"${it.label}" → duplicate item id "${it.id}"`);
+        seenIds.add(it.id);
+      }
       if (it.page && !published.has(it.page)) errors.push(`"${it.label}" → no published page "${it.page}"`);
       for (const r of it.roles ?? []) if (!roleIds.has(r)) errors.push(`"${it.label}" → unknown role "${r}"`);
       if (it.items && it.items.length > 0) {

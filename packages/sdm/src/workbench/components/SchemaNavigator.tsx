@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { Modal } from './Modal';
 import { SchemaNavGraph } from './SchemaNavGraph';
 import { useWorkbench } from '../WorkbenchContext';
-import { ComponentLabel } from '../../context/UatLabels';
 
 interface Props {
   initialTypeId: string;
@@ -39,7 +38,6 @@ export function SchemaNavigator({ initialTypeId, onClose }: Props) {
         padding: '10px 18px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc',
         position: 'relative',
       }}>
-        <ComponentLabel name="SchemaNavigator" />
         <button
           onClick={navigateBack}
           disabled={history.length === 0}

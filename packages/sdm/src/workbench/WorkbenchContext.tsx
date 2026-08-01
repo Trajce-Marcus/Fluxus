@@ -23,6 +23,15 @@ import { buildNotifyModule } from '../services/notify';
 // snapshot is built here, per mounted workbench, from that client.
 
 interface WorkbenchContextValue {
+  /** The operation whose partition is on screen — `null` = none picked yet, so
+   *  the model shows and the data does not (ruled 2026-07-31). */
+  operationId: string | null;
+  /** The solution's operations, for the side-menu picker. */
+  operations: { id: string; name: string }[];
+  /** Absent when the host does not offer switching — the picker hides. */
+  selectOperation?: (operationId: string | null) => void;
+  /** Why the last switch didn't take, if it didn't. */
+  operationError?: string | null;
   recordTypes: RecordTypeDef[];
   selectedRecordType: (RecordTypeDef & { workflow: WorkflowDef }) | null;
   selectedRecord: RecordInstance | null;
@@ -64,10 +73,18 @@ export interface WorkbenchProviderProps {
   /** Signed-in identity for `ctx.user` in expression parity; omitted in the
    *  demo (auth unconfigured) posture. */
   user?: ContextUser;
+  /** The operation the client is connected to, or null for none picked. */
+  operationId?: string | null;
+  operations?: { id: string; name: string }[];
+  /** Re-scope the host to another operation (or none). Omit and the picker
+   *  hides — a host that binds the operation itself keeps the choice. */
+  onSelectOperation?: (operationId: string | null) => void;
+  /** Surfaced under the picker — a failed switch must not look like a no-op. */
+  operationError?: string | null;
   children: React.ReactNode;
 }
 
-export function WorkbenchProvider({ client, user, children }: WorkbenchProviderProps) {
+export function WorkbenchProvider({ client, user, operationId = null, operations = [], onSelectOperation, operationError, children }: WorkbenchProviderProps) {
   const [, setTick] = useState(0);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -196,6 +213,10 @@ export function WorkbenchProvider({ client, user, children }: WorkbenchProviderP
 
   return (
     <Ctx.Provider value={{
+      operationId,
+      operations,
+      selectOperation: onSelectOperation,
+      operationError,
       recordTypes: adapter.listRecordTypes(),
       selectedRecordType: rtDef,
       selectedRecord,

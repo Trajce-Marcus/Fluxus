@@ -23,6 +23,7 @@ import {
 } from './pageEditorStore';
 import { componentManifests, PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
 import { pageRuntime } from '../../sdm-runtime/engine';
+import { useShellState } from '../shell/useShellState';
 import { LayoutEditor, css as layoutEditorCss } from './layout-editor/LayoutEditor';
 import { ExpressionDialog, css as expressionDialogCss } from './ExpressionDialog';
 import { PublishControl, css as publishControlCss } from './PublishControl';
@@ -383,9 +384,18 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pagePath }: 
 // ── Column 4: Preview ────────────────────────────────────────────────────────
 
 function PreviewColumn({ pagePath, slotConfigs, contextSchema }: { pagePath: string; slotConfigs: Record<string, SlotConfig | null>; contextSchema: ContextKeyDef[] }) {
+  // The preview renders against the same operation the workbench shows, and
+  // nothing is auto-picked (ruled 2026-07-31) — so an empty preview says which
+  // it is, rather than reading as a broken page.
+  const { dataOperationId } = useShellState(['dataOperationId']);
   return (
     <div className="pe-col pe-col-preview">
       <div className="pe-col-header">Preview</div>
+      {!dataOperationId && (
+        <div className="pe-preview-nodata">
+          No operation selected — the preview has no records. Pick one in Workbench.
+        </div>
+      )}
       <div className="pe-preview-content">
         <PageRenderer
           runtime={pageRuntime}
@@ -553,6 +563,14 @@ export const css = `
   .pe-expr--empty { color: var(--color-text-muted); font-style: italic; font-family: inherit; }
 
   .pe-preview-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; background: #fff; }
+  .pe-preview-nodata {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid var(--color-border);
+  }
 `;
 
 export const PageEditor = PageEditorComponent;

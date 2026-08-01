@@ -4,7 +4,6 @@
 // first step of workbench → Runtime app.
 
 import { useRuntime } from '../context/RuntimeContext';
-import { ComponentLabel } from '../context/UatLabels';
 
 export function PagesList() {
   const { pagePaths, selectedPage, selectPage } = useRuntime();
@@ -13,7 +12,6 @@ export function PagesList() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <ComponentLabel name="PagesList" />
       <div style={{
         padding: '12px 16px',
         fontSize: 11,

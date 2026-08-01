@@ -235,14 +235,14 @@ export function WorkflowsEditor() {
                       <textarea className="sdm-code" value={hookText(act.after_hook)} onChange={(e) => editAct({ after_hook: e.target.value || null })} /></label>
 
                     <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'act' ? removeAct() : setArmed('act'))}>
-                      {armed === 'act' ? 'Really remove?' : 'Remove activity'}</button>
+                      {armed === 'act' ? 'Really delete?' : 'Delete activity'}</button>
                   </div>
                 )}
               </div>
             </div>
 
             <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'wf' ? removeWf() : setArmed('wf'))}>
-              {armed === 'wf' ? 'Really remove?' : 'Remove workflow'}</button>
+              {armed === 'wf' ? 'Really delete?' : 'Delete workflow'}</button>
           </div>
         )}
 

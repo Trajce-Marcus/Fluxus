@@ -8,6 +8,7 @@ import { PeopleAdmin } from './PeopleAdmin';
 import { BillingAdmin } from './BillingAdmin';
 import { Placeholder, css as placeholderCss } from './Placeholder';
 import { css as menuCss } from './OperationMenuSection';
+import { css as operationViewCss } from './OperationView';
 
 export function AdminView({ tab }: { tab: string }) {
   switch (tab) {
@@ -42,5 +43,6 @@ export function AdminView({ tab }: { tab: string }) {
 
 // The shared admin CSS lives in OperationsAdmin; all admin panels use its
 // `.admin-*` classes. OperationMenuSection adds the `.menu-*` rules (shared
-// with the solution-level MenuEditor via MenuItemsEditor).
-export const css = operationsCss + menuCss + orgCss + placeholderCss;
+// with the solution-level MenuEditor via MenuItemsEditor); OperationView adds
+// the `.op-*` tab strip.
+export const css = operationsCss + menuCss + orgCss + placeholderCss + operationViewCss;

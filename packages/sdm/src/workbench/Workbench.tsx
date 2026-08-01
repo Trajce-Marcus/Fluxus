@@ -2,6 +2,7 @@ import type { ContextUser } from '@fluxus/engine';
 import type { FluxusClient } from '@fluxus/client';
 import { WorkbenchProvider } from './WorkbenchContext';
 import { RecordTypeList } from './components/RecordTypeList';
+import { OperationPicker } from './components/OperationPicker';
 import { RecordsGrid } from './components/RecordsGrid';
 import { RecordView } from './components/RecordView';
 
@@ -18,11 +19,30 @@ export interface WorkbenchProps {
   /** Signed-in identity, for `ctx.user` parity in expression evaluation.
    *  Omitted in the demo (auth unconfigured) posture. */
   user?: ContextUser;
+  /** Which operation's records are shown — `null` = none picked, the state a
+   *  solution opens in (ruled 2026-07-31). The model still lists; the data
+   *  waits for a choice. */
+  operationId?: string | null;
+  /** The solution's operations, for the side-menu picker. */
+  operations?: { id: string; name: string }[];
+  /** Re-scope to another operation (or none). Omitted ⇒ no picker: a host that
+   *  binds the operation itself (the Runtime app) keeps that choice. */
+  onSelectOperation?: (operationId: string | null) => void;
+  /** Why the last switch didn't take — shown under the picker. Without it a
+   *  failed re-scope just snaps the control back to the old operation. */
+  operationError?: string | null;
 }
 
-export function Workbench({ client, user }: WorkbenchProps) {
+export function Workbench({ client, user, operationId = null, operations = [], onSelectOperation, operationError }: WorkbenchProps) {
   return (
-    <WorkbenchProvider client={client} user={user}>
+    <WorkbenchProvider
+      client={client}
+      user={user}
+      operationId={operationId}
+      operations={operations}
+      onSelectOperation={onSelectOperation}
+      operationError={operationError}
+    >
       {/* The chrome rides in the tree, not in a stylesheet import: the Console
           mounts its shell in a **shadow root**, which a bundler-injected
           document-level stylesheet never reaches. A <style> element inside the
@@ -33,6 +53,9 @@ export function Workbench({ client, user }: WorkbenchProps) {
       <style>{css}</style>
       <div className="workbench">
         <div className="workbench-types">
+          {/* The operation first, then the model it partitions: the side menu
+              reads top-down as "whose data, then what shapes". */}
+          <OperationPicker />
           <RecordTypeList />
         </div>
         <div className="workbench-panes">

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
-import { ComponentLabel } from '../../context/UatLabels';
 import { RecordDetails } from './RecordDetails';
 import { RelatedRecords } from './RelatedRecords';
 import { ActivityHistoryList } from './ActivityHistoryList';
 import { AvailableActivities } from './AvailableActivities';
 import { SchemaNavigator } from './SchemaNavigator';
+import { NoOperationNotice } from './OperationPicker';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 type NavEntry = { typeId: string; recordId: string };
@@ -34,7 +34,7 @@ const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
 });
 
 export function RecordView() {
-  const { selectedRecord, selectedRecordType, getRecordAndType } = useWorkbench();
+  const { operationId, selectedRecord, selectedRecordType, getRecordAndType } = useWorkbench();
 
   const [viewedTypeId, setViewedTypeId] = useState<string | null>(null);
   const [viewedRecordId, setViewedRecordId] = useState<string | null>(null);
@@ -99,7 +99,6 @@ export function RecordView() {
   if (!selectedRecord) {
     return (
       <div className="panel-body" style={{ position: 'relative' }}>
-        <ComponentLabel name="RecordView" />
         {selectedRecordType && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button onClick={() => setShowSchemaNav(true)} style={schemaBtnStyle} title="Schema Navigator">
@@ -107,11 +106,15 @@ export function RecordView() {
             </button>
           </div>
         )}
-        <div style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
-          {selectedRecordType
-            ? 'Select a record from the grid to view details.'
-            : 'Select a record type, then a record.'}
-        </div>
+        {!operationId ? (
+          <NoOperationNotice what="records and run activities" />
+        ) : (
+          <div style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
+            {selectedRecordType
+              ? 'Select a record from the grid to view details.'
+              : 'Select a record type, then a record.'}
+          </div>
+        )}
         {showSchemaNav && selectedRecordType && (
           <SchemaNavigator
             initialTypeId={selectedRecordType.id}
@@ -137,7 +140,6 @@ export function RecordView() {
   return (
     <>
       <div className="panel-header">
-        <ComponentLabel name="RecordView" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <button onClick={navigateBack} disabled={!canGoBack} style={navBtnStyle(canGoBack)} title="Back">←</button>
           <button onClick={navigateForward} disabled={!canGoForward} style={navBtnStyle(canGoForward)} title="Forward">→</button>

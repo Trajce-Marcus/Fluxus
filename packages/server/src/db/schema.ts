@@ -84,6 +84,11 @@ export interface OperationConfig {
   menu?: MenuItem[];
 }
 export interface MenuItem {
+  /** Stable identity for the item, independent of its label (2026-08-01).
+   *  The editor uses it for selection and drag; §5a's subtractive overrides
+   *  need it to name an inherited item that a relabel would otherwise lose.
+   *  Optional: menus authored before it exists still load. */
+  id?: string;
   label: string;
   /** Page path (leaf items) — resolves to a published version of the solution. */
   page?: string;

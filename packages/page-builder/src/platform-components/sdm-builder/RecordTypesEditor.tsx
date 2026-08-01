@@ -164,7 +164,7 @@ export function RecordTypesEditor() {
             </div>
 
             <button className="admin-btn admin-btn-ghost" onClick={() => (armed ? removeRt() : setArmed(true))}>
-              {armed ? 'Really remove?' : 'Remove record type'}</button>
+              {armed ? 'Really delete?' : 'Delete record type'}</button>
           </div>
         )}
 

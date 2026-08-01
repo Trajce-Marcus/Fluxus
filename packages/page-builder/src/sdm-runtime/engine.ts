@@ -39,8 +39,20 @@ export let currentOperationId: string | null = null;
 export let solutionOperations: { id: string; name: string }[] = [];
 
 /** Remembered per solution so reopening lands on the same data (local only —
- *  a preference, not model state). */
-const dataOpKey = (solutionId: string) => `fluxus:page-builder:data-operation:${solutionId}`;
+ *  a preference, not model state). Renamed 2026-07-31 with the picker's move
+ *  into the workbench side menu — the choice is the workbench's now. */
+const dataOpKey = (solutionId: string) => `fluxus:page-builder:workbench-operation:${solutionId}`;
+
+/** Sweep the pre-M18 key (`…:data-operation:<solutionId>`) — the choice it held
+ *  is not migrated: nothing is auto-picked any more, so a stale remembered
+ *  operation would reintroduce exactly the invisible binding M18 removed. */
+function forgetLegacyDataOperationKeys(): void {
+  const legacy = 'fluxus:page-builder:data-operation:';
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(legacy)) localStorage.removeItem(key);
+  }
+}
 
 export async function initSdmRuntime(): Promise<void> {
   // Auth gate (RBAC_DESIGN §0): VITE_NEON_AUTH_URL unset ⇒ demo posture, no
@@ -54,6 +66,7 @@ export async function initSdmRuntime(): Promise<void> {
   bootUrl = import.meta.env.VITE_FLUXUS_API_URL;
   bootGetToken = auth.configured ? auth.getToken : undefined;
   consoleClient = ConsoleClient.create({ url: bootUrl, getToken: bootGetToken });
+  forgetLegacyDataOperationKeys();
 }
 
 /**
@@ -63,24 +76,34 @@ export async function initSdmRuntime(): Promise<void> {
  * (ruled 2026-07-26 — Console showing an empty table where the workbench showed
  * four records was the platform contradicting itself).
  *
- * `operationId` omitted ⇒ the remembered choice, else the solution's first
- * operation, else none (a solution with no operations yet).
+ * `operationId` omitted ⇒ the remembered choice if it still exists; `null` ⇒
+ * explicitly none. **Nothing is auto-picked** (ruled 2026-07-31): the old
+ * fallback to the solution's first operation bound the Console to a partition
+ * nobody chose — and "first" was whatever Postgres returned — so a solution
+ * whose choice was never made, or was made against a since-deleted operation,
+ * opens with no data and says so.
  */
-export async function openSolution(solutionId: string, operationId?: string): Promise<void> {
+export async function openSolution(solutionId: string, operationId?: string | null): Promise<void> {
   solutionOperations = await FluxusClient.operationsForSolution({ url: bootUrl, solutionId, getToken: bootGetToken });
+  const exists = (id: string | null | undefined) => !!id && solutionOperations.some((o) => o.id === id);
   const remembered = localStorage.getItem(dataOpKey(solutionId));
-  const chosen =
-    [operationId, remembered].find((id) => id && solutionOperations.some((o) => o.id === id)) ??
-    solutionOperations[0]?.id;
+  const chosen = operationId === null
+    ? undefined
+    : (exists(operationId) ? operationId! : exists(remembered) ? remembered! : undefined);
   sdmClient = await FluxusClient.connectSolution({ url: bootUrl, solutionId, operationId: chosen, getToken: bootGetToken });
   pageRuntime = createPageRuntime({ client: sdmClient });
   currentSolutionId = solutionId;
   currentOperationId = chosen ?? null;
+  // Remember the choice, and forget one that no longer resolves (deleted
+  // operation) so it cannot keep failing silently.
   if (chosen) localStorage.setItem(dataOpKey(solutionId), chosen);
+  else localStorage.removeItem(dataOpKey(solutionId));
 }
 
 /** Re-read the current solution's config + pages + records (e.g. after an SDM
  *  config save rebuilds the model, or an activity run changes data). */
 export async function reloadSolution(): Promise<void> {
-  if (currentSolutionId) await openSolution(currentSolutionId, currentOperationId ?? undefined);
+  // Pass the current choice through as-is — null means none, and a reload must
+  // not re-derive one.
+  if (currentSolutionId) await openSolution(currentSolutionId, currentOperationId);
 }
