@@ -28,8 +28,8 @@ one language. Apps come and go; the model accumulates.
 
 | Domain | Component | What it does | Runs as |
 |---|---|---|---|
-| **User interface** | **Console** | The builder's app: author the SDM, build pages, run the workbench (raw record/data tooling), administer operations, roles, publishing. | Browser app — `@fluxus/page-builder` |
-| | **Runtime** | The end user's app: sign in, see your operation's menu, use its published pages. Shows the solution's identity, not the platform's. | Browser app — `@fluxus/sdm` |
+| **User interface** | **Console** | The builder's app: author the SDM, build pages, run the workbench (raw record/data tooling), administer operations, roles, publishing. | Browser app — `@fluxus/console` |
+| | **Runtime** | The end user's app: sign in, see your operation's menu, use its published pages. Shows the solution's identity, not the platform's. | Browser app — `@fluxus/runtime` |
 | | **Page runtime** | Turns a stored page definition into working UI against live records; embedded by both apps. | Browser library — `@fluxus/page-runtime` |
 | **Model** | **SDM** | A solution's definition of its data and behaviour: record types, workflows, activities, hooks. Validated at save; versioned in the database. | Stored config artifact |
 | **Business logic** | **Activity engine** | The one pipeline every change goes through: availability gate → capture → validate → before hook → persist → after hook → history. Never reimplemented. | Shared library, browser + server — `@fluxus/engine` |

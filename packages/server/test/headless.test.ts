@@ -12,7 +12,7 @@ import { ensureOperation, ensureSolution, putConfig, seedOperationRecords } from
 import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { records, rptActivities, rptAttributes } from '../src/db/schema';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
-import { config } from '../../sdm/src/config';
+import { config } from '../../runtime/src/config';
 
 let db: Db;
 const notifications: NotificationEvent[] = [];

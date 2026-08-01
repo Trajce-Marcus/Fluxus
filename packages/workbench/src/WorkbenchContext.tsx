@@ -12,8 +12,8 @@ import type {
   ScriptContext,
 } from '@fluxus/engine';
 import type { FluxusClient, UploadService } from '@fluxus/client';
-import { NotificationLog } from '../store/NotificationLog';
-import { buildNotifyModule } from '../services/notify';
+import { NotificationLog } from './store/NotificationLog';
+import { buildNotifyModule } from './services/notify';
 
 // The workbench's own state (CONSOLE_RUNTIME_SPEC §4, M15). Everything
 // record-shaped lives here — selected record type, selected record, activity

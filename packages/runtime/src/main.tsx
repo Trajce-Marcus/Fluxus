@@ -29,7 +29,7 @@ async function boot(): Promise<void> {
       <div style={{ fontFamily: 'system-ui, sans-serif', padding: 32, maxWidth: 640 }}>
         <h2 style={{ margin: '0 0 8px' }}>Can't reach the Fluxus server</h2>
         <p style={{ color: '#64748b' }}>
-          The workbench needs <code>@fluxus/server</code> running — start it with{' '}
+          The Runtime app needs <code>@fluxus/server</code> running — start it with{' '}
           <code>npm run dev:server</code> (and seed the demo SDM once with{' '}
           <code>npm run seed:server</code>).
         </p>

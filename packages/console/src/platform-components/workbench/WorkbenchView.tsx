@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Workbench } from '@fluxus/sdm';
+import { Workbench } from '@fluxus/workbench';
 import { currentSession, openSolution, sdmClient } from '../../sdm-runtime/engine';
 import { shellStore } from '../shell/store';
 import { useShellState } from '../shell/useShellState';

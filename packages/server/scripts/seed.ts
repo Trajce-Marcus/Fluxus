@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { closeDb, createDb } from '../src/db/client';
 import { ensureOperation, ensureOrg, ensureSolution, getSolutionConfig, listPageVersions, listPages, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
 import { DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
-import { config } from '../../sdm/src/config';
+import { config } from '../../runtime/src/config';
 
 // Match the dev server: seed the DATABASE_URL from .env (Neon) when present,
 // else PGlite. Run `npm run seed` and it targets whatever `npm run dev` does.
@@ -51,9 +51,9 @@ if (wroteConfig) await putConfig(db, solutionId, config);
 await ensureOperation(db, operationId, solutionId, 'Western Region');
 await seedOperationRecords(db, operationId, config);
 
-// Page files: page path = the file's path relative to packages/page-builder
+// Page files: page path = the file's path relative to packages/console
 // minus the extension (pages/work-orders-demo.json → 'pages/work-orders-demo').
-const pagesDir = fileURLToPath(new URL('../../page-builder/pages', import.meta.url));
+const pagesDir = fileURLToPath(new URL('../../console/pages', import.meta.url));
 const pageFiles = readdirSync(pagesDir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'));
 const existingPaths = new Set((await listPages(db, solutionId)).map((p) => p.path));
 let wrotePages = 0;

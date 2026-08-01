@@ -1,7 +1,7 @@
-// Renders a published page in the workbench content area via
+// Renders a published page in the Runtime app's content area via
 // @fluxus/page-runtime (approved MVP slice, 2026-07-19). The stored PageDef
 // supplies slot configs and context schema; the renderer's css rides a plain
-// <style> tag — the workbench renders in the light DOM, no shadow root.
+// <style> tag — the Runtime app renders in the light DOM, no shadow root.
 
 import { PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
 import { pageRuntime } from '../host';

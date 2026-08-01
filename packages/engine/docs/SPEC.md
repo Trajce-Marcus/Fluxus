@@ -1,7 +1,7 @@
 # @fluxus/engine — Living Spec
 
 The shared activity engine: the host-agnostic SDM core extracted from
-`@fluxus/sdm` at the Extraction milestone (July 2026). Everything here used to
+`@fluxus/sdm` (now `@fluxus/runtime`) at the Extraction milestone (July 2026). Everything here used to
 live inside the workbench; the pipeline semantics did not change in the move —
 per-step doctrine (gate fail-closed rules, warn soft stop, waivers,
 exact-key mapping, staged after-hook commits) is specified in the sdm SPEC's

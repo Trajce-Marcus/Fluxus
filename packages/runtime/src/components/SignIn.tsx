@@ -1,4 +1,4 @@
-// The workbench's sign-in gate (RBAC_DESIGN §0): a minimal embedded
+// The Runtime app's sign-in gate (RBAC_DESIGN §0): a minimal embedded
 // email+password form shown before connect() when Neon Auth is configured
 // (VITE_NEON_AUTH_URL set). Signup stays open for MVP — once RBAC stage 1
 // engages deny-by-default, a fresh signup sees nothing, which is intended.
