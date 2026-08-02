@@ -4,7 +4,7 @@
 
 A model-first platform monorepo in three tiers (restructured 2026-08-01):
 
-- **Apps** — `@fluxus/console` (the design plane: author the SDM, build pages, host the workbench, administer operations/roles/publishing) and `@fluxus/runtime` (the runtime plane: what end users sign into — their operation's menu and published pages). **Apps never import apps.**
+- **Apps** — `@fluxus/console` (the design plane: author the SDM, build pages, host the workbench, administer operations/roles/publishing), `@fluxus/runtime` (the runtime plane: what end users sign into — their operation's menu and published pages) and `@fluxus/platform` (the platform plane: **ours**, above every org — registers orgs and their owners; usage and billing later). **Apps never import apps.**
 - **Libraries** — `@fluxus/workbench` (the out-of-the-box record UI every SDM gets for free; the Console mounts it) and `@fluxus/page-runtime` (the run-a-page cluster both apps embed).
 - **Core** — `@fluxus/engine` (the shared activity engine every host drives), `@fluxus/dsl` (the scripting language), `@fluxus/server` (activities as the API surface; Postgres), `@fluxus/client` (the apps' snapshot/run door to the server).
 

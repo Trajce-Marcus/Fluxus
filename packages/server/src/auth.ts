@@ -99,6 +99,41 @@ export interface Auth {
 
 const unauthorized = (message: string) => new TRPCError({ code: 'UNAUTHORIZED', message });
 
+/**
+ * The platform tier (ruled 2026-08-03) — us, the vendor, above every org.
+ * Registering an org is its work, because an org cannot create itself: the org
+ * admin is the root of authority *within* an org, and there is no org to be
+ * admin of yet.
+ *
+ * **An env allowlist, not a table**, and deliberately so. A `platform_users`
+ * table recreates one tier up exactly the chicken-and-egg `bootstrapOrgAdmin`
+ * exists to escape — who writes the first platform admin? The env is already
+ * outside the request path, which is the only property the first row of any
+ * tier needs. Platform admins are a handful of our own people, so the audit
+ * and lifecycle a table would buy has nothing yet to record. `isPlatformAdmin`
+ * is the single seam: swapping it for a table later touches no caller.
+ *
+ * Empty/unset ⇒ nobody is a platform admin, even in demo posture. This is the
+ * one gate that does NOT fall open when auth is unconfigured: every other check
+ * guards one org's data from its own people, where "no identity ⇒ nothing to
+ * gate on" holds, while this one guards every org from everyone. An unset
+ * allowlist on a machine with no auth would otherwise mean anyone who can reach
+ * the port can register orgs.
+ */
+export function platformAdmins(env: Record<string, string | undefined> = process.env): Set<string> {
+  return new Set(
+    (env.FLUXUS_PLATFORM_ADMINS ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+export function isPlatformAdmin(email: string | null | undefined, env?: Record<string, string | undefined>): boolean {
+  const key = email?.trim().toLowerCase();
+  return key ? platformAdmins(env).has(key) : false;
+}
+
 export function createAuth(env: Record<string, string | undefined> = process.env): Auth {
   // NEON_AUTH_URL per Neon's backend guides; NEON_AUTH_BASE_URL is the name
   // their Next.js SDK docs use — accept both, one meaning.

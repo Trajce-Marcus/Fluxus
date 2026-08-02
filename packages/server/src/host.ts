@@ -442,6 +442,58 @@ export interface OrgRow {
   createdAt: Date | null;
 }
 
+/** Every org, for the platform plane's org list. The only cross-org read in
+ *  the codebase — every other query is scoped to one org by construction, which
+ *  is why this one is reachable through the platform router alone. */
+export async function listOrgs(db: Db): Promise<OrgRow[]> {
+  const rows = await db.select().from(orgs).orderBy(asc(orgs.name));
+  return rows.map((r) => ({
+    id: r.id, name: r.name, contactEmail: r.contactEmail, plan: r.plan, status: r.status, createdAt: r.createdAt,
+  }));
+}
+
+export class OrgExistsError extends Error {
+  constructor(orgId: string) {
+    super(`Org '${orgId}' already exists`);
+  }
+}
+
+/**
+ * Register an org and its owner — **one act**, the obligation RBAC_COMPACT
+ * "Administration" states: creating an org and creating its first admin cannot
+ * be two steps, because after the first the org admits nobody, including
+ * whoever would perform the second.
+ *
+ * The owner is the org's first `org_users` admin (status 'invited' until their
+ * first sign-in binds an auth id) and is recorded as `orgs.contact_email` so
+ * the org row itself answers "whose is this". Deliberately NOT a separate
+ * 'owner' level (ruled 2026-08-03): a third tier value would need transfer and
+ * deletion rules this tier does not need yet, and the owner's authority — org
+ * admin — is fully expressed by the level that already exists.
+ *
+ * This is what retires `bootstrapOrgAdmin` for every org but the first. Nothing
+ * is emailed: invites are a database row and nothing more until a mail sender
+ * exists, so the owner is told out of band (ruled 2026-08-03).
+ */
+export async function registerOrg(
+  db: Db,
+  input: { id: string; name: string; ownerEmail: string; ownerName?: string | null; plan?: string },
+): Promise<void> {
+  const existing = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, input.id));
+  if (existing.length > 0) throw new OrgExistsError(input.id);
+  const ownerEmail = normaliseEmail(input.ownerEmail);
+  await db.insert(orgs).values({
+    id: input.id,
+    name: input.name,
+    contactEmail: ownerEmail,
+    ...(input.plan ? { plan: input.plan } : {}),
+  });
+  await db
+    .insert(orgUsers)
+    .values({ orgId: input.id, email: ownerEmail, name: input.ownerName ?? null, level: 'admin', status: 'invited' })
+    .onConflictDoUpdate({ target: [orgUsers.orgId, orgUsers.email], set: { level: 'admin' } });
+}
+
 /** Edit the org profile. Only the fields an org owns about itself — `plan` and
  *  `status` are ours to set, never theirs, so they are not writable here. */
 export async function putOrgProfile(db: Db, orgId: string, input: { name: string; contactEmail: string | null }): Promise<void> {
@@ -536,9 +588,24 @@ export async function listOperations(db: Db): Promise<OperationRow[]> {
 
 /** Create an operation against an existing solution (the linked FK is enforced). */
 export async function createOperation(db: Db, input: { id: string; solutionId: string; name: string }): Promise<void> {
-  const sol = await db.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, input.solutionId));
+  const sol = await db.select({ id: solutions.id, orgId: solutions.orgId }).from(solutions).where(eq(solutions.id, input.solutionId));
   if (sol.length === 0) throw new SolutionNotFoundError(input.solutionId);
-  await db.insert(operations).values({ id: input.id, solutionId: input.solutionId, name: input.name });
+  // The operation INHERITS the solution's org rather than taking one as input
+  // (2026-08-03). Two reasons: the link is binding and permanent, so an
+  // operation in a different org from its solution could never be corrected;
+  // and one source of truth means no call site can disagree about whose
+  // operation this is. Until now nothing passed an org at all and every
+  // operation landed in 'default' — invisible while 'default' was the only org.
+  await db.insert(operations).values({ id: input.id, solutionId: input.solutionId, name: input.name, orgId: sol[0].orgId });
+}
+
+/** Which org owns a solution — the gate lookup for every solution-scoped admin
+ *  call. Unknown id is NOT treated as 'default': that would let an admin of the
+ *  default org act on a typo'd id somewhere else. */
+export async function getSolutionOrg(db: Db, solutionId: string): Promise<string> {
+  const rows = await db.select({ orgId: solutions.orgId }).from(solutions).where(eq(solutions.id, solutionId));
+  if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
+  return rows[0].orgId;
 }
 
 /** Persist the operation's runtime config (menu, §5). */

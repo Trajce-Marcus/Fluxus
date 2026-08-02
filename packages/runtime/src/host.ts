@@ -14,7 +14,7 @@
 
 import { createEngine, buildGeoModule } from '@fluxus/engine';
 import type { ContextUser } from '@fluxus/engine';
-import { FluxusClient, type AuthSession, type HostAuth } from '@fluxus/client';
+import { FluxusClient, orgFromPath, type AuthSession, type HostAuth } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { NotificationLog } from './store/NotificationLog';
 import { buildNotifyModule } from './services/notify';
@@ -58,6 +58,17 @@ export async function initHost(auth?: HostAuth): Promise<void> {
     getToken: auth?.configured ? auth.getToken : undefined,
     pages: 'published',
   });
+  // The org may also be named in the path — `/o/<orgId>/?operation=<id>`
+  // (ruled 2026-08-03), so a Runtime link reads the same as a Console one. It
+  // is NOT how the org is resolved: the operation determines that, server-side,
+  // and `client.orgId` is the answer. Naming a different org in the path is a
+  // broken link, and saying so beats silently ignoring half the address.
+  const urlOrg = orgFromPath();
+  if (urlOrg && urlOrg !== client.orgId) {
+    throw new Error(
+      `This link says organisation '${urlOrg}', but operation '${client.operationId}' belongs to '${client.orgId}'.`,
+    );
+  }
   pageRuntime = createPageRuntime({ client });
   // The stored config was validated at config.put; re-reporting here is a
   // free safety net against server/client engine version drift.

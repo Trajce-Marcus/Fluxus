@@ -158,27 +158,45 @@ export interface OpUser {
  * the bearer-token transport.
  */
 export class ConsoleClient {
-  private constructor(private readonly trpc: Trpc) {}
+  private constructor(private readonly trpc: Trpc, private readonly orgId: string | undefined) {}
 
-  static create(options: { url?: string; getToken?: () => Promise<string | null> } = {}): ConsoleClient {
-    return new ConsoleClient(createTrpc(options.url ?? DEFAULT_URL, options.getToken));
+  /**
+   * `orgId` is the org this Console session is working in — the host reads it
+   * from the URL (`/o/<orgId>/…`) and passes it once here, rather than
+   * threading it through every call site. Omitted ⇒ the server's default org,
+   * which is what a single-org deployment and the demo posture want.
+   */
+  static create(options: { url?: string; orgId?: string; getToken?: () => Promise<string | null> } = {}): ConsoleClient {
+    return new ConsoleClient(createTrpc(options.url ?? DEFAULT_URL, options.getToken), options.orgId);
+  }
+
+  /** The session's org, or undefined when the server's default is in force. */
+  get org(): string | undefined {
+    return this.orgId;
+  }
+
+  /** Per-call override wins; otherwise the session's org; otherwise nothing,
+   *  and the server fills in its default. */
+  private scoped(orgId?: string): { orgId: string } | Record<string, never> {
+    const id = orgId ?? this.orgId;
+    return id ? { orgId: id } : {};
   }
 
   // The org tier (M14): Console's Organisation → Settings surface. Reads and
-  // profile edits only — no create (registration waits on user → org
-  // resolution), no plan/status writes (ours to set, not the org's).
+  // profile edits only — registering an org is the platform plane's
+  // (`PlatformClient`), and plan/status are ours to set, not the org's.
   getOrg(orgId?: string): Promise<OrgProfile> {
-    return this.trpc.orgs.get.query(orgId ? { orgId } : {}) as Promise<OrgProfile>;
+    return this.trpc.orgs.get.query(this.scoped(orgId)) as Promise<OrgProfile>;
   }
   putOrgProfile(input: { orgId?: string; name: string; contactEmail: string | null }): Promise<{ ok: true }> {
-    return this.trpc.orgs.putProfile.mutate(input);
+    return this.trpc.orgs.putProfile.mutate({ ...input, ...this.scoped(input.orgId) });
   }
 
   listSolutions(): Promise<{ id: string; name: string; origin: string }[]> {
-    return this.trpc.solutions.list.query();
+    return this.trpc.solutions.list.query(this.scoped());
   }
   createSolution(input: { id: string; name: string }): Promise<{ ok: true }> {
-    return this.trpc.solutions.create.mutate(input);
+    return this.trpc.solutions.create.mutate({ ...input, ...this.scoped() });
   }
   /** Edit a solution's profile — name only; the id is permanent. */
   updateSolution(input: { solutionId: string; name: string }): Promise<{ ok: true }> {
@@ -229,7 +247,10 @@ export class ConsoleClient {
    *  hand, and asking through an arbitrary one would make org administration
    *  depend on op membership. Cosmetic: every call is re-checked server-side. */
   me(operationId?: string): Promise<Me> {
-    return this.trpc.me.query(operationId ? { operationId } : {});
+    // With an operation the server reads the org off it; without one the answer
+    // is about THIS session's org, so it has to be named or `orgAdmin` would
+    // report on the default org instead.
+    return this.trpc.me.query(operationId ? { operationId } : this.scoped());
   }
 
   listSolUsers(solutionId: string): Promise<SolUser[]> {
@@ -251,20 +272,20 @@ export class ConsoleClient {
   // call here is re-checked server-side — `me().orgAdmin`/`.opAdmin` are for
   // deciding what to RENDER, never for deciding what is allowed.
   listOrgUsers(orgId?: string): Promise<OrgUser[]> {
-    return this.trpc.users.listOrg.query(orgId ? { orgId } : {});
+    return this.trpc.users.listOrg.query(this.scoped(orgId));
   }
   inviteOrgUser(input: { email: string; name?: string | null; level?: AdminLevel; orgId?: string }): Promise<{ ok: true }> {
-    return this.trpc.users.invite.mutate(input);
+    return this.trpc.users.invite.mutate({ ...input, ...this.scoped(input.orgId) });
   }
   removeOrgUser(email: string, orgId?: string): Promise<{ ok: true }> {
-    return this.trpc.users.removeOrg.mutate({ email, ...(orgId ? { orgId } : {}) });
+    return this.trpc.users.removeOrg.mutate({ email, ...this.scoped(orgId) });
   }
   /** Lifecycle: the reversible half of removal — grants survive, entry stops. */
   setOrgUserStatus(email: string, status: OrgUser['status'], orgId?: string): Promise<{ ok: true }> {
-    return this.trpc.users.setStatus.mutate({ email, status, ...(orgId ? { orgId } : {}) });
+    return this.trpc.users.setStatus.mutate({ email, status, ...this.scoped(orgId) });
   }
   setOrgUserLevel(email: string, level: AdminLevel, orgId?: string): Promise<{ ok: true }> {
-    return this.trpc.users.setOrgLevel.mutate({ email, level, ...(orgId ? { orgId } : {}) });
+    return this.trpc.users.setOrgLevel.mutate({ email, level, ...this.scoped(orgId) });
   }
   listOpUsers(operationId: string): Promise<OpUser[]> {
     return this.trpc.users.listOp.query({ operationId });
@@ -295,6 +316,60 @@ export class ConsoleClient {
   rollbackPage(solutionId: string, path: string, version: number): Promise<{ version: number }> {
     return this.trpc.pages.rollback.mutate({ solutionId, path, version });
   }
+}
+
+/** An org as the platform plane sees it — the same row `getOrg` returns, but
+ *  listed across orgs rather than read within one. */
+export interface PlatformOrg extends OrgProfile {}
+
+/**
+ * The platform-plane client — `@fluxus/platform`'s door (ruled 2026-08-03).
+ * Deliberately its own class rather than methods on ConsoleClient: this is the
+ * one client that is NOT scoped to an org, and the tier that may use it is a
+ * different tier. Keeping them apart means no Console screen can reach a
+ * cross-org call by accident.
+ *
+ * Bare bones by intent: list orgs, register one. Usage and billing land here
+ * eventually, but usage should fall out of the log rather than a counter table,
+ * so neither is invented ahead of the need.
+ */
+export class PlatformClient {
+  private constructor(private readonly trpc: Trpc) {}
+
+  static create(options: { url?: string; getToken?: () => Promise<string | null> } = {}): PlatformClient {
+    return new PlatformClient(createTrpc(options.url ?? DEFAULT_URL, options.getToken));
+  }
+
+  listOrgs(): Promise<PlatformOrg[]> {
+    return this.trpc.platform.listOrgs.query() as Promise<PlatformOrg[]>;
+  }
+
+  /**
+   * Register an org and its owner — one act, because an org whose first admin
+   * is a second step is an org nobody can enter. The owner becomes its org
+   * admin (status `invited`) and is told out of band: nothing is emailed, as
+   * there is no mail sender yet.
+   *
+   * `id` is a URL slug because it IS the URL — both apps read their org from
+   * `/o/<orgId>/…`.
+   */
+  registerOrg(input: { id: string; name: string; ownerEmail: string; ownerName?: string | null }): Promise<{ ok: true }> {
+    return this.trpc.platform.registerOrg.mutate(input);
+  }
+}
+
+/**
+ * The org this browser session is working in, read from `/o/<orgId>/…`
+ * (ruled 2026-08-03 — Neon's shape). The URL is the only place org identity
+ * lives client-side: no picker, no localStorage, so a link is a complete
+ * address and two orgs can be open in two tabs without fighting.
+ *
+ * Absent ⇒ undefined, and the server's default org applies — which is what a
+ * single-org deployment and every existing dev URL want.
+ */
+export function orgFromPath(pathname: string = window.location.pathname): string | undefined {
+  const m = /^\/o\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(pathname);
+  return m?.[1];
 }
 
 export interface RunInput {
@@ -344,6 +419,10 @@ export class FluxusClient {
     readonly orgName: string,
     readonly solutionName: string,
     readonly operationName: string,
+    /** The org that owns this operation — authoritative, because the SERVER
+     *  derives it from the operation. A host that also reads an org from its
+     *  URL checks against this rather than trusting the address. */
+    readonly orgId: string,
     /**
      * The caller's role ids in this operation, and whether RBAC is enforced
      * (auth configured). Hosts use these for cosmetic menu filtering; the
@@ -396,7 +475,7 @@ export class FluxusClient {
     // as in the Runtime host — running an activity is how you test a workflow.
     // Display names are Runtime chrome; Console shows the solution banner it
     // already has, so the ids stand in.
-    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], '', solutionId, operationId ?? '', [], false);
+    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], '', solutionId, operationId ?? '', '', [], false);
   }
 
   /** The operations running a given solution — Console's data picker (which
@@ -466,7 +545,7 @@ export class FluxusClient {
       [];
     const solutionName = (op as { solutionName?: string }).solutionName ?? solutionId;
     const orgName = (op as { orgName?: string }).orgName ?? op.orgId;
-    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, me.roles, me.authConfigured);
+    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, op.orgId, me.roles, me.authConfigured);
   }
 
   /**

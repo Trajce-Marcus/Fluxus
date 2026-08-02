@@ -53,11 +53,27 @@ Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows
 
 | Tier | Packages | Rule |
 |---|---|---|
-| **Apps** | `@fluxus/console`, `@fluxus/runtime` | Deployed browser apps. Neither imports the other, and neither has a library face. |
+| **Apps** | `@fluxus/console`, `@fluxus/runtime`, `@fluxus/platform` | Deployed browser apps. None imports another, and none has a library face. |
 | **Libraries** | `@fluxus/workbench`, `@fluxus/page-runtime` | Mountable UI an app embeds. Export css **as a string**, never a stylesheet import — the Console mounts its shell in a shadow root a document-level stylesheet never reaches. |
 | **Core** | `@fluxus/engine`, `@fluxus/dsl`, `@fluxus/server`, `@fluxus/client` | Host-agnostic. No UI. |
 
 This replaced the one deliberate exception M15 had left standing: the workbench had moved to the Console but stayed inside `@fluxus/sdm`, which exposed a library face alongside its app so `page-builder` could import it — a knowingly temporary edge, pending a name endorsement for a third package. The 2026-08-01 restructure closed it: the workbench became `@fluxus/workbench`, `@fluxus/sdm` became `@fluxus/runtime` and lost its library face, and `@fluxus/page-builder` became `@fluxus/console` because the package was never one view — it is the whole Console. **No app→app dependency exists or may be added.** Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only. Page definitions ride the same pipeline (backend stage 3, 2026-07-16): stored per `(solution, path)` on the server as opaque jsonb, snapshotted at connect, authored in the page builder. **The database is the source of truth for a solution** (config + pages; ruled 2026-07-26): both are versioned server-side (`page_versions`, `sdm_config_versions` — append-only, readme required), git carries code and migrations, and the repo's config/page files are a bootstrap fixture for an empty database rather than a deploy channel. The Console binds a solution to one of its operations for the records it builds against, so the design and runtime hosts show the same data.
+
+## The three planes
+
+Each app is a plane, and the planes differ by **who they admit**, not by what they render:
+
+| Plane | App | Audience | Scope |
+|---|---|---|---|
+| Design | `@fluxus/console` | an org's builders and admins | one org, one solution at a time |
+| Runtime | `@fluxus/runtime` | an org's end users | one operation |
+| Platform | `@fluxus/platform` | **us** — the vendor | across every org |
+
+The platform plane arrived 2026-08-03 to answer the two questions the org tier structurally cannot: **who creates an org** (not an org admin — there is no org to be admin of yet) and **who sees across orgs** (nobody could: every query in the API is scoped to one org by construction). `npm run bootstrap` was that tier in disguise — a script outside the request path, writing the first row because nothing inside it was allowed to. `platform.registerOrg` now writes an org and its owner **in one act**, which demotes the script to lockout recovery. Platform admins are an **env allowlist** (`FLUXUS_PLATFORM_ADMINS`), not a table, because a table recreates the same chicken-and-egg one tier up; `isPlatformAdmin` is the seam that swaps for one later. Design detail: `packages/platform/docs/SPEC.md`.
+
+It is a separate app rather than a Console section because the Console is scoped to one org by construction — folding cross-org data into it would ship tenant-spanning code in every customer-facing deploy.
+
+**The org lives in the URL** (ruled 2026-08-03, Neon's shape): both browser apps read it from `/o/<orgId>/…` via `orgFromPath()` in `@fluxus/client`, and that is the only place org identity lives client-side — no picker, no localStorage, so a link is a complete address and two orgs can be open in two tabs. The Console passes it to `ConsoleClient.create({ orgId })` once at boot, which carries it into every org-scoped call. The Runtime still derives its org from the operation server-side and merely *checks* the prefix, so a link naming the wrong org fails loudly instead of half-applying. Registering the second org also turned `org_id` from decoration into a boundary and exposed what that had been hiding — operations that ignored their solution's org, and admin gates that asked "are you an admin?" without asking "of which org?"; both closed the same day (SPEC §5).
 
 ## The SDM is the centre
 

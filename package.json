@@ -6,13 +6,17 @@
   ],
   "scripts": {
     "dev": "npm run dev:all",
-    "dev:all": "concurrently -n server,runtime,console -c blue,green,magenta \"npm:dev:server\" \"npm:dev:runtime\" \"npm:dev:console\"",
+    "dev:all": "concurrently -n server,runtime,console,platform -c blue,green,magenta,yellow \"npm:dev:server\" \"npm:dev:runtime\" \"npm:dev:console\" \"npm:dev:platform\"",
     "dev:runtime": "npm run dev --workspace=@fluxus/runtime",
     "dev:console": "npm run dev --workspace=@fluxus/console",
+    "dev:platform": "npm run dev --workspace=@fluxus/platform",
     "dev:server": "npm run dev --workspace=@fluxus/server",
     "seed:server": "npm run seed --workspace=@fluxus/server",
+    "bootstrap": "npm run bootstrap --workspace=@fluxus/server --",
+    "db:migrate": "npm run db:migrate --workspace=@fluxus/server",
     "build:runtime": "npm run build --workspace=@fluxus/runtime",
     "build:console": "npm run build --workspace=@fluxus/console",
+    "build:platform": "npm run build --workspace=@fluxus/platform",
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {

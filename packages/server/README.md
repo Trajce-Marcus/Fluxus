@@ -21,6 +21,7 @@ script pushes the page files under `page-builder/pages/`). Neon is live
 
 ```bash
 npm run seed --workspace=@fluxus/server   # bootstrap an EMPTY db with the demo (skip-if-present; --force to overwrite)
+npm run bootstrap -- you@example.com "Your Name"   # first org admin (root or this package; idempotent, safe on prod)
 npm run dev  --workspace=@fluxus/server   # http://localhost:8787, tRPC at /trpc
 npm test     --workspace=@fluxus/server   # acceptance tests on in-memory PGlite
 ```

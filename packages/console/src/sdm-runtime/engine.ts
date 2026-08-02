@@ -10,7 +10,7 @@
 // initialized values). Components never import this; they reach the SDM only
 // through the declarative wiring layer (dynamic props in, callbacks out).
 
-import { ConsoleClient, createHostAuth, FluxusClient, type AuthSession } from '@fluxus/client';
+import { ConsoleClient, createHostAuth, FluxusClient, orgFromPath, type AuthSession } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { signInGate } from './SignIn';
 
@@ -31,6 +31,9 @@ export let currentSession: AuthSession | null = null;
 // very different postures — demo (no auth, the server is open to everyone) and
 // signed-out — and the header must not show them the same way.
 export let authConfigured = false;
+// The org this Console session is working in, from `/o/<orgId>/…`; undefined
+// when the URL names none and the server's default org applies.
+export let currentOrgId: string | undefined;
 
 let bootUrl: string | undefined;
 let bootGetToken: (() => Promise<string | null>) | undefined;
@@ -70,7 +73,12 @@ export async function initSdmRuntime(): Promise<void> {
   // back to the client's localhost default.
   bootUrl = import.meta.env.VITE_FLUXUS_API_URL;
   bootGetToken = auth.configured ? auth.getToken : undefined;
-  consoleClient = ConsoleClient.create({ url: bootUrl, getToken: bootGetToken });
+  // The org comes from the URL — `/o/<orgId>/…` (ruled 2026-08-03, Neon's
+  // shape). Absent ⇒ the server's default org, which is every existing dev URL
+  // and every single-org deployment. Read once here: the client carries it into
+  // each org-scoped call so no screen has to remember to pass it.
+  currentOrgId = orgFromPath();
+  consoleClient = ConsoleClient.create({ url: bootUrl, orgId: currentOrgId, getToken: bootGetToken });
   forgetLegacyDataOperationKeys();
 }
 

@@ -23,7 +23,11 @@ import {
   getOperation,
   getOrg,
   getOrgName,
+  listOrgs,
+  registerOrg,
+  OrgExistsError,
   getSolutionName,
+  getSolutionOrg,
   putOrgProfile,
   getSolutionConfig,
   listConfigVersions,
@@ -68,7 +72,7 @@ import {
 } from './host';
 import type { NotifySink } from './services/notify';
 import { consoleNotifySink } from './services/notify';
-import { stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
+import { isPlatformAdmin, stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
 import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
 import type { MenuItem, OperationConfig } from './db/schema';
 
@@ -196,6 +200,24 @@ async function requireOrgAdmin(ctx: AppContext, orgId: string = DEFAULT_ORG): Pr
   throw new TRPCError({ code: 'FORBIDDEN', message: 'Requires organisation admin' });
 }
 
+/**
+ * The platform tier (ruled 2026-08-03) — above every org, and the only caller
+ * that may read across them or register a new one. Backed by an env allowlist
+ * (`isPlatformAdmin`), not a table; the reasoning is on that function.
+ *
+ * Note what this check does NOT do: fall open when auth is unconfigured. Every
+ * other gate here guards one org's data from that org's own people, so with no
+ * identity there is genuinely nothing to gate on. This one guards every org
+ * from everyone, and an unconfigured dev machine must not be a machine where
+ * anyone can register orgs. Demo posture therefore has no platform plane at
+ * all, which is correct — there is nothing to administer.
+ */
+async function requirePlatformAdmin(ctx: AppContext): Promise<void> {
+  const email = ctx.user?.email;
+  if (isPlatformAdmin(email)) return;
+  throw new TRPCError({ code: 'FORBIDDEN', message: 'Requires platform admin' });
+}
+
 async function requireOpAdmin(ctx: AppContext, operationId: string, orgId: string = DEFAULT_ORG): Promise<void> {
   if (!ctx.authConfigured) return;
   if (await isOpAdmin(ctx, operationId, orgId)) return;
@@ -308,6 +330,7 @@ function rethrow(err: unknown): never {
   if (err instanceof NotImplementedError) throw new TRPCError({ code: 'NOT_IMPLEMENTED', message: err.message });
   if (err instanceof OperationNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof OrgNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+  if (err instanceof OrgExistsError) throw new TRPCError({ code: 'CONFLICT', message: err.message });
   if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
   if (err instanceof TRPCError) throw err;
   throw new TRPCError({
@@ -387,6 +410,47 @@ export const appRouter = t.router({
       }),
   }),
 
+  // The platform plane (ruled 2026-08-03) — `@fluxus/platform`'s door, and the
+  // only place orgs are created or read across. Bare bones by intent: list and
+  // register. Usage and billing belong here eventually, but usage falls out of
+  // the log rather than a counter table, so neither is invented early.
+  platform: t.router({
+    /** Every org. The one cross-org read in the API. */
+    listOrgs: t.procedure.query(async ({ ctx }) => {
+      try {
+        await requirePlatformAdmin(ctx);
+        return await listOrgs(ctx.db);
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    /**
+     * Register an org and its owner in one act — see `registerOrg` for why
+     * they cannot be two. This is what makes `npm run bootstrap` recovery-only:
+     * every org after the first gets its first admin from here.
+     *
+     * The id is a URL slug because it IS the URL — the Console and Runtime read
+     * their org from `/o/<orgId>/…` (ruled 2026-08-03, Neon's shape), so
+     * anything that would need escaping there cannot be an org id.
+     */
+    registerOrg: t.procedure
+      .input(z.object({
+        id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'Lower-case letters, digits and hyphens only').max(63),
+        name: z.string().min(1),
+        ownerEmail: z.string().email(),
+        ownerName: z.string().nullish(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requirePlatformAdmin(ctx);
+          await registerOrg(ctx.db, input);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
   solutions: t.router({
     // Scoped to the org (2026-08-02): `solutions.org_id` decides whose list
     // this is. Ids stay globally unique — a solution is a distributable
@@ -398,10 +462,11 @@ export const appRouter = t.router({
       .input(z.object({ id: z.string().min(1), name: z.string().min(1), orgId: orgInput }))
       .mutation(async ({ ctx, input }) => {
         try {
-          // Org admin: creating solutions (and appointing their admins) is the
-          // root tier's work. A solution admin governs a solution, and cannot
-          // conjure more of them.
-          await requireOrgAdmin(ctx);
+          // Org admin OF THE TARGET ORG (2026-08-03) — the gate has to name the
+          // org being written to, or an admin of 'default' could create
+          // solutions in anyone's workspace. Latent until orgs could be
+          // registered; a hole the moment they can.
+          await requireOrgAdmin(ctx, input.orgId);
           // The creator is enrolled as a `write` user of it — the design plane
           // is strict, so a solution with an empty user list is one nobody can
           // build, including whoever just made it.
@@ -421,7 +486,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: z.string().min(1), name: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireOrgAdmin(ctx);
+          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
           await updateSolution(ctx.db, input);
           return { ok: true as const };
         } catch (err) {
@@ -432,7 +497,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireOrgAdmin(ctx);
+          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
           await deleteSolution(ctx.db, input.solutionId);
           return { ok: true as const };
         } catch (err) {
@@ -468,7 +533,9 @@ export const appRouter = t.router({
           // explicitly the root tier's. Previously gated on the linked
           // solution's design plane, which let anyone who could build a
           // solution mint operations — now closed.
-          await requireOrgAdmin(ctx);
+          // The operation inherits the solution's org, so the gate asks about
+          // that org — not the default one (2026-08-03).
+          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
           await createOperation(ctx.db, input);
           return { ok: true as const };
         } catch (err) {
@@ -696,7 +763,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          await requireOrgAdmin(ctx);
+          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
           return await listSolUsers(ctx.db, input.solutionId);
         } catch (err) {
           rethrow(err);
@@ -706,7 +773,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, email: z.string().email(), level: z.enum(['read', 'write']) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireOrgAdmin(ctx);
+          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
           await putSolUser(ctx.db, input);
           return { ok: true as const };
         } catch (err) {
@@ -717,7 +784,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, email: z.string().email() }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireOrgAdmin(ctx);
+          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
           await removeSolUser(ctx.db, input);
           return { ok: true as const };
         } catch (err) {

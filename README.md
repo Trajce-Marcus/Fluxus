@@ -12,6 +12,7 @@ Most app builders treat the data model as a byproduct of each app — every app 
 |---|---|
 | [`@fluxus/console`](packages/console/) | The design plane: author the SDM, build pages, host the workbench, administer operations, roles and publishing. |
 | [`@fluxus/runtime`](packages/runtime/) | The runtime plane: what end users sign into — their operation's menu and its published pages. Carries the sample asset-maintenance model ("Aber") as seed input. |
+| [`@fluxus/platform`](packages/platform/) | The platform plane: our own app, above every org — registers organisations and their owners. Usage and billing land here later. |
 
 **Libraries** — mounted by the apps:
 
@@ -66,6 +67,7 @@ fluxus/
 └── packages/
     ├── console/           # @fluxus/console       (app)
     ├── runtime/           # @fluxus/runtime       (app)
+    ├── platform/          # @fluxus/platform      (app)
     ├── workbench/         # @fluxus/workbench     (library)
     ├── page-runtime/      # @fluxus/page-runtime  (library)
     ├── engine/            # @fluxus/engine        (core)

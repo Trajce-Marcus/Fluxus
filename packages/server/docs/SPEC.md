@@ -188,6 +188,44 @@ takes `operationId?` (both default `demo/sdm`):
   (promotion is the point), but op-admin rows are written **only** into
   operations that currently have no users at all. It is safe against production
   precisely because it is separate from `seed`, which installs the demo bundle.
+
+  **Superseded for every org but the first (2026-08-03)**: `platform.registerOrg`
+  now writes an org and its owner in one act inside the request path, so the
+  script's job shrinks to what it should always have been — lockout recovery,
+  and the very first admin on a fresh deployment. See "The platform tier" below.
+- **The platform tier** — above every org (ruled 2026-08-03), and the only
+  caller that may read across orgs or create one. `requirePlatformAdmin` guards
+  `platform.listOrgs` and `platform.registerOrg`; membership is
+  `isPlatformAdmin(email)` in `auth.ts`, an **env allowlist**
+  (`FLUXUS_PLATFORM_ADMINS`) rather than a table — a `platform_users` table
+  recreates one tier up exactly the chicken-and-egg the bootstrap script exists
+  to escape, and the env is already outside the request path, which is the only
+  property the first row of any tier needs.
+
+  **This gate alone does not fall open when auth is unconfigured.** Every other
+  check here is open in demo posture, on the reasoning that with no identity
+  there is nothing to gate on — but those guard one org's data from that org's
+  own people. This one guards every org from everyone, and an unconfigured dev
+  machine must not be one where anyone who can reach the port registers orgs.
+
+  `registerOrg` writes the `orgs` row (with `contact_email` = the owner) and the
+  owner's `org_users` admin row **in one act**, because after the first alone the
+  org admits nobody — including whoever would perform the second. The owner is
+  **not a new level**: they are the org's first org admin, and a distinct
+  `owner` value would need transfer and demotion rules nothing needs yet.
+  Duplicate id ⇒ `CONFLICT`; ids are `^[a-z0-9][a-z0-9-]*$` because the id **is**
+  the URL (`/o/<orgId>/…`). Nothing is emailed — an invite is a database row
+  until a mail sender exists.
+- **`org_id` as a boundary** (2026-08-03) — registering a second org made the
+  org key load-bearing and exposed two things that had been invisible while
+  `'default'` was the only org. `createOperation` never set `org_id`, so every
+  operation landed in `'default'` whatever its solution belonged to; an operation
+  now **inherits its solution's org** (the link is binding and permanent, so a
+  mismatch could never be corrected). And six `requireOrgAdmin(ctx)` call sites
+  defaulted to `'default'`, so an admin of the default org could create, rename,
+  delete and staff solutions in anyone's workspace while the real owner was
+  refused; each now names the org being written to, resolved via
+  `getSolutionOrg` where the input does not carry it.
 - **The entry gate** — `resolveUser` is the one choke point every
   operation-scoped call passes through, so the op-user check lives there.
   **Strict, not dormant** (ruled 2026-08-02): an operation with no `op_users`
