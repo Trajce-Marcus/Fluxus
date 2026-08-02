@@ -9,7 +9,7 @@
 // Runtime host URL comes from VITE_FLUXUS_RUNTIME_URL,
 // localhost:5173 in dev. Plain functional form over the ConsoleClient's
 // operations/solutions CRUD — no SDM, no activities. RBAC stage-2 gates
-// operations.create on implementer `admin`; until then it's open per the env
+// operations.create on org admin; until then it's open per the env
 // stub, and a FORBIDDEN surfaces here as the error line.
 
 import { useEffect, useState } from 'react';

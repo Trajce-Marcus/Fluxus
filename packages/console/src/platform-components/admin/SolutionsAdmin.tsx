@@ -140,7 +140,7 @@ export function SolutionsAdmin() {
               <label className="admin-field">
                 <span>Id</span>
                 {/* Permanent once created: config, pages, operations and
-                    implementer levels are all keyed on it. */}
+                    sol users are all keyed on it. */}
                 <input
                   value={idEdited ? id : slug(name)}
                   onChange={(e) => { setIdEdited(true); setId(e.target.value); }}

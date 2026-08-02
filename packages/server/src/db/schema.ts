@@ -23,21 +23,33 @@ import type { ActivityHistoryEntry, ConfigRaw } from '@fluxus/engine';
 
 // A solution is the design artifact — the container for one SDM config, its
 // pages, role defs and default menu (CONSOLE_RUNTIME_SPEC §1). No data, users
-// or role assignments. Provenance (M12): `origin` says where it came from —
+// or user roles. Provenance (M12): `origin` says where it came from —
 // 'authored' (this org) or 'installed' (the Catalogue; unreachable until that
 // exists) — and `origin_ref` is the installed lineage, an opaque catalogue ref
 // (e.g. catalogue:<id>@<version>), null for authored work. The seam that stops
 // anything assuming every solution is locally authored.
 export const solutions = pgTable('solutions', {
+  // **Globally unique, and deliberately so** — a solution is a distributable
+  // package, and package registries (npm, crates, …) all key on a global name.
+  // That is why `org_id` below is scoping only and the PK stays this column:
+  // no foreign key or composite key anywhere has to know about the org.
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // Which org's workspace this row lives in (added 2026-08-02) — the last table
+  // to carry the org key; solutions predate the org tier (M13/M14), which is
+  // the only reason it was missing. **Scoping, not identity**: two orgs that
+  // install the same solution have different org_id and the same package. What
+  // a solution *is* stays answered by `id` + `origin`/`origin_ref`.
+  orgId: text('org_id').notNull().default('default'),
   origin: text('origin').notNull().default('authored'),
   originRef: text('origin_ref'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index('solutions_org').on(t.orgId),
+]);
 
 // The tenant an operation runs for. `operations.org_id` and
-// `role_assignments.org_id` have carried an org key since the operations tier
+// `user_roles.org_id` have carried an org key since the operations tier
 // (M1) with nowhere to read a display name from; this table is that row.
 // Added M13 (name only, for the Runtime header); M14 gives it the profile an
 // onboarded org actually has — GitHub's model, where the org is a real thing
@@ -57,7 +69,7 @@ export const orgs = pgTable('orgs', {
 });
 
 // An operation is the runtime unit — it links to exactly one solution and owns
-// the record partition, users/assignments and its own runtime config (the menu
+// the record partition, its users/roles and its own runtime config (the menu
 // today, §5). `config` is jsonb, not a table, until a second consumer demands
 // one (spec §2). Single implicit org for MVP: `org_id` names a row in `orgs`
 // (M13) but there is still no org-management UI.
@@ -66,7 +78,7 @@ export const operations = pgTable('operations', {
   orgId: text('org_id').notNull().default('default'),
   // BINDING AND PERMANENT (ruled 2026-07-27). An operation is created against
   // exactly one solution and can never be re-pointed at another: its record
-  // partition, role assignments and menu override are all written against that
+  // partition, user roles and menu override are all written against that
   // solution's model, so re-linking would orphan every one of them. Enforced by
   // absence — there is no update path, and none may be added.
   solutionId: text('solution_id').notNull().references(() => solutions.id),
@@ -99,30 +111,113 @@ export interface MenuItem {
 }
 
 // Governance store (CONSOLE_RUNTIME_SPEC §2a — Option B, bespoke auth-tier
-// tables; RBAC_COMPACT "Roles"): assignments live here, never in the solution.
+// tables; RBAC_COMPACT "Roles"): user roles live here, never in the solution.
 // Plain reads — no SDM, no activities.
 
-// Runtime-plane assignments: which role ids a user holds in an operation. One
-// row per (org, operation, user); the resolver's lookup 1.
-export const roleAssignments = pgTable('role_assignments', {
+// The user pool (RBAC_COMPACT "Users", ruled 2026-08-02). Three layers, each a
+// separate question: org_users — does this person exist to us; op_users — may
+// they enter this operation; user_roles — what may they see inside it.
+//
+// **Email is the key, not the auth id.** An invited user has no auth id until
+// their first sign-in, so the pool keys on email and binds `auth_user_id` when
+// they first authenticate. Roles can be assigned before they have ever logged
+// in. There is no signup — entry is invite-only, and the long-term replacement
+// is a company user-directory integration, which the email key keeps cheap.
+export const orgUsers = pgTable('org_users', {
   orgId: text('org_id').notNull().default('default'),
-  operationId: text('operation_id').notNull(),
-  userId: text('user_id').notNull(),
-  roleIds: jsonb('role_ids').$type<string[]>().notNull().default([]),
+  email: text('email').notNull(),
+  name: text('name'),
+  /** Bound at first successful sign-in; null while the invite is outstanding. */
+  authUserId: text('auth_user_id'),
+  status: text('status').$type<'invited' | 'active' | 'suspended'>().notNull().default('invited'),
+  /** Admin tier (RBAC_COMPACT "Administration"): 'admin' is the ORG admin — the
+   *  single root of authority. Creates solutions and appoints solution admins,
+   *  creates operations, appoints op admins, invites, owns user lifecycle.
+   *  Deliberately does NOT manage roles: the org admin controls who exists and
+   *  who gets in, the op admin controls what they may do inside. */
+  level: text('level').$type<'admin' | 'user'>().notNull().default('user'),
+  invitedAt: timestamp('invited_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  primaryKey({ columns: [t.orgId, t.operationId, t.userId] }),
-  index('role_assignments_operation').on(t.operationId),
+  primaryKey({ columns: [t.orgId, t.email] }),
+  // Sign-in resolves an authenticated caller back to their pool row, so this
+  // lookup is on the hot path of every gated request.
+  index('org_users_auth_user').on(t.authUserId),
 ]);
 
-// Implementer-plane levels: a user's design-time level on a solution. One row
-// per (user, solution); the resolver's lookup 2 (consumed at RBAC stage 2/M5).
-export const implementerLevels = pgTable('implementer_levels', {
-  userId: text('user_id').notNull(),
-  solutionId: text('solution_id').notNull(),
-  level: text('level').$type<'read' | 'write' | 'admin'>().notNull(),
+// Op users: may this person enter this operation at all. Deliberately separate
+// from user_roles — an op user with no roles enters and sees nothing,
+// which is a valid state; roles without an op_users row must NOT grant entry.
+// Keyed on email to match the pool, so a user can be added to an operation
+// before they have ever signed in.
+export const opUsers = pgTable('op_users', {
+  orgId: text('org_id').notNull().default('default'),
+  operationId: text('operation_id').notNull(),
+  email: text('email').notNull(),
+  /** Admin tier within this operation: 'admin' administers op users, role
+   *  assignments and the operation's menu override. An op admin may never mint
+   *  another op admin — authority flows downward only, so writing level 'admin'
+   *  is org-admin work (enforced in the router's users.addOp). */
+  level: text('level').$type<'admin' | 'user'>().notNull().default('user'),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  primaryKey({ columns: [t.userId, t.solutionId] }),
-  index('implementer_levels_solution').on(t.solutionId),
+  primaryKey({ columns: [t.orgId, t.operationId, t.email] }),
+  index('op_users_operation').on(t.operationId),
+  index('op_users_email').on(t.email),
+]);
+
+// Runtime-plane roles: which role ids a user holds in an operation. One row per
+// (org, operation, email); the resolver's lookup 1. Renamed from
+// `role_assignments` 2026-08-02 (migration 0015).
+//
+// **Keyed on email**, like the three membership tables — this was the last one
+// still keyed on the auth provider's id, and that broke two things: roles could
+// not be granted to an invited user before their first sign-in (which the Users
+// ruling says they can), and `removeOpUser`, which clears roles by email, was
+// silently clearing nothing.
+//
+// Not a membership layer of its own: this is an attribute of being an op user.
+// The two stay independent — an op user with no row here enters and sees
+// nothing (valid); a row here without an `op_users` row grants no entry at all.
+export const userRoles = pgTable('user_roles', {
+  orgId: text('org_id').notNull().default('default'),
+  operationId: text('operation_id').notNull(),
+  email: text('email').notNull(),
+  roleIds: jsonb('role_ids').$type<string[]>().notNull().default([]),
+}, (t) => [
+  primaryKey({ columns: [t.orgId, t.operationId, t.email] }),
+  index('user_roles_operation').on(t.operationId),
+]);
+
+// Sol users: who builds a solution, and at what grade. The design-plane layer of
+// the three (org_users → sol_users → op_users), and the resolver's lookup 2
+// (consumed at RBAC stage 2/M5). Renamed from `implementer_levels` 2026-08-02
+// (migration 0013) — "implementer" was the pre-users-model word for exactly
+// this, and two vocabularies for one concept is what made the model read as
+// messy. One pattern now: org_users / sol_users / op_users, and `level` means
+// the same kind of thing on each.
+//
+// `level` is **read | write**, not read/write/admin. After the grant rules moved
+// onto the admin tiers, 'admin' here guarded only solutions.update/delete, and
+// both are org-admin work — the org admin creates solutions, so destroying one
+// is the inverse of a call they already own. A grade that guards nothing is
+// noise. So: look at the model, or build it.
+//
+// **Keyed on email, not the auth user id** (rekeyed 2026-08-02, migration
+// 0012), matching org_users/op_users. An org admin appoints a solution user
+// from the pool, and pool users typically have not signed in yet — keying on
+// the auth id would have made "appoint, then they accept the invite"
+// impossible, which is the whole invite-first flow.
+//
+// No `org_id`, unlike its two siblings: solution ids are globally unique, so
+// the org is derivable through `solutions`. Storing it here would be
+// denormalisation with no query asking for it.
+export const solUsers = pgTable('sol_users', {
+  email: text('email').notNull(),
+  solutionId: text('solution_id').notNull(),
+  level: text('level').$type<'read' | 'write'>().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.email, t.solutionId] }),
+  index('sol_users_solution').on(t.solutionId),
 ]);
 
 export const sdmConfigs = pgTable('sdm_configs', {

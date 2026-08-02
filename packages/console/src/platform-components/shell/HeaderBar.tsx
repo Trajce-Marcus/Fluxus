@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useShellState } from './useShellState';
 import { shellStore } from './store';
 import { exitToWorkspace, openSolutionScoped } from './router';
-import { consoleClient, openSolution } from '../../sdm-runtime/engine';
+import { authConfigured, consoleClient, currentSession, openSolution } from '../../sdm-runtime/engine';
 
 function SolutionCrumb({ solutionId, solutionName }: { solutionId: string; solutionName: string | null }) {
   const [open, setOpen] = useState(false);
@@ -65,6 +65,32 @@ function SolutionCrumb({ solutionId, solutionName }: { solutionId: string; solut
   );
 }
 
+/** Who you are acting as. The Console had no such indicator while the Runtime
+ *  did (M13), so the only way to discover your Console identity was to open the
+ *  other app — and both apps share one Neon Auth origin, so the answer was
+ *  never obviously the same question. Read once at render: `currentSession` is
+ *  assigned by initSdmRuntime(), which api.ts awaits before mounting, and never
+ *  changes for the life of the page. */
+function Identity() {
+  // Demo posture (no auth server) is not "signed out" — it means the server is
+  // open and nothing is enforced. Say so rather than showing an empty slot.
+  if (!authConfigured) {
+    return <span className="header-identity-demo" title="No auth server configured — the API is open and roles are not enforced">Demo — no auth</span>;
+  }
+  if (!currentSession) {
+    return <span className="header-identity-demo" title="Auth is configured but no session resolved">Not signed in</span>;
+  }
+  const { name, email } = currentSession;
+  const label = name || email;
+  const initial = (label || '?').trim().charAt(0).toUpperCase();
+  return (
+    <div className="header-identity" title={name ? `${name} · ${email}` : email}>
+      <span className="header-identity-avatar" aria-hidden="true">{initial}</span>
+      <span className="header-identity-label">{label}</span>
+    </div>
+  );
+}
+
 function HeaderBarComponent() {
   // The org you are acting as — pinned at both IA levels (workspace and
   // solution-open), because solutions and operations all belong to it (M14).
@@ -89,6 +115,7 @@ function HeaderBarComponent() {
           it governs. The choice is still solution-wide — the page preview
           reads it too. */}
       <div className="header-spacer" />
+      <Identity />
     </div>
   );
 }
@@ -129,6 +156,46 @@ export const css = `
     flex-shrink: 0;
   }
   .header-spacer { flex: 1; }
+  /* Identity sits hard right, the conventional place for it and clear of the
+     breadcrumb's dropdown. Truncates rather than pushing the crumb around —
+     an email is arbitrarily long and the header is one line. */
+  .header-identity {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    flex-shrink: 1;
+    padding-left: 12px;
+    border-left: 1px solid var(--color-border);
+  }
+  .header-identity-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .header-identity-label {
+    font-size: 0.78rem;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .header-identity-demo {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding-left: 12px;
+    border-left: 1px solid var(--color-border);
+  }
   .crumb-wrap { position: relative; display: flex; align-items: center; gap: 10px; }
   .crumb-sep { color: var(--color-text-muted); }
   .crumb-btn {

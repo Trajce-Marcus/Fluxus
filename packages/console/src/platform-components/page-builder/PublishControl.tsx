@@ -3,7 +3,7 @@
 // version with required release notes; the versions dialog lists history and
 // rolls back (republishes an older version). Solution comes from the draft
 // client; the calls go through the Console client. RBAC stage-2 gates publish
-// on implementer write — a FORBIDDEN surfaces as the status line.
+// on sol-user write — a FORBIDDEN surfaces as the status line.
 
 import { useState } from 'react';
 import { consoleClient, sdmClient } from '../../sdm-runtime/engine';

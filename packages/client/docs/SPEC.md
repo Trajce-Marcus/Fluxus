@@ -26,9 +26,9 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    fetch `config.get` + draft `pages.list` by `solutionId`, plus **that
    operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
    the data you build against is one operation's). No menu/roles (`enforced`
-   false: Console is the implementer plane). With an operation bound,
+   false: Console is the design plane). With an operation bound,
    `refresh`/`runActivity` work exactly as in the Runtime host — running an
-   activity is how an implementer tests a workflow. Omitting `operationId`
+   activity is how a solution builder tests a workflow. Omitting `operationId`
    yields an empty record set: legal for a solution with no operations yet,
    but the exception, not the design. `saveConfig` round-trips `config.put`;
    `publishConfig`/`configVersions`/`rollbackConfig` are the model's version
@@ -74,8 +74,8 @@ transport) exposes plain typed calls: `listSolutions` / `createSolution` /
 server side is a TODO: it answers `NOT_IMPLEMENTED` and destroys nothing),
 `listOperations` /
 `getOperation` / `createOperation` / `putOperationConfig`, and the governance
-set (`operationRoles`, `listAssignments`/`putAssignment`,
-`listImplementers`/`putImplementer`), and the publish set (`publishPage`,
+set (`operationRoles`, `listUserRoles`/`putUserRoles`,
+`listSolUsers`/`putSolUser`), and the publish set (`publishPage`,
 `listPageVersions`, `getPageVersion`, `rollbackPage`). No snapshot, no engine —
 just the tRPC door for admin screens.
 

@@ -3,7 +3,7 @@
 // of the solution's default_menu. Inheriting (config.menu absent) shows the
 // default read-only; overriding replaces the whole menu — never a per-item
 // merge. Validated server-side at save (pages must be published, roles must
-// exist). Requires implementer write.
+// exist). Requires op admin.
 
 import { useEffect, useState } from 'react';
 import type { MenuItem } from '@fluxus/client';

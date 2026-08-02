@@ -71,6 +71,48 @@
       "when": 1785200100000,
       "tag": "0009_org_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785200200000,
+      "tag": "0010_org_op_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785200300000,
+      "tag": "0011_admin_levels",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785200400000,
+      "tag": "0012_implementer_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785200500000,
+      "tag": "0013_sol_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785200600000,
+      "tag": "0014_solutions_org",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785200700000,
+      "tag": "0015_user_roles",
+      "breakpoints": true
     }
   ]
 }

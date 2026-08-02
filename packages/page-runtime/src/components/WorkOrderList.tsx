@@ -1,4 +1,4 @@
-// Demo app component for Extraction stage 2: an implementer-built, model-blind
+// Demo app component for Extraction stage 2: a hand-authored, model-blind
 // work order list whose named callbacks are wired (in the container config) to
 // activities. Note the callback contract: (record, data object).
 

@@ -1,21 +1,27 @@
-// Console implementer levels (CONSOLE_RUNTIME_SPEC §3, RBAC_COMPACT): per
-// solution, over the governance store. Design-plane levels (read/write/admin)
-// gating config + page edits — enforced from RBAC stage 2 (M5); this surface
-// authors them now. Admin-gated server-side.
+// Console sol users (CONSOLE_RUNTIME_SPEC §3, RBAC_COMPACT): who builds a
+// solution, per solution, over the governance store. The design-plane layer of
+// the three — org users → sol users → op users.
+//
+// Two grades: `read` looks at the model, `write` builds it. There is no third —
+// 'admin' collapsed into 'write' (2026-08-02) once the admin tiers took over
+// everything it guarded. Enforced from RBAC stage 2 (M5).
+//
+// Keyed on EMAIL and ORG-ADMIN gated server-side: appointing who builds a
+// solution is the org tier's work, and the design plane governs no people.
 
 import { useEffect, useState } from 'react';
 import { consoleClient } from '../../sdm-runtime/engine';
 
-const LEVELS = ['read', 'write', 'admin'] as const;
+const LEVELS = ['read', 'write'] as const;
 type Level = (typeof LEVELS)[number];
 
-export function ImplementersAdmin() {
+export function SolUsersAdmin() {
   const [solutions, setSolutions] = useState<{ id: string; name: string }[]>([]);
   const [solutionId, setSolutionId] = useState('');
-  const [levels, setLevels] = useState<{ userId: string; level: Level }[]>([]);
+  const [levels, setLevels] = useState<{ email: string; level: Level }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [userId, setUserId] = useState('');
+  const [email, setEmail] = useState('');
   const [level, setLevel] = useState<Level>('write');
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +36,7 @@ export function ImplementersAdmin() {
     if (!sol) return;
     setError(null);
     try {
-      setLevels(await consoleClient.listImplementers(sol));
+      setLevels(await consoleClient.listSolUsers(sol));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -39,12 +45,12 @@ export function ImplementersAdmin() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!userId.trim() || !solutionId) return;
+    if (!email.trim() || !solutionId) return;
     setBusy(true);
     setError(null);
     try {
-      await consoleClient.putImplementer(solutionId, userId.trim(), level);
-      setUserId('');
+      await consoleClient.putSolUser(solutionId, email.trim(), level);
+      setEmail('');
       await loadFor(solutionId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -56,8 +62,8 @@ export function ImplementersAdmin() {
   return (
     <div className="admin-panel">
       <div className="admin-panel-head">
-        <h2 className="admin-title">Implementer levels</h2>
-        <p className="admin-sub">Design-time access to a solution: read (view), write (edit config + pages), admin (+ manage people). Enforced from M5.</p>
+        <h2 className="admin-title">Solution users</h2>
+        <p className="admin-sub">Who builds a solution: read (view the model), write (edit config + pages). Appointing them is org-admin work. Enforced from M5.</p>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -72,16 +78,16 @@ export function ImplementersAdmin() {
 
       <div className="admin-section">
         {levels.length === 0 ? (
-          <p className="admin-muted">No implementer levels set — everyone is treated as admin until one is set (M5 posture).</p>
+          <p className="admin-muted">No solution users set — everyone may build this solution until one is set (M5 posture).</p>
         ) : (
           <table className="admin-table">
-            <thead><tr><th>User id</th><th>Level</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Level</th><th></th></tr></thead>
             <tbody>
               {levels.map((l) => (
-                <tr key={l.userId}>
-                  <td className="admin-mono">{l.userId}</td>
+                <tr key={l.email}>
+                  <td className="admin-mono">{l.email}</td>
                   <td>{l.level}</td>
-                  <td><button className="admin-link" onClick={() => { setUserId(l.userId); setLevel(l.level); }}>Edit</button></td>
+                  <td><button className="admin-link" onClick={() => { setEmail(l.email); setLevel(l.level); }}>Edit</button></td>
                 </tr>
               ))}
             </tbody>
@@ -92,8 +98,8 @@ export function ImplementersAdmin() {
       <form className="admin-form" onSubmit={save}>
         <h3 className="admin-form-title">Set level</h3>
         <label className="admin-field">
-          <span>User id</span>
-          <input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="auth user id" className="admin-mono" />
+          <span>Email</span>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@example.com" className="admin-mono" />
         </label>
         <label className="admin-field">
           <span>Level</span>
@@ -101,7 +107,7 @@ export function ImplementersAdmin() {
             {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
         </label>
-        <button type="submit" className="admin-btn" disabled={busy || !userId.trim()}>
+        <button type="submit" className="admin-btn" disabled={busy || !email.trim()}>
           {busy ? 'Saving…' : 'Set level'}
         </button>
       </form>

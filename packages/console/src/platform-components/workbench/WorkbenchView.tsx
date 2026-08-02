@@ -6,7 +6,7 @@ import { useShellState } from '../shell/useShellState';
 
 // The workbench, hosted in the Console (CONSOLE_RUNTIME_SPEC §4, M15). It came
 // out of the Runtime app because raw record access, running any activity, CSV
-// import and the schema navigator are implementer work — and because the SDM
+// import and the schema navigator are design-plane work — and because the SDM
 // editor two clicks away was authoring blind against data it could not see.
 // The component owns everything record-shaped; this host hands over the design
 // scope's client and the operation choice. **The operation picker lives in the

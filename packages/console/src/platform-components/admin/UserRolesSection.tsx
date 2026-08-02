@@ -1,26 +1,29 @@
-// The operation view's Role assignments section (CONSOLE_RUNTIME_SPEC §3,
-// RBAC_COMPACT; scoped into the operation view at M11): grant users roles in
-// this operation. Role *definitions* come from the linked solution's config;
-// *assignments* live in role_assignments. Admin-gated server-side.
+// The operation view's Roles section (CONSOLE_RUNTIME_SPEC §3, RBAC_COMPACT;
+// scoped into the operation view at M11): grant users roles in this operation.
+// Role *definitions* come from the linked solution's config; who holds them
+// lives in `user_roles`. Op-admin gated server-side.
+//
+// Keyed on EMAIL since 2026-08-02 — roles can be granted to someone invited but
+// not yet signed in, which is the whole invite-first flow.
 
 import { useEffect, useState } from 'react';
 import { consoleClient } from '../../sdm-runtime/engine';
 
-export function AssignmentsSection({ operationId }: { operationId: string }) {
+export function UserRolesSection({ operationId }: { operationId: string }) {
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
-  const [assignments, setAssignments] = useState<{ userId: string; roleIds: string[] }[]>([]);
+  const [userRoles, setUserRoles] = useState<{ email: string; roleIds: string[] }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [userId, setUserId] = useState('');
+  const [email, setEmail] = useState('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
 
   async function load() {
     setError(null);
     try {
-      const [r, a] = await Promise.all([consoleClient.operationRoles(operationId), consoleClient.listAssignments(operationId)]);
+      const [r, a] = await Promise.all([consoleClient.operationRoles(operationId), consoleClient.listUserRoles(operationId)]);
       setRoles(r);
-      setAssignments(a);
+      setUserRoles(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -35,19 +38,19 @@ export function AssignmentsSection({ operationId }: { operationId: string }) {
     });
   }
 
-  function edit(a: { userId: string; roleIds: string[] }) {
-    setUserId(a.userId);
+  function edit(a: { email: string; roleIds: string[] }) {
+    setEmail(a.email);
     setPicked(new Set(a.roleIds));
   }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!userId.trim()) return;
+    if (!email.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await consoleClient.putAssignment(operationId, userId.trim(), [...picked]);
-      setUserId(''); setPicked(new Set());
+      await consoleClient.putUserRoles(operationId, email.trim(), [...picked]);
+      setEmail(''); setPicked(new Set());
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -60,7 +63,7 @@ export function AssignmentsSection({ operationId }: { operationId: string }) {
 
   return (
     <div className="admin-section">
-      <h3 className="admin-section-title">Role assignments</h3>
+      <h3 className="admin-section-title">Roles</h3>
       <p className="admin-sub">Grant users roles in this operation. Roles are declared in the linked solution.</p>
 
       {error && <div className="admin-error">{error}</div>}
@@ -69,15 +72,15 @@ export function AssignmentsSection({ operationId }: { operationId: string }) {
         <p className="admin-muted">This operation's solution declares no roles yet — add them in the solution's SDM → Roles.</p>
       ) : (
         <>
-          {assignments.length === 0 ? (
+          {userRoles.length === 0 ? (
             <p className="admin-muted">No assignments yet.</p>
           ) : (
             <table className="admin-table" style={{ marginBottom: 16 }}>
-              <thead><tr><th>User id</th><th>Roles</th><th></th></tr></thead>
+              <thead><tr><th>Email</th><th>Roles</th><th></th></tr></thead>
               <tbody>
-                {assignments.map((a) => (
-                  <tr key={a.userId}>
-                    <td className="admin-mono">{a.userId}</td>
+                {userRoles.map((a) => (
+                  <tr key={a.email}>
+                    <td className="admin-mono">{a.email}</td>
                     <td>{a.roleIds.map(roleName).join(', ') || '—'}</td>
                     <td><button className="admin-link" onClick={() => edit(a)}>Edit</button></td>
                   </tr>
@@ -89,8 +92,8 @@ export function AssignmentsSection({ operationId }: { operationId: string }) {
           <form className="admin-form" onSubmit={save}>
             <h3 className="admin-form-title">Assign roles</h3>
             <label className="admin-field">
-              <span>User id</span>
-              <input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="auth user id" className="admin-mono" />
+              <span>Email</span>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="person@example.com" className="admin-mono" />
             </label>
             <div className="admin-checks">
               {roles.map((r) => (
@@ -100,7 +103,7 @@ export function AssignmentsSection({ operationId }: { operationId: string }) {
                 </label>
               ))}
             </div>
-            <button type="submit" className="admin-btn" disabled={busy || !userId.trim()}>
+            <button type="submit" className="admin-btn" disabled={busy || !email.trim()}>
               {busy ? 'Saving…' : 'Save assignment'}
             </button>
             <p className="admin-hint">Saving with no roles checked clears the user's assignment.</p>

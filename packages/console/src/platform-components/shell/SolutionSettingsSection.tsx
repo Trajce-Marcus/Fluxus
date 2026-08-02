@@ -1,7 +1,7 @@
 // Solution → Settings: the open solution's own profile, and the danger zone.
 //
 // Name is editable (`solutions.update`); the **id is permanent** — the config,
-// pages, versions, implementer levels and every operation are keyed on it.
+// pages, versions, sol users and every operation are keyed on it.
 // Delete is wired end to end but the server refuses: the cascade to a
 // solution's operations and their records is a TODO (see `deleteSolution`).
 

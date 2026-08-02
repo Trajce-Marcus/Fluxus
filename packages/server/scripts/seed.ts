@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { closeDb, createDb } from '../src/db/client';
-import { ensureOperation, ensureOrg, ensureSolution, getSolutionConfig, listPageVersions, listPages, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
+import { bootstrapOrgAdmin, ensureOperation, ensureOrg, ensureSolution, getSolutionConfig, listPageVersions, listPages, publishPage, putConfig, putPage, seedOperationRecords } from '../src/host';
 import { DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { config } from '../../runtime/src/config';
 
@@ -68,11 +68,25 @@ for (const file of pageFiles) {
   if (existing.length === 0) await publishPage(db, solutionId, pagePath, 'Seed import', 'seed');
 }
 
+// The first org admin, when one is named. Creating an org and creating its
+// first admin are one act (RBAC_COMPACT "Administration") — and with the strict
+// entry gate, a seeded operation with no users would admit nobody, including
+// the Console. Same idempotent call as `npm run bootstrap`, which is the one to
+// use against an existing database; here it just saves a fresh clone a step.
+// Unset ⇒ skipped: in demo posture (auth unconfigured) there is nothing to
+// bootstrap, because everything is open.
+const adminEmail = process.env.FLUXUS_ORG_ADMIN_EMAIL;
+const bootstrapped = adminEmail ? await bootstrapOrgAdmin(db, { email: adminEmail, orgId: 'default' }) : null;
+
 const skipped = pageFiles.length - wrotePages;
 console.log(
   `Seeded solution '${solutionId}' (config: ${wroteConfig ? 'written' : 'kept existing'}, ` +
   `pages: ${wrotePages} written${skipped > 0 ? `, ${skipped} kept existing` : ''}) ` +
   `and operation '${operationId}' (records for empty types).` +
+  (bootstrapped
+    ? `\nOrg admin: '${bootstrapped.email}'${bootstrapped.operationsOpened.length > 0 ? ` (op admin of ${bootstrapped.operationsOpened.join(', ')})` : ''}` +
+      `${bootstrapped.solutionsOpened.length > 0 ? ` (write on ${bootstrapped.solutionsOpened.join(', ')})` : ''}.`
+    : '\nNo FLUXUS_ORG_ADMIN_EMAIL set — no org admin seeded. With auth configured, run `npm run bootstrap` or nobody can sign in.') +
   (!force && (skipped > 0 || !wroteConfig) ? '\nExisting content was left alone — re-run with --force to overwrite from the repo files.' : ''),
 );
 await closeDb(db);

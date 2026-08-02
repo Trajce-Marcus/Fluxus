@@ -72,7 +72,7 @@ No linking key between the two: every activity runs against a record, so both en
 
 **Not logged / parked (decisions, not accidents):** UI errors — not logged, accepted. Rejected submissions (gate `fail`) leave no trace — watchable when needed. SDM config edits live outside the pipeline — the platform-to-build-the-platform spiral is deliberately not entered.
 
-**Sequencing:** MVP-first — ride the pipeline, take the free wins (uniform audit, AI-legible stream, zero logging concepts for implementers), build retention tooling when real usage provides metrics.
+**Sequencing:** MVP-first — ride the pipeline, take the free wins (uniform audit, AI-legible stream, zero logging concepts for solution builders), build retention tooling when real usage provides metrics.
 
 ## Cancelling a mistaken activity (doctrine, decided July 2026)
 
@@ -130,7 +130,7 @@ Header (identity line, notification bell, user menu)
 
 **Identity line (M13, 2026-07-27):** the header answers who you work for, which app you are in, whose data it runs on, who you are, and whose platform this is. Left: **org name** `·` **solution name** (`.app-org` / `.app-header-sep` / `.app-title`). Right, before the toggles: the **operation name** as a context chip (`.op-chip`) — display-only, since switching operations in-session needs a memberships list that does not exist. All three come off `FluxusClient` (`orgName` / `solutionName` / `operationName`, resolved at connect from `operations.get`). Platform attribution is one **"Powered by Fluxus"** line pinned to the foot of the nav (`.powered-by`; `.side-panel` is now a column with a scrolling `.side-panel-nav`) — at the edge, never competing with the tenant's branding in the bar. Demo tenancy names come from the seed: Northwind Utilities / Asset Maintenance / Western Region.
 
-**Workbench out of the Runtime app (M15, 2026-07-27 — BUILT; CONSOLE_RUNTIME_SPEC §4):** the Runtime app renders published pages only. Raw record access, running any activity, CSV import and the schema navigator are implementer work, so the whole cluster collapsed into `<Workbench client user? />` and moved to the Console, where it mounts as a solution-level tab against the M9 data operation. What changed here:
+**Workbench out of the Runtime app (M15, 2026-07-27 — BUILT; CONSOLE_RUNTIME_SPEC §4):** the Runtime app renders published pages only. Raw record access, running any activity, CSV import and the schema navigator are design-plane work, so the whole cluster collapsed into `<Workbench client user? />` and moved to the Console, where it mounts as a solution-level tab against the M9 data operation. What changed here:
 
 - **`AppContext` is gone**, split in two. `context/RuntimeContext` holds this app's shell state (session/auth, the identity line's three names, published page paths, the open page); the workbench's own context holds everything record-shaped. Nothing above `<Workbench>` knows the record state exists — that mixing *was* the coupling.
 - **Consequences, by design**: no "Workbench" menu item, no record-type list in the Runtime nav, and an operation whose solution has no published pages shows an empty app. The escape hatch is gone deliberately.

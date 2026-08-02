@@ -1,26 +1,27 @@
 // Organisation → People (M17). Two audiences, one section, chosen in the inner
-// panel: **Members** — who belongs to the org — is not built (it needs the auth
-// tier to resolve user → org, the same gap that blocks org signup, §1a); and
-// **Implementer levels** — design-time access per solution — which is real and
-// moves here from its own workspace nav item.
+// panel: **Users** — the org pool, who exists to us at all — and **Solution
+// users** — who builds each solution, at read or write.
+//
+// "Members" was drift and is retired (ruled 2026-08-02): the binding terms are
+// users / org users / op users, one word per layer.
 //
 // Operation-scoped role assignments are deliberately *not* here: they belong to
 // an operation, and live in the operation view (M11).
 
 import { useState } from 'react';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
-import { ImplementersAdmin } from './ImplementersAdmin';
+import { SolUsersAdmin } from './SolUsersAdmin';
 import { Placeholder } from './Placeholder';
 
 const VIEWS = [
-  { id: 'members', label: 'Members', sub: 'org users' },
-  { id: 'implementers', label: 'Implementer levels', sub: 'design-time access' },
+  { id: 'users', label: 'Users', sub: 'the org pool' },
+  { id: 'solusers', label: 'Solution users', sub: 'who builds each solution' },
 ] as const;
 
 type ViewId = (typeof VIEWS)[number]['id'];
 
 export function PeopleAdmin() {
-  const [view, setView] = useState<ViewId>('members');
+  const [view, setView] = useState<ViewId>('users');
 
   return (
     <>
@@ -36,19 +37,19 @@ export function PeopleAdmin() {
         ))}
       </InnerPanel>
 
-      {view === 'members' ? (
+      {view === 'users' ? (
         <Placeholder
-          title="Members"
-          sub="Who belongs to this organisation. Needs the auth tier to resolve user → org, which it does not do yet."
+          title="Users"
+          sub="The org pool — who exists to this organisation at all. Invite-only; email is the key, and the auth id binds on first sign-in."
           items={[
-            'Invite a user to the organisation',
-            'Member list with organisation-level roles',
-            'Remove / suspend a member',
-            'Which operations each member is assigned to',
+            'Invite a user into the organisation',
+            'The pool, with each user\u2019s status and org-admin level',
+            'Suspend, reinstate or remove a user',
+            'Which operations each user has been added to',
           ]}
         />
       ) : (
-        <ImplementersAdmin />
+        <SolUsersAdmin />
       )}
     </>
   );

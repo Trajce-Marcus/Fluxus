@@ -8,7 +8,7 @@ import { RecordView } from './components/RecordView';
 
 // The workbench, as one component (CONSOLE_RUNTIME_SPEC §4, M15). Raw record
 // access, running any activity, CSV import and the schema navigator are
-// implementer work, so this mounts in the **Console**; the Runtime app renders
+// design-plane work, so this mounts in the **Console**; the Runtime app renders
 // published pages only. Self-contained by design: record types, grid and
 // record view are its three panes and its own context holds all of it — a host
 // hands over a connected client and knows nothing else.

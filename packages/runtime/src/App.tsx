@@ -11,7 +11,7 @@ const NAV_PREF_KEY = 'fluxus:sdm:nav-open';
 
 // The Runtime app renders published pages, and nothing else (§4, M15). The
 // workbench — raw records, arbitrary activity runs, CSV import, the schema
-// navigator — is implementer work and lives in the Console now, so an
+// navigator — is design-plane work and lives in the Console now, so an
 // operation whose solution has no published pages shows an empty app. That is
 // the design, not a gap: the escape hatch is gone deliberately.
 function ContentArea() {
@@ -93,7 +93,7 @@ function Shell() {
         <span className="app-title">{solutionName}</span>
         <span style={{ flex: 1 }} />
         {/* Which business unit's data this app is running on. Not switchable
-            yet — one operation per session until memberships land. */}
+            yet — one operation per session until an op-user picker lands. */}
         <span className="op-chip" title="Operation">{operationName}</span>
         <NotificationCentre />
         <UserMenu />

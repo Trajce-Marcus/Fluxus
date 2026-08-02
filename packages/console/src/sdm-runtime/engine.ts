@@ -27,6 +27,10 @@ export let consoleClient: ConsoleClient;
 // hosted workbench (M15) so expression evaluation there sees the same
 // `ctx.user` the Runtime app would.
 export let currentSession: AuthSession | null = null;
+// Whether an auth server is configured at all. `currentSession` is null in two
+// very different postures — demo (no auth, the server is open to everyone) and
+// signed-out — and the header must not show them the same way.
+export let authConfigured = false;
 
 let bootUrl: string | undefined;
 let bootGetToken: (() => Promise<string | null>) | undefined;
@@ -61,6 +65,7 @@ export async function initSdmRuntime(): Promise<void> {
   const auth = createHostAuth(import.meta.env.VITE_NEON_AUTH_URL);
   if (auth.configured && !(await auth.session())) await signInGate(auth);
   currentSession = auth.configured ? await auth.session() : null;
+  authConfigured = auth.configured;
   // Deployed builds bake in the live server URL; local dev (var unset) falls
   // back to the client's localhost default.
   bootUrl = import.meta.env.VITE_FLUXUS_API_URL;

@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { OperationMenuSection } from './OperationMenuSection';
-import { AssignmentsSection } from './AssignmentsSection';
+import { UserRolesSection } from './UserRolesSection';
 import { PlaceholderCard } from './Placeholder';
 
 type OpTab = 'overview' | 'users' | 'menu' | 'data' | 'settings';
@@ -106,21 +106,22 @@ function OverviewTab({ operation, solutionName }: { operation: OperationRow; sol
   );
 }
 
-/** Users of this operation. The built half is role assignment by user id; a
- *  real membership list (names, emails, invites) needs the auth tier. */
+/** Users of this operation — two of the three layers. `op_users` answers *may
+ *  they enter*; role assignments answer *what may they see inside*. The built
+ *  half is role assignment by user id; the op-user list itself is not built. */
 function UsersTab({ operationId }: { operationId: string }) {
   return (
     <>
-      <AssignmentsSection operationId={operationId} />
+      <UserRolesSection operationId={operationId} />
       <div className="admin-section">
-        <h3 className="admin-section-title">Members</h3>
-        <p className="admin-sub">Who these user ids are. Blocked on the same auth gap as organisation People.</p>
+        <h3 className="admin-section-title">Op users</h3>
+        <p className="admin-sub">Who may enter this operation at all — a separate question from what their roles let them see. An operation with no users admits nobody.</p>
         <div style={{ marginTop: 12 }}>
           <PlaceholderCard items={[
             'Users listed by name and email, not raw id',
-            'Invite a user into this operation',
+            'Add a user from the org pool',
             'Remove a user (clears every role here)',
-            'Last active, per user',
+            'Op-admin level, per user',
           ]} />
         </div>
       </div>

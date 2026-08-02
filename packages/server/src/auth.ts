@@ -15,7 +15,7 @@ import { and, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { DEMO_USER, type ContextUser } from '@fluxus/engine';
 import type { Db } from './db/client';
-import { implementerLevels, roleAssignments } from './db/schema';
+import { solUsers, userRoles } from './db/schema';
 
 export type AuthUser = ContextUser;
 
@@ -25,46 +25,63 @@ export type AuthUser = ContextUser;
  * table), it plugs into these two functions; nothing else moves.
  */
 export interface RolesResolver {
-  /** Runtime plane: role ids the user holds in the operation → `context.user.roles`. */
-  runtimeRoles(userId: string, operation: string): Promise<string[]>;
+  /** Runtime plane: role ids the user holds in the operation →
+   *  `context.user.roles`. Keyed on **email** (2026-08-02) like every other
+   *  grant, so roles can be granted before the person has ever signed in. */
+  runtimeRoles(email: string | null | undefined, operation: string): Promise<string[]>;
   /**
-   * Console plane: the user's implementer level on the solution. Server-only —
-   * consumed by config.put/page save/publish/menu/admin, never in the script
-   * environment. `'none'` = no access (levels declared but not for this user).
+   * Design plane: the user's level on the solution (`sol_users`). Server-only —
+   * consumed by config.put/page save/publish, never in the script environment.
+   * `'none'` = not a user of this solution.
+   *
+   * Keyed on **email**, not the auth user id (2026-08-02) — levels are appointed
+   * from the org pool, whose users may not have signed in yet. A caller with
+   * no email cannot match a row, so they get `'none'` once levels are declared.
    */
-  implementerLevel(userId: string, solutionId: string): Promise<'none' | 'read' | 'write' | 'admin'>;
+  solUserLevel(email: string | null | undefined, solutionId: string): Promise<'none' | 'read' | 'write'>;
 }
 
-/** Stage-1/2 stubs: no runtime roles, implementer plane open (everyone admin). */
+/** Stage-1/2 stubs: no runtime roles, design plane open (everyone may build).
+ *  Only ever reached when auth is unconfigured — the live resolver is strict. */
 export const stubRolesResolver: RolesResolver = {
   runtimeRoles: async () => [],
-  implementerLevel: async () => 'admin',
+  solUserLevel: async () => 'write',
 };
 
 /**
- * The live resolver. `runtimeRoles` reads `role_assignments` (RBAC stage 1) —
+ * The live resolver. `runtimeRoles` reads `user_roles` (RBAC stage 1) —
  * populates `context.user.roles`, drives record-type + activity enforcement.
- * `implementerLevel` reads `implementer_levels` (RBAC stage 2 / M5): **dormant
- * until declared** — if a solution has NO level rows, everyone is `admin`
- * (adoption posture, matching record-type/page enforcement); once any row
- * exists, a user without one is `'none'` (denied).
+ *
+ * `solUserLevel` reads `sol_users` (RBAC stage 2 / M5). **Strict, not dormant**
+ * (ruled 2026-08-02, replacing the dormant-until-declared adoption posture): you
+ * get access to a solution only if you are in its user list, exactly as with an
+ * operation. One rule now covers both — "you belong to a thing, or you do not" —
+ * instead of two surfaces answering the same shape of question differently.
+ *
+ * The consequence is a bootstrap, handled the same way as the operation gate:
+ * `solutions.create` writes its creator in as a `write` user, and
+ * `bootstrapOrgAdmin` covers solutions that already have nobody. The demo
+ * posture (auth unconfigured) is still open at the caller.
  */
 export function createDbRolesResolver(db: Db): RolesResolver {
   return {
-    runtimeRoles: async (userId, operationId) => {
+    runtimeRoles: async (email, operationId) => {
+      const key = email?.trim().toLowerCase();
+      if (!key) return [];
       const rows = await db
-        .select({ roleIds: roleAssignments.roleIds })
-        .from(roleAssignments)
-        .where(and(eq(roleAssignments.operationId, operationId), eq(roleAssignments.userId, userId)));
+        .select({ roleIds: userRoles.roleIds })
+        .from(userRoles)
+        .where(and(eq(userRoles.operationId, operationId), eq(userRoles.email, key)));
       return rows[0]?.roleIds ?? [];
     },
-    implementerLevel: async (userId, solutionId) => {
+    solUserLevel: async (email, solutionId) => {
       const rows = await db
-        .select({ userId: implementerLevels.userId, level: implementerLevels.level })
-        .from(implementerLevels)
-        .where(eq(implementerLevels.solutionId, solutionId));
-      if (rows.length === 0) return 'admin'; // dormant ⇒ open (adoption)
-      return rows.find((r) => r.userId === userId)?.level ?? 'none';
+        .select({ email: solUsers.email, level: solUsers.level })
+        .from(solUsers)
+        .where(eq(solUsers.solutionId, solutionId));
+      const key = email?.trim().toLowerCase();
+      if (!key) return 'none'; // no email ⇒ no row can match
+      return rows.find((r) => r.email === key)?.level ?? 'none';
     },
   };
 }

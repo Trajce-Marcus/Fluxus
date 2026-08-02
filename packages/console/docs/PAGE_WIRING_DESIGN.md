@@ -27,7 +27,7 @@ Today a component's data props and callbacks are wired through dropdown-built co
 
 ## The expression ↔ function crossover (evolving, deliberately)
 
-The language doctrine is "expressions ask, functions think" (DSL_SPEC §8): inline until you need intermediate variables, then promote to a named function and the config becomes a one-line call. That is right for the language but taxes the implementer with a packaging decision, and the two halves live in different places. Parallel: SQL inline queries vs stored procs — never settled by doctrine, made tolerable by navigation and convention.
+The language doctrine is "expressions ask, functions think" (DSL_SPEC §8): inline until you need intermediate variables, then promote to a named function and the config becomes a one-line call. That is right for the language but taxes the author with a packaging decision, and the two halves live in different places. Parallel: SQL inline queries vs stored procs — never settled by doctrine, made tolerable by navigation and convention.
 
 **Acceptance bar (agreed): straightforward traversal, not a premature rule.**
 - From any expression, jump into the functions it calls (and back).

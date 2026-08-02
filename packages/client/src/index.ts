@@ -102,6 +102,54 @@ export interface OrgProfile {
   createdAt: string | null;
 }
 
+/** The admin tier at a layer (RBAC_COMPACT "Administration"). Two values, not a
+ *  ladder: 'admin' administers that layer, 'user' belongs to it. */
+export type AdminLevel = 'admin' | 'user';
+
+/** A row in the org pool — does this person exist to us at all.
+ *  `authUserId` is null until their first sign-in binds it, which is also what
+ *  flips `status` from 'invited' to 'active'. */
+export interface OrgUser {
+  email: string;
+  name: string | null;
+  authUserId: string | null;
+  status: 'invited' | 'active' | 'suspended';
+  level: AdminLevel;
+}
+
+/** What `me` answers. `opAdmin` is false when no operation was named — it is
+ *  not a question about no operation in particular. */
+export interface Me {
+  id: string;
+  name: string;
+  email?: string | null;
+  roles: string[];
+  authConfigured: boolean;
+  orgAdmin: boolean;
+  opAdmin: boolean;
+  /** May use the Console at all: org admin, or a sol user on any solution.
+   *  Derived, never a stored flag — a bit could contradict the grants. */
+  console: boolean;
+}
+
+/** The design-plane grade on a solution. Two values, not three: 'admin' was
+ *  collapsed into 'write' once the admin tiers took over what it guarded. */
+export type SolLevel = 'read' | 'write';
+
+/** A row in a solution's user list — who builds it, and at what grade. */
+export interface SolUser {
+  email: string;
+  level: SolLevel;
+}
+
+/** A row in one operation's user list — may this person enter this operation.
+ *  Separate from roles by design: an op user with no roles enters and sees
+ *  nothing, which is valid; roles without this row never grant entry. */
+export interface OpUser {
+  email: string;
+  level: AdminLevel;
+}
+
 /**
  * The Console-plane client (CONSOLE_RUNTIME_SPEC §8): the cross-operation
  * admin surface the page builder drives — solutions/operations CRUD and (as
@@ -159,22 +207,75 @@ export class ConsoleClient {
     return this.trpc.config.get.query({ solutionId });
   }
 
-  // Governance (RBAC stage 1): user→role assignments per operation, implementer
-  // levels per solution. All admin-gated server-side.
+  // Governance (RBAC stage 1): user roles per operation, sol users per
+  // solution. All admin-gated server-side.
   operationRoles(operationId: string): Promise<{ id: string; name: string }[]> {
-    return this.trpc.assignments.roles.query({ operationId });
+    return this.trpc.userRoles.roles.query({ operationId });
   }
-  listAssignments(operationId: string): Promise<{ userId: string; roleIds: string[] }[]> {
-    return this.trpc.assignments.list.query({ operationId });
+  /** Who holds which roles in an operation. Keyed on **email** (2026-08-02), so
+   *  roles can be granted to an invited user who has never signed in. */
+  listUserRoles(operationId: string): Promise<{ email: string; roleIds: string[] }[]> {
+    return this.trpc.userRoles.list.query({ operationId });
   }
-  putAssignment(operationId: string, userId: string, roleIds: string[]): Promise<{ ok: true }> {
-    return this.trpc.assignments.put.mutate({ operationId, userId, roleIds });
+  putUserRoles(operationId: string, email: string, roleIds: string[]): Promise<{ ok: true }> {
+    return this.trpc.userRoles.put.mutate({ operationId, email, roleIds });
   }
-  listImplementers(solutionId: string): Promise<{ userId: string; level: 'read' | 'write' | 'admin' }[]> {
-    return this.trpc.implementers.list.query({ solutionId });
+  /** Sol users — who builds a solution, at `read` (look at the model) or
+   *  `write` (build it). The design-plane layer of the three. Keyed on **email**
+   *  since 2026-08-02: appointed from the org pool, whose users usually have
+   *  not signed in yet. Org-admin gated — the design plane governs no people. */
+  /** Who the caller is and what they may do. Omit `operationId` for the
+   *  org-level answer — the Organisation → Users screen has no operation in
+   *  hand, and asking through an arbitrary one would make org administration
+   *  depend on op membership. Cosmetic: every call is re-checked server-side. */
+  me(operationId?: string): Promise<Me> {
+    return this.trpc.me.query(operationId ? { operationId } : {});
   }
-  putImplementer(solutionId: string, userId: string, level: 'read' | 'write' | 'admin'): Promise<{ ok: true }> {
-    return this.trpc.implementers.put.mutate({ solutionId, userId, level });
+
+  listSolUsers(solutionId: string): Promise<SolUser[]> {
+    return this.trpc.solUsers.list.query({ solutionId });
+  }
+  putSolUser(solutionId: string, email: string, level: SolLevel): Promise<{ ok: true }> {
+    return this.trpc.solUsers.put.mutate({ solutionId, email, level });
+  }
+  removeSolUser(solutionId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.solUsers.remove.mutate({ solutionId, email });
+  }
+
+  // Users (RBAC_COMPACT "Users" + "Administration"). Three layers, each a
+  // separate question: the org pool (does this person exist to us), op users
+  // (may they enter this operation), roles (what may they see inside).
+  //
+  // Grants split identity from authorization: the org admin owns the pool and
+  // who gets in; the op admin owns their operation's list and its roles. Every
+  // call here is re-checked server-side — `me().orgAdmin`/`.opAdmin` are for
+  // deciding what to RENDER, never for deciding what is allowed.
+  listOrgUsers(orgId?: string): Promise<OrgUser[]> {
+    return this.trpc.users.listOrg.query(orgId ? { orgId } : {});
+  }
+  inviteOrgUser(input: { email: string; name?: string | null; level?: AdminLevel; orgId?: string }): Promise<{ ok: true }> {
+    return this.trpc.users.invite.mutate(input);
+  }
+  removeOrgUser(email: string, orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.users.removeOrg.mutate({ email, ...(orgId ? { orgId } : {}) });
+  }
+  /** Lifecycle: the reversible half of removal — grants survive, entry stops. */
+  setOrgUserStatus(email: string, status: OrgUser['status'], orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.users.setStatus.mutate({ email, status, ...(orgId ? { orgId } : {}) });
+  }
+  setOrgUserLevel(email: string, level: AdminLevel, orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.users.setOrgLevel.mutate({ email, level, ...(orgId ? { orgId } : {}) });
+  }
+  listOpUsers(operationId: string): Promise<OpUser[]> {
+    return this.trpc.users.listOp.query({ operationId });
+  }
+  /** Add a pool user to an operation, or change their level there. `level:
+   *  'admin'` requires ORG admin — an op admin may never mint another op admin. */
+  addOpUser(operationId: string, email: string, level: AdminLevel = 'user'): Promise<{ ok: true }> {
+    return this.trpc.users.addOp.mutate({ operationId, email, level });
+  }
+  removeOpUser(operationId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.users.removeOp.mutate({ operationId, email });
   }
 
   // Page publishing (M3): snapshot the current draft as a new version; list the
@@ -290,7 +391,7 @@ export class FluxusClient {
       initialRecords: partition.map((r) => [r.id, r] as const),
     });
     const pages = new Map(pageRows.map((p) => [p.path, p.def]));
-    // enforced=false: Console is the implementer plane, menus/roles are not
+    // enforced=false: Console is the design plane, menus/roles are not
     // filtered here. With an operation bound, runActivity/refresh work exactly
     // as in the Runtime host — running an activity is how you test a workflow.
     // Display names are Runtime chrome; Console shows the solution banner it
