@@ -16,7 +16,7 @@ _(empty — add freely)_
   vocabulary aligned to locked org/solution/operation naming).
   Shape so far: three surfaces (record type `read` role-list / activity access =
   the availability gate expression / page `open` role-list); strict-by-default
-  for record types + pages, open-by-default for activities; implementer plane =
+  for record types + pages, open-by-default for activities; design plane =
   read/write/admin; roles declared in config, assignments via an admin tool;
   row-level read conditions deferred. Still open in the draft: gate double-duty,
   anchor-readability, page client-only enforcement interim, role registry home.
@@ -38,7 +38,7 @@ _(empty — add freely)_
   radio buttons.
 - [ ] **Essential 8 assessment** — how the platform does/doesn't abide; not
   yet assessed.
-- [ ] **FluxScript comprehensive doc** — implementer-facing guide (variables
+- [ ] **FluxScript comprehensive doc** — a guide for solution builders (variables
   in hooks, the four roots, patterns). The mechanics already work (`let`
   bindings since DSL Phase 2); the doc doesn't exist. GRAMMAR.md + DSL_SPEC.md
   are spec, not tutorial.

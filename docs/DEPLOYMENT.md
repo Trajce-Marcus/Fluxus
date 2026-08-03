@@ -110,11 +110,21 @@ is in scope, taking the whole function down as
 ## Where everything lives on Vercel
 
 Team `trajce-marcus-projects`, three projects: `fluxus-server` (git
-integration on the GitHub repo), `fluxus-sdm` and `fluxus-page-builder`
-(static CLI deploys, no git integration). CLI access: `npx vercel login`
-(browser device auth).
+integration on the GitHub repo, project root `packages/server`), `fluxus-sdm`
+and `fluxus-page-builder` (static CLI deploys, no git integration). CLI
+access: `npx vercel login` (browser device auth).
 
-## The hosts (workbench + page builder)
+**Project names lag the packages** (2026-08-01 restructure): the packages are
+now `@fluxus/runtime` and `@fluxus/console`, but the Vercel projects are still
+`fluxus-sdm` / `fluxus-page-builder` and their URLs are load-bearing —
+`fluxus-sdm.vercel.app` is baked into the Console's
+`VITE_FLUXUS_RUNTIME_URL`, so renaming a project changes the live address and
+breaks **Open** on a deployed Console until the Console is rebuilt. Renaming
+them is therefore a deliberate, sequenced job, not a tidy-up. Nothing else
+broke: the hosts are static CLI deploys with no Root Directory setting, and
+`fluxus-server`'s root is untouched by the rename.
+
+## The hosts (Runtime app + Console)
 
 **Live since 2026-07-17:** https://fluxus-sdm.vercel.app and
 https://fluxus-page-builder.vercel.app — Vercel projects `fluxus-sdm` and
@@ -215,7 +225,7 @@ Setup, per environment:
 
 **CORS** on each bucket must allow the host origins to `PUT` (upload) and `GET`
 (display) directly. In the bucket's *Settings → CORS policy*, allow the
-workbench/page-builder origins (e.g. `http://localhost:5173` for dev and the
+Runtime/Console origins (e.g. `http://localhost:5173` for dev and the
 Vercel host URLs for prod) with methods `PUT, GET`, `AllowedHeaders: *`.
 
 Applying the ledger table: migration `0002_*` adds `attachments`. Run

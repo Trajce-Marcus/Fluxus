@@ -18,14 +18,14 @@ prod path).
 
 | Dependency | Version | Used in | Role | Maturity |
 |---|---|---|---|---|
-| `react` / `react-dom` | ^18.2 | sdm, page-builder | UI runtime | 🟢 Bedrock; deliberately one major behind latest (19) |
+| `react` / `react-dom` | ^18.2 | console, runtime, workbench, page-runtime | UI runtime | 🟢 Bedrock; deliberately one major behind latest (19) |
 | `pg` (node-postgres) | ^8.16 | server | Postgres driver (prod path) | 🟢 Bedrock — the standard, 15+ yrs |
 | `zod` | ^3.25 | server | Input validation (tRPC procedures) | 🟢 Bedrock — ubiquitous; v3 is the mature line |
-| `monaco-editor` | ^0.55 | page-builder | The VS Code editor (FluxScript editing) | 🟢 Established — Microsoft-maintained; `0.x` scheme is decade-stable |
+| `monaco-editor` | ^0.55 | console | The VS Code editor (FluxScript editing) | 🟢 Established — Microsoft-maintained; `0.x` scheme is decade-stable |
 | `@trpc/server` + `@trpc/client` | ^11.4 | server, client | The API surface | 🟡 Modern — popular, maintained; a real architectural commitment |
 | `hono` | ^4.8 | server | HTTP shell (one app on Node + Lambda) | 🟡 Modern — widely adopted; fetch-native design enables the dual runtime |
 | `@hono/node-server` | ^1.14 | server | Hono's Node adapter | 🟡 Modern — tied to Hono |
-| `@monaco-editor/react` | ^4.7 | page-builder | React wrapper for Monaco | 🟡 Community wrapper — popular but a smaller third-party project |
+| `@monaco-editor/react` | ^4.7 | console | React wrapper for Monaco | 🟡 Community wrapper — popular but a smaller third-party project |
 | `@electric-sql/pglite` | ^0.3 | server | **Dev/test** Postgres-in-WASM | 🟠 Young (0.x) — never runs in prod (only when no `DATABASE_URL`); behind the `createDb` seam |
 | `drizzle-orm` | ^0.44 | server | Query builder + schema | 🔴 **Watch-item** — pre-1.0, in the prod path; usage kept shallow (raw DDL, simple queries) so Kysely/raw `pg` stay easy fallbacks |
 

@@ -2,11 +2,11 @@
 // A record type is readable only to roles its `access.read` lists (default
 // deny), but ONLY once auth is configured AND the solution declares roles —
 // the env stub keeps everything open. Assignments come from the governance
-// store (role_assignments), resolved into context.user.roles per operation.
+// store (user_roles), resolved into context.user.roles per operation.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig, putRoleAssignment } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteOrgUser, putConfig, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
@@ -39,8 +39,11 @@ const config: ConfigRaw = {
 };
 
 let db: Db;
-const u1: ContextUser = { id: 'u1', name: 'U1', email: null, roles: [] }; // will hold role_a
-const u2: ContextUser = { id: 'u2', name: 'U2', email: null, roles: [] }; // no assignment
+// Both are op users of OP — entry and roles are separate questions (the entry
+// gate, RBAC_COMPACT "Users"), and these cases are all about the second one:
+// what a caller sees once inside. u2 enters and sees nothing.
+const u1: ContextUser = { id: 'u1', name: 'U1', email: 'u1@example.com', roles: [] }; // will hold role_a
+const u2: ContextUser = { id: 'u2', name: 'U2', email: 'u2@example.com', roles: [] }; // no assignment
 
 // Enforced caller: auth configured + the live resolver.
 const enforced = (user: ContextUser) => appRouter.createCaller({ db, user, roles: createDbRolesResolver(db), authConfigured: true });
@@ -57,7 +60,11 @@ beforeAll(async () => {
     { operationId: OP, id: 'B1', typeRef: 'rt_beta', customFields: {}, activityHistory: [] },
     { operationId: OP, id: 'G1', typeRef: 'rt_gamma', customFields: {}, activityHistory: [] },
   ]);
-  await putRoleAssignment(db, { operationId: OP, userId: 'u1', roleIds: ['role_a'] });
+  await putUserRoles(db, { operationId: OP, email: 'u1@example.com', roleIds: ['role_a'] });
+  for (const email of ['u1@example.com', 'u2@example.com']) {
+    await inviteOrgUser(db, { email });
+    await addOpUser(db, { operationId: OP, email });
+  }
 });
 
 describe('record-type read filter (default deny, enforced when configured)', () => {

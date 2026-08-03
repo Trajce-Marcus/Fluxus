@@ -4,7 +4,7 @@ Current design truth for the page runtime. Updated in the same commit as any beh
 
 ## Scope
 
-The **run-a-page cluster** (GLOSSARY "Page runtime", named 2026-07-19): `PageRenderer`, `ComponentContainer`, the component registry (`componentManifests` + the component library), the page expression host (`pageHost.ts`), save-time `validatePage`, and `ActivityFormModal` — everything a host embeds to turn a stored `PageDef` into working UI against live records. Page *editing* (layout editor, palette, Monaco, `persistence.ts`'s save path) stays in `@fluxus/page-builder`, the Console side.
+The **run-a-page cluster** (GLOSSARY "Page runtime", named 2026-07-19): `PageRenderer`, `ComponentContainer`, the component registry (`componentManifests` + the component library), the page expression host (`pageHost.ts`), save-time `validatePage`, and `ActivityFormModal` — everything a host embeds to turn a stored `PageDef` into working UI against live records. Page *editing* (layout editor, palette, Monaco, `persistence.ts`'s save path) stays in `@fluxus/console`.
 
 Extracted from the page builder 2026-07-19 as the first step of **workbench → Runtime app**: the same cluster renders the editor preview in the page builder and published pages in the SDM workbench.
 
@@ -61,5 +61,5 @@ The five demo components (`AppHeader`, `InventorList`, `InventorProfile`, `Map`,
 
 ## Hosts
 
-- **`@fluxus/page-builder`** (Console): editor preview (`PageEditor`) + `ExpressionDialog` validation; creates the handle in `sdm-runtime/engine.ts` at bootstrap.
-- **`@fluxus/sdm`** (workbench, 2026-07-19 MVP slice): "Pages" sidebar section; selecting a page swaps the content area to the rendered page; creates the handle in `host.ts`. First step of the workbench becoming the Runtime app.
+- **`@fluxus/console`**: editor preview (`PageEditor`) + `ExpressionDialog` validation; creates the handle in `sdm-runtime/engine.ts` at bootstrap.
+- **`@fluxus/runtime`** (2026-07-19 MVP slice, then the workbench's Pages section): the menu addresses published pages, and `PageView` swaps the content area to the rendered page; creates the handle in `host.ts`. First step of the workbench becoming the Runtime app.

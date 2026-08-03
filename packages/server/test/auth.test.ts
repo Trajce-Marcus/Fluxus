@@ -52,7 +52,7 @@ describe('roles resolver stubs (filled by RBAC stages 1–2)', () => {
     expect(await stubRolesResolver.runtimeRoles('u1', 'demo/sdm')).toEqual([]);
   });
 
-  it('console plane: open (admin)', async () => {
-    expect(await stubRolesResolver.implementerLevel('u1', 'demo/sdm')).toBe('admin');
+  it('design plane: open (write)', async () => {
+    expect(await stubRolesResolver.solUserLevel('u1@example.com', 'demo/sdm')).toBe('write');
   });
 });

@@ -182,6 +182,9 @@ export interface RecordTypeDef {
 export interface RoleDef {
   id: string;
   name: string;
+  /** What the role is for — shown in the Console's roles table (2026-08-01).
+   *  Documentation only; nothing resolves against it. */
+  description?: string;
 }
 
 // Named reusable FluxScript function (stored in the SDM's functions collection).

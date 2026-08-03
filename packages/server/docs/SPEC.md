@@ -37,8 +37,8 @@ because the entry append and record_map change preceded the hook.
 
 ```
 src/db/schema.ts       — Drizzle schema: orgs + solutions + operations (the tier,
-                         CONSOLE_RUNTIME_SPEC §2), role_assignments +
-                         implementer_levels (governance store, §2a),
+                         CONSOLE_RUNTIME_SPEC §2), user_roles +
+                         sol_users (governance store, §2a),
                          sdm_configs + pages (solution-keyed design artifacts),
                          page_versions (append-only published snapshots, §3),
                          records (transactional, operation-keyed),
@@ -54,7 +54,8 @@ src/host.ts            — loadOperationHost (resolve operation → solution, th
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig/seedOperationRecords)
-src/router.ts          — the tRPC router: orgs.get/putProfile, solutions.list,
+src/router.ts          — the tRPC router: orgs.get/putProfile,
+                         solutions.list/create/update/delete,
                          operations.list/get/create/putConfig, config.get/put,
                          pages.*, records.*, activities.run, files.*;
                          DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
@@ -86,14 +87,26 @@ takes `operationId?` (both default `demo/sdm`):
   `{ orgId?, name, contactEmail }` — name and contact email only. There is
   deliberately **no `orgs.create`** (signup needs user → org resolution) and
   `plan`/`status` are not writable: they are ours to set, not the org's.
-- **`solutions.list`** → `{ id, name }[]` and **`operations.list`** →
+- **`solutions.list`** → `{ id, name, origin }[]` / **`solutions.create`**
+  `{ id, name }` (ungated — nothing exists to grant a level on yet) /
+  **`solutions.update`** `{ solutionId, name }` (**org admin** since 2026-08-02) —
+  **name only**: the id is permanent, since config, pages, versions, sol users
+  and every operation are keyed on it. Called `update`, not `rename`,
+  because the profile will grow. / **`solutions.delete`** `{ solutionId }`
+  (**org admin** since 2026-08-02) — **wired but not implemented**: it validates the
+  solution exists and then throws `NotImplementedError` → `NOT_IMPLEMENTED`,
+  destroying nothing. The ruling it waits on is a **cascade** (2026-07-31:
+  deleting a solution deletes the operations running it, records included), and
+  `host.deleteSolution` carries the TODO listing every table that has to go and
+  the two open questions (R2 blobs, whether a deletion is recorded).
+- **`operations.list`** →
   `OperationRow[]` / **`operations.get`** `{ operationId? }` →
   `{ id, orgId, solutionId, name, config, solutionName, orgName }` (the display
   names ride along for the Runtime header's identity line — solution M10, org
   M13; both fall back to their id so a missing row can't break boot)
   / **`operations.create`**
-  `{ id, solutionId, name }` (implementer `admin`) / **`operations.putConfig`**
-  `{ operationId?, config }` (implementer `write`; the runtime menu **override**,
+  `{ id, solutionId, name }` (**org admin**) / **`operations.putConfig`**
+  `{ operationId?, config }` (**op admin** since 2026-08-02; the runtime menu **override**,
   §5 amended M10 — `menu` absent ⇒ inherit the solution's `default_menu`, `[]` ⇒
   explicitly empty; **validated at save**: every leaf `page` resolves to a
   published page of the linked solution, every role id is declared, one nesting
@@ -104,13 +117,129 @@ takes `operationId?` (both default `demo/sdm`):
 - **`me`** `{ operationId? }` → `{ id, name, email, roles, authConfigured }` —
   the caller's identity + roles resolved for the operation. The Runtime host
   uses it for **cosmetic** menu filtering; the server filters are the real gate.
-- **Governance (RBAC stage 1)** — over the `role_assignments` /
-  `implementer_levels` store, all implementer-`admin`-gated: **`assignments.roles`**
+- **Governance (RBAC stage 1)** — over the `user_roles` /
+  `sol_users` store. Re-tiered 2026-08-02: `userRoles.*` are now
+  **op-admin** gated and `solUsers.*` **org-admin** gated (see *The admin
+  tiers* below); `userRoles.roles` stays open, exposing only role defs.
+  **`userRoles.roles`**
   `{ operationId? }` → the linked solution's declared role defs (the picker);
-  **`assignments.list`** `{ operationId? }` / **`assignments.put`**
+  **`userRoles.list`** `{ operationId? }` / **`userRoles.put`**
   `{ operationId?, userId, roleIds }` (empty roleIds clears the row);
-  **`implementers.list`** `{ solutionId? }` / **`implementers.put`**
-  `{ solutionId?, userId, level }`.
+  **`solUsers.list`** `{ solutionId? }` / **`solUsers.put`**
+  `{ solutionId?, email, level }` — **keyed on email since 2026-08-02**
+  (migration 0012), and both **org-admin** gated. `level: 'admin'` here *is* the
+  solution-admin tier; there is deliberately no separate solution-users table.
+- **Users (2026-08-02)** — the org pool and each operation's user list:
+  **`users.listOrg`** `{ orgId? }` / **`users.invite`**
+  `{ email, name?, level?, orgId? }` / **`users.removeOrg`** `{ email, orgId? }`
+  / **`users.setStatus`** `{ email, status, orgId? }` / **`users.setOrgLevel`**
+  `{ email, level, orgId? }`; **`users.listOp`** `{ operationId? }` /
+  **`users.addOp`** `{ operationId?, email, level? }` / **`users.removeOp`**
+  `{ operationId?, email }`. `addOp` refuses an email that is not in the pool —
+  the pool is the only way in, so `op_users` can never be the wider set.
+  `removeOp` clears that user's role assignments in the operation; `removeOrg`
+  removes them from every operation **and strips their sol users**, so
+  no grant outlives the pool row that justified it (the second only became
+  reachable with the email rekey).
+- **The admin tiers (2026-08-02)** — three checks in `router.ts`, one per tier,
+  deliberately **not nested**: `requireOrgAdmin` (`org_users.level`),
+  `requireOpAdmin` (`op_users.level`, per operation) and `requireSolUser`
+  (`sol_users`, per solution). Authority has one root and flows
+  **downward only**; no tier appoints its own tier. The governing split is
+  **identity vs authorization**:
+
+  | Procedure | Tier | Was |
+  |---|---|---|
+  | `users.listOrg` / `invite` / `removeOrg` / `setStatus` / `setOrgLevel` | org admin | ungated |
+  | `solutions.create`, `operations.create` | org admin | design plane `admin` |
+  | `solUsers.list` / `solUsers.put` | org admin | design plane `admin` |
+  | `users.addOp` (level `user`) | op admin **or** org admin | design plane `admin` |
+  | `users.addOp` (level `admin`) | org admin only | — |
+  | `users.removeOp` | op admin | design plane `admin` |
+  | `userRoles.list` / `userRoles.put` | op admin | design plane `admin` |
+  | `operations.putConfig` (menu override) | op admin | design plane `write` |
+  | `config.put`, `pages.*`, `publish` | sol user | unchanged |
+
+  **Solution admins lose every user-facing grant** — including
+  `solUsers.list`, which since the rekey carries real emails. A person
+  building the model has no business over real identities.
+
+  An **org admin is not implicitly an op admin**: they may not manage roles or
+  the menu override until they appoint themselves op admin. A speed bump, not a
+  wall — the point is that the grant becomes explicit and auditable rather than
+  ambient. Suspension bites both tiers: a suspended pool row is not an admin
+  anywhere.
+
+  **The escalation rule lives in exactly one place** — `users.addOp` branches on
+  the `level` being written. Writing `user` needs op admin or org admin (entry
+  is an identity question, so either tier may answer it); writing `admin` needs
+  org admin. **An op admin can never mint an op admin.**
+- **Bootstrap** — `bootstrapOrgAdmin(db, { email })`, exposed as
+  `npm run bootstrap` and called by `npm run seed` when
+  `FLUXUS_ORG_ADMIN_EMAIL` is set. No signup plus a strict entry gate means the
+  chain cannot start itself: after migration 0010, an operation admits nobody,
+  including the Console, which reaches an operation through the same gate as the
+  Runtime — so nobody can open the screen that would invite the first person.
+  Something outside the request path has to write the first row. **Deliberately
+  a script and not a migration**: it needs an env var (plain SQL cannot read
+  one), and it must be **re-runnable**, because it is also the lockout recovery
+  tool and a lockout you can only fix by writing another migration is not a fix.
+  Two rules make re-runs safe — the pool row is upserted to org admin
+  (promotion is the point), but op-admin rows are written **only** into
+  operations that currently have no users at all. It is safe against production
+  precisely because it is separate from `seed`, which installs the demo bundle.
+
+  **Superseded for every org but the first (2026-08-03)**: `platform.registerOrg`
+  now writes an org and its owner in one act inside the request path, so the
+  script's job shrinks to what it should always have been — lockout recovery,
+  and the very first admin on a fresh deployment. See "The platform tier" below.
+- **The platform tier** — above every org (ruled 2026-08-03), and the only
+  caller that may read across orgs or create one. `requirePlatformAdmin` guards
+  `platform.listOrgs` and `platform.registerOrg`; membership is
+  `isPlatformAdmin(email)` in `auth.ts`, an **env allowlist**
+  (`FLUXUS_PLATFORM_ADMINS`) rather than a table — a `platform_users` table
+  recreates one tier up exactly the chicken-and-egg the bootstrap script exists
+  to escape, and the env is already outside the request path, which is the only
+  property the first row of any tier needs.
+
+  **This gate alone does not fall open when auth is unconfigured.** Every other
+  check here is open in demo posture, on the reasoning that with no identity
+  there is nothing to gate on — but those guard one org's data from that org's
+  own people. This one guards every org from everyone, and an unconfigured dev
+  machine must not be one where anyone who can reach the port registers orgs.
+
+  `registerOrg` writes the `orgs` row (with `contact_email` = the owner) and the
+  owner's `org_users` admin row **in one act**, because after the first alone the
+  org admits nobody — including whoever would perform the second. The owner is
+  **not a new level**: they are the org's first org admin, and a distinct
+  `owner` value would need transfer and demotion rules nothing needs yet.
+  Duplicate id ⇒ `CONFLICT`; ids are `^[a-z0-9][a-z0-9-]*$` because the id **is**
+  the URL (`/o/<orgId>/…`). Nothing is emailed — an invite is a database row
+  until a mail sender exists.
+- **`org_id` as a boundary** (2026-08-03) — registering a second org made the
+  org key load-bearing and exposed two things that had been invisible while
+  `'default'` was the only org. `createOperation` never set `org_id`, so every
+  operation landed in `'default'` whatever its solution belonged to; an operation
+  now **inherits its solution's org** (the link is binding and permanent, so a
+  mismatch could never be corrected). And six `requireOrgAdmin(ctx)` call sites
+  defaulted to `'default'`, so an admin of the default org could create, rename,
+  delete and staff solutions in anyone's workspace while the real owner was
+  refused; each now names the org being written to, resolved via
+  `getSolutionOrg` where the input does not carry it.
+- **The entry gate** — `resolveUser` is the one choke point every
+  operation-scoped call passes through, so the op-user check lives there.
+  **Strict, not dormant** (ruled 2026-08-02): an operation with no `op_users`
+  admits nobody — `FORBIDDEN`. Deliberately unlike the record-type/page/
+  sol-user surfaces, which are dormant-until-declared: those ask *what may
+  you see*, where an unconfigured model staying visible is a reasonable adoption
+  default; this asks *may you enter*, and an operation with no users listed has
+  literally no users. An empty list is an answer, not an absence of one. The
+  demo posture (auth unconfigured) is still open — with no identity to check
+  there is nothing to gate on. Entry and roles stay independent — an op
+  user with no roles enters and sees nothing (valid), and roles without an
+  `op_users` row never grant entry. There is **no design-plane bypass**: the
+  sol-user resolver is dormant-open today, so a bypass would make the gate a
+  no-op — someone who builds the solution adds themselves like anyone else.
 - **`activities.run`** `{ operationId?, activityId, recordId?, attributes, waived?,
   acknowledgedWarnings?, callbackData? }` → `RunActivityResult`. The headless
   contract (DSL_SPEC §5): the activity's attribute list is its parameter
@@ -175,12 +304,12 @@ takes `operationId?` (both default `demo/sdm`):
 - **`pages.publish`** `{ solutionId?, path, readme }` → `{ version }` /
   **`pages.versions`** `{ solutionId?, path }` / **`pages.getVersion`**
   `{ solutionId?, path, version }` → `{ def }` / **`pages.rollback`**
-  `{ solutionId?, path, version }` → `{ version }` (M3, implementer `write`).
+  `{ solutionId?, path, version }` → `{ version }` (M3, sol-user `write`).
   Publish snapshots the current draft at `max(version)+1` with required
   release notes; `page_versions` is **append-only, immutable** — rollback
   republishes an older version's def as a new version (draft untouched),
   never a delete/edit. Diffing is a non-goal. **`pages.publishedPaths`**
-  `{ solutionId? }` (implementer `read`) lists every published path unfiltered —
+  `{ solutionId? }` (sol-user `read`) lists every published path unfiltered —
   the authoring plane (menu editor); Console preview is access-exempt (§6).
   **Page access (M4)**: published `pages.list` filters to versions the caller
   can open — `def.access.open` must list a held role (default deny when auth
@@ -218,13 +347,15 @@ rev 6 §0). What the server implements:
   UNAUTHORIZED for the whole call; no anonymous mode.
 - **Roles-resolver seam** (`RolesResolver`, two lookups, both **live**):
   `runtimeRoles(user, operation) → roleIds` (`createDbRolesResolver` reads
-  `role_assignments`) → `context.user.roles`, resolved per call before the
-  engine exists (gates read it). `implementerLevel(user, solution)` (M5) reads
-  `implementer_levels`, **dormant until declared** — no rows ⇒ `admin` for all
-  (adoption); once any row exists an unlisted user is `none` (denied). Checked
-  by `config.put`/`pages.*`/`publish`/`operations.*`/governance via
-  `requireImplementer` (keyed on the solution; `write` for edits, `admin` for
-  people/operations). `requireImplementer` is a **no-op when auth is
+  `user_roles`) → `context.user.roles`, resolved per call before the
+  engine exists (gates read it). `solUserLevel(email, solution)` (M5) reads
+  `sol_users`, **dormant until declared** — no rows ⇒ `admin` for all
+  (adoption); once any row exists an unlisted user is `none` (denied). Keyed on
+  **email** since 2026-08-02, so a caller with no email is `none` once levels
+  exist. Checked by `config.put`/`pages.*`/`publish`/`solutions.update|delete`
+  via `requireSolUser` (keyed on the solution; `write` for edits, `admin`
+  for the solution profile). Operations, users and assignments left this check
+  when the admin tiers landed. `requireSolUser` is a **no-op when auth is
   unconfigured** (env stub open, §7).
 - **Record-type read enforcement** (RBAC stage 1, RBAC_COMPACT): active only
   when auth is **configured** (`ctx.authConfigured`) AND the solution declares
@@ -241,7 +372,7 @@ rev 6 §0). What the server implements:
 ## Data layers (v1: one Postgres, both hats)
 
 - `orgs` — `(id)` PK: the tenant (M13 `name`, M14 profile). `operations.org_id`
-  / `role_assignments.org_id` have carried an org key since M1 with nowhere to
+  / `user_roles.org_id` have carried an org key since M1 with nowhere to
   read a row from; this is that row. `contact_email`, `plan` (subscribed tier,
   default `'free'`), `status` (default `'active'`), `created_at` = the
   registration date. Migrations `0008_orgs` / `0009_org_profile`; one implicit
@@ -253,9 +384,46 @@ rev 6 §0). What the server implements:
   — `(id)` PK, `solution_id` FK NOT NULL, `org_id` (default `default`), `config`
   jsonb (the runtime menu **override**, §5 amended M10). The tier the rest key
   off (CONSOLE_RUNTIME_SPEC §2).
-- `role_assignments` — `(org_id, operation_id, user_id)` PK, `role_ids` jsonb:
-  the runtime-plane governance store (§2a). `implementer_levels` —
-  `(user_id, solution_id)` PK, `level`: the design-plane store (consumed at M5).
+- `solutions.org_id` (2026-08-02, migration 0014) — which org's workspace a
+  solution lives in; the last table to carry the org key. **Scoping, not
+  identity**: two orgs installing the same solution have different `org_id` and
+  the same package. The PK stays `id` alone — solution ids are **globally
+  unique**, which is the right posture for a distributable package and means no
+  foreign or composite key had to change.
+- `user_roles` — `(org_id, operation_id, email)` PK, `role_ids` jsonb:
+  the runtime-plane governance store (§2a). Renamed from `role_assignments` and
+  rekeyed `user_id` → `email` 2026-08-02 (migration 0015) — the last table on
+  the auth provider's id. Not a membership layer: an attribute of being an op
+  user. The rekey fixed two things: roles could not be granted before first
+  sign-in, and `removeOpUser` (which clears by email) was clearing nothing. `sol_users` —
+  `(email, solution_id)` PK, `level`: the design-plane layer of the three
+  (org_users → sol_users → op_users), consumed at M5. Renamed from
+  `implementer_levels` 2026-08-02 (migration 0013) so one word serves each
+  layer; `level` collapsed to **read | write** in the same migration, because
+  once the admin tiers took over, `admin` here guarded only
+  `solutions.update`/`delete` — both org-admin work. No `org_id` column, unlike
+  its two siblings: solution ids are globally unique, so the org is derivable
+  through `solutions`. Rekeyed from `user_id` to `email` 2026-08-02 (0012) — a solution admin is appointed from
+  the org pool, whose users typically have not signed in yet, so keying on the
+  auth id made invite-first appointment impossible. The backfill joins through
+  `org_users.auth_user_id` and drops rows that do not resolve; levels are
+  dormant-until-declared, so an empty table was the expected prior state.
+  Note `user_roles.user_id` was **not** rekeyed — see the open item below.
+- `org_users` — `(org_id, email)` PK, `name`, `auth_user_id`, `status`
+  (`invited`/`active`/`suspended`), `level` (`admin`/`user`): the organisation's
+  user pool, and where the **org admin** tier is stored. `op_users` —
+  `(org_id, operation_id, email)` PK, `level` (`admin`/`user`): who may enter an
+  operation, and where the **op admin** tier is stored. Added 2026-08-02
+  (RBAC_COMPACT "Users"); `level` columns in migration 0011. There is no
+  solution-users table — a **solution admin** is `sol_users.level =
+  'admin'`, which already existed. **Email is the key, not the auth id** — an
+  invited user has no auth id until first sign-in, so both tables key on email
+  and `createContext` binds `auth_user_id` (and flips `invited` → `active`) on
+  the first authenticated request. The bind statement carries
+  `auth_user_id IS NULL`, so it is self-disarming: an indexed no-op after the
+  first request, and an email that was never invited matches nothing — showing
+  up authenticated does not make you an org user. There is **no signup**; entry is
+  invite-only, pending a company user-directory integration long term.
 - `records` — `(operation_id, id)` PK, `custom_fields` + `activity_history` JSONB:
   the RecordInstance shape verbatim. SDM edits never touch physical schema.
 - `pages` — `(solution_id, path)` PK, opaque `def` JSONB (backend stage 3): page
@@ -354,8 +522,17 @@ against a running server) stays an open thread on the root ROADMAP.
 
 ## Known gaps (deliberate)
 
+- **`user_roles.user_id` is still keyed on the auth user id**, while
+  `org_users` / `op_users` / `sol_users` are all keyed on email. This
+  is inconsistent and it bites twice: (a) roles cannot be assigned to an invited
+  user before their first sign-in, which the *Users* ruling says they can, and
+  (b) `removeOpUser` clears assignments **by email**, so today it does not
+  actually clear an auth-id-keyed row. Rekeying it is the same one-line
+  migration shape as 0012 plus `runtimeRoles`, `userRoles.put` and the Console
+  assignments table. Not done in this pass because the scope named was
+  `sol_users`; raised for the call.
 - Auth built (2026-07-19) but roles stubbed: `context.user.roles` is `[]` and
-  the implementer plane is open until RBAC stages 1–2 fill the resolver seam;
+  the design plane is open until RBAC stages 1–2 fill the resolver seam;
   record-type read filtering and page `open` checks are not yet enforced.
 - GET activities (DSL_SPEC §5a) not implemented — blocked on the unified-log
   design for their logging posture; `records.*` covers data needs meanwhile.

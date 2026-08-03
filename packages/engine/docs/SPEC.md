@@ -1,7 +1,7 @@
 # @fluxus/engine — Living Spec
 
 The shared activity engine: the host-agnostic SDM core extracted from
-`@fluxus/sdm` at the Extraction milestone (July 2026). Everything here used to
+`@fluxus/sdm` (now `@fluxus/runtime`) at the Extraction milestone (July 2026). Everything here used to
 live inside the workbench; the pipeline semantics did not change in the move —
 per-step doctrine (gate fail-closed rules, warn soft stop, waivers,
 exact-key mapping, staged after-hook commits) is specified in the sdm SPEC's
@@ -100,7 +100,7 @@ record to the anchor and passes the object as `options.callbackData`.
   extra root into both hooks (like `value` in validation rules); `null` on
   direct (workbench-form) runs. The validator accepts it in any hook — every
   activity may be app-triggered. Untyped (validated as UNKNOWN); its shape is
-  the implementer's contract with their component.
+  the solution builder's contract with their component.
 - **UI vs non-UI activity** — with attributes, the host opens the standard
   capture form and the run proceeds normally; with no attributes there is
   nothing to fill in and the run passes straight to the hooks.

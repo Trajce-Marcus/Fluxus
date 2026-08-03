@@ -4,7 +4,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureOrg, ensureSolution, putConfig, putRoleAssignment } from '../src/host';
+import { addOpUser, ensureOperation, ensureOrg, ensureSolution, inviteOrgUser, putConfig, putUserRoles } from '../src/host';
 import { operations } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { appRouter } from '../src/router';
@@ -21,7 +21,9 @@ const config: ConfigRaw = {
 };
 
 let db: Db;
-const u1: ContextUser = { id: 'u1', name: 'U1', email: null, roles: [] };
+// An op user of OP: entry is a separate gate from page access, and this case is
+// about the second one (RBAC_COMPACT "Users").
+const u1: ContextUser = { id: 'u1', name: 'U1', email: 'u1@example.com', roles: [] };
 const enforced = (user: ContextUser) => appRouter.createCaller({ db, user, roles: createDbRolesResolver(db), authConfigured: true });
 const open = () => appRouter.createCaller({ db });
 
@@ -38,7 +40,9 @@ beforeAll(async () => {
   await pub('pages/p1', ['role_a']);
   await pub('pages/p2', ['role_b']);
   await pub('pages/p3'); // no access.open → default deny when active
-  await putRoleAssignment(db, { operationId: OP, userId: 'u1', roleIds: ['role_a'] });
+  await putUserRoles(db, { operationId: OP, email: 'u1@example.com', roleIds: ['role_a'] });
+  await inviteOrgUser(db, { email: 'u1@example.com' });
+  await addOpUser(db, { operationId: OP, email: 'u1@example.com' });
 });
 
 describe('published page access filter (§6)', () => {

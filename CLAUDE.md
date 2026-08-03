@@ -2,7 +2,15 @@
 
 ## What this repo is
 
-A model-first platform monorepo with seven parts: `@fluxus/sdm` (the Shared Data Model workbench), `@fluxus/engine` (the shared activity engine every host drives), `@fluxus/page-builder` (the page/app builder — the Console-side editor), `@fluxus/page-runtime` (the run-a-page cluster both browser hosts embed), `@fluxus/dsl` (the scripting language), `@fluxus/server` (activities as the API surface; Postgres), `@fluxus/client` (the browser hosts' snapshot/run door to the server). Read [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the platform at a glance (built vs direction), [docs/VISION.md](docs/VISION.md) for why, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the parts connect, [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical terminology, [docs/ROADMAP.md](docs/ROADMAP.md) for phase interlocks.
+A model-first platform monorepo in three tiers (restructured 2026-08-01):
+
+- **Apps** — `@fluxus/console` (the design plane: author the SDM, build pages, host the workbench, administer operations/roles/publishing), `@fluxus/runtime` (the runtime plane: what end users sign into — their operation's menu and published pages) and `@fluxus/platform` (the platform plane: **ours**, above every org — registers orgs and their owners; usage and billing later). **Apps never import apps.**
+- **Libraries** — `@fluxus/workbench` (the out-of-the-box record UI every SDM gets for free; the Console mounts it) and `@fluxus/page-runtime` (the run-a-page cluster both apps embed).
+- **Core** — `@fluxus/engine` (the shared activity engine every host drives), `@fluxus/dsl` (the scripting language), `@fluxus/server` (activities as the API surface; Postgres), `@fluxus/client` (the apps' snapshot/run door to the server).
+
+Read [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the platform at a glance (built vs direction), [docs/VISION.md](docs/VISION.md) for why, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the parts connect, [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical terminology, [docs/ROADMAP.md](docs/ROADMAP.md) for phase interlocks.
+
+UI packages export css **as a string** — no stylesheet imports, because the Console mounts its shell in a shadow root a document-level stylesheet never reaches.
 
 ## Docs-with-code rule (binding)
 

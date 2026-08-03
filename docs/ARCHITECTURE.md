@@ -9,40 +9,71 @@ How the parts connect. Package-level detail lives in each package's `docs/SPEC.m
 │                        @fluxus/dsl                              │
 │  grammar · interpreter · schema-aware validator                 │
 │  (expressions → queries → scripts; the one language)            │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ evaluated through
-┌────────────────────────────▼────────────────────────────────────┐
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ evaluated through
+┌───────────────────────────▼─────────────────────────────────────┐
 │                       @fluxus/engine                            │
 │  the activity pipeline (runActivity) · Store contract ·         │
 │  DSL bridge · config validation · core SDM types                │
 └──────┬──────────────────────┬──────────────────────┬────────────┘
        │ hosted by            │ hosted by            │ hosted by
 ┌──────▼──────────┐  ┌────────▼───────────┐  ┌───────▼────────────┐
-│  @fluxus/sdm    │  │ @fluxus/           │  │  @fluxus/server    │
-│  Runtime app ·  │──▶│   page-builder    │  │  activities as the │
-│  <Workbench>    │  │  Console: layout   │  │  API surface (tRPC)│
-│  UI, notify     │  │  editor · SDM      │  │  · Postgres        │
-│  centre         │  │  editor · admin    │  │                    │
-└──────┬──────────┘  └────────┬───────────┘  └───────▲────────────┘
-       │   both embed the page runtime and talk      │
-       │   to the server through the client          │
-┌──────▼───────────────▼──────┐                      │
-│   @fluxus/page-runtime      │                      │
-│   render stored pages:      │                      │
-│   PageRenderer · wiring     │                      │
-│   host · capture form       │                      │
-└──────────────┬──────────────┘                      │
-       ┌───────▼────────────┐                        │
+│ @fluxus/runtime │  │  @fluxus/console   │  │  @fluxus/server    │
+│  the Runtime    │  │  the Console:      │  │  activities as the │
+│  app: menu +    │  │  layout editor ·   │  │  API surface (tRPC)│
+│  published      │  │  SDM editor ·      │  │  · Postgres        │
+│  pages          │  │  admin · publish   │  │                    │
+└──────┬──────────┘  └───┬────────────┬───┘  └───────▲────────────┘
+       │                 │            │ mounts       │
+       │                 │     ┌──────▼───────────┐  │
+       │                 │     │@fluxus/workbench │  │
+       │                 │     │ record types →   │  │
+       │                 │     │ grid → record    │  │
+       │                 │     │ view + activities│  │
+       │                 │     └──────────────────┘  │
+       │   both apps embed the page runtime          │
+       │   and reach the server via the client       │
+┌──────▼─────────────────▼──┐                        │
+│   @fluxus/page-runtime    │                        │
+│   render stored pages:    │                        │
+│   PageRenderer · wiring   │                        │
+│   host · capture form     │                        │
+└─────────────┬─────────────┘                        │
+       ┌──────▼─────────────┐                        │
        │  @fluxus/client    │────────────────────────┘
-       │  config+partition  │   config.get · records.partition
-       │  +pages snapshot   │   · pages.* · activities.run
+       │  config+partition  │  config.get · records.partition
+       │  +pages snapshot   │  · pages.* · activities.run
        │  · runs            │
        └────────────────────┘
 ```
 
-Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); anything two hosts share is a package they both import: the pipeline (`engine`), the server door (`client`), and since 2026-07-19 the run-a-page cluster (`@fluxus/page-runtime` — PageRenderer, ComponentContainer, the component registry, the page expression host, the standard capture form; extracted from the page builder so the workbench can render published pages, the first step of workbench → Runtime app). A host wraps its connected client in one injected `PageRuntime` handle; page *editing* stays in the page builder.
+Dependency direction is strict: `dsl` ← `engine` ← hosts. The language knows nothing about records or workflows (scope-blindness is load-bearing); anything two hosts share is a package they both import: the pipeline (`engine`), the server door (`client`), and since 2026-07-19 the run-a-page cluster (`@fluxus/page-runtime` — PageRenderer, ComponentContainer, the component registry, the page expression host, the standard capture form; extracted from the page builder so the Runtime app can render published pages, the first step of workbench → Runtime app). A host wraps its connected client in one injected `PageRuntime` handle; page *editing* stays in the Console.
 
-**The one host→host edge** (M15, 2026-07-27): `page-builder` imports `<Workbench>` from `@fluxus/sdm`. The workbench moved to the Console — record access and arbitrary activity runs are implementer work — but the cluster stayed in the package that grew it, because a third package needs a name endorsement. So the old "peer hosts never depend on each other" rule now has exactly one exception, and it is a knowingly temporary one: `@fluxus/sdm` exposes a library face (`src/index.ts`) alongside its app, and `page-builder` consumes it. If a second host ever wants the workbench, that is the signal to extract it properly. Nothing else may cross between hosts. Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only. Page definitions ride the same pipeline (backend stage 3, 2026-07-16): stored per `(solution, path)` on the server as opaque jsonb, snapshotted at connect, authored in the page builder. **The database is the source of truth for a solution** (config + pages; ruled 2026-07-26): both are versioned server-side (`page_versions`, `sdm_config_versions` — append-only, readme required), git carries code and migrations, and the repo's config/page files are a bootstrap fixture for an empty database rather than a deploy channel. The Console binds a solution to one of its operations for the records it builds against, so the design and runtime hosts show the same data.
+**Three tiers, and apps never import apps** (restructured 2026-08-01):
+
+| Tier | Packages | Rule |
+|---|---|---|
+| **Apps** | `@fluxus/console`, `@fluxus/runtime`, `@fluxus/platform` | Deployed browser apps. None imports another, and none has a library face. |
+| **Libraries** | `@fluxus/workbench`, `@fluxus/page-runtime` | Mountable UI an app embeds. Export css **as a string**, never a stylesheet import — the Console mounts its shell in a shadow root a document-level stylesheet never reaches. |
+| **Core** | `@fluxus/engine`, `@fluxus/dsl`, `@fluxus/server`, `@fluxus/client` | Host-agnostic. No UI. |
+
+This replaced the one deliberate exception M15 had left standing: the workbench had moved to the Console but stayed inside `@fluxus/sdm`, which exposed a library face alongside its app so `page-builder` could import it — a knowingly temporary edge, pending a name endorsement for a third package. The 2026-08-01 restructure closed it: the workbench became `@fluxus/workbench`, `@fluxus/sdm` became `@fluxus/runtime` and lost its library face, and `@fluxus/page-builder` became `@fluxus/console` because the package was never one view — it is the whole Console. **No app→app dependency exists or may be added.** Each host supplies the engine a `Store` implementation, the SDM config, and its service modules. Since backend stage 2 the browser hosts' Store is a fetched snapshot: `@fluxus/client` loads the scope's config + record partition from `@fluxus/server` into the engine's `MemoryAdapter` (expressions keep evaluating locally and synchronously), and every mutation is a server-side `activities.run` followed by a partition re-fetch — hooks and persistence run server-side only. Page definitions ride the same pipeline (backend stage 3, 2026-07-16): stored per `(solution, path)` on the server as opaque jsonb, snapshotted at connect, authored in the page builder. **The database is the source of truth for a solution** (config + pages; ruled 2026-07-26): both are versioned server-side (`page_versions`, `sdm_config_versions` — append-only, readme required), git carries code and migrations, and the repo's config/page files are a bootstrap fixture for an empty database rather than a deploy channel. The Console binds a solution to one of its operations for the records it builds against, so the design and runtime hosts show the same data.
+
+## The three planes
+
+Each app is a plane, and the planes differ by **who they admit**, not by what they render:
+
+| Plane | App | Audience | Scope |
+|---|---|---|---|
+| Design | `@fluxus/console` | an org's builders and admins | one org, one solution at a time |
+| Runtime | `@fluxus/runtime` | an org's end users | one operation |
+| Platform | `@fluxus/platform` | **us** — the vendor | across every org |
+
+The platform plane arrived 2026-08-03 to answer the two questions the org tier structurally cannot: **who creates an org** (not an org admin — there is no org to be admin of yet) and **who sees across orgs** (nobody could: every query in the API is scoped to one org by construction). `npm run bootstrap` was that tier in disguise — a script outside the request path, writing the first row because nothing inside it was allowed to. `platform.registerOrg` now writes an org and its owner **in one act**, which demotes the script to lockout recovery. Platform admins are an **env allowlist** (`FLUXUS_PLATFORM_ADMINS`), not a table, because a table recreates the same chicken-and-egg one tier up; `isPlatformAdmin` is the seam that swaps for one later. Design detail: `packages/platform/docs/SPEC.md`.
+
+It is a separate app rather than a Console section because the Console is scoped to one org by construction — folding cross-org data into it would ship tenant-spanning code in every customer-facing deploy.
+
+**The org lives in the URL** (ruled 2026-08-03, Neon's shape): both browser apps read it from `/o/<orgId>/…` via `orgFromPath()` in `@fluxus/client`, and that is the only place org identity lives client-side — no picker, no localStorage, so a link is a complete address and two orgs can be open in two tabs. The Console passes it to `ConsoleClient.create({ orgId })` once at boot, which carries it into every org-scoped call. The Runtime still derives its org from the operation server-side and merely *checks* the prefix, so a link naming the wrong org fails loudly instead of half-applying. Registering the second org also turned `org_id` from decoration into a boundary and exposed what that had been hiding — operations that ignored their solution's org, and admin gates that asked "are you an admin?" without asking "of which org?"; both closed the same day (SPEC §5).
 
 ## The SDM is the centre
 
@@ -67,7 +98,7 @@ The validator checks every script against the SDM at **config-save time** — un
 
 ## The activity engine has multiple hosts
 
-The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine (`@fluxus/engine`, extracted from the sdm package July 2026) with three front doors:
+The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine (`@fluxus/engine`, extracted from the then-`@fluxus/sdm` package July 2026) with three front doors:
 
 1. **SDM record workbench** — activity strip / CREATE launch on the grid. *(Live.)*
 2. **Page builder apps** — a component's named callback wired to `run-activity`; the callback contract is (record, one data object). UI activities open the standard capture form; non-UI activities pass straight to the hooks, which read the data object via the `callbackData` root. Same gate, hooks, history. *(Live — Extraction stage 2.)*
