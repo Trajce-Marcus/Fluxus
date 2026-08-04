@@ -14,6 +14,7 @@ import { useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { OperationMenuSection } from './OperationMenuSection';
 import { UserRolesSection } from './UserRolesSection';
+import { OpUsersSection } from './OpUsersSection';
 import { PlaceholderCard } from './Placeholder';
 
 type OpTab = 'overview' | 'users' | 'menu' | 'data' | 'settings';
@@ -106,25 +107,15 @@ function OverviewTab({ operation, solutionName }: { operation: OperationRow; sol
   );
 }
 
-/** Users of this operation — two of the three layers. `op_users` answers *may
- *  they enter*; role assignments answer *what may they see inside*. The built
- *  half is role assignment by user id; the op-user list itself is not built. */
+/** Users of this operation — two of the three layers, in the order the gates
+ *  apply: `op_users` answers *may they enter*, roles answer *what may they see
+ *  inside*. Two tables, deliberately not one grid: the gates are independent,
+ *  and a row-per-user grid would imply they are not. */
 function UsersTab({ operationId }: { operationId: string }) {
   return (
     <>
+      <OpUsersSection operationId={operationId} />
       <UserRolesSection operationId={operationId} />
-      <div className="admin-section">
-        <h3 className="admin-section-title">Op users</h3>
-        <p className="admin-sub">Who may enter this operation at all — a separate question from what their roles let them see. An operation with no users admits nobody.</p>
-        <div style={{ marginTop: 12 }}>
-          <PlaceholderCard items={[
-            'Users listed by name and email, not raw id',
-            'Add a user from the org pool',
-            'Remove a user (clears every role here)',
-            'Op-admin level, per user',
-          ]} />
-        </div>
-      </div>
     </>
   );
 }

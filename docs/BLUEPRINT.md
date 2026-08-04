@@ -133,6 +133,52 @@ future package-qualified ids; nothing may assume ids unique across solutions.
 The invariant behind both: **solutions exchange data only by calling each
 other's activities, never by reading each other's records.**
 
+## Components over their own backend — *Direction* (agreed 2026-08-04)
+
+A component is model-blind UI wired per page. Today it reaches data one way:
+`dynamic-data` props bound to FluxScript over the record roots, callbacks that
+run activities. That covers everything the SDM models — and nothing else.
+
+**The direction is a second door: a component may be wired to named server
+functions instead of records**, through the existing **service registry** (the
+DSL Phase 3 mechanism behind `notify` and `geo`, with its manifests and its
+read-versus-effect purity). A service module whose implementation is a server
+call, plus a component manifest declaring which services it needs, is the whole
+of it. No new storage, no new transport, no bypass of the activity pipeline:
+records still change only through activities, and this is for the things that
+are deliberately **not** records.
+
+Why it matters: the platform's own administration surfaces — users, admins,
+orgs, billing — must live in real tables with real constraints, because
+authorization data cannot sit inside the system that authorization gates (see
+*Users and administration*, and RBAC_DESIGN §2a, ruled 2026-07-20). Without this
+door those surfaces can only ever be hand-written app code. With it, they are
+composed the same way a customer composes theirs, and the platform is built out
+of its own parts without pretending everything is a record.
+
+Two audiences, only one served at first. **Our apps reusing components:**
+immediate. **Customers authoring or installing them:** needs registration,
+versioning and sandboxing — that is the Catalogue and packaging story, and this
+is a step toward it, not it.
+
+Sequencing, deliberately: prove the seam on a **low-stakes** surface (org profile
+or billing — list plus form, no security consequence) before bringing the
+administration screens onto it. A bug in a users screen is a lockout, and the
+recovery path is a script run against production. The known cleanup this work
+should absorb: component registration is duplicated across three un-derived
+registries (`componentManifests`, `SESSION_COMPONENTS`, `componentSchemas`) and
+should be derived from the manifest.
+
+Considered and rejected on the same day: **modelling users and administration in
+the SDM itself** to get change history for free. It reverses the §2a ruling,
+trades the database's structural enforcement (foreign keys, composite keys, a
+grant that cannot exist without its target) for hook-enforced equivalents, and
+makes the request path recursive — the resolver would read records to decide
+whether you may read records. The audit benefit is separable and is being taken
+directly, as an append-only change ledger over the admin tables. The SDM stays
+the right home for the platform's own *business* objects — orgs, billing,
+catalogue, approvals — none of which sit in the authorization path.
+
 ## The commercial layer — *Direction*
 
 Orgs subscribe to the platform (the org row, profile, and plan field are Built;

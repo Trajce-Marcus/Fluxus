@@ -1,5 +1,12 @@
 # Console Users UI — design brief
 
+**BUILT 2026-08-04** — `admin/OrgUsersSection.tsx` (§7) and
+`admin/OpUsersSection.tsx` (§8). Two departures from what is written below, both
+ruled by the user on the day: Surface 1 is *Organisation → Users* with no inner
+panel (§4 amended), and **every data entry is a dialog**, so the invite form and
+the add-user form are modals rather than `admin-form` panels — the surfaces stay
+lists. The brief is kept as the record of the rules the build had to satisfy.
+
 Written 2026-08-02, for handing to a design agent. The server half of the users
 model is built and pushed (`49acb79`); this is the only unbuilt piece. Domain
 rules here are settled — see `docs/RBAC_COMPACT.md` → *Users* + *Administration*
@@ -69,26 +76,30 @@ their operation but **can never make someone an op admin**. Only an org admin ca
 Use **users**, **org users**, **sol users**, **op users**.
 
 Never: *members*, *memberships*, *implementers*, *teammates*, *seats*,
-*accounts*, *staff*, *participants*. "People" only as the existing nav section
-name. This vocabulary was standardised deliberately after competing words
-drifted; synonyms are a regression, including in microcopy and tooltips.
+*accounts*, *staff*, *participants*, *people*. ("People" was the old nav section
+name and was retired 2026-08-04 — the section is now **Users**.) This vocabulary
+was standardised deliberately after competing words drifted; synonyms are a
+regression, including in microcopy and tooltips.
 
 ## 4. Where these surfaces live
 
-Four-region shell:
+Shell regions. The inner panel is a *list* column some sections use; **these
+surfaces do not use it** (ruled 2026-08-04) — with the panel absent the column
+collapses and the main area runs full width.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Header bar (40px) — org · solution … operation, identity    │
-├────────┬──────────────┬─────────────────────────────────────┤
-│ Side   │ Inner panel  │  Main content area                  │
-│ nav    │ (list of     │  ← your surfaces render here        │
-│ 200px  │  things)     │                                     │
-└────────┴──────────────┴─────────────────────────────────────┘
+├────────┬────────────────────────────────────────────────────┤
+│ Side   │  Main content area                                 │
+│ nav    │  ← your surfaces render here, full width           │
+│ 200px  │                                                    │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
-**Surface 1** — *Organisation → People → Users*. "People" is a side-nav section
-whose inner panel offers **Users** (yours) and **Solution users** (exists).
+**Surface 1** — *Organisation → Users*: a side-nav item that renders the org
+pool straight into the main area. **No inner panel, no sub-views.** *Solution
+users* is a separate sibling nav item that already exists and is not yours.
 
 **Surface 2** — the **Users** tab of the operation view (`Overview · Users ·
 Menu · Data · Settings`). That tab already contains a **Roles** section
@@ -207,10 +218,10 @@ then an `admin-form`. Match its structure, density and copy voice.
 exclamatory, never apologetic, no emoji. Compare: *"This operation's solution
 declares no roles yet — add them in the solution's SDM → Roles."*
 
-## 7. Surface 1 — Organisation → People → Users
+## 7. Surface 1 — Organisation → Users
 
-Org admins only. Fills the main area, so a full `admin-panel` with
-`admin-panel-head`.
+Org admins only. Fills the main area at full width (no inner panel), so a full
+`admin-panel` with `admin-panel-head`.
 
 ```ts
 type AdminLevel = 'admin' | 'user';

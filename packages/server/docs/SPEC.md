@@ -522,15 +522,11 @@ against a running server) stays an open thread on the root ROADMAP.
 
 ## Known gaps (deliberate)
 
-- **`user_roles.user_id` is still keyed on the auth user id**, while
-  `org_users` / `op_users` / `sol_users` are all keyed on email. This
-  is inconsistent and it bites twice: (a) roles cannot be assigned to an invited
-  user before their first sign-in, which the *Users* ruling says they can, and
-  (b) `removeOpUser` clears assignments **by email**, so today it does not
-  actually clear an auth-id-keyed row. Rekeying it is the same one-line
-  migration shape as 0012 plus `runtimeRoles`, `userRoles.put` and the Console
-  assignments table. Not done in this pass because the scope named was
-  `sol_users`; raised for the call.
+- ~~`user_roles.user_id` is still keyed on the auth user id~~ — **closed by
+  migration 0015** (2026-08-02), which renamed `role_assignments` → `user_roles`
+  and rekeyed it to email. All four tables are email-keyed, roles can be granted
+  to an invited user before first sign-in, and `removeOpUser` actually clears
+  their grants. (This entry stayed stale for two days; noted 2026-08-04.)
 - Auth built (2026-07-19) but roles stubbed: `context.user.roles` is `[]` and
   the design plane is open until RBAC stages 1–2 fill the resolver seam;
   record-type read filtering and page `open` checks are not yet enforced.

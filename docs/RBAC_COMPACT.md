@@ -126,4 +126,4 @@ No row-level read conditions, field-level permissions, role inheritance/groups/w
 - **Solution admins lose every user-facing grant**, including `solUsers.list` — since the rekey those rows carry real emails.
 - **Suspension bites the tiers**, not just the entry gate: a suspended pool row is not an admin anywhere.
 - `me` returns `{ orgAdmin, opAdmin, console }` so the Console can gate what it **renders**; every call is re-checked server-side. `console` is derived (org admin, or any sol-user level on any solution) — never a stored flag.
-- **Not rekeyed: `user_roles.user_id`**, still the auth id. Inconsistent with the three email-keyed tables, and it blocks assigning roles to an invited user before first sign-in. See `packages/server/docs/SPEC.md` → *Known gaps*.
+- **`user_roles` rekeyed too** — migration 0015 renamed `role_assignments` → `user_roles` and moved it off the auth id onto email, the same day. All four tables are now email-keyed, so roles can be granted to an invited user before first sign-in and `removeOpUser` genuinely clears their grants. (The build note above briefly recorded this as *not* rekeyed; corrected 2026-08-04.)

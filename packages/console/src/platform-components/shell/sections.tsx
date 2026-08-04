@@ -39,11 +39,14 @@ const SOLUTION_GROUP = 'Solution';
 const DATA_GROUP = 'Data';
 
 /** The organisation home (M17) — the tenant's own surfaces. Solutions is our
- *  Projects; People/Billing/Integrations are the IA the org tier implies, with
- *  placeholder content where nothing is built (§1a: no signup, no billing). */
+ *  Projects; Users/Billing/Integrations are the IA the org tier implies, with
+ *  placeholder content where nothing is built (§1a: no signup, no billing).
+ *
+ *  "People" was retired 2026-08-04: the section holds users, so it is named
+ *  Users, and its two audiences are two nav items rather than an inner panel. */
 export const WORKSPACE_SECTIONS: ConsoleSection[] = [
   { id: 'solutions', label: 'Solutions', group: ORG_GROUP, render: () => <AdminView tab="solutions" /> },
-  { id: 'people', label: 'People', group: ORG_GROUP, render: () => <AdminView tab="people" /> },
+  { id: 'users', label: 'Users', group: ORG_GROUP, render: () => <AdminView tab="users" /> },
   { id: 'billing', label: 'Billing', group: ORG_GROUP, render: () => <AdminView tab="billing" /> },
   { id: 'integrations', label: 'Integrations', group: ORG_GROUP, render: () => <AdminView tab="integrations" /> },
   { id: 'settings', label: 'Settings', group: ORG_GROUP, render: () => <AdminView tab="settings" /> },

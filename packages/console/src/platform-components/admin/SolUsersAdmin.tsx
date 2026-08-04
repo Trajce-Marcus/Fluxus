@@ -1,3 +1,9 @@
+// UNMOUNTED since 2026-08-04: its organisation nav item was removed (ruled) —
+// who builds a solution is a question about that solution, not about the org,
+// and it does not belong in the org menu. Kept because it is the only surface
+// that grants design-plane access at all; it needs a home inside the open
+// solution (`Solution → Users`) before that grant is reachable again.
+//
 // Console sol users (CONSOLE_RUNTIME_SPEC §3, RBAC_COMPACT): who builds a
 // solution, per solution, over the governance store. The design-plane layer of
 // the three — org users → sol users → op users.
