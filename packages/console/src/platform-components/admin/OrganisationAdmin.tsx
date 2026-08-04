@@ -6,6 +6,13 @@
 // needs the auth tier to resolve user → org, which it does not do yet (single
 // implicit 'default' org, §1). `plan`/`status` are ours to set, never the
 // org's; since M17 they read on **Billing**, leaving this the settings surface.
+//
+// **The name is the only editable field** (2026-08-04). *Contact email* was
+// dropped with the column (migration 0018): it was born identical to the owner's
+// address and nothing read it. The **owner** replaces it and reads **read-only**
+// — changing it is ownership transfer, and this screen is org-admin work, so an
+// editable field here would let an org admin promote themselves to the root that
+// appoints org admins. Transfer stays deliberately unbuilt (USERS.md §7).
 
 import { useEffect, useState } from 'react';
 import { consoleClient } from '../../sdm-runtime/engine';
@@ -17,9 +24,8 @@ export function OrganisationAdmin() {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Draft profile fields — the only two the org owns about itself.
+  // The one field the org edits about itself.
   const [name, setName] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
 
   async function reload() {
     setError(null);
@@ -27,7 +33,6 @@ export function OrganisationAdmin() {
       const o = await consoleClient.getOrg();
       setOrg(o);
       setName(o.name);
-      setContactEmail(o.contactEmail ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -42,10 +47,7 @@ export function OrganisationAdmin() {
     setError(null);
     setSaved(false);
     try {
-      await consoleClient.putOrgProfile({
-        name: name.trim(),
-        contactEmail: contactEmail.trim() || null,
-      });
+      await consoleClient.putOrgProfile({ name: name.trim() });
       await reload();
       setSaved(true);
     } catch (err) {
@@ -55,7 +57,7 @@ export function OrganisationAdmin() {
     }
   }
 
-  const dirty = org !== null && (name !== org.name || contactEmail !== (org.contactEmail ?? ''));
+  const dirty = org !== null && name !== org.name;
 
   return (
     <div className="admin-panel">
@@ -76,15 +78,6 @@ export function OrganisationAdmin() {
               <span>Name</span>
               <input value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} placeholder="Northwind Utilities" />
             </label>
-            <label className="admin-field">
-              <span>Contact email</span>
-              <input
-                type="email"
-                value={contactEmail}
-                onChange={(e) => { setContactEmail(e.target.value); setSaved(false); }}
-                placeholder="admin@northwind.example"
-              />
-            </label>
             <div className="admin-row">
               <button type="submit" className="admin-btn" disabled={busy || !dirty || !name.trim()}>
                 {busy ? 'Saving…' : 'Save profile'}
@@ -98,8 +91,21 @@ export function OrganisationAdmin() {
             <table className="admin-table">
               <tbody>
                 <tr><th>Organisation id</th><td className="admin-mono">{org.id}</td></tr>
+                <tr>
+                  <th>Owner</th>
+                  <td>
+                    {org.ownerEmail
+                      ? <span className="admin-mono">{org.ownerEmail}</span>
+                      : <span className="admin-muted">Not set — this org predates the owner tier</span>}
+                  </td>
+                </tr>
               </tbody>
             </table>
+            <p className="admin-hint">
+              The owner is this organisation's contact address and the root of its authority — they appoint
+              its org admins. Read-only: changing it is a transfer of ownership, not a profile edit, and it
+              is not built yet.
+            </p>
           </div>
         </>
       )}

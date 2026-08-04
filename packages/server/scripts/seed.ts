@@ -85,7 +85,7 @@ console.log(
   `and operation '${operationId}' (records for empty types).` +
   (bootstrapped
     ? `\nOrg admin: '${bootstrapped.email}'${bootstrapped.operationsOpened.length > 0 ? ` (op admin of ${bootstrapped.operationsOpened.join(', ')})` : ''}` +
-      `${bootstrapped.solutionsOpened.length > 0 ? ` (write on ${bootstrapped.solutionsOpened.join(', ')})` : ''}.`
+      `${bootstrapped.solutionsOpened.length > 0 ? ` (builds ${bootstrapped.solutionsOpened.join(', ')})` : ''}.`
     : '\nNo FLUXUS_ORG_ADMIN_EMAIL set — no org admin seeded. With auth configured, run `npm run bootstrap` or nobody can sign in.') +
   (!force && (skipped > 0 || !wroteConfig) ? '\nExisting content was left alone — re-run with --force to overwrite from the repo files.' : ''),
 );

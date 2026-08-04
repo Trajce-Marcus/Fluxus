@@ -15,7 +15,7 @@ import { and, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { DEMO_USER, type ContextUser } from '@fluxus/engine';
 import type { Db } from './db/client';
-import { solUsers, userRoles } from './db/schema';
+import { solAdmins, userRoles } from './db/schema';
 
 export type AuthUser = ContextUser;
 
@@ -30,38 +30,39 @@ export interface RolesResolver {
    *  grant, so roles can be granted before the person has ever signed in. */
   runtimeRoles(email: string | null | undefined, operation: string): Promise<string[]>;
   /**
-   * Design plane: the user's level on the solution (`sol_users`). Server-only —
-   * consumed by config.put/page save/publish, never in the script environment.
-   * `'none'` = not a user of this solution.
+   * Design plane: does this person build this solution (`sol_admins`)?
+   * Server-only — consumed by config.put/page save/publish, never in the script
+   * environment. One grade, so one boolean: the read/write split it replaces
+   * guarded nothing once appointment moved onto the admin tiers (2026-08-04).
    *
-   * Keyed on **email**, not the auth user id (2026-08-02) — levels are appointed
-   * from the org pool, whose users may not have signed in yet. A caller with
-   * no email cannot match a row, so they get `'none'` once levels are declared.
+   * Keyed on **email**, not the auth user id — sol admins are appointed from the
+   * pool, whose people may not have signed in yet. A caller with no email cannot
+   * match a row, so they get `false`.
    */
-  solUserLevel(email: string | null | undefined, solutionId: string): Promise<'none' | 'read' | 'write'>;
+  isSolAdmin(email: string | null | undefined, solutionId: string): Promise<boolean>;
 }
 
 /** Stage-1/2 stubs: no runtime roles, design plane open (everyone may build).
  *  Only ever reached when auth is unconfigured — the live resolver is strict. */
 export const stubRolesResolver: RolesResolver = {
   runtimeRoles: async () => [],
-  solUserLevel: async () => 'write',
+  isSolAdmin: async () => true,
 };
 
 /**
  * The live resolver. `runtimeRoles` reads `user_roles` (RBAC stage 1) —
  * populates `context.user.roles`, drives record-type + activity enforcement.
  *
- * `solUserLevel` reads `sol_users` (RBAC stage 2 / M5). **Strict, not dormant**
+ * `isSolAdmin` reads `sol_admins` (RBAC stage 2 / M5). **Strict, not dormant**
  * (ruled 2026-08-02, replacing the dormant-until-declared adoption posture): you
- * get access to a solution only if you are in its user list, exactly as with an
- * operation. One rule now covers both — "you belong to a thing, or you do not" —
+ * build a solution only if you are appointed to it, exactly as with an
+ * operation. One rule covers both — "you belong to a thing, or you do not" —
  * instead of two surfaces answering the same shape of question differently.
  *
  * The consequence is a bootstrap, handled the same way as the operation gate:
- * `solutions.create` writes its creator in as a `write` user, and
- * `bootstrapOrgAdmin` covers solutions that already have nobody. The demo
- * posture (auth unconfigured) is still open at the caller.
+ * `solutions.create` appoints its creator, and `bootstrapOrgAdmin` covers
+ * solutions that already have nobody. The demo posture (auth unconfigured) is
+ * still open at the caller.
  */
 export function createDbRolesResolver(db: Db): RolesResolver {
   return {
@@ -74,14 +75,15 @@ export function createDbRolesResolver(db: Db): RolesResolver {
         .where(and(eq(userRoles.operationId, operationId), eq(userRoles.email, key)));
       return rows[0]?.roleIds ?? [];
     },
-    solUserLevel: async (email, solutionId) => {
-      const rows = await db
-        .select({ email: solUsers.email, level: solUsers.level })
-        .from(solUsers)
-        .where(eq(solUsers.solutionId, solutionId));
+    isSolAdmin: async (email, solutionId) => {
       const key = email?.trim().toLowerCase();
-      if (!key) return 'none'; // no email ⇒ no row can match
-      return rows.find((r) => r.email === key)?.level ?? 'none';
+      if (!key) return false; // no email ⇒ no row can match
+      const [row] = await db
+        .select({ email: solAdmins.email })
+        .from(solAdmins)
+        .where(and(eq(solAdmins.solutionId, solutionId), eq(solAdmins.email, key)))
+        .limit(1);
+      return !!row;
     },
   };
 }

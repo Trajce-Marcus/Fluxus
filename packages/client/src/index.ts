@@ -96,25 +96,39 @@ export interface OperationRow {
 export interface OrgProfile {
   id: string;
   name: string;
-  contactEmail: string | null;
+  /** The root of authority, and the org's contact address — `contactEmail` was
+   *  dropped in migration 0018 (the two were born identical and nothing read the
+   *  contact). **Read-only here**: changing it is ownership transfer, which is
+   *  not org-admin work and is not built. */
+  ownerEmail: string | null;
   plan: string;
   status: string;
   createdAt: string | null;
 }
 
-/** The admin tier at a layer (RBAC_COMPACT "Administration"). Two values, not a
- *  ladder: 'admin' administers that layer, 'user' belongs to it. */
-export type AdminLevel = 'admin' | 'user';
-
-/** A row in the org pool — does this person exist to us at all.
- *  `authUserId` is null until their first sign-in binds it, which is also what
- *  flips `status` from 'invited' to 'active'. */
-export interface OrgUser {
+/** A person in the organisation (USERS.md §2) — identity, and nothing else.
+ *  There is no level here: being one of these grants nothing at all, and every
+ *  capability is a separate grant. `authUserId` is null until their first
+ *  sign-in binds it, which is what flips `status` 'invited' → 'active'. */
+export interface User {
   email: string;
   name: string | null;
   authUserId: string | null;
-  status: 'invited' | 'active' | 'suspended';
-  level: AdminLevel;
+  status: UserStatus;
+  /** When the relationship ended; null unless `status` is 'expired'. */
+  expiredAt: string | null;
+}
+
+/** `suspended` is a reversible pause that keeps every grant; `expired` is the
+ *  terminal state and drops them all. **Neither deletes the row** — record
+ *  history names its author by auth id, and the person's row is the only thing
+ *  that can turn that id back into a name. */
+export type UserStatus = 'invited' | 'active' | 'suspended' | 'expired';
+
+/** A grant row, at every tier: the row IS the appointment, so it carries the
+ *  person and nothing more. */
+export interface Grant {
+  email: string;
 }
 
 /** What `me` answers. `opAdmin` is false when no operation was named — it is
@@ -125,29 +139,29 @@ export interface Me {
   email?: string | null;
   roles: string[];
   authConfigured: boolean;
+  /** The root of authority — appoints org admins, and nothing else by itself.
+   *  Not implicitly an org admin. */
+  orgOwner: boolean;
   orgAdmin: boolean;
   opAdmin: boolean;
-  /** May use the Console at all: org admin, or a sol user on any solution.
-   *  Derived, never a stored flag — a bit could contradict the grants. */
+  /** May use the Console at all: owner, org admin, or sol admin of any
+   *  solution. Derived, never a stored flag — a bit could contradict the
+   *  grants it summarises. */
   console: boolean;
 }
 
-/** The design-plane grade on a solution. Two values, not three: 'admin' was
- *  collapsed into 'write' once the admin tiers took over what it guarded. */
-export type SolLevel = 'read' | 'write';
-
-/** A row in a solution's user list — who builds it, and at what grade. */
-export interface SolUser {
+/** Who builds a solution, joined across the org — the Organisation → Users
+ *  *Sol admins* tab, which is where the appointments are made. */
+export interface SolAdminRow {
+  solutionId: string;
   email: string;
-  level: SolLevel;
 }
 
-/** A row in one operation's user list — may this person enter this operation.
- *  Separate from roles by design: an op user with no roles enters and sees
- *  nothing, which is valid; roles without this row never grant entry. */
-export interface OpUser {
+/** Who administers an operation, joined across a solution's operations — the
+ *  Solution → Users *Op admins* tab. */
+export interface OpAdminRow {
+  operationId: string;
   email: string;
-  level: AdminLevel;
 }
 
 /**
@@ -188,7 +202,8 @@ export class ConsoleClient {
   getOrg(orgId?: string): Promise<OrgProfile> {
     return this.trpc.orgs.get.query(this.scoped(orgId)) as Promise<OrgProfile>;
   }
-  putOrgProfile(input: { orgId?: string; name: string; contactEmail: string | null }): Promise<{ ok: true }> {
+  /** The name, and nothing else — see `OrgProfile.ownerEmail`. */
+  putOrgProfile(input: { orgId?: string; name: string }): Promise<{ ok: true }> {
     return this.trpc.orgs.putProfile.mutate({ ...input, ...this.scoped(input.orgId) });
   }
 
@@ -238,10 +253,6 @@ export class ConsoleClient {
   putUserRoles(operationId: string, email: string, roleIds: string[]): Promise<{ ok: true }> {
     return this.trpc.userRoles.put.mutate({ operationId, email, roleIds });
   }
-  /** Sol users — who builds a solution, at `read` (look at the model) or
-   *  `write` (build it). The design-plane layer of the three. Keyed on **email**
-   *  since 2026-08-02: appointed from the org pool, whose users usually have
-   *  not signed in yet. Org-admin gated — the design plane governs no people. */
   /** Who the caller is and what they may do. Omit `operationId` for the
    *  org-level answer — the Organisation → Users screen has no operation in
    *  hand, and asking through an arbitrary one would make org administration
@@ -253,50 +264,104 @@ export class ConsoleClient {
     return this.trpc.me.query(operationId ? { operationId } : this.scoped());
   }
 
-  listSolUsers(solutionId: string): Promise<SolUser[]> {
-    return this.trpc.solUsers.list.query({ solutionId });
-  }
-  putSolUser(solutionId: string, email: string, level: SolLevel): Promise<{ ok: true }> {
-    return this.trpc.solUsers.put.mutate({ solutionId, email, level });
-  }
-  removeSolUser(solutionId: string, email: string): Promise<{ ok: true }> {
-    return this.trpc.solUsers.remove.mutate({ solutionId, email });
-  }
-
-  // Users (RBAC_COMPACT "Users" + "Administration"). Three layers, each a
-  // separate question: the org pool (does this person exist to us), op users
-  // (may they enter this operation), roles (what may they see inside).
+  // ── Users, admins and roles (USERS.md) ──────────────────────────────────────
+  // One population of people, then grants. Each method below belongs to exactly
+  // one list, and each list is governed by one tier — read them together and the
+  // model reads back out: the owner appoints org admins, org admins appoint sol
+  // and op admins, op admins staff their operation and assign its roles.
   //
-  // Grants split identity from authorization: the org admin owns the pool and
-  // who gets in; the op admin owns their operation's list and its roles. Every
-  // call here is re-checked server-side — `me().orgAdmin`/`.opAdmin` are for
-  // deciding what to RENDER, never for deciding what is allowed.
-  listOrgUsers(orgId?: string): Promise<OrgUser[]> {
-    return this.trpc.users.listOrg.query(this.scoped(orgId));
+  // Every call is re-checked server-side. `me().orgOwner`/`.orgAdmin`/`.opAdmin`
+  // are for deciding what to RENDER, never for deciding what is allowed.
+
+  /** The organisation's people. Org-admin gated: an op admin cannot browse it,
+   *  which is why `addOpUser` validates an address against it for them. */
+  listUsers(orgId?: string): Promise<User[]> {
+    return this.trpc.users.list.query(this.scoped(orgId));
   }
-  inviteOrgUser(input: { email: string; name?: string | null; level?: AdminLevel; orgId?: string }): Promise<{ ok: true }> {
+  /** Invite someone into the organisation — the only way in, and it grants
+   *  nothing anywhere. Pass `operationId` when the caller is an op admin: they
+   *  have no org-wide standing, so the server checks the operation they name. */
+  inviteUser(input: { email: string; name?: string | null; operationId?: string; orgId?: string }): Promise<{ ok: true }> {
     return this.trpc.users.invite.mutate({ ...input, ...this.scoped(input.orgId) });
   }
-  removeOrgUser(email: string, orgId?: string): Promise<{ ok: true }> {
-    return this.trpc.users.removeOrg.mutate({ email, ...this.scoped(orgId) });
-  }
-  /** Lifecycle: the reversible half of removal — grants survive, entry stops. */
-  setOrgUserStatus(email: string, status: OrgUser['status'], orgId?: string): Promise<{ ok: true }> {
+  /** Suspend and reinstate — the reversible pause. Grants survive, entry stops,
+   *  and the person is no admin anywhere while it lasts. `expired` is not
+   *  settable here; it drops grants, so it has its own call. */
+  setUserStatus(email: string, status: Exclude<UserStatus, 'expired'>, orgId?: string): Promise<{ ok: true }> {
     return this.trpc.users.setStatus.mutate({ email, status, ...this.scoped(orgId) });
   }
-  setOrgUserLevel(email: string, level: AdminLevel, orgId?: string): Promise<{ ok: true }> {
-    return this.trpc.users.setOrgLevel.mutate({ email, level, ...this.scoped(orgId) });
+  /** End the relationship: drops every grant at every tier and stamps
+   *  `expiredAt`, but keeps the person, so their record history stays
+   *  attributable. There is no hard delete. */
+  expireUser(email: string, orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.users.expire.mutate({ email, ...this.scoped(orgId) });
   }
-  listOpUsers(operationId: string): Promise<OpUser[]> {
-    return this.trpc.users.listOp.query({ operationId });
+  /** Bring an expired person back — as a plain member with **no grants**.
+   *  Expiry kept nothing to restore, so they are appointed again from scratch. */
+  unexpireUser(email: string, orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.users.unexpire.mutate({ email, ...this.scoped(orgId) });
   }
-  /** Add a pool user to an operation, or change their level there. `level:
-   *  'admin'` requires ORG admin — an op admin may never mint another op admin. */
-  addOpUser(operationId: string, email: string, level: AdminLevel = 'user'): Promise<{ ok: true }> {
-    return this.trpc.users.addOp.mutate({ operationId, email, level });
+
+  /** Who administers the organisation. Visible to any org admin, **appointed by
+   *  the owner alone** — no tier appoints its own tier. */
+  listOrgAdmins(orgId?: string): Promise<Grant[]> {
+    return this.trpc.orgAdmins.list.query(this.scoped(orgId));
+  }
+  orgOwner(orgId?: string): Promise<{ email: string | null }> {
+    return this.trpc.orgAdmins.owner.query(this.scoped(orgId));
+  }
+  appointOrgAdmin(email: string, orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.orgAdmins.appoint.mutate({ email, ...this.scoped(orgId) });
+  }
+  removeOrgAdmin(email: string, orgId?: string): Promise<{ ok: true }> {
+    return this.trpc.orgAdmins.remove.mutate({ email, ...this.scoped(orgId) });
+  }
+
+  /** Who builds a solution. One grade — you build it or you do not. Org-admin
+   *  gated on every call, including the read: the design plane governs no
+   *  people, and these rows carry real identities. */
+  listSolAdmins(solutionId: string): Promise<Grant[]> {
+    return this.trpc.solAdmins.list.query({ solutionId });
+  }
+  /** Every solution's admins at once — the organisation's *Sol admins* tab. */
+  listSolAdminsByOrg(orgId?: string): Promise<SolAdminRow[]> {
+    return this.trpc.solAdmins.listByOrg.query(this.scoped(orgId));
+  }
+  appointSolAdmin(solutionId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.solAdmins.appoint.mutate({ solutionId, email });
+  }
+  removeSolAdmin(solutionId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.solAdmins.remove.mutate({ solutionId, email });
+  }
+
+  /** Who runs an operation. Appointed by an **org admin**, never by another op
+   *  admin. An admin row implies entry — no separate op-user row is needed. */
+  listOpAdmins(operationId: string): Promise<Grant[]> {
+    return this.trpc.opAdmins.list.query({ operationId });
+  }
+  /** The op admins of every operation running one solution — the solution's
+   *  *Op admins* tab. */
+  listOpAdminsBySolution(solutionId: string): Promise<OpAdminRow[]> {
+    return this.trpc.opAdmins.listBySolution.query({ solutionId });
+  }
+  appointOpAdmin(operationId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.opAdmins.appoint.mutate({ operationId, email });
+  }
+  removeOpAdmin(operationId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.opAdmins.remove.mutate({ operationId, email });
+  }
+
+  /** Who may enter an operation — the op admin's list. */
+  listOpUsers(operationId: string): Promise<Grant[]> {
+    return this.trpc.opUsers.list.query({ operationId });
+  }
+  /** Refuses an address that is not in the organisation: the pool is the only
+   *  way in, so this list can never be the wider set. */
+  addOpUser(operationId: string, email: string): Promise<{ ok: true }> {
+    return this.trpc.opUsers.add.mutate({ operationId, email });
   }
   removeOpUser(operationId: string, email: string): Promise<{ ok: true }> {
-    return this.trpc.users.removeOp.mutate({ operationId, email });
+    return this.trpc.opUsers.remove.mutate({ operationId, email });
   }
 
   // Page publishing (M3): snapshot the current draft as a new version; list the

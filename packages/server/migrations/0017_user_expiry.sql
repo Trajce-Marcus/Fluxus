@@ -1,0 +1,26 @@
+-- Expiry replaces removal (agreed 2026-08-04).
+--
+-- Deleting a person deleted nothing they had done — record history, the activity
+-- projection and the publish trails are append-only and carry no foreign keys —
+-- but it deleted the only row that could ever say WHO they were. `author` on a
+-- history entry is the auth id, and `users.auth_user_id` is the only bridge from
+-- that id to a name. Drop the row and the spine still records the act while
+-- becoming permanently unable to name the actor. An append-only audit trail that
+-- quietly stops being readable is not one.
+--
+-- So the person row is now kept forever and expiry is the terminal state:
+--
+--   suspended  reversible pause. Every grant survives, so reinstating is one
+--              act, and in the meantime they are no admin anywhere and enter
+--              nothing.
+--   expired    the end of the relationship. Every grant is dropped — that is
+--              what makes it different from suspension — but the row remains,
+--              so everything they ever did can still be attributed to them.
+--
+-- There is no hard delete any more. `users.remove` is gone rather than kept
+-- beside this: two terminal paths, one of which silently damages the audit
+-- trail, is a choice nobody should have to make correctly under time pressure.
+--
+-- `status` is plain text (no DB enum), so 'expired' needs no type change; only
+-- the timestamp is new. Existing rows are untouched — nobody is expired.
+ALTER TABLE "users" ADD COLUMN "expired_at" timestamp with time zone;

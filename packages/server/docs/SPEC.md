@@ -38,7 +38,7 @@ because the entry append and record_map change preceded the hook.
 ```
 src/db/schema.ts       — Drizzle schema: orgs + solutions + operations (the tier,
                          CONSOLE_RUNTIME_SPEC §2), user_roles +
-                         sol_users (governance store, §2a),
+                         sol_admins (governance store, §2a),
                          sdm_configs + pages (solution-keyed design artifacts),
                          page_versions (append-only published snapshots, §3),
                          records (transactional, operation-keyed),
@@ -84,7 +84,10 @@ takes `operationId?` (both default `demo/sdm`):
 
 - **`orgs.get`** `{ orgId? }` → the org profile (unknown id ⇒ a synthetic row,
   so an un-onboarded workspace renders rather than errors) / **`orgs.putProfile`**
-  `{ orgId?, name, contactEmail }` — name and contact email only. There is
+  `{ orgId?, name }` — **the name only**. `owner_email` is deliberately not
+  writable here: changing it is ownership transfer, and this is org-admin work,
+  so an org admin who could write it would promote themselves to the root that
+  appoints org admins. There is
   deliberately **no `orgs.create`** (signup needs user → org resolution) and
   `plan`/`status` are not writable: they are ours to set, not the org's.
 - **`solutions.list`** → `{ id, name, origin }[]` / **`solutions.create`**
@@ -117,63 +120,76 @@ takes `operationId?` (both default `demo/sdm`):
 - **`me`** `{ operationId? }` → `{ id, name, email, roles, authConfigured }` —
   the caller's identity + roles resolved for the operation. The Runtime host
   uses it for **cosmetic** menu filtering; the server filters are the real gate.
-- **Governance (RBAC stage 1)** — over the `user_roles` /
-  `sol_users` store. Re-tiered 2026-08-02: `userRoles.*` are now
-  **op-admin** gated and `solUsers.*` **org-admin** gated (see *The admin
-  tiers* below); `userRoles.roles` stays open, exposing only role defs.
-  **`userRoles.roles`**
-  `{ operationId? }` → the linked solution's declared role defs (the picker);
-  **`userRoles.list`** `{ operationId? }` / **`userRoles.put`**
-  `{ operationId?, userId, roleIds }` (empty roleIds clears the row);
-  **`solUsers.list`** `{ solutionId? }` / **`solUsers.put`**
-  `{ solutionId?, email, level }` — **keyed on email since 2026-08-02**
-  (migration 0012), and both **org-admin** gated. `level: 'admin'` here *is* the
-  solution-admin tier; there is deliberately no separate solution-users table.
-- **Users (2026-08-02)** — the org pool and each operation's user list:
-  **`users.listOrg`** `{ orgId? }` / **`users.invite`**
-  `{ email, name?, level?, orgId? }` / **`users.removeOrg`** `{ email, orgId? }`
-  / **`users.setStatus`** `{ email, status, orgId? }` / **`users.setOrgLevel`**
-  `{ email, level, orgId? }`; **`users.listOp`** `{ operationId? }` /
-  **`users.addOp`** `{ operationId?, email, level? }` / **`users.removeOp`**
-  `{ operationId?, email }`. `addOp` refuses an email that is not in the pool —
-  the pool is the only way in, so `op_users` can never be the wider set.
-  `removeOp` clears that user's role assignments in the operation; `removeOrg`
-  removes them from every operation **and strips their sol users**, so
-  no grant outlives the pool row that justified it (the second only became
-  reachable with the email rekey).
-- **The admin tiers (2026-08-02)** — three checks in `router.ts`, one per tier,
-  deliberately **not nested**: `requireOrgAdmin` (`org_users.level`),
-  `requireOpAdmin` (`op_users.level`, per operation) and `requireSolUser`
-  (`sol_users`, per solution). Authority has one root and flows
-  **downward only**; no tier appoints its own tier. The governing split is
-  **identity vs authorization**:
+- **Governance (RBAC stage 1)** — over the `user_roles` / `sol_admins` store.
+  **`userRoles.roles`** `{ operationId? }` → the linked solution's declared role
+  defs (the picker; open, exposes no user data); **`userRoles.list`**
+  `{ operationId? }` / **`userRoles.put`** `{ operationId?, email, roleIds }`
+  (empty roleIds clears the row) — both **op-admin** gated, and an org admin is
+  refused deliberately.
+- **Users, admins and roles (rewritten 2026-08-04)** — one router per list, each
+  governed by one tier. The whole surface is `src/routers/users.ts`; the store is
+  `src/users/`; the checks are `src/gates.ts`.
 
-  | Procedure | Tier | Was |
+  | Router | Procedures | Tier |
   |---|---|---|
-  | `users.listOrg` / `invite` / `removeOrg` / `setStatus` / `setOrgLevel` | org admin | ungated |
-  | `solutions.create`, `operations.create` | org admin | design plane `admin` |
-  | `solUsers.list` / `solUsers.put` | org admin | design plane `admin` |
-  | `users.addOp` (level `user`) | op admin **or** org admin | design plane `admin` |
-  | `users.addOp` (level `admin`) | org admin only | — |
-  | `users.removeOp` | op admin | design plane `admin` |
-  | `userRoles.list` / `userRoles.put` | op admin | design plane `admin` |
-  | `operations.putConfig` (menu override) | op admin | design plane `write` |
-  | `config.put`, `pages.*`, `publish` | sol user | unchanged |
+  | `users` | `list` `{orgId?}`, `invite` `{email,name?,operationId?,orgId?}`, `setStatus` `{email,status,orgId?}`, `expire` `{email,orgId?}`, `unexpire` | org admin; `invite` also owner or op admin of the named operation |
+  | `orgAdmins` | `list`, `owner`, `appoint` `{email}`, `remove` `{email}` | list = org admin; **appoint/remove = owner only** |
+  | `solAdmins` | `list` `{solutionId}`, `listByOrg` `{orgId?}`, `appoint` `{solutionId,email}`, `remove` | org admin, including the read |
+  | `opAdmins` | `list` `{operationId}`, `listBySolution` `{solutionId}`, `appoint`, `remove` | appoint/remove = org admin; `list` = op **or** org admin |
+  | `opUsers` | `list` `{operationId}`, `add` `{operationId,email}`, `remove` | `list`/`add` = op **or** org admin; `remove` = op admin |
 
-  **Solution admins lose every user-facing grant** — including
-  `solUsers.list`, which since the rekey carries real emails. A person
-  building the model has no business over real identities.
+  **Invite grants nothing anywhere** — it adds a row to `users` and stops. Every
+  appointment is a separate call on the list it belongs to. Appointment refuses
+  an email that is not in the pool: invite, then appoint, enforced in the store
+  rather than assumed by the UI.
+
+  `opUsers.remove` clears that person's roles in the operation; `users.expire`
+  drops every grant at every tier, so nothing outlives the relationship that
+  justified it — but **keeps the person row**, always (see *Lifecycle* below).
+- **The tiers (rewritten 2026-08-04)** — five checks in `src/gates.ts`, one per
+  tier, deliberately **not nested**: `requireOrgOwner` (`orgs.owner_email`),
+  `requireOrgAdmin` (`org_admins`), `requireOpAdmin` (`op_admins`, per
+  operation), `requireSolAdmin` (`sol_admins`, per solution) and `requireOpUser`
+  (entry — `op_users` OR `op_admins`, since an admin row implies entry).
+  Authority has one root — the **owner** — and flows **downward only**; no tier
+  appoints its own tier. The governing split is **identity vs authorization**:
+
+  | Procedure | Tier |
+  |---|---|
+  | `users.*` (lifecycle), `solutions.create`, `operations.create` | org admin |
+  | `orgAdmins.appoint` / `remove` | **owner only** |
+  | `solAdmins.*`, `opAdmins.appoint` / `remove` | org admin |
+  | `opUsers.add` | op admin **or** org admin |
+  | `opUsers.remove`, `userRoles.*`, `operations.putConfig` | op admin |
+  | `config.put`, `pages.*`, `publish` | sol admin |
+
+  **Sol admins have no user-facing grant at all** — including `solAdmins.list`,
+  which carries real emails. A person building the model has no business over
+  real identities.
 
   An **org admin is not implicitly an op admin**: they may not manage roles or
-  the menu override until they appoint themselves op admin. A speed bump, not a
-  wall — the point is that the grant becomes explicit and auditable rather than
-  ambient. Suspension bites both tiers: a suspended pool row is not an admin
-  anywhere.
+  the menu override until they appoint themselves one. A speed bump, not a wall
+  — the point is that the grant becomes explicit and auditable rather than
+  ambient. **The owner is not implicitly an org admin** for the same reason.
 
-  **The escalation rule lives in exactly one place** — `users.addOp` branches on
-  the `level` being written. Writing `user` needs op admin or org admin (entry
-  is an identity question, so either tier may answer it); writing `admin` needs
-  org admin. **An op admin can never mint an op admin.**
+  **Suspension bites every tier**: each `is*Admin` re-reads the pool row, so a
+  suspended person is no admin anywhere while their grants survive intact for
+  reinstatement.
+
+  **Lifecycle, and why there is no delete** (migration 0017) — `suspended` is a
+  reversible pause that keeps every grant; **`expired`** is terminal and drops
+  them all, stamping `expired_at`. Neither deletes the row, and nothing else
+  does either. Deleting a person deleted nothing they had *done* — record
+  history, `rpt_activities` and the publish trails are append-only and carry no
+  foreign keys — but it deleted the only row that could say who they *were*:
+  `author` is an auth id, and `users.auth_user_id` is the only bridge from that
+  id to a name. Expiry **replaced** removal rather than joining it. `bindAuthUser`
+  will not resurrect an expired row, and `setUserStatus` refuses `expired` —
+  dropping grants is not something a status write may do silently.
+
+  `hasConsoleAccess` derives "may open the Console" — owner, org admin, or sol
+  admin of anything. Never a stored flag. The owner's derivation is what makes
+  the first appointment reachable on a fresh org, where nobody holds a grant.
 - **Bootstrap** — `bootstrapOrgAdmin(db, { email })`, exposed as
   `npm run bootstrap` and called by `npm run seed` when
   `FLUXUS_ORG_ADMIN_EMAIL` is set. No signup plus a strict entry gate means the
@@ -184,10 +200,12 @@ takes `operationId?` (both default `demo/sdm`):
   a script and not a migration**: it needs an env var (plain SQL cannot read
   one), and it must be **re-runnable**, because it is also the lockout recovery
   tool and a lockout you can only fix by writing another migration is not a fix.
-  Two rules make re-runs safe — the pool row is upserted to org admin
-  (promotion is the point), but op-admin rows are written **only** into
-  operations that currently have no users at all. It is safe against production
-  precisely because it is separate from `seed`, which installs the demo bundle.
+  Three rules make re-runs safe — the pool row and the `org_admins` appointment
+  are upserted (promotion is the point); ownership is claimed **only** if the org
+  has none (transfer is a deliberate act, never a side effect); and `op_admins` /
+  `sol_admins` rows are written **only** where nobody administers that operation
+  or solution yet. It is safe against production precisely because it is separate
+  from `seed`, which installs the demo bundle.
 
   **Superseded for every org but the first (2026-08-03)**: `platform.registerOrg`
   now writes an org and its owner in one act inside the request path, so the
@@ -208,11 +226,14 @@ takes `operationId?` (both default `demo/sdm`):
   own people. This one guards every org from everyone, and an unconfigured dev
   machine must not be one where anyone who can reach the port registers orgs.
 
-  `registerOrg` writes the `orgs` row (with `contact_email` = the owner) and the
-  owner's `org_users` admin row **in one act**, because after the first alone the
-  org admits nobody — including whoever would perform the second. The owner is
-  **not a new level**: they are the org's first org admin, and a distinct
-  `owner` value would need transfer and demotion rules nothing needs yet.
+  `registerOrg` writes three things **in one act**: the `orgs` row, its
+  `owner_email` (the root of authority), and the owner's `users` row — the
+  organisation's **first user**. Nobody invites the owner, because there is
+  nobody there to do it, so the act that creates the org creates the person
+  (2026-08-04). They are deliberately **not** appointed an org admin: they
+  appoint org admins, and appoint themselves one if they mean to do ordinary
+  org-admin work. Console access is derived from ownership, which is what makes
+  that first appointment reachable.
   Duplicate id ⇒ `CONFLICT`; ids are `^[a-z0-9][a-z0-9-]*$` because the id **is**
   the URL (`/o/<orgId>/…`). Nothing is emailed — an invite is a database row
   until a mail sender exists.
@@ -348,15 +369,15 @@ rev 6 §0). What the server implements:
 - **Roles-resolver seam** (`RolesResolver`, two lookups, both **live**):
   `runtimeRoles(user, operation) → roleIds` (`createDbRolesResolver` reads
   `user_roles`) → `context.user.roles`, resolved per call before the
-  engine exists (gates read it). `solUserLevel(email, solution)` (M5) reads
-  `sol_users`, **dormant until declared** — no rows ⇒ `admin` for all
-  (adoption); once any row exists an unlisted user is `none` (denied). Keyed on
-  **email** since 2026-08-02, so a caller with no email is `none` once levels
-  exist. Checked by `config.put`/`pages.*`/`publish`/`solutions.update|delete`
-  via `requireSolUser` (keyed on the solution; `write` for edits, `admin`
-  for the solution profile). Operations, users and assignments left this check
-  when the admin tiers landed. `requireSolUser` is a **no-op when auth is
-  unconfigured** (env stub open, §7).
+  engine exists (gates read it). `isSolAdmin(email, solution)` (M5) reads
+  `sol_admins` — **strict**: you build a solution only if you are appointed to
+  it. One grade, so one boolean (2026-08-04); the `read`/`write` split bought
+  nothing once appointment moved onto the admin tiers. Keyed on **email**, so a
+  caller with no email can never match. Checked by
+  `config.put`/`pages.*`/`publish` via `requireSolAdmin`;
+  `solutions.update|delete`, operations, users and roles left this check when the
+  admin tiers landed. `requireSolAdmin` is a **no-op when auth is unconfigured**
+  (env stub open, §7).
 - **Record-type read enforcement** (RBAC stage 1, RBAC_COMPACT): active only
   when auth is **configured** (`ctx.authConfigured`) AND the solution declares
   `access.roles`; otherwise everything reads open (env stub / adoption
@@ -373,9 +394,11 @@ rev 6 §0). What the server implements:
 
 - `orgs` — `(id)` PK: the tenant (M13 `name`, M14 profile). `operations.org_id`
   / `user_roles.org_id` have carried an org key since M1 with nowhere to
-  read a row from; this is that row. `contact_email`, `plan` (subscribed tier,
-  default `'free'`), `status` (default `'active'`), `created_at` = the
-  registration date. Migrations `0008_orgs` / `0009_org_profile`; one implicit
+  read a row from; this is that row. `owner_email` (the root of authority, and the org's contact address — a
+  separate `contact_email` was dropped by migration 0018, having been born
+  identical to it and read by nothing), `plan` (subscribed tier, default
+  `'free'`), `status` (default `'active'`), `created_at` = the registration
+  date. Migrations `0008_orgs` / `0009_org_profile` / `0018_org_owner_email`; one implicit
   `'default'` row, and **no signup path** — creating an org needs the auth tier
   to resolve user → org, which it does not do.
 - `solutions` — `(id)` PK: the design artifact — `name`, plus provenance (M12):
@@ -395,28 +418,34 @@ rev 6 §0). What the server implements:
   rekeyed `user_id` → `email` 2026-08-02 (migration 0015) — the last table on
   the auth provider's id. Not a membership layer: an attribute of being an op
   user. The rekey fixed two things: roles could not be granted before first
-  sign-in, and `removeOpUser` (which clears by email) was clearing nothing. `sol_users` —
-  `(email, solution_id)` PK, `level`: the design-plane layer of the three
-  (org_users → sol_users → op_users), consumed at M5. Renamed from
-  `implementer_levels` 2026-08-02 (migration 0013) so one word serves each
-  layer; `level` collapsed to **read | write** in the same migration, because
-  once the admin tiers took over, `admin` here guarded only
-  `solutions.update`/`delete` — both org-admin work. No `org_id` column, unlike
-  its two siblings: solution ids are globally unique, so the org is derivable
-  through `solutions`. Rekeyed from `user_id` to `email` 2026-08-02 (0012) — a solution admin is appointed from
-  the org pool, whose users typically have not signed in yet, so keying on the
-  auth id made invite-first appointment impossible. The backfill joins through
-  `org_users.auth_user_id` and drops rows that do not resolve; levels are
-  dormant-until-declared, so an empty table was the expected prior state.
-  Note `user_roles.user_id` was **not** rekeyed — see the open item below.
-- `org_users` — `(org_id, email)` PK, `name`, `auth_user_id`, `status`
-  (`invited`/`active`/`suspended`), `level` (`admin`/`user`): the organisation's
-  user pool, and where the **org admin** tier is stored. `op_users` —
-  `(org_id, operation_id, email)` PK, `level` (`admin`/`user`): who may enter an
-  operation, and where the **op admin** tier is stored. Added 2026-08-02
-  (RBAC_COMPACT "Users"); `level` columns in migration 0011. There is no
-  solution-users table — a **solution admin** is `sol_users.level =
-  'admin'`, which already existed. **Email is the key, not the auth id** — an
+  sign-in, and `removeOpUser` (which clears by email) was clearing nothing.
+- **The user tables (rewritten 2026-08-04, migration 0016)** — one population,
+  then grants, with **no `level` column anywhere**. Every grant table is keyed
+  `(target, person)`: the row *is* the appointment.
+
+  | Table | PK | Question |
+  |---|---|---|
+  | `users` | `(org_id, email)` | Who is this person? Plus `name`, `auth_user_id`, `status` (`invited`/`active`/`suspended`/`expired`), `invited_at`, `expired_at`. |
+  | `org_admins` | `(org_id, email)` | Who administers the organisation? |
+  | `sol_admins` | `(email, solution_id)` | Who builds this solution? One grade. |
+  | `op_users` | `(org_id, operation_id, email)` | Who may enter this operation? |
+  | `op_admins` | `(org_id, operation_id, email)` | Who administers it? |
+
+  `orgs.owner_email` holds the root of authority. `sol_admins` carries no
+  `org_id`, unlike its siblings: solution ids are globally unique, so the org is
+  derivable through `solutions`.
+
+  Migration 0016 preserved data by **promotion**: `org_users.level='admin'` →
+  an `org_admins` row, `op_users.level='admin'` → an `op_admins` row (the
+  `op_users` row dropped, since an admin row implies entry), `sol_users`
+  `write` → `sol_admins`, `read` **dropped**. Orphan grants — rows naming
+  somebody not in the pool — are deleted, so the invite-then-appoint order is
+  enforced rather than assumed.
+
+  Lifecycle lives on the `users` row alone, so suspension bites every tier at
+  once rather than being re-implemented in each.
+
+  **Email is the key, not the auth id** — an**Email is the key, not the auth id** — an
   invited user has no auth id until first sign-in, so both tables key on email
   and `createContext` binds `auth_user_id` (and flips `invited` → `active`) on
   the first authenticated request. The bind statement carries

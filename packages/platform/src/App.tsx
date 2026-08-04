@@ -116,7 +116,7 @@ export default function App({ client, who, onSignOut }: {
                     <tr key={o.id}>
                       <td style={mono}>{o.id}</td>
                       <td style={td}>{o.name}</td>
-                      <td style={td}>{o.contactEmail ?? <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                      <td style={td}>{o.ownerEmail ?? <span style={{ color: '#94a3b8' }}>—</span>}</td>
                       <td style={td}>{o.plan}</td>
                       <td style={td}>{o.status}</td>
                       <td style={td}>{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '—'}</td>

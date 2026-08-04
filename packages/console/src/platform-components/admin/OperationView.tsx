@@ -13,8 +13,7 @@
 import { useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { OperationMenuSection } from './OperationMenuSection';
-import { UserRolesSection } from './UserRolesSection';
-import { OpUsersSection } from './OpUsersSection';
+import { OperationUsersScreen } from '../users';
 import { PlaceholderCard } from './Placeholder';
 
 type OpTab = 'overview' | 'users' | 'menu' | 'data' | 'settings';
@@ -67,7 +66,7 @@ export function OperationView({ operation, solutionName, onOpenRuntime }: {
 
       <div className="op-body">
         {tab === 'overview' && <OverviewTab operation={operation} solutionName={solutionName} />}
-        {tab === 'users' && <UsersTab operationId={operation.id} />}
+        {tab === 'users' && <OperationUsersScreen operationId={operation.id} operationName={operation.name} />}
         {tab === 'menu' && <OperationMenuSection operationId={operation.id} solutionId={operation.solutionId} />}
         {tab === 'data' && <DataTab />}
         {tab === 'settings' && <SettingsTab />}
@@ -107,18 +106,6 @@ function OverviewTab({ operation, solutionName }: { operation: OperationRow; sol
   );
 }
 
-/** Users of this operation — two of the three layers, in the order the gates
- *  apply: `op_users` answers *may they enter*, roles answer *what may they see
- *  inside*. Two tables, deliberately not one grid: the gates are independent,
- *  and a row-per-user grid would imply they are not. */
-function UsersTab({ operationId }: { operationId: string }) {
-  return (
-    <>
-      <OpUsersSection operationId={operationId} />
-      <UserRolesSection operationId={operationId} />
-    </>
-  );
-}
 
 function DataTab() {
   return (

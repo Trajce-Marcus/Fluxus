@@ -73,11 +73,24 @@ transport) exposes plain typed calls: `listSolutions` / `createSolution` /
 `updateSolution` (name only — the id is permanent) / `deleteSolution` (the
 server side is a TODO: it answers `NOT_IMPLEMENTED` and destroys nothing),
 `listOperations` /
-`getOperation` / `createOperation` / `putOperationConfig`, and the governance
-set (`operationRoles`, `listUserRoles`/`putUserRoles`,
-`listSolUsers`/`putSolUser`), and the publish set (`publishPage`,
+`getOperation` / `createOperation` / `putOperationConfig`, and the publish set (`publishPage`,
 `listPageVersions`, `getPageVersion`, `rollbackPage`). No snapshot, no engine —
 just the tRPC door for admin screens.
+
+**Users, admins and roles** (rewritten 2026-08-04, see root
+[USERS.md](../../../docs/USERS.md)) are one method group per list, because each
+list answers one question and is governed by one tier: the pool (`listUsers`,
+`inviteUser`, `setUserStatus`, `removeUser`), org admins (`listOrgAdmins`,
+`orgOwner`, `appointOrgAdmin`, `removeOrgAdmin` — the owner's alone), sol admins
+(`listSolAdmins`, `listSolAdminsByOrg`, `appointSolAdmin`, `removeSolAdmin`), op
+admins (`listOpAdmins`, `listOpAdminsBySolution`, `appointOpAdmin`,
+`removeOpAdmin`), op users (`listOpUsers`, `addOpUser`, `removeOpUser`) and roles
+(`operationRoles`, `listUserRoles`, `putUserRoles`).
+
+`inviteUser` grants nothing anywhere — appointment is always a second call. The
+`User` type carries no level; `Grant` is `{ email }`, because the row *is* the
+appointment. `me()` answers `{ orgOwner, orgAdmin, opAdmin, console }` for
+deciding what to **render**; every call is re-checked server-side.
 
 `connect`'s `pages` option (`'draft'` default | `'published'`) picks which page
 set the snapshot holds: the Runtime host passes `'published'` (latest version

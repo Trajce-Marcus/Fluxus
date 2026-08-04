@@ -46,12 +46,15 @@ const result = await bootstrapOrgAdmin(db, { email, name: nameArg ?? null, orgId
 
 console.log(
   `Org admin: '${result.email}' in org '${orgId}'.\n` +
+  (result.claimedOwnership
+    ? `Owner of '${orgId}' — it had none, so recovery claimed it. Ownership is never taken from someone.\n`
+    : '') +
   (result.operationsOpened.length > 0
-    ? `Op admin of ${result.operationsOpened.length} operation(s) that had no users: ${result.operationsOpened.join(', ')}.\n`
-    : 'No operations were opened — every operation already has users, so none was locked.\n') +
+    ? `Op admin of ${result.operationsOpened.length} operation(s) that nobody administered: ${result.operationsOpened.join(', ')}.\n`
+    : 'No operations were opened — every operation already has an admin, so none was locked.\n') +
   (result.solutionsOpened.length > 0
-    ? `Write on ${result.solutionsOpened.length} solution(s) that had no users: ${result.solutionsOpened.join(', ')}.`
-    : 'No solutions were opened — every solution already has users.') +
+    ? `Builds ${result.solutionsOpened.length} solution(s) that nobody built: ${result.solutionsOpened.join(', ')}.`
+    : 'No solutions were opened — every solution already has an admin.') +
   '\nThey still have to sign in once for the auth id to bind (status: invited → active).',
 );
 await closeDb(db);

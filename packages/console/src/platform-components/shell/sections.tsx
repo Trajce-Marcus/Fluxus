@@ -12,6 +12,7 @@ import { PagesSection } from '../page-builder/PagesSection';
 import { OverviewSection } from './OverviewSection';
 import { SolutionOperationsSection } from './SolutionOperationsSection';
 import { SolutionSettingsSection } from './SolutionSettingsSection';
+import { SolutionUsersScreen } from '../users';
 import { sdmDirty, setSdmDirty } from '../sdm-builder/useSolutionConfig';
 
 export interface ConsoleSection {
@@ -55,6 +56,10 @@ export const WORKSPACE_SECTIONS: ConsoleSection[] = [
 export const SOLUTION_SECTIONS: ConsoleSection[] = [
   { id: 'overview', label: 'Overview', group: SOLUTION_GROUP, render: () => <OverviewSection /> },
   { id: 'operations', label: 'Operations', group: SOLUTION_GROUP, render: () => <SolutionOperationsSection /> },
+  /* Solution → Users (2026-08-04): who builds this solution (read-only — it is
+     appointed at the organisation) and who runs its operations. Not rendered
+     for sol admins, who see no user list anywhere. */
+  { id: 'users', label: 'Users', group: SOLUTION_GROUP, render: () => <SolutionUsersScreen /> },
   { id: 'pages', label: 'Pages', group: SOLUTION_GROUP, render: () => <PagesSection /> },
   { id: 'settings', label: 'Settings', group: SOLUTION_GROUP, render: () => <SolutionSettingsSection /> },
   { id: 'record-types', label: 'Record types', group: SDM_GROUP, render: () => <SdmView tab="record-types" />, canLeave: canLeaveSdm },

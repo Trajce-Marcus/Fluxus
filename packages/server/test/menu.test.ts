@@ -4,7 +4,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureOrg, ensureSolution, inviteOrgUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureOrg, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
 import { operations } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { appRouter } from '../src/router';
@@ -41,7 +41,7 @@ beforeAll(async () => {
   await pub('pages/p2', ['role_b']);
   await pub('pages/p3'); // no access.open → default deny when active
   await putUserRoles(db, { operationId: OP, email: 'u1@example.com', roleIds: ['role_a'] });
-  await inviteOrgUser(db, { email: 'u1@example.com' });
+  await inviteUser(db, { email: 'u1@example.com' });
   await addOpUser(db, { operationId: OP, email: 'u1@example.com' });
 });
 
@@ -164,17 +164,25 @@ describe('org profile (M14)', () => {
     expect(org.status).toBe('active');
   });
 
-  it('edits name and contact email', async () => {
-    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Water', contactEmail: 'ops@northwind.example' });
+  it('edits the name — the only field the org owns about itself', async () => {
+    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Water' });
     const org = await open().orgs.get({ orgId: 'default' });
     expect(org.name).toBe('Northwind Water');
-    expect(org.contactEmail).toBe('ops@northwind.example');
-    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Utilities', contactEmail: null });
+    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Utilities' });
   });
 
-  it('rejects an unknown org and a malformed email', async () => {
-    await expect(open().orgs.putProfile({ orgId: 'no-such-org', name: 'X', contactEmail: null })).rejects.toThrow(/not onboarded/i);
-    await expect(open().orgs.putProfile({ orgId: 'default', name: 'X', contactEmail: 'nope' })).rejects.toThrow();
+  it('cannot write the owner — that is a transfer, not a profile edit', async () => {
+    // An org admin who could write this column would promote themselves to the
+    // root that appoints org admins. The field is not in the input at all.
+    const { orgs } = await import('../src/db/schema');
+    const { eq } = await import('drizzle-orm');
+    await db.update(orgs).set({ ownerEmail: 'owner@northwind.example' }).where(eq(orgs.id, 'default'));
+    await open().orgs.putProfile({ orgId: 'default', name: 'Northwind Utilities' });
+    expect((await open().orgs.get({ orgId: 'default' })).ownerEmail).toBe('owner@northwind.example');
+  });
+
+  it('rejects an unknown org', async () => {
+    await expect(open().orgs.putProfile({ orgId: 'no-such-org', name: 'X' })).rejects.toThrow(/not onboarded/i);
   });
 
   it('returns a synthetic row for an org with no record', async () => {

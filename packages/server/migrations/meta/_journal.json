@@ -113,6 +113,27 @@
       "when": 1785200700000,
       "tag": "0015_user_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785200800000,
+      "tag": "0016_users_and_admins",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785200900000,
+      "tag": "0017_user_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785201000000,
+      "tag": "0018_org_owner_email",
+      "breakpoints": true
     }
   ]
 }

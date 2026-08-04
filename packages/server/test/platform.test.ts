@@ -11,7 +11,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { getOrg, getOrgUser, listOrgs } from '../src/host';
+import { getOrg, getUser, listOrgs } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver, isPlatformAdmin } from '../src/auth';
 import type { ContextUser } from '@fluxus/engine';
@@ -63,7 +63,7 @@ describe('the gate', () => {
   it('stays SHUT in demo posture, unlike every other gate', async () => {
     // The contrast is the point: with auth unconfigured the org-admin surface
     // is wide open, and the platform surface still is not.
-    await expect(stub().users.listOrg()).resolves.toBeDefined();
+    await expect(stub().users.list()).resolves.toBeDefined();
     await expect(stub().platform.listOrgs()).rejects.toThrow(/Requires platform admin/);
   });
 });
@@ -79,32 +79,50 @@ describe('registerOrg', () => {
 
     const org = await getOrg(db, 'acme');
     expect(org).toMatchObject({ id: 'acme', name: 'Acme Corp', plan: 'free', status: 'active' });
-    // The org row itself answers "whose is this".
-    expect(org.contactEmail).toBe('owner@acme.com');
+    // The org row itself answers "whose is this" — one email column, since
+    // `contact_email` was dropped (0018) as a duplicate of this one.
+    expect(org.ownerEmail).toBe('owner@acme.com');
 
-    // ...and the owner is a real org admin, in `acme`, not in 'default'.
-    const owner = await getOrgUser(db, { email: 'owner@acme.com', orgId: 'acme' });
-    expect(owner).toMatchObject({ level: 'admin', status: 'invited', name: 'Ada Owner' });
-    expect(await getOrgUser(db, { email: 'owner@acme.com', orgId: 'default' })).toBeNull();
+    // ...and the owner is the org's FIRST USER, in `acme`, not in 'default'.
+    // Nobody invites the owner — there is nobody there to do it — so the act
+    // that creates the org creates the person.
+    const owner = await getUser(db, { email: 'owner@acme.com', orgId: 'acme' });
+    expect(owner).toMatchObject({ status: 'invited', name: 'Ada Owner' });
+    expect(await getUser(db, { email: 'owner@acme.com', orgId: 'default' })).toBeNull();
+
+    // Deliberately NOT an org admin: the owner appoints them, and appoints
+    // themselves one if they mean to do ordinary org-admin work.
+    const { listOrgAdmins } = await import('../src/host');
+    expect(await listOrgAdmins(db, 'acme')).toEqual([]);
   });
 
-  it('lets the owner straight into their own org, and nowhere else', async () => {
+  it('lets the owner into the Console of their own org, and nowhere else', async () => {
     await as(vendor).platform.registerOrg({ id: 'acme', name: 'Acme', ownerEmail: 'owner@acme.com' });
     const owner: ContextUser = { id: 'auth-owner', name: 'Owner', email: 'owner@acme.com', roles: [] };
 
     // The point of the whole exercise: no bootstrap script, no second step.
-    await expect(as(owner).users.listOrg({ orgId: 'acme' })).resolves.toHaveLength(1);
+    // Console access is derived from ownership, which is what makes the first
+    // appointment reachable on an org where nobody holds a grant yet.
+    await expect(as(owner).me({ orgId: 'acme' })).resolves.toMatchObject({ orgOwner: true, orgAdmin: false, console: true });
     // And the org key is a real boundary — the default org is somebody else's.
-    await expect(as(owner).users.listOrg({ orgId: 'default' })).rejects.toThrow(/Requires organisation admin/);
+    await expect(as(owner).me({ orgId: 'default' })).resolves.toMatchObject({ orgOwner: false, console: false });
   });
 
-  it('is where the second admin comes from — the owner invites, we do not', async () => {
+  it('is where the first org admin comes from — the owner appoints, we do not', async () => {
     await as(vendor).platform.registerOrg({ id: 'acme', name: 'Acme', ownerEmail: 'owner@acme.com' });
     const owner: ContextUser = { id: 'auth-owner', name: 'Owner', email: 'owner@acme.com', roles: [] };
+    const { listOrgAdmins } = await import('../src/host');
 
-    await as(owner).users.invite({ email: 'second@acme.com', level: 'admin', orgId: 'acme' });
-    const second = await getOrgUser(db, { email: 'second@acme.com', orgId: 'acme' });
-    expect(second?.level).toBe('admin');
+    // Invite, then appoint — two acts, as everywhere else.
+    await as(owner).users.invite({ email: 'second@acme.com', orgId: 'acme' });
+    await as(owner).orgAdmins.appoint({ email: 'second@acme.com', orgId: 'acme' });
+    expect((await listOrgAdmins(db, 'acme')).map((r) => r.email)).toEqual(['second@acme.com']);
+
+    // The new org admin cannot appoint a third — no tier appoints its own tier.
+    const second: ContextUser = { id: 'auth-second', name: 'Second', email: 'second@acme.com', roles: [] };
+    await as(owner).users.invite({ email: 'third@acme.com', orgId: 'acme' });
+    await expect(as(second).orgAdmins.appoint({ email: 'third@acme.com', orgId: 'acme' }))
+      .rejects.toThrow(/organisation owner/);
   });
 
   it('refuses a duplicate id', async () => {
@@ -135,8 +153,12 @@ describe('the org key as a boundary', () => {
 
   beforeEach(async () => {
     await as(vendor).platform.registerOrg({ id: 'acme', name: 'Acme', ownerEmail: 'owner@acme.com' });
-    const { inviteOrgUser } = await import('../src/host');
-    await inviteOrgUser(db, { email: 'boss@default.com', level: 'admin' }); // admin of 'default'
+    const { inviteUser, appointOrgAdmin } = await import('../src/host');
+    await inviteUser(db, { email: 'boss@default.com' });
+    await appointOrgAdmin(db, { email: 'boss@default.com' }); // admin of 'default'
+    // The owner is not implicitly an org admin, so acme's owner appoints
+    // themselves — the ordinary first move on a new organisation.
+    await appointOrgAdmin(db, { email: 'owner@acme.com', orgId: 'acme' });
   });
 
   it("an admin of 'default' cannot create solutions in another org", async () => {
@@ -149,9 +171,9 @@ describe('the org key as a boundary', () => {
   it("an admin of 'default' cannot rename, delete or staff another org's solution", async () => {
     await as(owner).solutions.create({ id: 'acme/thing', name: 'Thing', orgId: 'acme' });
     await expect(as(dflt).solutions.update({ solutionId: 'acme/thing', name: 'Mine now' })).rejects.toThrow(/organisation admin/);
-    await expect(as(dflt).solUsers.list({ solutionId: 'acme/thing' })).rejects.toThrow(/organisation admin/);
+    await expect(as(dflt).solAdmins.list({ solutionId: 'acme/thing' })).rejects.toThrow(/organisation admin/);
     await expect(
-      as(dflt).solUsers.put({ solutionId: 'acme/thing', email: 'boss@default.com', level: 'write' }),
+      as(dflt).solAdmins.appoint({ solutionId: 'acme/thing', email: 'boss@default.com' }),
     ).rejects.toThrow(/organisation admin/);
   });
 

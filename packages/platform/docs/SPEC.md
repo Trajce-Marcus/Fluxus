@@ -49,20 +49,33 @@ allowlist ⇒ nobody, always.
 
 `platform.registerOrg({ id, name, ownerEmail, ownerName? })` — one act:
 
-1. the `orgs` row, with `contact_email` = the owner, so the org row itself
+1. the `orgs` row, with `owner_email` = the owner, so the org row itself
    answers "whose is this";
-2. an `org_users` row for the owner: `level: 'admin'`, `status: 'invited'`.
+2. a `users` row for the owner (`status: 'invited'`) — the organisation's
+   **first user**. Nobody invites the owner, because there is nobody there to do
+   it, so the act that creates the org creates the person.
 
 They cannot be two steps. After step 1 alone the org admits nobody — including
-whoever would perform step 2. This is the same obligation RBAC_COMPACT states
-for the first admin, discharged in the request path at last.
+whoever would perform step 2.
 
-**The owner is not a new level** (ruled 2026-08-03). "Owner" is the org's first
-`org_users` admin, and their authority is fully expressed by the level that
-already exists. A distinct `owner` value would need transfer rules, deletion
-rules, and an answer to whether an owner can be demoted — real questions this
-tier does not need answered yet. Revisit when billing gives "owner" a meaning
-"first admin" cannot carry.
+The owner is deliberately **not** appointed an org admin here (rewritten
+2026-08-04, see root [USERS.md](../../../docs/USERS.md)): they *appoint* org
+admins, and appoint themselves one if they mean to do ordinary org-admin work.
+Console access is derived from ownership, which is what makes that first
+appointment reachable on an org where nobody holds a grant yet. This is the same
+obligation RBAC_COMPACT states for the first admin, discharged in the request
+path at last.
+
+**The owner is a real thing on the org row** (`orgs.owner_email`, migration
+0016 — superseding the 2026-08-03 ruling that it was merely the org's first
+admin). It had to become one: the rule that no tier appoints its own tier leaves
+nobody inside the org able to appoint the first org admin, so the root has to sit
+above them. `owner_email` is also the org's contact address — a separate
+`contact_email` was dropped (migration 0018) as a duplicate born identical to it.
+
+**Transfer and demotion are still unbuilt**, which is why `owner_email` is not
+writable through `orgs.putProfile`: editing the org is org-admin work, and an org
+admin who could write that column would promote themselves to the root.
 
 **Nothing is emailed** (ruled 2026-08-03). An invite is a database row until a
 mail sender exists; the owner is told out of band. The app says so on the form

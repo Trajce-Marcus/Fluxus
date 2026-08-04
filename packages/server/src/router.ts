@@ -33,23 +33,10 @@ import {
   listConfigVersions,
   getPageVersion,
   insertPendingAttachment,
-  listSolUsers,
   listOperations,
   listPageVersions,
   listPages,
   listPublishedPages,
-  addOpUser,
-  getOpUser,
-  getOrgUser,
-  isAnySolUser,
-  inviteOrgUser,
-  listOpUsers,
-  listOrgUsers,
-  listUserRoles,
-  removeOpUser,
-  removeOrgUser,
-  setOrgUserLevel,
-  setOrgUserStatus,
   listSolutions,
   createSolution,
   updateSolution,
@@ -61,47 +48,51 @@ import {
   rollbackConfig,
   rollbackPage,
   putConfig,
-  putSolUser,
-  removeSolUser,
   putOperationConfig,
   putPage,
-  putUserRoles,
   usedStorageBytes,
   validateOperationMenu,
   writeBack,
 } from './host';
+import {
+  opAdminsRouter,
+  opUsersRouter,
+  orgAdminsRouter,
+  solAdminsRouter,
+  userRolesRouter,
+  usersRouter,
+} from './routers/users';
+import {
+  hasConsoleAccess,
+  isOpAdmin,
+  isOrgAdmin,
+  isOrgOwner,
+  requireOpAdmin,
+  requireOpUser,
+  requireOrgAdmin,
+  requirePlatformAdmin,
+  requireSolAdmin,
+} from './gates';
+import {
+  DEFAULT_OPERATION,
+  DEFAULT_ORG,
+  DEFAULT_SOLUTION,
+  operationInput,
+  orgInput,
+  rethrow,
+  solutionInput,
+  t,
+  type AppContext,
+} from './trpc';
 import type { NotifySink } from './services/notify';
+
+// Re-exported so `./router` stays the one import for callers that had them
+// here before the trpc/gates split (app.ts, index.ts, the Lambda/Vercel entries).
+export { DEFAULT_OPERATION, DEFAULT_ORG, DEFAULT_SOLUTION, type AppContext };
 import { consoleNotifySink } from './services/notify';
 import { isPlatformAdmin, stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
 import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
 import type { MenuItem, OperationConfig } from './db/schema';
-
-/** The single demo bundle keeps one id as both its solution and its operation. */
-export const DEFAULT_SOLUTION = 'demo/sdm';
-export const DEFAULT_OPERATION = 'demo/sdm';
-/** The single implicit org (§1) until the auth tier resolves user → org. */
-export const DEFAULT_ORG = 'default';
-
-export interface AppContext {
-  db: Db;
-  sink?: NotifySink;
-  /** The blob store (R2) for `files` presigns; unconfigured when FLUXUS_R2_* is unset. */
-  blob?: BlobStore;
-  /**
-   * The per-request verified identity (RBAC_COMPACT "Auth") — produced by
-   * Auth.authenticate in createApp's createContext. Absent (tests, direct
-   * callers) ⇒ the demo stub.
-   */
-  user?: AuthUser;
-  /** Roles-resolver seam (§0.4); absent ⇒ the stage-1/2 stubs. */
-  roles?: RolesResolver;
-  /**
-   * Whether Neon Auth is configured. RBAC enforcement (the record-type read
-   * filter) is active only when true; the env stub (tests, local dev) leaves
-   * everything open, matching "no auth env ⇒ everything open".
-   */
-  authConfigured?: boolean;
-}
 
 /**
  * Runtime-plane identity for one call: the verified user with `roles`
@@ -115,138 +106,6 @@ async function resolveUser(ctx: AppContext, operationId: string) {
   // Roles resolve on the EMAIL (0015), like every other grant — the auth id
   // only exists once someone has signed in, and grants precede that.
   return { ...user, roles: await roles.runtimeRoles(user.email, operationId) };
-}
-
-/**
- * The entry gate (RBAC_COMPACT "Users", ruled 2026-08-02): may this caller open
- * this operation at all? Distinct from roles — an op user with no roles enters
- * and sees nothing (valid); roles without an op_users row must never grant entry.
- * Enforced here because `resolveUser` is the one choke point every
- * operation-scoped call passes through.
- *
- * **Strict, not dormant** (ruled 2026-08-02): an operation with no op_users
- * admits nobody. Deliberately unlike the record-type/page/sol-user surfaces,
- * which are dormant-until-declared — those ask "what may you see", and an
- * un-configured model staying visible is a reasonable adoption default. This
- * asks "may you enter", and an operation with no users listed has, literally,
- * no users. An empty list is an answer, not an absence of one.
- *
- * No design-plane bypass: someone who builds the solution adds themselves like
- * anyone else. (The sol-user resolver is dormant-open today, so a bypass would
- * make this gate a no-op anyway.)
- *
- * The demo posture (auth unconfigured) is still open — with no identity to
- * check there is nothing to gate on, and local dev would be unusable.
- */
-async function requireOpUser(ctx: AppContext, operationId: string, user: AuthUser): Promise<void> {
-  if (!ctx.authConfigured) return;
-  const email = user.email?.trim().toLowerCase();
-  const row = email ? await getOpUser(ctx.db, { operationId, email }) : null;
-  if (row) return;
-  throw new TRPCError({
-    code: 'FORBIDDEN',
-    message: `You are not a user of operation '${operationId}'`,
-  });
-}
-
-/**
- * ── The admin tiers (RBAC_COMPACT "Administration", ruled 2026-08-02) ─────────
- *
- * Authority has one root — the org admin — and flows **downward only**. No tier
- * appoints its own tier, and there is no sideways delegation. Three checks, one
- * per tier, and they are deliberately NOT nested:
- *
- *   requireOrgAdmin       — org_users.level = 'admin'. Identity: who exists,
- *                           who gets in, who administers.
- *   requireOpAdmin        — op_users.level = 'admin' IN THIS OPERATION.
- *                           Authorization: what they may do once inside.
- *   requireSolUser        — sol_users. The design plane: read (look at the
- *                           model) or write (build it).
- *
- * **An org admin is not implicitly an op admin.** That is the governing split
- * (identity vs authorization) and it is intentional: an org admin who wants to
- * manage roles appoints themselves op admin first. A speed bump, not a wall —
- * the point is that the grant is explicit and auditable rather than ambient.
- * The one crossover is adding a user to an operation, which is an identity
- * question and so accepts either tier; see `users.addOp`. Appointing sol users
- * is org-admin work too — the design plane governs no people.
- *
- * Same env posture as every other check: auth unconfigured ⇒ open, because with
- * no identity there is nothing to gate on.
- */
-async function isOrgAdmin(ctx: AppContext, orgId: string): Promise<boolean> {
-  const email = (ctx.user ?? DEMO_USER).email?.trim().toLowerCase();
-  if (!email) return false;
-  const row = await getOrgUser(ctx.db, { email, orgId });
-  // A suspended admin is not an admin — lifecycle has to bite the tier too, or
-  // suspending an org admin would leave their grants fully live.
-  return row?.level === 'admin' && row.status !== 'suspended';
-}
-
-async function isOpAdmin(ctx: AppContext, operationId: string, orgId: string): Promise<boolean> {
-  const email = (ctx.user ?? DEMO_USER).email?.trim().toLowerCase();
-  if (!email) return false;
-  const row = await getOpUser(ctx.db, { operationId, email, orgId });
-  if (row?.level !== 'admin') return false;
-  // The op grant rides on the pool row, so a suspended/removed pool user loses
-  // it even while the op_users row survives.
-  const pool = await getOrgUser(ctx.db, { email, orgId });
-  return pool !== null && pool.status !== 'suspended';
-}
-
-async function requireOrgAdmin(ctx: AppContext, orgId: string = DEFAULT_ORG): Promise<void> {
-  if (!ctx.authConfigured) return;
-  if (await isOrgAdmin(ctx, orgId)) return;
-  throw new TRPCError({ code: 'FORBIDDEN', message: 'Requires organisation admin' });
-}
-
-/**
- * The platform tier (ruled 2026-08-03) — above every org, and the only caller
- * that may read across them or register a new one. Backed by an env allowlist
- * (`isPlatformAdmin`), not a table; the reasoning is on that function.
- *
- * Note what this check does NOT do: fall open when auth is unconfigured. Every
- * other gate here guards one org's data from that org's own people, so with no
- * identity there is genuinely nothing to gate on. This one guards every org
- * from everyone, and an unconfigured dev machine must not be a machine where
- * anyone can register orgs. Demo posture therefore has no platform plane at
- * all, which is correct — there is nothing to administer.
- */
-async function requirePlatformAdmin(ctx: AppContext): Promise<void> {
-  const email = ctx.user?.email;
-  if (isPlatformAdmin(email)) return;
-  throw new TRPCError({ code: 'FORBIDDEN', message: 'Requires platform admin' });
-}
-
-async function requireOpAdmin(ctx: AppContext, operationId: string, orgId: string = DEFAULT_ORG): Promise<void> {
-  if (!ctx.authConfigured) return;
-  if (await isOpAdmin(ctx, operationId, orgId)) return;
-  throw new TRPCError({ code: 'FORBIDDEN', message: `Requires admin of operation '${operationId}'` });
-}
-
-/**
- * Design-plane check (`sol_users`) for config/page writes — keyed on the
- * solution, because the design plane attaches to the design artifact. The stub
- * resolver answers 'write', so this is open until RBAC stage 2 fills the seam.
- *
- * Two grades: `read` looks at the model, `write` builds it. There is no third —
- * 'admin' collapsed into 'write' (2026-08-02) once the admin tiers took over
- * everything it guarded. Appointing sol users is org-admin work, not something
- * a sol user can do, so no tier appoints its own tier here either.
- */
-const SOL_RANK = { none: 0, read: 1, write: 2 } as const;
-async function requireSolUser(ctx: AppContext, solutionId: string, level: 'read' | 'write'): Promise<void> {
-  // Env stub (no auth) ⇒ design plane open, matching "no auth ⇒ everything
-  // open" (§7). Enforced only when auth is configured (RBAC stage 2 / M5).
-  if (!ctx.authConfigured) return;
-  const user = ctx.user ?? DEMO_USER;
-  const roles = ctx.roles ?? stubRolesResolver;
-  // Email, not id — sol users are appointed from the org pool, whose users may
-  // never have signed in (rekeyed 2026-08-02).
-  const held = await roles.solUserLevel(user.email, solutionId);
-  if (SOL_RANK[held] < SOL_RANK[level]) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: `Requires solution '${level}' on this solution` });
-  }
 }
 
 /**
@@ -297,12 +156,6 @@ function matchesAccept(accept: string[], mime: string, name: string): boolean {
   });
 }
 
-const t = initTRPC.context<AppContext>().create();
-
-const solutionInput = z.string().min(1).default(DEFAULT_SOLUTION);
-const operationInput = z.string().min(1).default(DEFAULT_OPERATION);
-const orgInput = z.string().min(1).default(DEFAULT_ORG);
-
 // Menu shape (schema §5) — validated on operations.putConfig. Deeper validation
 // (page paths resolve to published versions; role ids exist) lands with M4.
 const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
@@ -324,20 +177,6 @@ const operationConfigSchema: z.ZodType<OperationConfig> = z.object({
 const jsonValue: z.ZodType<unknown> = z.lazy(() =>
   z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(jsonValue), z.record(z.string(), jsonValue)]),
 );
-
-function rethrow(err: unknown): never {
-  if (err instanceof SolutionNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
-  if (err instanceof NotImplementedError) throw new TRPCError({ code: 'NOT_IMPLEMENTED', message: err.message });
-  if (err instanceof OperationNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
-  if (err instanceof OrgNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
-  if (err instanceof OrgExistsError) throw new TRPCError({ code: 'CONFLICT', message: err.message });
-  if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
-  if (err instanceof TRPCError) throw err;
-  throw new TRPCError({
-    code: 'BAD_REQUEST',
-    message: err instanceof Error ? err.message : String(err),
-  });
-}
 
 export const appRouter = t.router({
   // Solutions + operations (CONSOLE_RUNTIME_SPEC §2–3): plain auth-tier CRUD,
@@ -369,18 +208,20 @@ export const appRouter = t.router({
       // themselves, which are open when there is no identity to gate on.
       const orgAdmin = ctx.authConfigured ? await isOrgAdmin(ctx, orgId) : true;
       const opAdmin = !scoped ? false : ctx.authConfigured ? await isOpAdmin(ctx, input.operationId!, orgId) : true;
-      // "May use the Console" is DERIVED, never a stored flag: org admin, or a
-      // sol user on any solution. A separate bit could contradict the
-      // grants it summarises, so there isn't one.
-      const console = ctx.authConfigured
-        ? orgAdmin || (u.email ? await isAnySolUser(ctx.db, u.email) : false)
-        : true;
+      // The owner rides along too: they alone appoint org admins, so the
+      // Org admins tab renders its controls off this and nothing else.
+      const orgOwner = ctx.authConfigured ? await isOrgOwner(ctx, orgId) : true;
+      // "May use the Console" is DERIVED, never a stored flag — owner, org
+      // admin, or sol admin of any solution. A separate bit could contradict
+      // the grants it summarises, so there isn't one.
+      const console = await hasConsoleAccess(ctx, orgId);
       return {
         id: u.id,
         name: u.name,
         email: u.email,
         roles: u.roles ?? [],
         authConfigured: ctx.authConfigured === true,
+        orgOwner,
         orgAdmin,
         opAdmin,
         console,
@@ -398,11 +239,10 @@ export const appRouter = t.router({
       .input(z.object({
         orgId: orgInput,
         name: z.string().min(1),
-        contactEmail: z.string().email().nullable().default(null),
       }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await putOrgProfile(ctx.db, input.orgId, { name: input.name, contactEmail: input.contactEmail });
+          await putOrgProfile(ctx.db, input.orgId, { name: input.name });
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
@@ -563,235 +403,15 @@ export const appRouter = t.router({
       }),
   }),
 
-  // User roles, per operation (CONSOLE_RUNTIME_SPEC §2a/§3, RBAC_COMPACT).
-  // **Op admin** (ruled 2026-08-02, was design-plane 'admin' — sol users lose
-  // this): roles answer "what may they do once inside", which is the op admin's
-  // half of the split. Notably an ORG admin is refused here too, deliberately —
-  // they may appoint themselves op admin, and that grant is then explicit.
-  // `roles` reads the linked solution's declared role defs for the picker and
-  // exposes no user data, so it is open.
-  userRoles: t.router({
-    roles: t.procedure
-      .input(z.object({ operationId: operationInput }).default({}))
-      .query(async ({ ctx, input }) => {
-        try {
-          const op = await getOperation(ctx.db, input.operationId);
-          const config = await getSolutionConfig(ctx.db, op.solutionId);
-          return config.access?.roles ?? [];
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    list: t.procedure
-      .input(z.object({ operationId: operationInput }).default({}))
-      .query(async ({ ctx, input }) => {
-        try {
-          const op = await getOperation(ctx.db, input.operationId);
-          await requireOpAdmin(ctx, input.operationId, op.orgId);
-          return await listUserRoles(ctx.db, input.operationId);
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    put: t.procedure
-      .input(z.object({ operationId: operationInput, email: z.string().email(), roleIds: z.array(z.string().min(1)) }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const op = await getOperation(ctx.db, input.operationId);
-          await requireOpAdmin(ctx, input.operationId, op.orgId);
-          await putUserRoles(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-  }),
-
-  // Users (RBAC_COMPACT "Users" + "Administration", ruled 2026-08-02): the org
-  // pool and each operation's user list. Email is the key at both layers — an
-  // invited user has no auth id until first sign-in.
-  //
-  // The grant split follows identity vs authorization. The **org admin** owns
-  // the pool: invite, lifecycle, removal, and appointing admins of any tier. The
-  // **op admin** owns their operation's user list. Solution admins appear
-  // nowhere here — they get no user visibility at all.
-  users: t.router({
-    listOrg: t.procedure
-      .input(z.object({ orgId: z.string().min(1).default(DEFAULT_ORG) }).default({}))
-      .query(async ({ ctx, input }) => {
-        try {
-          // The whole pool is the org admin's view; nobody else sees it.
-          await requireOrgAdmin(ctx, input.orgId);
-          return await listOrgUsers(ctx.db, input.orgId);
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    invite: t.procedure
-      .input(z.object({
-        email: z.string().email(),
-        name: z.string().nullish(),
-        // Appointing an org admin at invite time. Omitted ⇒ plain user, and a
-        // re-invite never demotes an existing admin (see inviteOrgUser).
-        level: z.enum(['admin', 'user']).optional(),
-        orgId: z.string().min(1).default(DEFAULT_ORG),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, input.orgId);
-          await inviteOrgUser(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    removeOrg: t.procedure
-      .input(z.object({ email: z.string().email(), orgId: z.string().min(1).default(DEFAULT_ORG) }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, input.orgId);
-          await removeOrgUser(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    /** Lifecycle: suspend/reinstate. The reversible half of removeOrg — every
-     *  grant survives, but the entry gate and both admin tiers refuse them. */
-    setStatus: t.procedure
-      .input(z.object({
-        email: z.string().email(),
-        status: z.enum(['invited', 'active', 'suspended']),
-        orgId: z.string().min(1).default(DEFAULT_ORG),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, input.orgId);
-          await setOrgUserStatus(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    /** Appoint or demote an org admin. No tier appoints its own tier, so this
-     *  is a deliberate exception to that rule and the only one: the org tier is
-     *  the root of authority, and something has to be able to add a second
-     *  person to it. Bootstrapping the FIRST one is the seed's job. */
-    setOrgLevel: t.procedure
-      .input(z.object({
-        email: z.string().email(),
-        level: z.enum(['admin', 'user']),
-        orgId: z.string().min(1).default(DEFAULT_ORG),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, input.orgId);
-          await setOrgUserLevel(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    listOp: t.procedure
-      .input(z.object({ operationId: operationInput }).default({}))
-      .query(async ({ ctx, input }) => {
-        try {
-          const op = await getOperation(ctx.db, input.operationId);
-          // Either tier: the op admin runs this list, and the org admin has to
-          // see it to put the first person in it.
-          if (ctx.authConfigured && !(await isOpAdmin(ctx, input.operationId, op.orgId)) && !(await isOrgAdmin(ctx, op.orgId))) {
-            throw new TRPCError({ code: 'FORBIDDEN', message: `Requires admin of operation '${input.operationId}'` });
-          }
-          return await listOpUsers(ctx.db, input.operationId);
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    /**
-     * **The escalation rule, in one place.** Adding someone to an operation is
-     * an identity question ("may they enter"), so either admin tier may do it —
-     * but the LEVEL being written decides who:
-     *
-     *   level 'user'  → op admin or org admin
-     *   level 'admin' → org admin only
-     *
-     * So an op admin can staff their operation but can never mint another op
-     * admin, which is the downward-only rule. Every other appointment path
-     * funnels through here, which is why the branch lives at this one call
-     * rather than being spread across the procedures.
-     */
-    addOp: t.procedure
-      .input(z.object({ operationId: operationInput, email: z.string().email(), level: z.enum(['admin', 'user']).default('user') }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const op = await getOperation(ctx.db, input.operationId);
-          if (input.level === 'admin') {
-            await requireOrgAdmin(ctx, op.orgId);
-          } else if (ctx.authConfigured && !(await isOpAdmin(ctx, input.operationId, op.orgId)) && !(await isOrgAdmin(ctx, op.orgId))) {
-            throw new TRPCError({ code: 'FORBIDDEN', message: `Requires admin of operation '${input.operationId}'` });
-          }
-          await addOpUser(ctx.db, { ...input, orgId: op.orgId });
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    removeOp: t.procedure
-      .input(z.object({ operationId: operationInput, email: z.string().email() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const op = await getOperation(ctx.db, input.operationId);
-          await requireOpAdmin(ctx, input.operationId, op.orgId);
-          await removeOpUser(ctx.db, { ...input, orgId: op.orgId });
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-  }),
-
-  // Sol users: who builds a solution, at `read` or `write`. The design-plane
-  // layer of the three (org_users → sol_users → op_users), renamed from
-  // `implementers` 2026-08-02 so one word serves each layer.
-  //
-  // **Org admin** on every procedure: "create solutions and appoint who builds
-  // them" is the root tier's, and the design plane governs no people — a sol
-  // user cannot appoint another, and since the email rekey these rows carry
-  // real identities they have no business seeing.
-  solUsers: t.router({
-    list: t.procedure
-      .input(z.object({ solutionId: solutionInput }).default({}))
-      .query(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
-          return await listSolUsers(ctx.db, input.solutionId);
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    put: t.procedure
-      .input(z.object({ solutionId: solutionInput, email: z.string().email(), level: z.enum(['read', 'write']) }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
-          await putSolUser(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-    remove: t.procedure
-      .input(z.object({ solutionId: solutionInput, email: z.string().email() }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
-          await removeSolUser(ctx.db, input);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
-  }),
+  // Users, admins and roles (USERS.md) — one router per list, each governed by
+  // one tier. The whole surface lives in ./routers/users.ts; the gates it reads
+  // are in ./gates.ts.
+  users: usersRouter,
+  orgAdmins: orgAdminsRouter,
+  solAdmins: solAdminsRouter,
+  opAdmins: opAdminsRouter,
+  opUsers: opUsersRouter,
+  userRoles: userRolesRouter,
 
   config: t.router({
     get: t.procedure
@@ -807,7 +427,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, config: z.unknown() }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireSolUser(ctx, input.solutionId, 'write');
+          await requireSolAdmin(ctx, input.solutionId);
           // The solution's default runtime menu (§5, amended 2026-07-26) rides
           // in the config artifact; the engine stays menu-blind, so its shape
           // and references are validated here — same §5 rules as the operation
@@ -831,7 +451,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, readme: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireSolUser(ctx, input.solutionId, 'write');
+          await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
           return await publishConfig(ctx.db, input.solutionId, input.readme, publishedBy);
         } catch (err) {
@@ -848,7 +468,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, version: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireSolUser(ctx, input.solutionId, 'write');
+          await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
           return await rollbackConfig(ctx.db, input.solutionId, input.version, `Rollback to v${input.version}`, publishedBy);
         } catch (err) {
@@ -883,14 +503,14 @@ export const appRouter = t.router({
     put: t.procedure
       .input(z.object({ solutionId: solutionInput, path: z.string().min(1), def: z.unknown() }))
       .mutation(async ({ ctx, input }) => {
-        await requireSolUser(ctx, input.solutionId, 'write');
+        await requireSolAdmin(ctx, input.solutionId);
         await putPage(ctx.db, input.solutionId, input.path, input.def ?? {});
         return { ok: true as const };
       }),
     delete: t.procedure
       .input(z.object({ solutionId: solutionInput, path: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
-        await requireSolUser(ctx, input.solutionId, 'write');
+        await requireSolAdmin(ctx, input.solutionId);
         await deletePage(ctx.db, input.solutionId, input.path);
         return { ok: true as const };
       }),
@@ -900,7 +520,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, path: z.string().min(1), readme: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireSolUser(ctx, input.solutionId, 'write');
+          await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
           return await publishPage(ctx.db, input.solutionId, input.path, input.readme, publishedBy);
         } catch (err) {
@@ -913,7 +533,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          await requireSolUser(ctx, input.solutionId, 'read');
+          await requireSolAdmin(ctx, input.solutionId);
           return (await listPublishedPages(ctx.db, input.solutionId)).map((p) => p.path).sort();
         } catch (err) {
           rethrow(err);
@@ -928,7 +548,7 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, path: z.string().min(1), version: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
         try {
-          await requireSolUser(ctx, input.solutionId, 'write');
+          await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
           return await rollbackPage(ctx.db, input.solutionId, input.path, input.version, `Rollback to v${input.version}`, publishedBy);
         } catch (err) {

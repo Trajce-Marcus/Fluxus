@@ -1,10 +1,10 @@
 # Users, admins and roles
 
-**Agreed 2026-08-04. This is the target model, not what is built.** The built
-system still carries the 2026-08-02 shape (`org_users` / `sol_users` /
-`op_users`, each with a `level` column); §6 lists exactly what changes.
-[RBAC_COMPACT.md](RBAC_COMPACT.md) remains the technical source of truth and is
-rewritten onto this model when the migration lands.
+**Agreed and BUILT 2026-08-04** — migration 0016, `packages/server/src/users/`,
+and the Console screens in `packages/console/src/platform-components/users/`.
+§6 records what changed from the 2026-08-02 shape it replaced.
+[RBAC_COMPACT.md](RBAC_COMPACT.md) is the technical source of truth and has been
+rewritten onto this model; build notes are in each package's `docs/phases/`.
 
 ---
 
@@ -31,9 +31,22 @@ else — no level, no authority, no access.
   auth id binds on first sign-in and flips *invited* → *active*.
 - **Invite only, no signup.** Replaced later by a directory integration; the
   email key is what makes that swap cheap.
-- **Suspension is here**, so it bites everywhere at once: a suspended person is
-  not an admin anywhere and enters nothing, while every grant survives for
-  reinstatement. Removal is the destructive counterpart and drops every grant.
+- **Lifecycle is here**, so it bites everywhere at once. Two ways to end
+  someone's access, and the difference is what survives:
+  - **suspended** — a reversible pause. Every grant survives, so reinstating is
+    one act; meanwhile they are no admin anywhere and enter nothing.
+  - **expired** — the end of the relationship. Every grant is dropped, and
+    `expired_at` records when. Unexpiring brings the person back as a plain
+    member with **nothing**; they are appointed again from scratch.
+- **Nobody is ever deleted** (2026-08-04). Deleting a person deleted nothing they
+  had *done* — record history, the activity projection and the publish trails are
+  append-only and carry no foreign keys — but it deleted the only row that could
+  say who they *were*: `author` on a history entry is an auth id, and
+  `users.auth_user_id` is the only bridge from that id to a name. An append-only
+  audit trail that quietly stops being readable is not one. So expiry replaced
+  removal outright rather than joining it: two terminal paths, one of which
+  silently damages the trail, is a choice nobody should have to make correctly
+  under pressure.
 
 ## 3. Administration
 
@@ -77,9 +90,8 @@ and the owner invites (they appoint org admins). **Sol admins do not**: a person
 is needed either *for an operation* or *to build another solution*, and neither
 appointment is theirs to make, so neither is the invitation.
 
-Lifecycle — suspend and remove — stays with the org admin: it is org-wide and
-destructive, and it is the one user-facing act that is not a side effect of a
-grant.
+Lifecycle — suspend and expire — stays with the org admin: it is org-wide, and
+it is the one user-facing act that is not a side effect of a grant.
 
 **An admin row implies entry.** An op admin can open the operation they
 administer without a separate op-user row — an administrator who cannot open the
@@ -138,9 +150,26 @@ an ordinary user in a fourth, with no notion of a "sol admin account" existing
 anywhere. This is what *one population, then grants* means in the schema, and it
 repeats identically at every level.
 
-*Names proposed, not yet endorsed:* `users`, `org_admins`, `sol_admins`,
-`op_admins`, and whatever column carries the owner (`orgs.owner_email` is the
-obvious one, but `orgs.contact_email` already exists and may just become it).
+*Built as proposed (migration 0016):* `users`, `org_admins`, `sol_admins`,
+`op_admins`, plus **`orgs.owner_email`**, seeded from `contact_email`.
+`contact_email` was then **dropped** (migration 0018): registration set both to
+the same address, so they were born identical and only ever drifted, and nothing
+read the contact for behaviour. The owner is the org's contact address until
+billing exists to give a separate one a meaning. Names remain open per §10.
+
+### Expiry, not deletion (2026-08-04, migration 0017)
+
+`users.status` gains **`expired`** and the row gains **`expired_at`**. `remove`
+is gone from the API and the store; `expire` and `unexpire` replace it. Signing
+in does **not** resurrect an expired person — a live session must not undo an
+administrator's decision — and suspension is refused on one, because there is
+nothing to pause.
+
+Still open, deliberately: `author` on a history entry is the **auth id** while
+every user table is keyed on **email**. Every other table moved to email in
+migrations 0012/0015; this one did not. Fixing it would let authorship join the
+pool directly, but it means rewriting existing history entries — its own
+decision, and expiry does not depend on it.
 
 ## 6. What changes from what is built
 
@@ -153,12 +182,36 @@ obvious one, but `orgs.contact_email` already exists and may just become it).
 | Org owner is not a level — the first org admin, remembered as `orgs.contact_email` | Owner is a real thing on the org row, and is **not** implicitly an org admin |
 | Org admin adds op users and appoints op admins | Org admin appoints **op admins only**; ordinary users are the op admin's to add |
 | Only org admins invite | Op admins, org admins and the owner invite — whoever may appoint may also invite. Sol admins never invite. Invitation stays a separate step from appointment. |
-| `platform.registerOrg` writes org + first org admin | Writes org + **owner** |
+| `platform.registerOrg` writes org + first org admin | Writes org + **owner** + the owner's `users` row — the organisation's first user |
 
 Console consequences: the Organisation → Users screen loses its per-row
 *Org admin* toggle (that becomes an org-admins list, appointed by the owner) and
 the operation's *Op admin* checkbox moves to the org admin's operation-creation
 path. The op users table and its add-user dialog survive as they are.
+
+### The screens this implies
+
+**Agreed 2026-08-04.** One pattern, repeated at every tier: a Users screen shows
+the tier above it **read-only**, the list it governs **editable**, and an
+**Invite** button. Invite only ever adds a person to the organisation's user list
+— it carries no admin connotation anywhere it appears; every appointment is made
+in the list it belongs to.
+
+| Screen | Tabs | Editable by |
+|---|---|---|
+| **Organisation → Users** | *All users* (suspend, reinstate, remove) · *Org admins* · *Sol admins*, by solution | org admin; the *Org admins* tab, the owner alone |
+| **Solution → Users** | *Sol admins* (read-only here) · *Op admins* for this solution's operations | org admin |
+| **Operation → Users** | *Op admins* (read-only here) · *Op users*, with their roles | op admin |
+
+Sol admins are appointed at the **organisation**, not inside the solution they
+build: appointing one is an act of the org admin's authority, and the org's user
+screens are where that authority is exercised. The open solution shows them so
+its own screen answers "who builds this" without leaving — and shows them
+read-only for the same reason. This reverses an earlier placement (the solution
+was to own the list) in favour of the uniform pattern.
+
+Sol admins see none of these screens; the solution's Users item is not rendered
+for them.
 
 ## 7. Starting an organisation
 
@@ -167,12 +220,28 @@ chain cannot start itself (no signup, and a fresh operation admits nobody), so
 the first row has to come from outside the request path. The owner is then told
 **manually**; automated notification comes later.
 
+**Registering an org creates the owner as its first user** (agreed 2026-08-04):
+one `users` row, named on the org row as owner, and no grants. Nobody invites the
+owner — there is nobody there to do it — so the act that creates the org creates
+the person. They can then sign in, appoint the first org admins, and appoint
+themselves one if they intend to do ordinary org-admin work.
+
+**Console access is derived, never a flag.** It follows from being the owner, an
+org admin, or a sol admin of any solution. The owner's derivation is what makes
+the first appointment reachable: signing in as owner with no grants opens
+Organisation → Users and nothing else.
+
 `npm run bootstrap` stays as lockout recovery and the first admin on a fresh
 deployment.
 
 **Deferred, deliberately** (2026-08-04): how an owner is changed or transferred,
 and how platform admins are managed beyond the env allowlist. Neither blocks
 anything; both get worked out when something actually needs them.
+
+Until transfer exists, `owner_email` is **not writable through the org profile**.
+Editing the org is org-admin work, and an org admin who could write that column
+would promote themselves to the root that appoints org admins. Org → Settings
+edits the name and shows the owner read-only.
 
 ## 8. Walk-throughs
 
@@ -205,9 +274,15 @@ population, then grants.
 
 ## 10. Open
 
-1. **Naming**, per §5.
+1. **Naming**, per §5 — the table names shipped as proposed (`users`,
+   `org_admins`, `sol_admins`, `op_admins`), and `orgs.owner_email` was added
+   and **replaced** `contact_email`, which migration 0018 dropped. Still open
+   for renaming.
 2. Nothing shows **which operations a person belongs to** from the user list.
-   Worth adding once the model settles.
+   No procedure returns the join; deliberately left out of the build. The first
+   thing to add if the pool screen feels blind.
 3. An op admin can invite someone and never place them, leaving a user with no
    grants. Harmless — they can do nothing — but the user list should make
    "invited, placed nowhere" easy to see so it does not accumulate quietly.
+4. The organisation's **Sol admins** tab lists every solution's admins grouped by
+   solution. With a large catalogue that wants filtering or paging.

@@ -6,7 +6,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteOrgUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
@@ -62,7 +62,7 @@ beforeAll(async () => {
   ]);
   await putUserRoles(db, { operationId: OP, email: 'u1@example.com', roleIds: ['role_a'] });
   for (const email of ['u1@example.com', 'u2@example.com']) {
-    await inviteOrgUser(db, { email });
+    await inviteUser(db, { email });
     await addOpUser(db, { operationId: OP, email });
   }
 });
