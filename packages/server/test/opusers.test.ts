@@ -21,6 +21,7 @@ import {
   bindAuthUser,
   bootstrapOrgAdmin,
   ensureOperation,
+  ensureOrg,
   ensureSolution,
   getOwnerEmail,
   inviteUser,
@@ -64,6 +65,8 @@ const emails = (rows: { email: string }[]) => rows.map((r) => r.email);
 
 beforeEach(async () => {
   db = await createDb();
+  // Nothing installs an org any more, so the tenancy under test is built here.
+  await ensureOrg(db, 'default', 'Op Users Org');
   await ensureSolution(db, SOL, 'Op users');
   await putConfig(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Op users');
@@ -287,10 +290,19 @@ describe('bootstrap: the first org admin', () => {
     expect(await isOpUser(db, { operationId: OP, email: 'boss@example.com' })).toBe(true);
   });
 
+  it('refuses an organisation that does not exist rather than inventing one', async () => {
+    // Recovery promotes someone inside a tenancy; creating the tenancy is
+    // platform.registerOrg's job. Nothing prepopulates an org, so bootstrapping
+    // into a missing one has to fail loudly instead of reporting success after
+    // updating no rows.
+    await expect(bootstrapOrgAdmin(db, { email: 'boss@example.com', orgId: 'no-such-org' }))
+      .rejects.toThrow(/does not exist/i);
+  });
+
   it('claims ownership only of an organisation that has none', async () => {
     // Without an owner nobody may appoint org admins — the tier above is empty,
     // so recovery has to fill it. An org that HAS one is left alone: transfer is
-    // a deliberate act, never a side effect of re-running a seed.
+    // a deliberate act, never a side effect of re-running it.
     await bootstrapOrgAdmin(db, { email: 'boss@example.com' });
     expect(await getOwnerEmail(db)).toBe('boss@example.com');
     const second = await bootstrapOrgAdmin(db, { email: 'other@example.com' });

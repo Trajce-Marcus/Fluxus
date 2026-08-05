@@ -15,7 +15,9 @@
 //   - the owner is claimed only if the org has none, never taken from someone;
 //   - operations and solutions are opened ONLY where nobody administers them
 //     yet. Something already governed is already governed, and silently
-//     re-granting yourself entry on every seed would make the gates meaningless.
+//     re-granting yourself entry on every run would make the gates meaningless.
+//
+// It promotes someone into an org that exists; it never creates the org.
 //
 // Returns what it did, so the caller can say so rather than claim success.
 
@@ -37,13 +39,25 @@ export async function bootstrapOrgAdmin(db: Db, input: { email: string; name?: s
   const orgId = input.orgId ?? DEFAULT_ORG_ID;
   const email = normaliseEmail(input.email);
 
+  // The org must already exist. Recovery promotes someone inside a tenancy; it
+  // does not invent one — no migration installs a 'default' org any more
+  // (2026-08-05), so on a truly empty database `platform.registerOrg` comes
+  // first. Without this check the ownership claim below would quietly update
+  // zero rows and report success on an org that isn't there.
+  const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  if (!org) {
+    throw new Error(
+      `Organisation '${orgId}' does not exist — register it first (platform.registerOrg), then bootstrap an admin into it.`,
+    );
+  }
+
   await inviteUser(db, { orgId, email, name: input.name });
   await db.insert(orgAdmins).values({ orgId, email }).onConflictDoNothing();
 
   // An org with no owner has nobody who may appoint org admins — the tier above
   // this one is empty, so recovery has to fill it. An org that HAS an owner is
-  // left alone: ownership transfer is a deliberate act, not a side effect of
-  // re-running a seed script.
+  // left alone: ownership transfer is a deliberate act, never a side effect of
+  // re-running this.
   const claimed = await db
     .update(orgs)
     .set({ ownerEmail: email })

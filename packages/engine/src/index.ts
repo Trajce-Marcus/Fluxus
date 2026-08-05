@@ -66,7 +66,6 @@ export type {
   RoleDef,
   ReverseRefEntry,
   RunActivityResult,
-  SeedGroup,
   WorkflowDef,
   WorkflowRawDef,
 } from './types';

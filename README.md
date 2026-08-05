@@ -11,7 +11,7 @@ Most app builders treat the data model as a byproduct of each app — every app 
 | Package | What it is |
 |---|---|
 | [`@fluxus/console`](packages/console/) | The design plane: author the SDM, build pages, host the workbench, administer operations, roles and publishing. |
-| [`@fluxus/runtime`](packages/runtime/) | The runtime plane: what end users sign into — their operation's menu and its published pages. Carries the sample asset-maintenance model ("Aber") as seed input. |
+| [`@fluxus/runtime`](packages/runtime/) | The runtime plane: what end users sign into — their operation's menu and its published pages. Carries the sample asset-maintenance model ("Aber") as test fixture and reference. |
 | [`@fluxus/platform`](packages/platform/) | The platform plane: our own app, above every org — registers organisations and their owners. Usage and billing land here later. |
 
 **Libraries** — mounted by the apps:
@@ -52,10 +52,11 @@ npm run dev                # server + both apps together
 npm run dev:server         # required by both apps        → http://localhost:8787
 npm run dev:runtime        # Runtime app                  → http://localhost:5173
 npm run dev:console        # Console                      → http://localhost:5174
-npm run seed:server        # load the demo SDM once
 ```
 
 Records, config and pages live in `@fluxus/server` (Postgres — PGlite locally, Neon deployed); the apps fetch a snapshot at boot and run every activity server-side. There is no localStorage fallback: if the server is down, boot fails loudly.
+
+**Nothing is prepopulated** (ruled 2026-08-05). A fresh database has no orgs, no solutions, no pages and no records — there is no seed script and no migration installs sample content. Register an org (`platform.registerOrg`, via `@fluxus/platform`), then author a solution in the Console; `npm run bootstrap` appoints the first admin into an org that already exists. A "create a sample solution" action may be built later, but it will be something you ask for, never something that installs itself.
 
 ## Project structure
 

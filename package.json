@@ -11,7 +11,6 @@
     "dev:console": "npm run dev --workspace=@fluxus/console",
     "dev:platform": "npm run dev --workspace=@fluxus/platform",
     "dev:server": "npm run dev --workspace=@fluxus/server",
-    "seed:server": "npm run seed --workspace=@fluxus/server",
     "bootstrap": "npm run bootstrap --workspace=@fluxus/server --",
     "db:migrate": "npm run db:migrate --workspace=@fluxus/server",
     "build:runtime": "npm run build --workspace=@fluxus/runtime",

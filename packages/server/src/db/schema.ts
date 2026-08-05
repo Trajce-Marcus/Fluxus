@@ -276,8 +276,9 @@ export const sdmConfigs = pgTable('sdm_configs', {
 // pages have had since M3 (ruled 2026-07-26). Same posture as page_versions:
 // append-only and immutable, publish snapshots the current draft `sdm_configs`
 // row at `max(version)+1` with release notes, rollback republishes an older
-// config as a NEW version. This is what replaces git as the model's history
-// now that the repo config files are demoted to a bootstrap fixture.
+// config as a NEW version. This is what replaces git as the model's history:
+// the repo's config files install nothing (no seed path since 2026-08-05) —
+// they are test fixture and future sample-solution material only.
 export const sdmConfigVersions = pgTable('sdm_config_versions', {
   solutionId: text('solution_id').notNull(),
   version: integer('version').notNull(),
@@ -289,9 +290,9 @@ export const sdmConfigVersions = pgTable('sdm_config_versions', {
   primaryKey({ columns: [t.solutionId, t.version] }),
 ]);
 
-// Page definitions ride the config pipeline (ruled 2026-07-16): server is
-// runtime truth, repo page files are the deploy input (seed upserts them —
-// deploying pages = deploying files). One row per page so the page builder
+// Page definitions ride the config pipeline (ruled 2026-07-16): the server is
+// runtime truth and pages are authored in the Console — no repo file installs
+// one (the demo page went with the seed script, 2026-08-05). One row per page so the page builder
 // saves a single page without touching the SDM config blob. `def` is opaque
 // jsonb here: PageDef and validatePage live in the page builder (a host);
 // the server never depends on a peer host.

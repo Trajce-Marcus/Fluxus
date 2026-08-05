@@ -117,7 +117,7 @@ function DataTab() {
           'Archiving — move closed records out of the working set',
           'Retention rules, per record type',
           "Export a snapshot of the operation's data",
-          'Import / seed from a snapshot',
+          'Import from a snapshot',
           'Purge, with the same confirm-by-typing as a solution delete',
         ]} />
       </div>

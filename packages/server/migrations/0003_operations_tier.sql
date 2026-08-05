@@ -28,8 +28,9 @@ ALTER INDEX "records_scope_type" RENAME TO "records_operation_type";--> statemen
 ALTER INDEX "rpt_activities_scope_record" RENAME TO "rpt_activities_operation_record";--> statement-breakpoint
 ALTER INDEX "rpt_activities_scope_activity" RENAME TO "rpt_activities_operation_activity";--> statement-breakpoint
 -- Backfill the single implicit solution + operation for any existing bundle
--- (the live 'demo/sdm' deployment). Fresh dev DBs have no configs yet — the
--- seed script creates these rows instead. Idempotent via ON CONFLICT.
+-- (the live 'demo/sdm' deployment). Pure backfill: it reads rows that already
+-- exist, so a fresh database — which has no configs — gets nothing from it.
+-- Idempotent via ON CONFLICT.
 INSERT INTO "solutions" ("id", "name")
 	SELECT DISTINCT "solution_id", 'Demo' FROM "sdm_configs"
 	ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint

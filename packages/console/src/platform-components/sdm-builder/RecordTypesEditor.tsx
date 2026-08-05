@@ -9,6 +9,17 @@ import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'fk_ref'];
 
+/** `rt_assets` from "Assets" — the §1 id convention, entities plural. */
+function recordTypeId(name: string): string {
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return slug ? `rt_${slug}` : '';
+}
+
+/** The New dialog's own state — a record type is only appended to the draft
+ *  once it has an id, a name and a workflow, so a half-typed one never sits in
+ *  the list waiting to fail the save. */
+interface NewDraft { id: string; name: string; description: string; workflow_ref: string }
+
 export function RecordTypesEditor() {
   const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
   const [sel, setSel] = useState(0);
@@ -17,6 +28,9 @@ export function RecordTypesEditor() {
   const [dirty, setDirty] = useDirty();
   // Which remove is armed — the button asks once before it bites.
   const [armed, setArmed] = useState(false);
+  // Panel filter — a mature solution has too many types to scan by eye.
+  const [filter, setFilter] = useState('');
+  const [dialog, setDialog] = useState<NewDraft | null>(null);
 
   const rts = draft.recordTypes;
   const cur: RecordTypeDef | undefined = rts[sel];
@@ -33,9 +47,20 @@ export function RecordTypesEditor() {
   function editFields(next: CustomFieldDef[]) {
     edit({ custom_fields: next });
   }
-  function add() {
-    setRts([...rts, { id: 'rt_', name: '', description: '', workflow_ref: workflows[0]?.id ?? '', custom_fields: [] }]);
+  function openNew() {
+    setDialog({ id: '', name: '', description: '', workflow_ref: workflows[0]?.id ?? '' });
+  }
+  /** Append the dialog's record type, then show it — clearing the filter, or
+   *  the thing just created could land outside the visible list. */
+  function commitDialog() {
+    if (!dialog) return;
+    const name = dialog.name.trim();
+    const id = (dialog.id.trim() || recordTypeId(name)).trim();
+    if (!name || !id || !dialog.workflow_ref) return;
+    setRts([...rts, { id, name, description: dialog.description.trim(), workflow_ref: dialog.workflow_ref, custom_fields: [] }]);
+    setFilter('');
     select(rts.length);
+    setDialog(null);
   }
   /** Selection moves disarm a pending remove. */
   function select(i: number) {
@@ -68,13 +93,28 @@ export function RecordTypesEditor() {
 
   const idErr = idProblems(rts.map((r) => r.id));
 
+  // The dialog's id follows the name until the user types one of their own.
+  const dialogId = dialog && !dialog.id ? recordTypeId(dialog.name) : dialog?.id ?? '';
+  const duplicateId = !!dialogId && rts.some((r) => r.id === dialogId);
+
+  // Filtering keeps each type's real index: `sel` indexes the draft, not the
+  // visible subset, so hiding a row must not renumber the selection.
+  const q = filter.trim().toLowerCase();
+  const shown = rts
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !q || `${r.name} ${r.id} ${r.description ?? ''}`.toLowerCase().includes(q));
+
   return (
     <>
       {/* The list is the shell's inner panel (M17); it lists the *draft*, so a
           rename or an addition shows before it is saved. */}
-      <InnerPanel title="Record types" actions={<button className="panel-btn" onClick={add}>New</button>}>
+      <InnerPanel title="Record types" actions={<button className="panel-btn" onClick={openNew}>New</button>}>
+        {rts.length > 0 && (
+          <input className="panel-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search record types…" />
+        )}
         {rts.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
-        {rts.map((r, i) => (
+        {rts.length > 0 && shown.length === 0 && <p className="panel-empty">No match for “{filter.trim()}”.</p>}
+        {shown.map(({ r, i }) => (
           <PanelItem key={i} name={r.name || '(unnamed)'} sub={r.id || '(new)'} active={i === sel} onClick={() => select(i)} />
         ))}
       </InnerPanel>
@@ -121,7 +161,7 @@ export function RecordTypesEditor() {
                     );
                   })}
                 </div>
-                <p className="admin-muted">None checked ⇒ open (no read restriction).</p>
+                <p className="admin-muted">None checked ⇒ nobody reads this type. Reads are default-deny once roles exist.</p>
               </div>
             )}
 
@@ -172,6 +212,41 @@ export function RecordTypesEditor() {
           <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save record types'}</button>
         </div>
       </div>
+
+      {/* Creation is a popup over the list, never an inline blank row (ruled
+          2026-08-04) — and it collects the fields the engine requires up front
+          rather than appending an invalid type and hoping. */}
+      {dialog && (
+        <div className="admin-overlay" onClick={() => setDialog(null)}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="admin-modal-title">New record type</h3>
+            <p className="admin-sub">
+              An entity this solution's model tracks. Custom fields are added afterwards, on the type itself.
+            </p>
+            <div className="admin-modal-form">
+              <label className="admin-field"><span>Name</span>
+                <input value={dialog.name} onChange={(e) => setDialog({ ...dialog, name: e.target.value })} placeholder="Assets" autoFocus /></label>
+              <label className="admin-field"><span>Id</span>
+                <input className="admin-mono" value={dialogId} onChange={(e) => setDialog({ ...dialog, id: e.target.value })} placeholder="rt_assets" />
+                <span className="admin-muted">Records store the id — renaming it later is blocked once records exist.</span></label>
+              <label className="admin-field"><span>Description</span>
+                <input value={dialog.description} onChange={(e) => setDialog({ ...dialog, description: e.target.value })} /></label>
+              <label className="admin-field"><span>Workflow</span>
+                <select value={dialog.workflow_ref} onChange={(e) => setDialog({ ...dialog, workflow_ref: e.target.value })}>
+                  {!dialog.workflow_ref && <option value="" disabled>(select a workflow)</option>}
+                  {workflows.map((w) => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}
+                </select></label>
+              {duplicateId && <div className="admin-error">A record type with id ‘{dialogId}’ already exists.</div>}
+              {workflows.length === 0 && <div className="admin-error">Define a workflow first — every record type must resolve one.</div>}
+              <div className="admin-row admin-modal-actions">
+                <button className="admin-btn" onClick={commitDialog}
+                  disabled={!dialog.name.trim() || !dialogId || !dialog.workflow_ref || duplicateId}>Add record type</button>
+                <button className="admin-link" onClick={() => setDialog(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

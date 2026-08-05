@@ -21,7 +21,7 @@
 // Callers here carry emails, and a caller with none can never match a row.
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { appointOrgAdmin, appointSolAdmin, ensureOperation, ensureSolution, inviteUser, putConfig } from '../src/host';
+import { appointOrgAdmin, appointSolAdmin, ensureOperation, ensureOrg, ensureSolution, inviteUser, putConfig } from '../src/host';
 import { createDb, type Db } from '../src/db/client';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
@@ -43,6 +43,8 @@ const denied = /admin of this solution/;
 
 beforeAll(async () => {
   db = await createDb();
+  // Nothing installs an org any more, so the tenancy under test is built here.
+  await ensureOrg(db, 'default', 'Sol Admins Org');
   // Invite first, appoint second — the order is the model, and appointment
   // refuses anyone the organisation does not know.
   await inviteUser(db, { email: 'boss@example.com' });

@@ -10,8 +10,8 @@ written synchronously in-transaction.
 **Status:** backend stage 3 — headless invocation live with tests, both
 browser hosts repointed here via `@fluxus/client` (partition snapshot in,
 `activities.run` out; hooks + persistence server-side only), and page
-definitions stored here too (`pages` table on the config pipeline; the seed
-script pushes the page files under `page-builder/pages/`). Neon is live
+definitions stored here too (`pages` table on the config pipeline; authored in
+the Console — nothing installs pages). Neon is live
 (schema via drizzle-kit migrations; local dev reads `.env` for
 `DATABASE_URL`). Deploy target is **Vercel** (`src/vercel.ts` bundled by
 `npm run build:vercel` + `vercel.json`; decision + seam rules in root
@@ -20,11 +20,15 @@ script pushes the page files under `page-builder/pages/`). Neon is live
 ## Run
 
 ```bash
-npm run seed --workspace=@fluxus/server   # bootstrap an EMPTY db with the demo (skip-if-present; --force to overwrite)
 npm run bootstrap -- you@example.com "Your Name"   # first org admin (root or this package; idempotent, safe on prod)
 npm run dev  --workspace=@fluxus/server   # http://localhost:8787, tRPC at /trpc
 npm test     --workspace=@fluxus/server   # acceptance tests on in-memory PGlite
 ```
+
+A migrated database is **empty** — no orgs, solutions, pages or records, by
+ruling (2026-08-05). There is no seed script: register an org through
+`platform.registerOrg`, then `npm run bootstrap` promotes the first admin into
+it (it refuses an org that does not exist rather than inventing one).
 
 No `DATABASE_URL` → PGlite persisted to `.data/`. Set `DATABASE_URL` to any
 Postgres (Neon) to use it instead — same schema, same queries.

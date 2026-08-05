@@ -44,49 +44,5 @@
         "after_hook": null
       }
     ]
-  },
-  "seeds": [
-    {
-      "id": "s_newtown",
-      "fields": {
-        "name": "Newtown",
-        "city_id": "c_syd"
-      }
-    },
-    {
-      "id": "s_manly",
-      "fields": {
-        "name": "Manly",
-        "city_id": "c_syd"
-      }
-    },
-    {
-      "id": "s_parramatta",
-      "fields": {
-        "name": "Parramatta",
-        "city_id": "c_syd"
-      }
-    },
-    {
-      "id": "s_fitzroy",
-      "fields": {
-        "name": "Fitzroy",
-        "city_id": "c_mel"
-      }
-    },
-    {
-      "id": "s_stkilda",
-      "fields": {
-        "name": "St Kilda",
-        "city_id": "c_mel"
-      }
-    },
-    {
-      "id": "s_newfarm",
-      "fields": {
-        "name": "New Farm",
-        "city_id": "c_bne"
-      }
-    }
-  ]
+  }
 }

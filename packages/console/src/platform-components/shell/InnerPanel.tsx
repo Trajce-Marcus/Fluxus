@@ -154,4 +154,20 @@ export const css = `
   }
   .panel-btn:hover { background: rgba(255,255,255,0.06); }
   .panel-empty { padding: 8px 9px; font-size: 0.76rem; color: var(--color-text-muted); }
+
+  /* List filter — a section with more items than fit renders one above its
+     list, inside the panel body so it scrolls with nothing and stays put. */
+  .panel-filter {
+    width: 100%;
+    margin-bottom: 6px;
+    padding: 4px 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 0.76rem;
+  }
+  .panel-filter::placeholder { color: var(--color-text-muted); }
+  .panel-filter:focus { outline: none; border-color: var(--color-accent); }
 `;

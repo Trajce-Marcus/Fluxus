@@ -195,9 +195,10 @@ describe('listOrgs', () => {
     await as(vendor).platform.registerOrg({ id: 'beta', name: 'Beta', ownerEmail: 'b@beta.com' });
     await as(vendor).platform.registerOrg({ id: 'alpha', name: 'Alpha', ownerEmail: 'a@alpha.com' });
 
-    // 'default' is the migration-installed org every database starts with.
+    // Exactly the two just registered: a database starts with no orgs at all
+    // (the migration stopped installing a 'default' one on 2026-08-05).
     const rows = await as(vendor).platform.listOrgs();
-    expect(rows.map((r) => r.id)).toEqual(['alpha', 'beta', 'default']); // by name
-    expect(await listOrgs(db)).toHaveLength(3);
+    expect(rows.map((r) => r.id)).toEqual(['alpha', 'beta']); // by name
+    expect(await listOrgs(db)).toHaveLength(2);
   });
 });

@@ -171,8 +171,10 @@ export interface RecordTypeDef {
   id_field?: string;
   custom_fields: CustomFieldDef[];
   /** RBAC read surface (RBAC_COMPACT): role ids that may read this type.
-   *  Absent/empty ⇒ open. Enforced server-side (partition filter), never in
-   *  script env. */
+   *  **Default deny** — absent/empty means no role reads it, not "open". The
+   *  only open posture is a solution that declares no `access.roles` at all,
+   *  which switches RBAC off wholesale. Enforced server-side (partition
+   *  filter), never in script env. */
   access?: { read?: string[] };
 }
 
@@ -196,20 +198,12 @@ export interface FunctionDef {
   body: string | string[];
 }
 
-// Demo/sample records shipped with an entity file; loaded only when the store
-// has no records of that type yet.
-export interface SeedGroup {
-  typeId: string;
-  records: { id: string; fields: Record<string, unknown> }[];
-}
-
 // Raw config — matches the JSON on disk exactly
 export interface ConfigRaw {
   attributes: AttributeDef[];
   recordTypes: RecordTypeDef[];
   workflows: WorkflowRawDef[];
   functions?: FunctionDef[];
-  seeds?: SeedGroup[];
   /** Solution-scoped RBAC role definitions (RBAC_COMPACT). Absent ⇒ RBAC
    *  dormant (adoption posture): all record types/pages read open. */
   access?: { roles?: RoleDef[] };

@@ -8,17 +8,17 @@ It renders whatever solution the caller's operation runs; end users see the solu
 
 **Status:** M15 shape — published pages only. Pages render via [`@fluxus/page-runtime`](../page-runtime/). FluxScript hooks live: before-hook gates and transactional after-hook effects (DSL Phase 2 — see [ROADMAP](../../docs/ROADMAP.md)). Raw record access, running any activity, CSV import and the Schema Navigator are implementer work and live in the workbench, mounted by the **Console**.
 
-The package still carries the sample asset-maintenance model ("Aber") in [config/](config/) — shared pools (`attributes.json`, `functions.json`) plus one file per entity (record type + workflow) under `config/entities/`, merged into one `ConfigRaw` by [src/config.ts](src/config.ts). It is the **seed script's input** (`@fluxus/server` reads it), not what the running app loads: the app fetches config from the server. The model is config; the runtime is generic. (File layout is POC-era convenience — the endgame is the SDM in a database, edited through UI.)
+The package still carries the sample asset-maintenance model ("Aber") in [config/](config/) — shared pools (`attributes.json`, `functions.json`) plus one file per entity (record type + workflow) under `config/entities/`, merged into one `ConfigRaw` by [src/config.ts](src/config.ts). It is **test fixture and reference material only** — nothing installs it into a database (the seed script and every other prepopulation path went on 2026-08-05), and it is not what the running app loads: the app fetches config from the server. The model is config; the runtime is generic. (File layout is POC-era convenience — the endgame is the SDM in a database, edited through UI.)
 
 ## Run
 
 ```bash
 npm run dev          # from repo root: server + Runtime app + Console together
 # or individually: npm run dev:server (required) + npm run dev:runtime
-# → http://localhost:5173 (server at :8787; seed the demo SDM once with npm run seed:server)
+# → http://localhost:5173 (server at :8787)
 ```
 
-Since backend stage 2 (2026-07-12) records live in `@fluxus/server` (Postgres): the app boots by fetching the scope's stored config + partition via `@fluxus/client` and runs every activity server-side — there is no localStorage fallback, so if the server is down, boot fails loudly. Config changes under [config/](config/) reach the server via `npm run seed:server` (config.put upserts; seed records load only for empty types).
+Since backend stage 2 (2026-07-12) records live in `@fluxus/server` (Postgres): the app boots by fetching the scope's stored config + partition via `@fluxus/client` and runs every activity server-side — there is no localStorage fallback, so if the server is down, boot fails loudly. A fresh database holds nothing: author a solution in the Console, and create records by running activities. Editing [config/](config/) changes the test fixture, not any database.
 
 ## Docs
 

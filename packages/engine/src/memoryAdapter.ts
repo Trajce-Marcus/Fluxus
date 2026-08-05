@@ -3,15 +3,13 @@ import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, Recor
 import { joinScript } from './bridge';
 
 // THE Store: all reference-Store behaviour (workflow resolution, constraint
-// checks, staged mutation halves, seeding) with no storage attached. Every
-// host runs one — browser hosts fill it from @fluxus/client's snapshot; the
-// server host loads a scope's partition into one per request, runs the sync
-// engine against it, and writes the diff back to Postgres (partition-fetch +
-// filter made literal). Storage-backed subclasses may override persist().
+// checks, staged mutation halves) with no storage attached. Every host runs
+// one — browser hosts fill it from @fluxus/client's snapshot; the server host
+// loads a scope's partition into one per request, runs the sync engine against
+// it, and writes the diff back to Postgres (partition-fetch + filter made
+// literal). Storage-backed subclasses may override persist().
 export interface MemoryAdapterOptions {
   initialRecords?: Iterable<readonly [string, RecordInstance]>;
-  /** Load config seed records for types that have none yet. */
-  seed?: boolean;
 }
 
 export class MemoryAdapter implements Store {
@@ -84,31 +82,10 @@ export class MemoryAdapter implements Store {
     }
 
     this.records = new Map(options.initialRecords ?? []);
-    if (options.seed) this.seedRecords(config);
   }
 
   /** Persistence hook, called after every mutation — no-op in memory. */
   protected persist(): void {}
-
-  // Load an entity file's sample records, but only for types that have no
-  // records yet — user data is never touched or duplicated.
-  protected seedRecords(config: ConfigRaw): void {
-    let seeded = false;
-    for (const group of config.seeds ?? []) {
-      const hasAny = [...this.records.values()].some(r => r.typeRef === group.typeId);
-      if (hasAny) continue;
-      for (const seed of group.records) {
-        this.records.set(seed.id, {
-          id: seed.id,
-          typeRef: group.typeId,
-          customFields: seed.fields,
-          activityHistory: [],
-        });
-        seeded = true;
-      }
-    }
-    if (seeded) this.persist();
-  }
 
   // For record types with id_field set, rename any record whose stored id doesn't
   // match the natural key value, then patch FK references pointing at the old ids.

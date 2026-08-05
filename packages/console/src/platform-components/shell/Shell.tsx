@@ -9,7 +9,7 @@ import { css as pagesSectionCss } from '../page-builder/PagesSection';
 import { css as adminViewCss } from '../admin/AdminView';
 import { css as sdmViewCss } from '../sdm-builder/SdmView';
 
-// Demo-page seeding moved to api.ts (backend stage 2): savePage validates
+// Page bootstrapping moved to api.ts (backend stage 2): savePage validates
 // against the fetched SDM config, so it must run after initSdmRuntime — not
 // at module load.
 

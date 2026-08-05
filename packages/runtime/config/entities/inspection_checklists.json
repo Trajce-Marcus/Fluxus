@@ -203,19 +203,5 @@
         ]
       }
     ]
-  },
-  "seeds": [
-    {
-      "id": "etp_001",
-      "fields": {
-        "id": "etp_001",
-        "checklist_no": "ETP-001",
-        "work_area": "Switchroom — Level 1",
-        "site_location": "12 Harbour St, Sydney",
-        "client": "Acme Constructions",
-        "contract_id": "",
-        "status": "Raised"
-      }
-    }
-  ]
+  }
 }

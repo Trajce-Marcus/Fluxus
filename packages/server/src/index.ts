@@ -7,8 +7,6 @@ import { serve } from '@hono/node-server';
 import { createDb } from './db/client';
 import { createApp } from './app';
 import { createAuth } from './auth';
-import { getSolutionConfig } from './host';
-import { DEFAULT_SOLUTION } from './router';
 import { createBlobStore } from './services/blob';
 
 // Local dev convenience: load packages/server/.env if present so `npm run dev`
@@ -21,12 +19,6 @@ if (!process.env.DATABASE_URL) {
 const db = await createDb({ dataDir: process.env.PGLITE_DATA_DIR ?? '.data/fluxus' });
 const auth = createAuth();
 const app = createApp({ db, blob: createBlobStore(), auth });
-
-try {
-  await getSolutionConfig(db, DEFAULT_SOLUTION);
-} catch {
-  console.log(`No SDM config stored for solution '${DEFAULT_SOLUTION}' yet — run \`npm run seed\` to load the demo SDM.`);
-}
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port });

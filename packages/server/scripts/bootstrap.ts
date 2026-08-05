@@ -8,12 +8,15 @@
 // that would invite the first person. Something outside the request path has to
 // write the first row. This is that something.
 //
-// Deliberately SEPARATE from `npm run seed`. The seed installs the demo bundle
-// (solution, config, pages, records) and is for an empty database; this is safe
-// to point at production, because all it writes is one pool row and op-admin
-// rows in operations that currently have no users at all. It is idempotent, so
-// it doubles as the lockout recovery tool — which is exactly what a migration
-// could not be.
+// This is the ONLY script that writes to a database — the seed script and every
+// other prepopulation path was deleted on 2026-08-05, so nothing installs
+// solutions, pages or records for you. It is safe to point at production,
+// because all it writes is one pool row and op-admin rows in operations that
+// currently have no users at all. It is idempotent, so it doubles as the
+// lockout recovery tool — which is exactly what a migration could not be.
+//
+// It promotes someone into an org that already exists (register one with
+// platform.registerOrg first); it never creates the org.
 //
 //   FLUXUS_ORG_ADMIN_EMAIL=you@example.com npm run bootstrap
 //   npm run bootstrap -- you@example.com "Your Name"
@@ -23,8 +26,8 @@ import { closeDb, createDb } from '../src/db/client';
 import { bootstrapOrgAdmin } from '../src/host';
 import { DEFAULT_ORG } from '../src/router';
 
-// Match the dev server and the seed: DATABASE_URL from .env (Neon) when
-// present, else PGlite.
+// Match the dev server: DATABASE_URL from .env (Neon) when present, else
+// PGlite.
 if (!process.env.DATABASE_URL) {
   try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); } catch { /* no .env → PGlite */ }
 }

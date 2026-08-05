@@ -22,6 +22,7 @@ import {
   appointOrgAdmin,
   appointSolAdmin,
   ensureOperation,
+  ensureOrg,
   ensureSolution,
   inviteUser,
   listOpAdmins,
@@ -63,6 +64,9 @@ const forbidden = /Requires (organisation admin|admin of operation|the organisat
 
 beforeEach(async () => {
   db = await createDb();
+  // No migration invents an org any more, so the tenancy under test is built
+  // here — ownership hangs off this row.
+  await ensureOrg(db, 'default', 'Tiers Org');
   await ensureSolution(db, SOL, 'Tiers');
   await putConfig(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Tiers');

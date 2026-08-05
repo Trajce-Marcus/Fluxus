@@ -180,9 +180,11 @@ to the bundle): schema changes are applied from a dev machine with
 `npm run db:migrate` **before** pushing code that needs them. `DATABASE_URL`
 (Neon
 **pooled** connection string) is set in the Vercel project's environment
-variables. Region `syd1` lives in `vercel.json`. Seeding
-(`npm run seed:server`) runs from a dev machine against the same
-`DATABASE_URL` — the interim config-authoring loop is unchanged.
+variables. Region `syd1` lives in `vercel.json`. **A migrated database is
+empty** (ruled 2026-08-05): there is no seed step, and no deploy installs
+content. Register the first org through `@fluxus/platform`, then
+`npm run bootstrap -- you@example.com` against the same `DATABASE_URL` to
+appoint its first admin; everything else is authored in the Console.
 
 ## Blob storage — Cloudflare R2 (files & photos)
 

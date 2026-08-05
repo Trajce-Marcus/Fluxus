@@ -1,4 +1,4 @@
-import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef, SeedGroup } from '@fluxus/engine';
+import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
 
 // The SDM is split for hand-editing: shared pools (attributes, functions) plus
 // one file per entity (record type + its workflow, always edited as a pair).
@@ -28,7 +28,6 @@ import samples from '../config/entities/samples.json';
 interface EntityFile {
   recordType: RecordTypeDef;
   workflow: WorkflowRawDef;
-  seeds?: { id: string; fields: Record<string, unknown> }[];
 }
 
 // Order here is display order in the workbench sidebar.
@@ -50,14 +49,9 @@ const entities = [
   samples,
 ] as unknown as EntityFile[];
 
-const seeds: SeedGroup[] = entities
-  .filter((e) => e.seeds && e.seeds.length > 0)
-  .map((e) => ({ typeId: e.recordType.id, records: e.seeds! }));
-
 export const config: ConfigRaw = {
   attributes: attributes as unknown as AttributeDef[],
   recordTypes: entities.map((e) => e.recordType),
   workflows: entities.map((e) => e.workflow),
   functions: functions as ConfigRaw['functions'],
-  seeds,
 };

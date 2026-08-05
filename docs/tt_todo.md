@@ -43,14 +43,18 @@ _(empty — add freely)_
   bindings since DSL Phase 2); the doc doesn't exist. GRAMMAR.md + DSL_SPEC.md
   are spec, not tutorial.
 - [ ] **Config authoring flow** — narrowed further by stage 2 (2026-07-12):
-  both hosts now read config from the server; local `config.ts` is only the
-  seed script's input (`npm run seed:server` = the interim authoring loop:
-  edit files → push up). Stage 3 (2026-07-16) added pages to the same loop:
-  `page-builder/pages/*.json` are deploy-input files the seed upserts
-  (deploying pages = deploying files); the page builder itself authors
-  straight against the server. The authoring tool/flow proper (AI-assisted
-  editing against a running server) is the still-open "config distribution"
-  thread on the ROADMAP.
+  both hosts read config from the server. **Narrowed to a point 2026-08-05**:
+  the file-push loop is gone with the seed script — `runtime/config/` is test
+  fixture only, `console/pages/` is deleted, and the Console is now the *only*
+  way a config or page reaches a database. What is left of this item is the
+  authoring tool/flow proper (AI-assisted editing against a running server),
+  the still-open "config distribution" thread on the ROADMAP.
+- [ ] **Sample solution (create-on-request)** — added 2026-08-05 alongside the
+  prepopulation removal. An explicit action ("give me a worked example") that
+  stands up a demo solution, and if it creates records does so by running
+  activities. Raw material is the SDM under `packages/runtime/config/` and the
+  demo page in git history. The rule that makes it acceptable: someone asks for
+  it, once, by name — it never installs itself.
 - [ ] **PII field flag → hashing** (much later; added 2026-07-14). In a record
   type def, flag a custom field as PII so its value is protected at rest.
   Feasibility: doable as a field flag, but "hashed" (one-way) only supports

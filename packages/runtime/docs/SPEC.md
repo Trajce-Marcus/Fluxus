@@ -5,7 +5,7 @@ Current design truth for the **Runtime app** — the runtime-plane app end users
 The package was `@fluxus/sdm` until the 2026-08-01 restructure. Two things left it and one thing stayed:
 
 - **Gone to [`@fluxus/workbench`](../../workbench/docs/SPEC.md)** — the `<Workbench>` component and everything record-shaped: the UI tree, the attribute capture forms and widgets, the FluxScript form wiring (show conditions, required, validation, waivers, list datasources), the operation picker, the Schema Navigator, and the workbench's service composition. This package no longer exports a library face at all: **apps never import apps.**
-- **Stayed here** — the Runtime app itself, plus the demo asset-maintenance config in [config/](../config/) (the seed script's input) and the SDM/pipeline doctrine below, which is model-level truth rather than app behaviour.
+- **Stayed here** — the Runtime app itself, plus the demo asset-maintenance config in [config/](../config/) (test fixture and reference only — nothing installs it) and the SDM/pipeline doctrine below, which is model-level truth rather than app behaviour.
 
 ## Model
 
@@ -39,7 +39,11 @@ Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost
 
 **Services in the demo config (DSL Phase 3).** Two modules back the shipped scripts — `notify` (effect: `user`, `email`) and `geo` (read: `suburbsOf`, implemented in `@fluxus/engine`; it backs the suburb `List` datasource, so the city → suburb dependent picker exercises a service call end to end). `validateConfig` passes the registry, so the config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification dispatches only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Since backend stage 2 that hook runs **server-side**, so the dispatch lands on the server's notify sink (process console), not this app's bell — see the dormant-bell note under Architecture. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring"). Where each host composes its own sink: this app's is `src/services/notify.ts` → `src/store/NotificationLog.ts`; the workbench keeps a separate dormant copy ([workbench SPEC](../../workbench/docs/SPEC.md)).
 
-**Seeds:** an entity file may carry `seeds` (sample records); they load only when the store has no records of that type. Cities/suburbs ship seeded so the location picker works out of the box. Since backend stage 2 seeding happens server-side at `config.put` (same semantics); `npm run seed:server` pushes this package's config up.
+**No seeds (2026-08-05).** Entity files used to carry a `seeds` block — sample records loaded into any store that had none of that type, cities/suburbs among them so the location picker worked out of the box. It is gone: config, `ConfigRaw.seeds`, the `MemoryAdapter` loader, and the server's `seedOperationRecords`. It was a second write path into records, straight past activities, for demo convenience only — the one thing the invariant below forbids. An operation now starts empty and every record in it arrives through an activity; a store built from config alone holds nothing. Tests that need data build it themselves (`test/dsl-wiring.test.ts` pins a location fixture; the server's headless test raises its anchors through their own activities).
+
+**And nothing else is prepopulated either.** The same day, the removal went the rest of the way: the seed script is deleted (with `npm run seed` / `npm run seed:server`), so nothing pushes this package's config or any page into a database, and no migration installs a demo org. [config/](../config/) is **test fixture and reference material** — the source of truth for a solution is the database, authored through the Console. Full account in the [server SPEC](../../server/docs/SPEC.md) under "Nothing is prepopulated".
+
+Reference data (cities, suburbs, checklists) therefore has to be entered like anything else. If loading it in bulk is worth solving, it gets built deliberately as an import that runs activities — not by reviving a bypass. A "create a sample solution" action may be built later; the rule is that it runs when asked for by name, never on its own.
 
 ## The pipeline is the log (design direction, agreed July 2026 — not yet built)
 
@@ -87,8 +91,8 @@ Activity history is append-only and never edited, so **cancel can never mean del
 
 ```
 config/{attributes,functions}.json + config/entities/*.json
-  └── config.ts (merges to one typed ConfigRaw — the seed script's input only;
-        the running app reads config from the server)
+  └── config.ts (merges to one typed ConfigRaw — test fixture only, installed
+        nowhere; the running app reads config from the server)
 
 src/host.ts (backend stage 2): FluxusClient.connect() → scope config +
         partition snapshot in the engine's MemoryAdapter;
@@ -105,7 +109,7 @@ src/host.ts (backend stage 2): FluxusClient.connect() → scope config +
 
 The package has **no library face** since the 2026-08-01 restructure: `src/index.ts` and `"main"` are gone with the workbench, and no package imports this one. Apps never import apps.
 
-- The Store-contract seam paid off at backend stage 2 (2026-07-12): hosts swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a partition re-fetch. This package keeps the demo config (as seed input), the Runtime shell, and its own `NotificationLog` + notify sink (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
+- The Store-contract seam paid off at backend stage 2 (2026-07-12): hosts swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a partition re-fetch. This package keeps the demo config (as test fixture), the Runtime shell, and its own `NotificationLog` + notify sink (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
 - **Notification bell is dormant since stage 2**: hooks (and their `queue services.notify.*`) execute server-side, where the sink is the process console. The bell + `NotificationLog` stay wired (manifest still validates) and come back to life with the unified-log design.
 
 ## UI
@@ -128,7 +132,7 @@ Header (identity line, notification bell, user menu)
 
 **Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` (the role-filtered effective menu, `client.visibleMenu()`) is primary; without a menu (demo/adoption posture) the pages listing is the fallback. *Amended M15:* the record-type list is gone from this nav entirely — it belongs to `<Workbench>` now — and so is the "Workbench" menu item.
 
-**Identity line (M13, 2026-07-27):** the header answers who you work for, which app you are in, whose data it runs on, who you are, and whose platform this is. Left: **org name** `·` **solution name** (`.app-org` / `.app-header-sep` / `.app-title`). Right, before the toggles: the **operation name** as a context chip (`.op-chip`) — display-only, since switching operations in-session needs a memberships list that does not exist. All three come off `FluxusClient` (`orgName` / `solutionName` / `operationName`, resolved at connect from `operations.get`). Platform attribution is one **"Powered by Fluxus"** line pinned to the foot of the nav (`.powered-by`; `.side-panel` is now a column with a scrolling `.side-panel-nav`) — at the edge, never competing with the tenant's branding in the bar. Demo tenancy names come from the seed: Northwind Utilities / Asset Maintenance / Western Region.
+**Identity line (M13, 2026-07-27):** the header answers who you work for, which app you are in, whose data it runs on, who you are, and whose platform this is. Left: **org name** `·` **solution name** (`.app-org` / `.app-header-sep` / `.app-title`). Right, before the toggles: the **operation name** as a context chip (`.op-chip`) — display-only, since switching operations in-session needs a memberships list that does not exist. All three come off `FluxusClient` (`orgName` / `solutionName` / `operationName`, resolved at connect from `operations.get`). Platform attribution is one **"Powered by Fluxus"** line pinned to the foot of the nav (`.powered-by`; `.side-panel` is now a column with a scrolling `.side-panel-nav`) — at the edge, never competing with the tenant's branding in the bar. Names come from the tenancy's own rows — nothing installs a demo org, solution or operation any more (2026-08-05), so each is whatever its admin named it, falling back to the id when a row is missing.
 
 **Workbench out of the Runtime app (M15, 2026-07-27 — BUILT; CONSOLE_RUNTIME_SPEC §4):** the Runtime app renders published pages only. Raw record access, running any activity, CSV import and the schema navigator are design-plane work, so the whole cluster collapsed into `<Workbench client user? />` and moved to the Console, where it mounts as a solution-level tab against the M9 data operation. What changed here:
 

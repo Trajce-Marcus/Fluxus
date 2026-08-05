@@ -53,7 +53,7 @@ src/host.ts            — loadOperationHost (resolve operation → solution, th
                          load) / writeBack (diff + projection) / putConfig;
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
-                         putOperationConfig/seedOperationRecords)
+                         putOperationConfig)
 src/router.ts          — the tRPC router: orgs.get/putProfile,
                          solutions.list/create/update/delete,
                          operations.list/get/create/putConfig, config.get/put,
@@ -72,7 +72,9 @@ src/vercel.ts          — prod entry (hono/vercel; requires DATABASE_URL);
                          with vercel.json the only Vercel-specifics by ruling
 src/services/notify.ts — server notify module (manifest identical to the
                          workbench's; pluggable NotifySink, console default)
-scripts/seed.ts        — dev tooling: demo SDM → putConfig (see below)
+scripts/bootstrap.ts   — the only script that writes: promotes the first org
+                         admin into an existing org (lockout recovery)
+scripts/migrate.ts     — applies drizzle-kit migrations against DATABASE_URL
 ```
 
 ## The API surface
@@ -191,8 +193,7 @@ takes `operationId?` (both default `demo/sdm`):
   admin of anything. Never a stored flag. The owner's derivation is what makes
   the first appointment reachable on a fresh org, where nobody holds a grant.
 - **Bootstrap** — `bootstrapOrgAdmin(db, { email })`, exposed as
-  `npm run bootstrap` and called by `npm run seed` when
-  `FLUXUS_ORG_ADMIN_EMAIL` is set. No signup plus a strict entry gate means the
+  `npm run bootstrap`. No signup plus a strict entry gate means the
   chain cannot start itself: after migration 0010, an operation admits nobody,
   including the Console, which reaches an operation through the same gate as the
   Runtime — so nobody can open the screen that would invite the first person.
@@ -204,8 +205,11 @@ takes `operationId?` (both default `demo/sdm`):
   are upserted (promotion is the point); ownership is claimed **only** if the org
   has none (transfer is a deliberate act, never a side effect); and `op_admins` /
   `sol_admins` rows are written **only** where nobody administers that operation
-  or solution yet. It is safe against production precisely because it is separate
-  from `seed`, which installs the demo bundle.
+  or solution yet. It is safe against production because that is all it writes:
+  since 2026-08-05 it is the **only** script that writes anything, and it
+  installs no content. It also **requires the org to exist** — recovery promotes
+  someone inside a tenancy, it never invents one, so on an empty database
+  `platform.registerOrg` comes first.
 
   **Superseded for every org but the first (2026-08-03)**: `platform.registerOrg`
   now writes an org and its owner in one act inside the request path, so the
@@ -303,9 +307,9 @@ takes `operationId?` (both default `demo/sdm`):
   any error-severity `validateConfig` finding, or (2026-07-26) a record-type
   id that stored records still reference — the config must survive the data it
   already governs: mutation is activity-only, so orphaned `typeRef`s would be
-  unreachable forever. Config is solution-plane and owns no records;
-  demo-record seeding moved to `seedOperationRecords` (called against an
-  operation by the seed script), not `config.put`. Since M10 the artifact may
+  unreachable forever. Config is solution-plane and owns no records, and since
+  2026-08-05 nothing else puts records in an operation either (see "Nothing is
+  prepopulated" below). Since M10 the artifact may
   carry a top-level **`default_menu`** (§5 amended — the solution's default
   runtime navigation, inherited by operations unless overridden): the engine
   stays menu-blind, so `put` validates it here — §5 shape, published-page +
@@ -315,10 +319,10 @@ takes `operationId?` (both default `demo/sdm`):
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
   builder, and the server never depends on a peer host, so unlike `config.put`
-  there is no save-time validation here. `put` is an unconditional upsert —
-  the seed script pushes every `*.json` under `page-builder/pages/`, so
-  deploying pages = deploying files and files win over live edits; unlike
-  record seeds, pages are never user data. `list` `{ solutionId?, published? }`
+  there is no save-time validation here. `put` is an unconditional upsert, and
+  the only caller is the Console: pages are authored artifacts, and no repo file
+  installs one (the "deploying pages = deploying files" posture and the demo
+  page file both went on 2026-08-05). `list` `{ solutionId?, published? }`
   has **two modes** (M3): draft (Console — the `pages` rows) vs published
   (Runtime — latest `page_versions` per path). `@fluxus/client` snapshots one
   set at connect per its `pages` mode.
@@ -498,9 +502,8 @@ for pages (M3) and `sdm_config_versions` for the model. Both append-only with
 required release notes; rollback republishes rather than deleting. One
 difference: `rollbackConfig` also restores the older config **as the draft**,
 because the config draft is what every host evaluates against, whereas a page
-draft is the builder's working copy. The repo files the seed script reads are a
-bootstrap fixture for an empty database, never authority — `npm run seed` is
-skip-if-present (`--force` overwrites from the files on purpose).
+draft is the builder's working copy. Nothing installs a config or a page: a
+migrated database is empty and stays empty until someone authors into it.
 
 DDL is drizzle-kit migrations (`migrations/`, generated from `schema.ts` via
 `npm run db:generate`): `createDb()` applies outstanding migrations
@@ -542,12 +545,45 @@ ceiling and per-attribute `max_size_mb`/`accept` at presign, the environment
 fuse (ledger `SUM(size)`), and a Cloudflare billing notification as backstop.
 Read ops (thumb fetches) are unreachable at POC scale against the free tier.
 
-## Config distribution (interim)
+## Nothing is prepopulated (ruled 2026-08-05)
 
-`scripts/seed.ts` imports the sdm workbench's demo config and stores it via
-`putConfig`. That cross-package import is dev tooling only — the server
-runtime never depends on a peer host. Config distribution proper (authoring
-against a running server) stays an open thread on the root ROADMAP.
+**A migrated database is empty.** No orgs, no solutions, no operations, no
+pages, no records. There is no seed script, no bootstrap fixture, and no
+migration that installs content. Everything arrives the way a real tenant's
+would: an org through `platform.registerOrg`, a solution through
+`solutions.create`, a page through the Console, a record through an activity.
+
+What was removed, and why each had to go:
+
+| Removed | What it did | Why |
+|---|---|---|
+| `scripts/seed.ts` (+ `npm run seed`, `npm run seed:server`) | Installed a demo org/solution/operation, the repo's SDM config, the demo page, and demo records | A database that fills itself is a database whose contents nobody chose |
+| `seedOperationRecords` + `ConfigRaw.seeds` | Inserted demo records into an operation's partition | A second write path into records, straight past activities — the pipeline invariant allows none |
+| `INSERT` in migration `0008_orgs` | Invented `('default', 'Northwind Utilities')` | A migration's job is schema; inventing a tenant row is seeding |
+| `packages/console/pages/work-orders-demo.json` | The demo page the seed pushed | Pages are authored, not shipped |
+
+Two things deliberately stayed, because neither installs content:
+
+- **`scripts/bootstrap.ts`** — promotes the first org admin into an org that
+  already exists (and now refuses one that doesn't). It is the answer to a
+  strict entry gate, not a content installer, and it remains the lockout
+  recovery tool.
+- **Backfill `INSERT`s in migrations `0003` and `0016`** — they `SELECT` from
+  rows that already exist and rewrite them into new tables. On a fresh database
+  they insert nothing.
+
+**Sample content later is an explicit action.** A "create a sample solution"
+function may well be built — the repo's demo SDM under
+`packages/runtime/config/` is kept as its raw material (and as test fixture).
+The rule is that it runs because someone asked for it, once, by name; it never
+installs itself, and if it creates records it does so by running activities.
+
+### Config distribution (interim)
+
+The cross-package import of the demo config now exists only in
+`test/headless.test.ts` — dev tooling, never the server runtime, which depends
+on no peer host. Config distribution proper (authoring against a running
+server) is the Console, and remains an open thread on the root ROADMAP.
 
 ## Known gaps (deliberate)
 

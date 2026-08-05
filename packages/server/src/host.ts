@@ -41,19 +41,19 @@ export interface OperationHost {
 
 export class SolutionNotFoundError extends Error {
   constructor(solutionId: string) {
-    super(`No SDM config stored for solution '${solutionId}' — put one via config.put (or npm run seed)`);
+    super(`No SDM config stored for solution '${solutionId}' — author one in the Console, or put one via config.put`);
   }
 }
 
 export class OperationNotFoundError extends Error {
   constructor(operationId: string) {
-    super(`No operation '${operationId}' — create one in the Console (or npm run seed)`);
+    super(`No operation '${operationId}' — create one in the Console`);
   }
 }
 
 export class OrgNotFoundError extends Error {
   constructor(orgId: string) {
-    super(`No org '${orgId}' — the workspace is not onboarded (or npm run seed)`);
+    super(`No org '${orgId}' — the workspace is not onboarded; register it via platform.registerOrg`);
   }
 }
 
@@ -400,9 +400,11 @@ export async function listPublishedPages(db: Db, solutionId: string): Promise<{ 
 // Plain auth-tier reads/writes — no SDM, no activities. The Console admin
 // surfaces are built by hand over these helpers.
 
-// Bootstrap upserts. M9 demoted the seed to skip-if-present for *content*
-// (config, records); display names are not content, so these refresh the name
-// on conflict — renaming the demo tenancy stays a one-line seed edit.
+// Idempotent upserts, used by tests and `scripts/bootstrap.ts` to stand a
+// tenancy up. Nothing in the request path calls them and no script installs
+// content with them any more (the seed script went with all other
+// prepopulation, 2026-08-05) — orgs arrive via platform.registerOrg,
+// solutions via solutions.create, operations via operations.create.
 export async function ensureOrg(db: Db, id: string, name: string): Promise<void> {
   await db.insert(orgs).values({ id, name }).onConflictDoUpdate({ target: orgs.id, set: { name } });
 }
@@ -537,8 +539,8 @@ export async function getSolutionName(db: Db, solutionId: string): Promise<strin
  *  build a solution only if you are appointed to it), so a solution created with
  *  an empty list would be one nobody can build, including the person who just
  *  made it. Creating a solution and appointing its first admin are one act, the
- *  same rule the org tier follows. `createdBy` absent (seed, tests, demo
- *  posture) ⇒ no row, and nothing to be locked out of. */
+ *  same rule the org tier follows. `createdBy` absent (tests, demo posture)
+ *  ⇒ no row, and nothing to be locked out of. */
 export async function createSolution(db: Db, input: { id: string; name: string; orgId?: string; createdBy?: string | null }): Promise<void> {
   await db.insert(solutions).values({ id: input.id, name: input.name, orgId: input.orgId ?? 'default' });
   if (input.createdBy) {
@@ -687,33 +689,6 @@ export function pageOpenable(authConfigured: boolean | undefined, config: Config
 // it touching the SDM or the engine. Re-exported so callers keep one import.
 export * from './users';
 
-/**
- * Seed the config's demo records into an operation partition — dev bootstrap
- * only (moved out of putConfig, which is solution-plane and owns no records).
- * Each seed group loads only if the operation has no records of that type yet,
- * so user data is never touched.
- */
-export async function seedOperationRecords(db: Db, operationId: string, config: ConfigRaw): Promise<void> {
-  for (const group of config.seeds ?? []) {
-    if (group.records.length === 0) continue;
-    const existing = await db
-      .select({ id: records.id })
-      .from(records)
-      .where(and(eq(records.operationId, operationId), eq(records.typeRef, group.typeId)))
-      .limit(1);
-    if (existing.length > 0) continue;
-    await db.insert(records).values(
-      group.records.map((seed) => ({
-        operationId,
-        id: seed.id,
-        typeRef: group.typeId,
-        customFields: seed.fields,
-        activityHistory: [] as ActivityHistoryEntry[],
-      })),
-    );
-  }
-}
-
 // ── Config storage ────────────────────────────────────────────────────────────
 
 export class ConfigValidationError extends Error {
@@ -727,8 +702,8 @@ export class ConfigValidationError extends Error {
  * stored artifact and "config-save-time validation" becomes literal. The
  * server rejects an invalid SDM at save, for humans and AI alike (same
  * guardrail posture as validatePage in the page builder). Config is
- * solution-plane and owns no records; demo-record seeding lives in
- * seedOperationRecords, called against an operation by the seed script.
+ * solution-plane and owns no records — an operation starts empty and every
+ * record in it arrives through an activity, with no seeding path around that.
  */
 export async function putConfig(db: Db, solutionId: string, config: ConfigRaw, sink: NotifySink = consoleNotifySink): Promise<void> {
   // Structural check first — MemoryAdapter resolves every attribute_ref and

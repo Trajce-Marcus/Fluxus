@@ -11,10 +11,10 @@ The **Console** — the design-plane app (`src/main.tsx`): where implementers au
 ```bash
 npm run dev                # from repo root: server + Runtime app + Console together
 # or individually: npm run dev:server (required) + npm run dev:console
-# → http://localhost:5174 (server at :8787; seed the demo SDM once with npm run seed:server)
+# → http://localhost:5174 (server at :8787)
 ```
 
-Since backend stage 2 (2026-07-12) SDM records live in `@fluxus/server`, shared with the Runtime app; the app boots by fetching the config + records via `@fluxus/client` and runs activities server-side. Opening a solution binds it to one of its **operations** — picked in the workbench's own side menu (ruled 2026-07-31) — so the model editor and page preview show the same records the workbench shows. Since backend stage 3 (2026-07-16) page definitions live on the server too (`pages` table, snapshot at connect, saves round-trip); the database is the source of truth and files under [pages/](pages/) only bootstrap an empty one. No localStorage anywhere (bar UI preferences).
+Since backend stage 2 (2026-07-12) SDM records live in `@fluxus/server`, shared with the Runtime app; the app boots by fetching the config + records via `@fluxus/client` and runs activities server-side. Opening a solution binds it to one of its **operations** — picked in the workbench's own side menu (ruled 2026-07-31) — so the model editor and page preview show the same records the workbench shows. Since backend stage 3 (2026-07-16) page definitions live on the server too (`pages` table, snapshot at connect, saves round-trip); the database is the source of truth and nothing prepopulates it — a fresh one has no solution and no pages until you author them here (the demo page file and the seed script that installed it went on 2026-08-05). No localStorage anywhere (bar UI preferences).
 
 `VITE_FLUXUS_RUNTIME_URL` points at the deployed Runtime app — **Operations → Open** launches `${VITE_FLUXUS_RUNTIME_URL}/?operation=<id>` in a new tab (dev default `http://localhost:5173`).
 

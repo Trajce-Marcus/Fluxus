@@ -42,28 +42,5 @@
         "after_hook": null
       }
     ]
-  },
-  "seeds": [
-    {
-      "id": "c_syd",
-      "fields": {
-        "name": "Sydney",
-        "state": "NSW"
-      }
-    },
-    {
-      "id": "c_mel",
-      "fields": {
-        "name": "Melbourne",
-        "state": "VIC"
-      }
-    },
-    {
-      "id": "c_bne",
-      "fields": {
-        "name": "Brisbane",
-        "state": "QLD"
-      }
-    }
-  ]
+  }
 }

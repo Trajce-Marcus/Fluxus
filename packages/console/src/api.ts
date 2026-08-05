@@ -8,8 +8,9 @@ import { initSdmRuntime } from './sdm-runtime/engine';
 // SDM runtime bootstraps here: fetch the scope's config + partition + pages
 // from @fluxus/server before anything renders. Kicked off at module load;
 // every mount awaits it. Hard cutover by ruling: server unreachable → error
-// text in the mount element, no localStorage fallback. The demo page is a
-// repo file (pages/work-orders-demo.json) pushed by the server seed script.
+// text in the mount element, no localStorage fallback. Nothing is installed
+// for you: a fresh database has no solution, no pages and no records until
+// someone authors them here.
 const sdmReady = initSdmRuntime();
 
 type PropsMap = Record<string, unknown>;
@@ -84,7 +85,7 @@ window.MyComponents = {
         mountPoint.innerHTML =
           `<h2 style="margin:0 0 8px">Can't reach the Fluxus server</h2>` +
           `<p style="color:#64748b">The page builder needs <code>@fluxus/server</code> running — start it with ` +
-          `<code>npm run dev:server</code> (and seed the demo SDM once with <code>npm run seed:server</code>).</p>` +
+          `<code>npm run dev:server</code>.</p>` +
           `<pre style="background:#f8fafc;padding:12px;border-radius:6px;white-space:pre-wrap"></pre>`;
         mountPoint.querySelector('pre')!.textContent = err instanceof Error ? err.message : String(err);
       });

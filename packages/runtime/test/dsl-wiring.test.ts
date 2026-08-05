@@ -1,7 +1,11 @@
 // Headless acceptance tests for the DSL ↔ SDM wiring:
-// real config, real MemoryAdapter (config-seeded), real evaluator.
+// real config, real MemoryAdapter, real evaluator.
 // Phase 1: the city → suburb dependent datasource.
 // Phase 2: the Complete Work Order hook pair (before gate, after effects).
+//
+// The location data the datasource tests query is a fixture built here. The
+// SDM ships no records — a store starts empty and everything in it arrives
+// through an activity — so a test that needs data makes its own.
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { evaluateExpression, executeScript, FluxFailError } from '@fluxus/dsl';
@@ -19,6 +23,20 @@ beforeAll(() => {
   } as Storage;
 });
 
+// Cities and suburbs carry no id_field, so the fixture pins ids explicitly —
+// the datasource assertions below match suburbs to cities by FK value.
+const LOCATION_FIXTURE: { typeId: string; id: string; fields: Record<string, unknown> }[] = [
+  { typeId: 'rt_cities', id: 'c_syd', fields: { name: 'Sydney', state: 'NSW' } },
+  { typeId: 'rt_cities', id: 'c_mel', fields: { name: 'Melbourne', state: 'VIC' } },
+  { typeId: 'rt_cities', id: 'c_bne', fields: { name: 'Brisbane', state: 'QLD' } },
+  { typeId: 'rt_suburbs', id: 's_newtown', fields: { name: 'Newtown', city_id: 'c_syd' } },
+  { typeId: 'rt_suburbs', id: 's_manly', fields: { name: 'Manly', city_id: 'c_syd' } },
+  { typeId: 'rt_suburbs', id: 's_parramatta', fields: { name: 'Parramatta', city_id: 'c_syd' } },
+  { typeId: 'rt_suburbs', id: 's_fitzroy', fields: { name: 'Fitzroy', city_id: 'c_mel' } },
+  { typeId: 'rt_suburbs', id: 's_stkilda', fields: { name: 'St Kilda', city_id: 'c_mel' } },
+  { typeId: 'rt_suburbs', id: 's_newfarm', fields: { name: 'New Farm', city_id: 'c_bne' } },
+];
+
 async function setup() {
   const { config } = await import('../src/config');
   const { MemoryAdapter } = await import('@fluxus/engine');
@@ -27,7 +45,10 @@ async function setup() {
   const { buildGeoModule } = await import('@fluxus/engine');
   const { buildEvalHost: rawBuildEvalHost } = await import('@fluxus/engine');
   const { validateConfig } = await import('@fluxus/engine');
-  const adapter = new MemoryAdapter(config, { seed: true });
+  const adapter = new MemoryAdapter(config);
+  for (const { typeId, id, fields } of LOCATION_FIXTURE) {
+    adapter.insertRecord({ ...adapter.buildRecord(typeId, fields), id });
+  }
   const notifications = new NotificationLog();
   notifications.clear(); // the localStorage shim persists across tests in this file
   const services = [buildNotifyModule(notifications), buildGeoModule(adapter)];
@@ -41,11 +62,11 @@ describe('DSL ↔ SDM wiring', () => {
     expect(validateConfig(config, services)).toEqual([]);
   });
 
-  it('seeds load cities and suburbs into an empty store', async () => {
-    const { config, adapter } = await setup();
-    expect(adapter.getRecordTypeData('rt_cities').length).toBe(3);
-    expect(adapter.getRecordTypeData('rt_suburbs').length).toBe(6);
-    expect(config.seeds?.length).toBe(3); // cities, suburbs, inspection checklists
+  it('a store built from the config alone holds no records', async () => {
+    const { config } = await setup();
+    const { MemoryAdapter } = await import('@fluxus/engine');
+    const bare = new MemoryAdapter(config);
+    expect(bare.getRecordTypeData('rt_cities')).toEqual([]);
   });
 
   it('city datasource lists all cities ordered by name', async () => {

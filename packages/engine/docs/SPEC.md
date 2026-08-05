@@ -175,14 +175,20 @@ and writes the diff back transactionally (root ARCHITECTURE.md
 truly async evaluator is ever needed.
 
 `MemoryAdapter` (extracted at DSL Phase 4) is THE Store: workflow/attribute
-resolution, constraint checks, staged mutation halves, seeding, natural-id
-migration — with a protected `persist()` no-op hook (for storage-backed
-subclasses, none currently live) and `allRecords()` for diffing hosts. Every
-host runs one: browser hosts fill it from `@fluxus/client`'s snapshot; the
-server host loads a scope's partition per request. `LocalStorageAdapter`
-(the localStorage-persisting subclass both browser hosts ran before backend
-stage 2) was deleted at backend stage 3 — the hard cutover left it without a
-host, and its remaining test consumers moved to `MemoryAdapter({seed:true})`.
+resolution, constraint checks, staged mutation halves, natural-id migration —
+with a protected `persist()` no-op hook (for storage-backed subclasses, none
+currently live) and `allRecords()` for diffing hosts. Every host runs one:
+browser hosts fill it from `@fluxus/client`'s snapshot; the server host loads
+a scope's partition per request. `LocalStorageAdapter` (the
+localStorage-persisting subclass both browser hosts ran before backend stage 2)
+was deleted at backend stage 3 — the hard cutover left it without a host.
+
+**No config seeding (2026-08-05).** `ConfigRaw.seeds`, the `SeedGroup` type and
+the adapter's `{ seed: true }` option are gone. Config carried sample records
+that loaded into any store holding none of that type — a write path into
+records that went around activities, which the pipeline invariant forbids. A
+store built from a config alone is empty; callers that need records create
+them.
 
 ### validateSubmission (DSL Phase 4)
 

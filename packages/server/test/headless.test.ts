@@ -8,7 +8,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig, seedOperationRecords } from '../src/host';
+import { ensureOperation, ensureSolution, putConfig } from '../src/host';
 import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { records, rptActivities, rptAttributes } from '../src/db/schema';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
@@ -23,30 +23,41 @@ const caller = () => appRouter.createCaller({ db, sink });
 // mutation returns — drain it before asserting on the sink.
 const drainQueue = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+const CHECKLIST_ID = 'etp_001';
+
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
-  // The demo SDM ships no job/workgroup seeds, and a work order's job_id is a
-  // required FK — seed the anchors the acceptance flow hangs off (seeds are
-  // config, not a write path around activities).
-  const cfg = structuredClone(config);
-  cfg.seeds = [
-    ...(cfg.seeds ?? []),
-    {
-      typeId: 'rt_jobs',
-      records: [{
-        id: 'JOB-1',
-        fields: { id: 'JOB-1', job_no: 'J-100', job_type: 'Inspection', status: 'Raised', location: 'Depot', due_date: '2026-08-01', contract_id: '' },
-      }],
-    },
-    {
-      typeId: 'rt_workgroups',
-      records: [{ id: 'WG-1', fields: { id: 'WG-1', name: 'Crew A' } }],
-    },
-  ];
   await ensureSolution(db, DEFAULT_SOLUTION, 'Demo');
-  await putConfig(db, DEFAULT_SOLUTION, cfg, sink);
+  await putConfig(db, DEFAULT_SOLUTION, config, sink);
   await ensureOperation(db, DEFAULT_OPERATION, DEFAULT_SOLUTION, 'Demo');
-  await seedOperationRecords(db, DEFAULT_OPERATION, cfg);
+
+  // An operation starts empty and has no seeding path, so everything the
+  // assertions hang off is built through its own activity — the same pipeline
+  // under test. A work order's job_id is a required FK (hence the job and
+  // workgroup); the location tests need two cities each holding a suburb, so
+  // whichever the list returns first has both a matching and a foreign suburb.
+  await caller().activities.run({
+    activityId: 'act_raise_inspection_jobs',
+    attributes: { id: 'JOB-1', job_no: 'J-100', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' },
+  });
+  await caller().activities.run({
+    activityId: 'act_create_workgroups',
+    attributes: { id: 'WG-1', name: 'Crew A' },
+  });
+  for (const [city, state, suburb] of [['Sydney', 'NSW', 'Newtown'], ['Melbourne', 'VIC', 'Fitzroy']]) {
+    const created = await caller().activities.run({
+      activityId: 'act_create_cities',
+      attributes: { name: city, state },
+    });
+    await caller().activities.run({
+      activityId: 'act_create_suburbs',
+      attributes: { name: suburb, city_id: created.recordId },
+    });
+  }
+  await caller().activities.run({
+    activityId: 'act_raise_inspection_checklists',
+    attributes: { id: CHECKLIST_ID, checklist_no: 'ETP-001', work_area: 'Switchroom — Level 1', site_location: '12 Harbour St, Sydney', client: 'Acme Constructions', contract_id: '' },
+  });
 });
 
 describe('config storage', () => {
@@ -55,9 +66,16 @@ describe('config storage', () => {
     expect(stored.recordTypes.map((rt) => rt.id)).toContain('rt_work_orders');
   });
 
-  it('seeded the demo records for empty types', async () => {
-    const cities = await caller().records.list({ typeId: 'rt_cities' });
-    expect(cities.length).toBeGreaterThan(0);
+  it('storing a config puts no records in the operation', async () => {
+    // Config is solution-plane and owns no records: a fresh operation on a
+    // stored config is empty, and stays empty until an activity runs.
+    const SOL = 'demo/fresh';
+    const OP = 'demo/fresh-op';
+    await ensureSolution(db, SOL, 'Fresh');
+    await putConfig(db, SOL, config, sink);
+    await ensureOperation(db, OP, SOL, 'Fresh');
+    const stored = await db.select().from(records).where(eq(records.operationId, OP));
+    expect(stored).toEqual([]);
   });
 
   it('rejects an invalid SDM at save time', async () => {
@@ -234,7 +252,7 @@ describe('headless activity invocation', () => {
 });
 
 describe('composite attributes (MR014 checklist, staged)', () => {
-  const clId = 'etp_001'; // seeded with status 'Raised'
+  const clId = CHECKLIST_ID; // raised in beforeAll, so status is 'Raised'
 
   it('enforces stage order: pre-start is unavailable while status is Raised', async () => {
     // Payload is valid (validateSubmission passes) — the availability gate
