@@ -519,6 +519,168 @@ The node-postgres pool handles idle-client `'error'` events (logged, client
 discarded and replaced on next query) — Neon reaps idle connections
 server-side, and an unhandled error event would crash the process.
 
+## Model storage: the SDM config as tables (designed 2026-08-08, NOT BUILT)
+
+Today one jsonb blob per solution (`sdm_configs.config`) holds attributes,
+record types, workflows, functions and `access.roles`. The mismatch that
+forces the change: the **consistency unit is the whole graph** (a workflow
+references attributes, so validation is always global) while the **change unit
+is one entity** (an author edits one attribute) — and a blob makes the *write*
+unit the whole graph too. `config.put` is therefore last-write-wins across the
+entire model: two sol admins editing two different record types have no logical
+conflict, yet one silently loses their work. There is also no per-entity
+authorship and no "what uses attribute X", the prerequisite for any safe
+rename or delete.
+
+**The rule that governs the change**: the one-pipeline invariant governs
+*solutions* — records, activities, hooks, history — not the Console. The
+Console is a conceded custom app that already owns tables (`users`,
+`*_admins`, `pages`, …), so design-plane authoring storage is not a second
+pipeline and the invariant does not block this.
+
+**Direction: the tables are truth; the assembled config is derived.**
+Considered and rejected: keeping the blob and adding an etag/version to
+`config.put`. That protects against loss but still forces every author to
+serialise on the whole model.
+
+### The six tables
+
+One per collection, `sdm_` prefixed like the two model tables that already
+exist. Every row is keyed by solution and carries the entity exactly as the
+config spells it.
+
+| Table | PK | Holds |
+|---|---|---|
+| `sdm_attributes` | `(solution_id, key)` | the attribute pool |
+| `sdm_record_types` | `(solution_id, id)` | `recordTypes[]` |
+| `sdm_workflows` | `(solution_id, id)` | `workflows[]`, **activities included** |
+| `sdm_functions` | `(solution_id, id)` | `functions[]` |
+| `sdm_roles` | `(solution_id, id)` | `access.roles[]` |
+| `sdm_menus` | `(solution_id)` | `default_menu` — one row, not a collection |
+
+**`sdm_menus` is the odd one** — keyed by solution alone, because the
+solution's default runtime menu (§5, M10) is the config's only non-collection
+field. It is a table rather than a column on `sdm_configs` so that **nothing in
+`sdm_configs` is truth**: the snapshot row stays purely derived, and therefore
+droppable and rebuildable at any time. Its `def` holds the menu array whole —
+menu items are not independently authored entities, and one person edits a menu
+at a time (the same reasoning that keeps activities inside their workflow).
+
+Common columns: `solution_id` text NOT NULL (FK → `solutions.id`), the PK's
+second column where there is one (`key` for attributes — the config's own
+spelling for that entity's identity — `id` for record types, workflows,
+functions and roles; `sdm_menus` has none), `def` jsonb NOT NULL, and
+`created_at`/`created_by`, `updated_at`/`updated_by`. The `*_by` columns hold
+**email**, the users-model key, and are **nullable**: null means the row
+predates per-entity authorship (the backfill), never a fake author.
+
+`def` is the entity verbatim, *including* its own key/id — assembly is then
+`rows.map(r => r.def)` with no reconstruction step, and the duplicated
+identifier is the price of an assembler that cannot be wrong. `def` is the
+established name for exactly this (`pages.def`, `page_versions.def`).
+
+One promoted column: **`sdm_record_types.workflow_ref`** text NOT NULL, FK
+`(solution_id, workflow_ref)` → `sdm_workflows(solution_id, id)`. It is the
+one reference the split can hand to Postgres. Named `workflow_ref` to match
+the config field, not `workflow_id`, because it *is* that field lifted out.
+
+**Activities stay inside their workflow** (ruled 2026-08-08). They were the
+obvious sixth table — an activity is the largest object in the model and
+plausibly the edit unit — but the change unit is really the workflow: one
+person owns one workflow at a time, and reviewing a workflow change wants the
+whole thing in one view. Keeping them nested also preserves their authored
+order for free. If a workflow ever grows too contended or too long to review,
+splitting activities out later is a migration with no API change — assembly is
+per-collection either way.
+
+### What does not change
+
+- **`sdm_config_versions`** — untouched. Publish still assembles the graph into
+  one immutable jsonb snapshot; that is already the right artifact for
+  install / share / version.
+- **`sdm_configs`** — the row survives unchanged in shape, with its `config`
+  column demoted from truth to a **derived draft snapshot**, refreshed on every
+  write so `config.get` stays a single fetch. After the split the table holds
+  **nothing but derivation**.
+- **`config.get`** — unchanged, reads the snapshot.
+- **`config.put`** (whole config) — kept, as the **import** path: it explodes an
+  incoming config into rows, replacing all five collections and the menu (rows
+  absent from the incoming config are deleted). `rollbackConfig` depends on it,
+  and installing a solution package will too.
+
+### Ordering
+
+Rows carry no authored array order, so assembly is deterministic by key:
+attributes by `key`, the other four by `id`. Activities keep their existing
+`sort_order` inside the workflow def. Authored array order in today's blobs is
+**lost at migration** — accepted; nothing reads it.
+
+### The write path
+
+New per-entity mutations sit beside `config.put`: `config.putAttribute` /
+`deleteAttribute`, `config.putRecordType` / `deleteRecordType`,
+`config.putWorkflow` / `deleteWorkflow`, `config.putFunction` /
+`deleteFunction`, `config.putRole` / `deleteRole`, and
+`config.putDefaultMenu` (no delete — an empty array is the empty menu) — sol
+admin, like `config.put`. Each runs one transaction:
+
+1. `SELECT … FROM sdm_configs WHERE solution_id = $1 FOR UPDATE` (inserting the
+   row if absent) — this **serialises validation per solution** while leaving
+   writes per entity. Two admins editing different record types both keep their
+   work; they queue for the length of one validation, they do not overwrite.
+2. write the entity row (`created_by` on insert, `updated_by` on update).
+3. assemble the graph from the six tables.
+4. run the **existing** validation unchanged — MemoryAdapter resolution,
+   error-severity `validateConfig` findings, the stored-`typeRef` orphan check,
+   and `default_menu` shape/reference validation. Global validation is not
+   relaxed by the split; only the storage shape moves.
+5. any error → rollback, so the entity write disappears with it.
+6. success → refresh `sdm_configs.config` with the assembled graph, commit.
+
+A delete that would dangle (an attribute an activity still uses, a workflow a
+record type still points at) fails at step 4 like any other invalid graph — the
+FK catches the record-type case earlier and more cheaply.
+
+### Migration
+
+One new migration creates the six tables and backfills by running each
+existing `sdm_configs.config` through the import path, leaving `config` in
+place as the snapshot. `*_by` columns land null for backfilled rows.
+
+### Build order (ruled 2026-08-08): the API moves before the storage
+
+**Step 1 — the per-entity procedures, over today's blob.** The concurrency fix
+does not need the tables. Each procedure runs the transaction described above
+with one substitution at steps 2–3: instead of writing a row and assembling,
+it splices the single entity into the parsed `sdm_configs.config` under the
+same `FOR UPDATE` lock. Validation, the lock, the signatures and the Console's
+call sites are all final. Two admins editing different record types both keep
+their work from this step onwards — which is the point of the whole exercise.
+
+**Step 2 — the tables underneath.** The migration lands and each procedure's
+body swaps blob-splicing for row-write-plus-assemble. No API change, no app
+change; the throwaway splice bodies are deleted here. A migration is a far
+safer thing to run when nothing above it is moving.
+
+Rejected: storage first, under an unchanged Console. It delivers nothing until
+step 2, and it leaves the editor to change its storage *and* its API in one
+later step. This order touches the Console once, early, and pays out
+immediately.
+
+The one thing step 1 cannot deliver is **per-entity authorship** — `created_by`
+/ `updated_by` arrive with the tables.
+
+### Deliberately deferred
+
+- **Per-entity history** ("who changed this attribute in March") — the split
+  gives last-writer columns only; real history needs a second append-only
+  table. Not built: it has never existed, and `sdm_config_versions` still
+  records every publish.
+- **A usage edge table** — activity → attribute edges live inside `def`, so
+  "what uses attribute X" is a jsonb containment query, not a join, and
+  Postgres cannot enforce those refs. Accepted; a derived `sdm_attribute_usages`
+  table can be added later as pure derivation.
+
 ## Services
 
 The server registers `notify` (manifest identical to the workbench's — script

@@ -39,7 +39,7 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **Show condition** — DSL expression deciding applicability. On an attribute usage: whether the attribute is presented (UI) or accepted (headless); errors leave it visible. On an activity: whether the activity is offered/invocable at all — the **availability gate**, re-checked as the first step of the activity pipeline; `attributes` is unavailable (runs before capture) and errors fail closed.
 - **`queue`** — keyword marking a service call as fire-and-forget; dispatched only if the surrounding transaction commits (outbox pattern).
 - **Service module** — the unit behind the `services` root: manifest (name, description, functions with params + `kind`) plus implementation. `kind: read` = pure query, callable anywhere; `kind: effect` = changes the world, after hooks only, prefer `queue`. Manifests make service calls schema-validatable (existence, arity, purity) at config-save time.
-- **`callbackData`** — embedding-point extra root (like `value` in validation rules). In hooks: the one data object of an app-triggered run, `null` on direct runs. In page callback scripts: the packed component payload `{value, data}`. Untyped — its shape is the solution builder's contract with their component.
+- **`callbackData`** — embedding-point extra root (like `value` in validation rules). In hooks: the one data object of an app-triggered run, `null` on direct runs. In page callback scripts: the packed component payload `{value, data}`. Untyped — its shape is the solution builder's contract with their component; designed 2026-08-08 to become **declared per activity and validated server-side**, and never a basis for authorization (CLIENT_TRUST_BOUNDARY.md).
 - **Scope-blind** — scripts never name their org, repo, or SDM; scope is injected. Locked invariant.
 - **Schema-aware validation** — every script checked against the SDM at config-save time (unknown types/fields/shapes fail before runtime).
 
@@ -56,6 +56,17 @@ Canonical definitions. If a doc or discussion uses one of these terms differentl
 - **App (module)** — a coarse-grained reusable component (e.g. calendar scheduler) shipped with a manifest; rewired per SDM through slot config, never rewritten.
 - **Activity spine** — the property that data + behaviour + audit share one backbone because every surface mutates only via activities.
 - **Page runtime** — the run-a-page half of the page machinery (named 2026-07-19): PageRenderer + ComponentContainer + the component registry + the page expression host + the activity capture form — everything a host embeds to turn a stored page definition into working UI against live records. Distinct from page *editing* (editor, palette, Monaco), which stays Console-side. Extracted as `@fluxus/page-runtime`; the Console app embeds it for preview, the Runtime app as its main surface.
+
+## Client trust boundary (designed 2026-08-08, none built)
+
+Terms endorsed 2026-08-08; the design is [CLIENT_TRUST_BOUNDARY.md](CLIENT_TRUST_BOUNDARY.md).
+
+- **Projection** — the pure server-side function producing the client's model from the stored one, by **whitelist**: it names every field that ships, so a field added to the model is invisible until deliberately exposed. Hooks never cross it.
+- **`ClientSolutionConfig`** — the narrow client-facing model the projection returns. `SolutionConfig` *extends* it, so client-typed code cannot compile a reference to a hook — the guarantee is structural, not a runtime filter.
+- **Handle** — a small signed (never encrypted) JSON blob the server issues and the client returns: HMAC + key id + short TTL. **Integrity, never authority** — every run re-authorizes regardless. Design rule: never put in a handle anything the user is not already entitled to see.
+- **Operation handle** — the handle issued at connect carrying org/solution/operation, so the client stops naming its own scope on every call. "Bind what's constant, authorize what varies, derive everything else."
+- **Record handle** — the handle issued when a user opens one record, carrying the record, its version and the activities offered. Bought for **coherence** (the offer and the run refer to the same record at the same version), not primarily for security. One per open record; never minted per grid row.
+- **Confirmation token** — the signed warnings returned with a `needs-confirmation` result and required back on the re-run, replacing the client's `acknowledgedWarnings` assertion: the acknowledgement then references warnings the server actually issued.
 
 ## Organisation (future)
 

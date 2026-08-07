@@ -1,6 +1,13 @@
 # Idea: model storage split, client projection, and tamper-resistant runtime binding
 
-**Status:** design discussion 2026-08-08. **Nothing built, no spec written.** Five interlocking threads that came out of one conversation; the intent is to build the spec in a fresh session from this summary. Names marked *(unendorsed)* below still need the user's OK before they enter code or schema.
+**Status:** design discussion 2026-08-08. **Nothing built.** Five interlocking threads that came out of one conversation.
+
+**Threads 1–3 are now specced** (2026-08-08), storage kept separate from security:
+
+- **1** → [packages/server/docs/SPEC.md](../../packages/server/docs/SPEC.md) "Model storage: the SDM config as tables". Table and column names endorsed; **activities stay inside their workflow** — the sixth table proposed here was rejected, since the change unit is the workflow and nesting also preserves activity order.
+- **2–3** → [docs/CLIENT_TRUST_BOUNDARY.md](../CLIENT_TRUST_BOUNDARY.md).
+
+**Threads 4–5 remain open discussion** — 5 in particular still needs the requirement tested against its three no-change resolutions before it is spec-able. Names marked *(unendorsed)* below still need the user's OK before they enter code or schema.
 
 **Why it hangs together:** all five are the same question asked at different layers — *what does the client actually need, and what must never be taken from it?*
 
@@ -94,7 +101,7 @@ Summary rule: **bind what's constant, authorize what varies, derive everything e
 
 ### Gaps found
 
-1. **`callbackData: z.unknown()`** — arbitrary client JSON handed straight to hooks as the `callbackData` root. It exists for service callbacks, but on a direct run the client forges it freely. **Sharpest of the three**: an unvalidated channel into server-side script execution. Concrete example: the demo dispatch passes `{ crew: 'Crew A' }`; the before hook checks the crew is *present* but nothing checks it is a **real** crew, or one this user may dispatch to. Closing it properly means giving service callbacks their own authenticated channel rather than sharing the run endpoint — a design task, not a patch.
+1. **`callbackData: z.unknown()`** — arbitrary client JSON handed straight to hooks as the `callbackData` root. It exists for service callbacks, but on a direct run the client forges it freely. *(Corrected while speccing: it exists for **app-triggered runs** — a page callback calling `services.activities.run(id, record, data)` — not service callbacks. See CLIENT_TRUST_BOUNDARY.md gap 1.)* **Sharpest of the three**: an unvalidated channel into server-side script execution. Concrete example: the demo dispatch passes `{ crew: 'Crew A' }`; the before hook checks the crew is *present* but nothing checks it is a **real** crew, or one this user may dispatch to. Closing it properly means giving service callbacks their own authenticated channel rather than sharing the run endpoint — a design task, not a patch.
 2. **`operationId` on every call** — the client names its own scope each time. It is checked, so not a hole, but it is the prime candidate for the Session move: bind at connect, hand back a key, stop accepting it. Same for `solutionId` on the design plane.
 3. **`acknowledgedWarnings: boolean`** — the client asserts the user saw the warnings. Cheap fix: the server returns a confirmation token with the warnings and requires it back, so the acknowledgement references warnings the server actually issued.
 
