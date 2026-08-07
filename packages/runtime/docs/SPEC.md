@@ -9,7 +9,7 @@ The package was `@fluxus/sdm` until the 2026-08-01 restructure. Two things left 
 
 ## Model
 
-Everything is driven by one logical config, stored split for hand-editing in `packages/runtime/config/` — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — and merged into one `ConfigRaw` by `src/config.ts` (typed by `@fluxus/engine`). The split is POC-era convenience; the endgame is the SDM in a database edited through UI. Collections:
+Everything is driven by one logical config, stored split for hand-editing in `packages/runtime/config/` — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — and merged into one `SolutionConfig` by `src/config.ts` (typed by `@fluxus/engine`). The split is POC-era convenience; the endgame is the SDM in a database edited through UI. Collections:
 
 - **`attributes`** — standalone, reusable capturable inputs; activities reference them by `attribute_ref`.
 - **`recordTypes`** — collections (`rt_<plural>`): custom fields (incl. `fk_ref` with `fk_record_type` / `fk_display_field`), optional constraints (`required`, `unique`, `immutable`, `indexed`), a `workflow_ref`.
@@ -39,7 +39,7 @@ Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost
 
 **Services in the demo config (DSL Phase 3).** Two modules back the shipped scripts — `notify` (effect: `user`, `email`) and `geo` (read: `suburbsOf`, implemented in `@fluxus/engine`; it backs the suburb `List` datasource, so the city → suburb dependent picker exercises a service call end to end). `validateConfig` passes the registry, so the config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification dispatches only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Since backend stage 2 that hook runs **server-side**, so the dispatch lands on the server's notify sink (process console), not this app's bell — see the dormant-bell note under Architecture. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring"). Where each host composes its own sink: this app's is `src/services/notify.ts` → `src/store/NotificationLog.ts`; the workbench keeps a separate dormant copy ([workbench SPEC](../../workbench/docs/SPEC.md)).
 
-**No seeds (2026-08-05).** Entity files used to carry a `seeds` block — sample records loaded into any store that had none of that type, cities/suburbs among them so the location picker worked out of the box. It is gone: config, `ConfigRaw.seeds`, the `MemoryAdapter` loader, and the server's `seedOperationRecords`. It was a second write path into records, straight past activities, for demo convenience only — the one thing the invariant below forbids. An operation now starts empty and every record in it arrives through an activity; a store built from config alone holds nothing. Tests that need data build it themselves (`test/dsl-wiring.test.ts` pins a location fixture; the server's headless test raises its anchors through their own activities).
+**No seeds (2026-08-05).** Entity files used to carry a `seeds` block — sample records loaded into any store that had none of that type, cities/suburbs among them so the location picker worked out of the box. It is gone: config, `SolutionConfig.seeds`, the `MemoryAdapter` loader, and the server's `seedOperationRecords`. It was a second write path into records, straight past activities, for demo convenience only — the one thing the invariant below forbids. An operation now starts empty and every record in it arrives through an activity; a store built from config alone holds nothing. Tests that need data build it themselves (`test/dsl-wiring.test.ts` pins a location fixture; the server's headless test raises its anchors through their own activities).
 
 **And nothing else is prepopulated either.** The same day, the removal went the rest of the way: the seed script is deleted (with `npm run seed` / `npm run seed:server`), so nothing pushes this package's config or any page into a database, and no migration installs a demo org. [config/](../config/) is **test fixture and reference material** — the source of truth for a solution is the database, authored through the Console. Full account in the [server SPEC](../../server/docs/SPEC.md) under "Nothing is prepopulated".
 
@@ -91,7 +91,7 @@ Activity history is append-only and never edited, so **cancel can never mean del
 
 ```
 config/{attributes,functions}.json + config/entities/*.json
-  └── config.ts (merges to one typed ConfigRaw — test fixture only, installed
+  └── config.ts (merges to one typed SolutionConfig — test fixture only, installed
         nowhere; the running app reads config from the server)
 
 src/host.ts (backend stage 2): FluxusClient.connect() → scope config +

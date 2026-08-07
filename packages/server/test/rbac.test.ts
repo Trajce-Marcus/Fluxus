@@ -10,7 +10,7 @@ import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putU
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
-import type { ConfigRaw, ContextUser } from '@fluxus/engine';
+import type { SolutionConfig, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/rbac';
 const OP = 'test/rbac';
@@ -20,7 +20,7 @@ const touch = (id: string) => ({
   attributes: [{ attribute_ref: 'note' }], before_hook: null, after_hook: null,
 });
 
-const config: ConfigRaw = {
+const config: SolutionConfig = {
   access: { roles: [{ id: 'role_a', name: 'As' }, { id: 'role_b', name: 'Bs' }] },
   attributes: [
     { key: 'id', label: 'ID', description: '', type: 'text' },

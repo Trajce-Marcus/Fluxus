@@ -36,12 +36,12 @@ import { orgs } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { ConfigRaw, ContextUser } from '@fluxus/engine';
+import type { SolutionConfig, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/tiers';
 const OP = 'test/tiers';
 
-const config: ConfigRaw = {
+const config: SolutionConfig = {
   access: { roles: [{ id: 'role_a', name: 'As' }] },
   attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }],
   recordTypes: [],

@@ -1,9 +1,9 @@
-// SDM Record types editor: the solution's record types (ConfigRaw.recordTypes)
+// SDM Record types editor: the solution's record types (SolutionConfig.recordTypes)
 // — id, name, workflow binding, custom fields, and the RBAC read surface.
 // Slice 1: plain forms; workflow/activity authoring stays hand-edited.
 
 import { useState } from 'react';
-import type { ConfigRaw, CustomFieldDef, RecordTypeDef } from '@fluxus/engine';
+import type { SolutionConfig, CustomFieldDef, RecordTypeDef } from '@fluxus/engine';
 import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
@@ -21,7 +21,7 @@ function recordTypeId(name: string): string {
 interface NewDraft { id: string; name: string; description: string; workflow_ref: string }
 
 export function RecordTypesEditor() {
-  const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
+  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -4,7 +4,7 @@
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
 import { parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
-import type { AttributeDef, ConfigRaw, ContextUser, RecordInstance } from './types';
+import type { AttributeDef, SolutionConfig, ContextUser, RecordInstance } from './types';
 import type { Store } from './store';
 
 /**
@@ -27,7 +27,7 @@ export function joinScript(script: string | string[] | null | undefined): string
 }
 
 /** Named function sources for the evaluator/validator (bodies joined). */
-export function resolveFunctions(config: ConfigRaw): string[] {
+export function resolveFunctions(config: SolutionConfig): string[] {
   return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? '');
 }
 
@@ -35,7 +35,7 @@ export function resolveFunctions(config: ConfigRaw): string[] {
  * Signature map for ValidateOptions.functions, parsed from the bodies.
  * Unparseable bodies are skipped — validateConfig reports those.
  */
-export function functionSignatures(config: ConfigRaw): Record<string, { params: string[] }> {
+export function functionSignatures(config: SolutionConfig): Record<string, { params: string[] }> {
   const out: Record<string, { params: string[] }> = {};
   for (const fn of config.functions ?? []) {
     try {
@@ -73,7 +73,7 @@ export function serializeFields(fields: Record<string, unknown>): Record<string,
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
 }
 
-export function buildDslSchema(config: ConfigRaw, services: ServiceModuleDef[] = []): DslSchema {
+export function buildDslSchema(config: SolutionConfig, services: ServiceModuleDef[] = []): DslSchema {
   const types: DslSchema['types'] = {};
   for (const rt of config.recordTypes) {
     const fields: DslSchema['types'][string]['fields'] = {};
@@ -94,7 +94,7 @@ export function toDslRecord(record: RecordInstance): DslRecord {
   return { id: record.id, type: shortName(record.typeRef), fields: record.customFields };
 }
 
-export function buildRecordsHost(adapter: Store, config: ConfigRaw): RecordsHost {
+export function buildRecordsHost(adapter: Store, config: SolutionConfig): RecordsHost {
   const byShortName = new Map(config.recordTypes.map((rt) => [shortName(rt.id), rt]));
 
   return {
@@ -335,7 +335,7 @@ export function coerceValue(type: string | undefined, raw: string): unknown {
 
 export function buildEvalHost(
   adapter: Store,
-  config: ConfigRaw,
+  config: SolutionConfig,
   script: ScriptContext,
   services: ServiceModuleDef[] = [],
 ): EvalHost {

@@ -5,17 +5,17 @@
 // re-reads the fresh snapshot. Editors keep a local draft and call commit.
 
 import { useCallback, useState } from 'react';
-import type { ConfigRaw } from '@fluxus/engine';
+import type { SolutionConfig } from '@fluxus/engine';
 import { sdmClient, reloadSolution } from '../../sdm-runtime/engine';
 import { shellStore } from '../shell/store';
 
 /** A deep clone of the current config — safe to mutate as a draft. */
-export function readConfig(): ConfigRaw {
-  return structuredClone(sdmClient.config) as ConfigRaw;
+export function readConfig(): SolutionConfig {
+  return structuredClone(sdmClient.config) as SolutionConfig;
 }
 
 /** Persist a full config, rebuild the model, and remount solution views. */
-export async function commitConfig(next: ConfigRaw): Promise<void> {
+export async function commitConfig(next: SolutionConfig): Promise<void> {
   await sdmClient.saveConfig(next);
   await reloadSolution();
   shellStore.set((prev) => ({ ...prev, scopeVersion: prev.scopeVersion + 1 }));

@@ -8,7 +8,7 @@
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
-import type { ConfigRaw, RecordInstance, RunActivityResult } from '@fluxus/engine';
+import type { SolutionConfig, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { AppRouter } from '@fluxus/server';
 import { runUpload, type Descriptor, type PresignRequest, type Presigned, type UploadService } from './upload';
 
@@ -459,7 +459,7 @@ export class FluxusClient {
     readonly operationId: string,
     /** The operation's linked solution; the config + pages key. */
     readonly solutionId: string,
-    readonly config: ConfigRaw,
+    readonly config: SolutionConfig,
     readonly adapter: MemoryAdapter,
     /**
      * Page definitions (path → def), snapshotted at connect like the record
@@ -524,8 +524,8 @@ export class FluxusClient {
     // blank and the first save (config.put) creates the row.
     const [pageRows, config, partition] = await Promise.all([
       trpc.pages.list.query({ solutionId, published: false }),
-      (trpc.config.get.query({ solutionId }) as Promise<ConfigRaw>).catch(
-        () => ({ attributes: [], recordTypes: [], workflows: [] }) as ConfigRaw,
+      (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch(
+        () => ({ attributes: [], recordTypes: [], workflows: [] }) as SolutionConfig,
       ),
       operationId
         ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
@@ -553,7 +553,7 @@ export class FluxusClient {
 
   /** Persist the solution's SDM config (Console SDM editor → config.put). The
    *  caller reconnects afterwards to rebuild the adapter/pageRuntime. */
-  async saveConfig(config: ConfigRaw): Promise<void> {
+  async saveConfig(config: SolutionConfig): Promise<void> {
     await this.trpc.config.put.mutate({ solutionId: this.solutionId, config });
   }
 
@@ -589,7 +589,7 @@ export class FluxusClient {
     const solutionId = op.solutionId;
     const published = options.pages === 'published';
     const [config, partition, pageRows, me] = await Promise.all([
-      trpc.config.get.query({ solutionId }) as Promise<ConfigRaw>,
+      trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>,
       trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>,
       // operationId lets published mode filter pages to those openable to the
       // caller (page access control, §6).
@@ -603,7 +603,7 @@ export class FluxusClient {
     // Effective menu (§5, M10): operation override ?? solution default ?? [].
     // `menu` absent on the operation means inherit; `[]` is an explicit empty
     // override. The engine is menu-blind, so default_menu is read off the raw
-    // config here, not via ConfigRaw.
+    // config here, not via SolutionConfig.
     const menu =
       (op.config as { menu?: MenuItem[] }).menu ??
       (config as { default_menu?: MenuItem[] }).default_menu ??

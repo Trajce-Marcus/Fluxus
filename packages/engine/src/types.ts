@@ -198,8 +198,12 @@ export interface FunctionDef {
   body: string | string[];
 }
 
-// Raw config — matches the JSON on disk exactly
-export interface ConfigRaw {
+// One solution's model, exactly as stored: `sdm_configs.config` keyed by
+// solution id, and every snapshot in `sdm_config_versions`. Renamed from
+// `ConfigRaw` 2026-08-07 — the `Raw` suffix paired with nothing (there is no
+// cooked top-level config), while the inner `*RawDef` types still do carry the
+// unresolved-vs-resolved distinction.
+export interface SolutionConfig {
   attributes: AttributeDef[];
   recordTypes: RecordTypeDef[];
   workflows: WorkflowRawDef[];

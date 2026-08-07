@@ -25,11 +25,11 @@ import { appointOrgAdmin, appointSolAdmin, ensureOperation, ensureOrg, ensureSol
 import { createDb, type Db } from '../src/db/client';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { ConfigRaw, ContextUser } from '@fluxus/engine';
+import type { SolutionConfig, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/impl';
 const OP = 'test/impl';
-const config: ConfigRaw = { attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }], recordTypes: [], workflows: [] };
+const config: SolutionConfig = { attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }], recordTypes: [], workflows: [] };
 
 let db: Db;
 const builder: ContextUser = { id: 'builder', name: 'B', email: 'builder@example.com', roles: [] };

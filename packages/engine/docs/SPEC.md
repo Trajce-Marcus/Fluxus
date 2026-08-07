@@ -21,8 +21,15 @@ against.
 ## What the engine owns
 
 ```
-src/types.ts       — SDM config + runtime types (ConfigRaw, RecordTypeDef,
+src/types.ts       — SDM config + runtime types (SolutionConfig, RecordTypeDef,
                      ActivityDef, RecordInstance, ActivityHistoryEntry, …)
+                     `SolutionConfig` was `ConfigRaw` until 2026-08-07: one of
+                     these IS one solution's model (`sdm_configs.config`, keyed
+                     by solution id), and the `Raw` suffix paired with nothing
+                     — there is no cooked top-level config. The inner
+                     `WorkflowRawDef`/`ActivityRawDef` keep theirs, because
+                     those do pair with resolved forms. Type-only rename: no
+                     stored jsonb changed.
 src/store.ts       — the Store contract (the persistence seam)
 src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storage
                      (extracted from LocalStorageAdapter at DSL Phase 4;
@@ -155,7 +162,7 @@ record to the anchor and passes the object as `options.callbackData`.
 
 ### RBAC config surface (RBAC_COMPACT; enforced outside the engine)
 
-`ConfigRaw.access.roles` (`RoleDef[]`, solution-scoped role definitions) and
+`SolutionConfig.access.roles` (`RoleDef[]`, solution-scoped role definitions) and
 `RecordTypeDef.access.read` (role ids that may read a type) are carried on the
 config for the **server** to enforce (record-type read filter, RBAC stage 1) —
 the engine defines the shape but does not gate reads on it. Activity gating
@@ -183,7 +190,7 @@ a scope's partition per request. `LocalStorageAdapter` (the
 localStorage-persisting subclass both browser hosts ran before backend stage 2)
 was deleted at backend stage 3 — the hard cutover left it without a host.
 
-**No config seeding (2026-08-05).** `ConfigRaw.seeds`, the `SeedGroup` type and
+**No config seeding (2026-08-05).** `SolutionConfig.seeds`, the `SeedGroup` type and
 the adapter's `{ seed: true }` option are gone. Config carried sample records
 that loaded into any store holding none of that type — a write path into
 records that went around activities, which the pipeline invariant forbids. A

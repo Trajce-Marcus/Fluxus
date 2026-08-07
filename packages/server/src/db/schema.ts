@@ -19,7 +19,7 @@
 // solution to read the config while its data stays operation-partitioned.
 
 import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrecision, index, primaryKey } from 'drizzle-orm/pg-core';
-import type { ActivityHistoryEntry, ConfigRaw } from '@fluxus/engine';
+import type { ActivityHistoryEntry, SolutionConfig } from '@fluxus/engine';
 
 // A solution is the design artifact — the container for one SDM config, its
 // pages, role defs and default menu (CONSOLE_RUNTIME_SPEC §1). No data, users
@@ -268,7 +268,7 @@ export const solAdmins = pgTable('sol_admins', {
 
 export const sdmConfigs = pgTable('sdm_configs', {
   solutionId: text('solution_id').primaryKey(),
-  config: jsonb('config').$type<ConfigRaw>().notNull(),
+  config: jsonb('config').$type<SolutionConfig>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -282,7 +282,7 @@ export const sdmConfigs = pgTable('sdm_configs', {
 export const sdmConfigVersions = pgTable('sdm_config_versions', {
   solutionId: text('solution_id').notNull(),
   version: integer('version').notNull(),
-  config: jsonb('config').$type<ConfigRaw>().notNull(),
+  config: jsonb('config').$type<SolutionConfig>().notNull(),
   readme: text('readme').notNull(),
   publishedBy: text('published_by').notNull(),
   publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),

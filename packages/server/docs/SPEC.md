@@ -558,7 +558,7 @@ What was removed, and why each had to go:
 | Removed | What it did | Why |
 |---|---|---|
 | `scripts/seed.ts` (+ `npm run seed`, `npm run seed:server`) | Installed a demo org/solution/operation, the repo's SDM config, the demo page, and demo records | A database that fills itself is a database whose contents nobody chose |
-| `seedOperationRecords` + `ConfigRaw.seeds` | Inserted demo records into an operation's partition | A second write path into records, straight past activities — the pipeline invariant allows none |
+| `seedOperationRecords` + `SolutionConfig.seeds` | Inserted demo records into an operation's partition | A second write path into records, straight past activities — the pipeline invariant allows none |
 | `INSERT` in migration `0008_orgs` | Invented `('default', 'Northwind Utilities')` | A migration's job is schema; inventing a tenant row is seeding |
 | `packages/console/pages/work-orders-demo.json` | The demo page the seed pushed | Pages are authored, not shipped |
 

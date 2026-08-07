@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { coerceValue, coerceCapturedValue, isBlank } from '../src/bridge';
 import { descriptorShapeIssues } from '../src/attributeTypes';
 import { validateConfig } from '../src/validateConfig';
-import type { ConfigRaw } from '../src/types';
+import type { SolutionConfig } from '../src/types';
 
 describe('coerceValue — new scalar types', () => {
   it('datetime parses to a Date (offset-bearing ISO)', () => {
@@ -76,12 +76,12 @@ describe('descriptorShapeIssues', () => {
 });
 
 describe('validateConfig — type_config key rules (§3/§11)', () => {
-  const base = (attributes: ConfigRaw['attributes']): ConfigRaw => ({
+  const base = (attributes: SolutionConfig['attributes']): SolutionConfig => ({
     attributes,
     recordTypes: [],
     workflows: [],
   });
-  const errorsOf = (cfg: ConfigRaw) => validateConfig(cfg).map((f) => f.diagnostic.message);
+  const errorsOf = (cfg: SolutionConfig) => validateConfig(cfg).map((f) => f.diagnostic.message);
 
   it('accepts a well-formed photo/file config', () => {
     const cfg = base([

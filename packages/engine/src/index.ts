@@ -57,7 +57,7 @@ export type {
   AttributeTypeConfig,
   AttributeUsageDef,
   SectionMarkerDef,
-  ConfigRaw,
+  SolutionConfig,
   ContextUser,
   CustomFieldDef,
   FunctionDef,

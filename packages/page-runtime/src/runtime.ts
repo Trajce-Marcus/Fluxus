@@ -7,7 +7,7 @@
 // client, exactly as before the extraction.
 
 import type { FluxusClient } from '@fluxus/client';
-import type { ActivityDef, ConfigRaw, MemoryAdapter, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
+import type { ActivityDef, SolutionConfig, MemoryAdapter, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 import type { Diagnostic } from '@fluxus/dsl';
 import type { PageDef } from './pageDef';
 import {
@@ -29,7 +29,7 @@ export interface FoundActivity {
 export interface PageRuntime {
   readonly client: FluxusClient;
   readonly store: MemoryAdapter;
-  readonly config: ConfigRaw;
+  readonly config: SolutionConfig;
   /** Resolve an activity id to its resolved def + owning record type. */
   findActivity(activityId: string): FoundActivity | null;
   /** Read a page definition from the client's page snapshot. */

@@ -1,17 +1,17 @@
-// SDM Attributes editor: the solution's attribute pool (ConfigRaw.attributes) —
+// SDM Attributes editor: the solution's attribute pool (SolutionConfig.attributes) —
 // the reusable capture fields activities compose. Slice 1: key/label/
 // description/type plus the common type_config knobs (fk target, list values,
 // multi, multiline). Composite/section/DSL-driven configs stay hand-edited.
 
 import { useState } from 'react';
-import type { AttributeDef, ConfigRaw } from '@fluxus/engine';
+import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
 import { readConfig, commitConfig, useDirty } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'reference', 'list', 'photo', 'file'];
 
 export function AttributesEditor() {
-  const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
+  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

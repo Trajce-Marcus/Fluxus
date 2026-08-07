@@ -10,7 +10,7 @@ import { ensureOperation, ensureSolution, insertPendingAttachment, putConfig } f
 import { appRouter } from '../src/router';
 import { attachments, rptActivities, rptAttributes } from '../src/db/schema';
 import type { BlobStore } from '../src/services/blob';
-import type { ConfigRaw } from '@fluxus/engine';
+import type { SolutionConfig } from '@fluxus/engine';
 
 // One id serves as both solution (config) and operation (records) for the test.
 const SCOPE = 'test/files';
@@ -26,7 +26,7 @@ const blob: BlobStore = {
 
 // Minimal self-contained SDM: a widget with a code, a multi photo attribute,
 // and a single-file attribute with an accept filter.
-const config: ConfigRaw = {
+const config: SolutionConfig = {
   attributes: [
     { key: 'id', label: 'ID', description: '', type: 'text' },
     { key: 'code', label: 'Code', description: '', type: 'text' },

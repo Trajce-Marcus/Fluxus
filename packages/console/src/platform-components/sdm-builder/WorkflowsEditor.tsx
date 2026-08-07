@@ -1,4 +1,4 @@
-// SDM Workflows editor: the solution's workflows (ConfigRaw.workflows) and the
+// SDM Workflows editor: the solution's workflows (SolutionConfig.workflows) and the
 // activities nested under each. A record type binds one workflow; activities
 // are the mutation verbs users run against its records.
 //
@@ -12,7 +12,7 @@ import { useState } from 'react';
 import type {
   ActivityRawDef,
   AttributeUsageDef,
-  ConfigRaw,
+  SolutionConfig,
   SectionMarkerDef,
   WorkflowRawDef,
 } from '@fluxus/engine';
@@ -30,7 +30,7 @@ function hookText(h: string | string[] | null | undefined): string {
 }
 
 export function WorkflowsEditor() {
-  const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
+  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [selWf, setSelWf] = useState(0);
   const [selAct, setSelAct] = useState(0);
   const [busy, setBusy] = useState(false);

@@ -5,13 +5,13 @@
 // (published pages + declared roles + one nesting level).
 
 import { useEffect, useState } from 'react';
-import type { ConfigRaw } from '@fluxus/engine';
+import type { SolutionConfig } from '@fluxus/engine';
 import type { MenuItem } from '@fluxus/client';
 import { readConfig, commitConfig, useDirty } from './useSolutionConfig';
 import { consoleClient, sdmClient } from '../../sdm-runtime/engine';
 import { MenuItemsEditor } from '../admin/MenuItemsEditor';
 
-type ConfigWithMenu = ConfigRaw & { default_menu?: MenuItem[] };
+type ConfigWithMenu = SolutionConfig & { default_menu?: MenuItem[] };
 
 export function MenuEditor() {
   const [draft, setDraft] = useState<ConfigWithMenu>(() => readConfig());
@@ -39,7 +39,7 @@ export function MenuEditor() {
       // Prune: empty items[] would read as a group; an empty menu drops the key
       // (no default is `undefined`, not `[]`).
       const clean = menu.map((it) => (it.items && it.items.length === 0 ? { ...it, items: undefined } : it));
-      await commitConfig({ ...draft, default_menu: clean.length > 0 ? clean : undefined } as ConfigRaw);
+      await commitConfig({ ...draft, default_menu: clean.length > 0 ? clean : undefined } as SolutionConfig);
       setDirty(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

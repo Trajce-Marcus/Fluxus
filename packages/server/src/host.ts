@@ -14,7 +14,7 @@ import {
   buildGeoModule,
   type ActivityDef,
   type ActivityHistoryEntry,
-  type ConfigRaw,
+  type SolutionConfig,
   type ContextUser,
   type Engine,
   type RecordInstance,
@@ -32,7 +32,7 @@ import { buildNotifyModule, consoleNotifySink, type NotifySink } from './service
 export interface OperationHost {
   operationId: string;
   solutionId: string;
-  config: ConfigRaw;
+  config: SolutionConfig;
   adapter: MemoryAdapter;
   engine: Engine;
   /** Load-time serialization of each record — the diff baseline for writeBack. */
@@ -57,7 +57,7 @@ export class OrgNotFoundError extends Error {
   }
 }
 
-export async function getSolutionConfig(db: Db, solutionId: string): Promise<ConfigRaw> {
+export async function getSolutionConfig(db: Db, solutionId: string): Promise<SolutionConfig> {
   const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
   if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
   return rows[0].config;
@@ -641,7 +641,7 @@ export class MenuValidationError extends Error {
  * solution's `default_menu`) — the latter passes `rolesFrom` so roles are read
  * from the config being saved, not the stored one it is replacing.
  */
-export async function validateOperationMenu(db: Db, solutionId: string, menu: MenuItem[], rolesFrom?: ConfigRaw): Promise<void> {
+export async function validateOperationMenu(db: Db, solutionId: string, menu: MenuItem[], rolesFrom?: SolutionConfig): Promise<void> {
   const published = new Set((await listPublishedPages(db, solutionId)).map((p) => p.path));
   const config = rolesFrom ?? (await getSolutionConfig(db, solutionId));
   const roleIds = new Set((config.access?.roles ?? []).map((r) => r.id));
@@ -674,7 +674,7 @@ export async function validateOperationMenu(db: Db, solutionId: string, menu: Me
  * is **default deny**: `def.access.open` must list a held role. `def` is opaque
  * jsonb — this reads only the shallow `access.open` convention, no PageDef dep.
  */
-export function pageOpenable(authConfigured: boolean | undefined, config: ConfigRaw, roles: string[] | undefined, def: unknown): boolean {
+export function pageOpenable(authConfigured: boolean | undefined, config: SolutionConfig, roles: string[] | undefined, def: unknown): boolean {
   if (!authConfigured) return true;
   if (!config.access?.roles?.length) return true;
   const open = (def as { access?: { open?: string[] } } | null)?.access?.open;
@@ -705,7 +705,7 @@ export class ConfigValidationError extends Error {
  * solution-plane and owns no records — an operation starts empty and every
  * record in it arrives through an activity, with no seeding path around that.
  */
-export async function putConfig(db: Db, solutionId: string, config: ConfigRaw, sink: NotifySink = consoleNotifySink): Promise<void> {
+export async function putConfig(db: Db, solutionId: string, config: SolutionConfig, sink: NotifySink = consoleNotifySink): Promise<void> {
   // Structural check first — MemoryAdapter resolves every attribute_ref and
   // workflow_ref, throwing on danglers…
   const adapter = new MemoryAdapter(config);
@@ -756,7 +756,7 @@ export class ConfigDraftNotFoundError extends Error {
 }
 
 /** Append `config` as the next immutable version of a solution's model. */
-async function appendConfigVersion(db: Db, solutionId: string, config: ConfigRaw, readme: string, publishedBy: string): Promise<{ version: number }> {
+async function appendConfigVersion(db: Db, solutionId: string, config: SolutionConfig, readme: string, publishedBy: string): Promise<{ version: number }> {
   const [row] = await db
     .select({ maxV: sql<number | null>`MAX(${sdmConfigVersions.version})` })
     .from(sdmConfigVersions)
@@ -796,7 +796,7 @@ export async function listConfigVersions(db: Db, solutionId: string): Promise<{ 
 }
 
 /** One specific published config — the rollback source. */
-export async function getConfigVersion(db: Db, solutionId: string, version: number): Promise<ConfigRaw | null> {
+export async function getConfigVersion(db: Db, solutionId: string, version: number): Promise<SolutionConfig | null> {
   const rows = await db
     .select({ config: sdmConfigVersions.config })
     .from(sdmConfigVersions)

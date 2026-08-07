@@ -5,7 +5,7 @@
 // diagnostics land on the console.
 
 import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ConfigRaw } from './types';
+import type { SolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
@@ -15,7 +15,7 @@ export interface Finding {
   diagnostic: Diagnostic;
 }
 
-export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] = []): Finding[] {
+export function validateConfig(config: SolutionConfig, services: ServiceModuleDef[] = []): Finding[] {
   // services.logger is engine-owned and part of every host's registry
   // (createEngine appends it, name reserved) — validation must see the same
   // registry the engine runs with, whoever is validating.
@@ -166,7 +166,7 @@ export function validateConfig(config: ConfigRaw, services: ServiceModuleDef[] =
   return findings;
 }
 
-export function reportConfigFindings(config: ConfigRaw, services: ServiceModuleDef[] = []): void {
+export function reportConfigFindings(config: SolutionConfig, services: ServiceModuleDef[] = []): void {
   const findings = validateConfig(config, services);
   for (const { where, diagnostic } of findings) {
     const log = diagnostic.severity === 'error' ? console.error : console.warn;

@@ -1,5 +1,5 @@
 import type { Store } from './store';
-import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ConfigRaw, ReverseRefEntry } from './types';
+import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, SolutionConfig, ReverseRefEntry } from './types';
 import { joinScript } from './bridge';
 
 // THE Store: all reference-Store behaviour (workflow resolution, constraint
@@ -19,7 +19,7 @@ export class MemoryAdapter implements Store {
   private listeners: Set<() => void> = new Set();
   private reverseIndex: Map<string, ReverseRefEntry[]>;
 
-  constructor(config: ConfigRaw, options: MemoryAdapterOptions = {}) {
+  constructor(config: SolutionConfig, options: MemoryAdapterOptions = {}) {
     this.recordTypes = config.recordTypes;
 
     // Build an attribute lookup keyed by attribute.key, then resolve each

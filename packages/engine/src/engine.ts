@@ -5,7 +5,7 @@
 // UI concerns (selection, toasts, console channels) stay with the host.
 
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ActivityDef, ConfigRaw, ContextUser, RecordInstance, RunActivityResult } from './types';
+import type { ActivityDef, SolutionConfig, ContextUser, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
 import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
@@ -13,7 +13,7 @@ import { buildLoggerModule } from './services/logger';
 
 export interface EngineOptions {
   store: Store;
-  config: ConfigRaw;
+  config: SolutionConfig;
   services?: ServiceModuleDef[];
   /**
    * The identity every evaluation sees as `context.user` and every committed

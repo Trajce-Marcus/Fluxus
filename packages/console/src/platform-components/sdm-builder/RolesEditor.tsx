@@ -9,7 +9,7 @@
 // rename must not change it.
 
 import { useState } from 'react';
-import type { ConfigRaw, RoleDef } from '@fluxus/engine';
+import type { SolutionConfig, RoleDef } from '@fluxus/engine';
 import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
 
 /** `role_dispatchers` from "Dispatchers" — the §1 id convention. */
@@ -27,7 +27,7 @@ interface Draft {
 }
 
 export function RolesEditor() {
-  const [draft, setDraft] = useState<ConfigRaw>(() => readConfig());
+  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();

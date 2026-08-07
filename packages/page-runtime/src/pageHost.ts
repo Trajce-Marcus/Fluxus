@@ -20,7 +20,7 @@ import {
   type ServiceModuleDef,
 } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, functionSignatures } from '@fluxus/engine';
-import type { ConfigRaw, MemoryAdapter } from '@fluxus/engine';
+import type { SolutionConfig, MemoryAdapter } from '@fluxus/engine';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
 // Components emit (value, data?) — a selection value or anchor record id, plus
@@ -113,7 +113,7 @@ export interface PageContext {
  */
 export function evaluatePageExpression(
   store: MemoryAdapter,
-  config: ConfigRaw,
+  config: SolutionConfig,
   source: string,
   pageCtx: PageContext,
 ): unknown {
@@ -155,7 +155,7 @@ export function toComponentValue(value: unknown): unknown {
  */
 export function runPageCallback(
   store: MemoryAdapter,
-  config: ConfigRaw,
+  config: SolutionConfig,
   source: string,
   callbackData: CallbackPayload,
   pageCtx: PageContext,
@@ -176,12 +176,12 @@ export function runPageCallback(
 
 // ── Validation (shared by the editor dialog and validatePage) ─────────────────
 
-const pageSchema = (config: ConfigRaw) => buildDslSchema(config, pageServicesStub());
+const pageSchema = (config: SolutionConfig) => buildDslSchema(config, pageServicesStub());
 
-const pageFunctions = (config: ConfigRaw) => functionSignatures(config);
+const pageFunctions = (config: SolutionConfig) => functionSignatures(config);
 
 /** Validate a dynamic-prop expression. `attributes` is not a page root. */
-export function validatePageExpression(config: ConfigRaw, source: string): Diagnostic[] {
+export function validatePageExpression(config: SolutionConfig, source: string): Diagnostic[] {
   return validateExpression(source, pageSchema(config), {
     bannedRoots: ['attributes'],
     functions: pageFunctions(config),
@@ -189,7 +189,7 @@ export function validatePageExpression(config: ConfigRaw, source: string): Diagn
 }
 
 /** Validate a callback script: effects allowed, record mutations rejected. */
-export function validatePageCallback(config: ConfigRaw, source: string): Diagnostic[] {
+export function validatePageCallback(config: SolutionConfig, source: string): Diagnostic[] {
   return validateScript(source, pageSchema(config), {
     mode: 'callback',
     bannedRoots: ['attributes'],

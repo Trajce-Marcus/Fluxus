@@ -1,9 +1,9 @@
-import type { ConfigRaw, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
+import type { SolutionConfig, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
 
 // The SDM is split for hand-editing: shared pools (attributes, functions) plus
 // one file per entity (record type + its workflow, always edited as a pair).
 // This layout is a POC-era convenience — the endgame is the SDM in a database,
-// edited through UI. Everything merges back into one ConfigRaw here; nothing
+// edited through UI. Everything merges back into one SolutionConfig here; nothing
 // downstream knows about files.
 
 import attributes from '../config/attributes.json';
@@ -49,9 +49,9 @@ const entities = [
   samples,
 ] as unknown as EntityFile[];
 
-export const config: ConfigRaw = {
+export const config: SolutionConfig = {
   attributes: attributes as unknown as AttributeDef[],
   recordTypes: entities.map((e) => e.recordType),
   workflows: entities.map((e) => e.workflow),
-  functions: functions as ConfigRaw['functions'],
+  functions: functions as SolutionConfig['functions'],
 };

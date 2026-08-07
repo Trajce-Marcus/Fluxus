@@ -8,7 +8,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { DEMO_USER, isDescriptorType, validateSubmission, type ConfigRaw, type RunActivityResult } from '@fluxus/engine';
+import { DEMO_USER, isDescriptorType, validateSubmission, type SolutionConfig, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -117,7 +117,7 @@ async function resolveUser(ctx: AppContext, operationId: string) {
  * Otherwise **default deny**: a type is readable only if its `access.read`
  * lists a role the user holds. A held role set comes from `runtimeRoles`.
  */
-function computeReadable(authConfigured: boolean | undefined, config: ConfigRaw, roles: string[] | undefined): Set<string> | null {
+function computeReadable(authConfigured: boolean | undefined, config: SolutionConfig, roles: string[] | undefined): Set<string> | null {
   if (!authConfigured) return null; // env stub ⇒ everything open
   if (!config.access?.roles?.length) return null; // solution opted out ⇒ open (adoption)
   const held = new Set(roles ?? []);
@@ -129,7 +129,7 @@ function computeReadable(authConfigured: boolean | undefined, config: ConfigRaw,
 }
 
 /** The caller's resolved roles + the operation's linked-solution config. */
-async function operationContext(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; config: ConfigRaw }> {
+async function operationContext(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; config: SolutionConfig }> {
   const user = await resolveUser(ctx, operationId);
   const op = await getOperation(ctx.db, operationId);
   const config = await getSolutionConfig(ctx.db, op.solutionId);
@@ -436,9 +436,9 @@ export const appRouter = t.router({
           if (defaultMenu !== undefined) {
             const parsed = z.array(menuItemSchema).safeParse(defaultMenu);
             if (!parsed.success) throw new TRPCError({ code: 'BAD_REQUEST', message: `default_menu is not a menu: ${parsed.error.message}` });
-            await validateOperationMenu(ctx.db, input.solutionId, parsed.data, input.config as ConfigRaw);
+            await validateOperationMenu(ctx.db, input.solutionId, parsed.data, input.config as SolutionConfig);
           }
-          await putConfig(ctx.db, input.solutionId, input.config as ConfigRaw, ctx.sink);
+          await putConfig(ctx.db, input.solutionId, input.config as SolutionConfig, ctx.sink);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
