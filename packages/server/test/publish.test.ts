@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
 import { appRouter } from '../src/router';
+import { ensureSolution } from '../src/host';
 
 const SOL = 'test/publish';
 let db: Db;
@@ -56,6 +57,9 @@ describe('page publishing', () => {
 // truth for a solution's model.
 describe('SDM config publishing', () => {
   const CSOL = 'test/config-publish';
+  // The model's entity rows are FK'd to `solutions` (storage split, 2026-08-08),
+  // so the solution has to exist before a config can be stored against it.
+  beforeAll(async () => { await ensureSolution(db, CSOL, 'Config publish'); });
   const model = (label: string) => ({
     attributes: [{ key: 'note', label, description: '', type: 'text' }],
     recordTypes: [],

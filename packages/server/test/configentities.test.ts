@@ -9,7 +9,9 @@
 // the *consistency* unit stays the whole graph.
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
+import { sdmAttributes, sdmMenus, sdmRecordTypes, sdmRoles } from '../src/db/schema';
 import {
   appointSolAdmin,
   ensureOperation,
@@ -217,6 +219,70 @@ describe('the default menu', () => {
     await stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'Crew', roles: ['role_crew'] }] });
     await expect(stub().config.deleteRole({ solutionId: SOL, id: 'role_crew' })).rejects.toThrow(/unknown role/);
     expect((await getSolutionConfig(db, SOL)).access?.roles).toHaveLength(1);
+  });
+});
+
+// Step 2: the six sdm_* tables are truth and sdm_configs.config is derived.
+describe('the tables are truth', () => {
+  it('a put lands as a row, and the snapshot is assembled from the rows', async () => {
+    await stub().config.putAttribute({
+      solutionId: SOL,
+      def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
+    });
+    const rows = await db.select().from(sdmAttributes).where(eq(sdmAttributes.solutionId, SOL));
+    expect(rows.map((r) => r.key).sort()).toEqual(['name', 'serial']);
+    // `def` is the entity verbatim, its own key included — assembly is a lift.
+    expect(rows.find((r) => r.key === 'serial')?.def).toMatchObject({ key: 'serial', label: 'Serial' });
+    expect((await getSolutionConfig(db, SOL)).attributes.map((a) => a.key)).toEqual(['name', 'serial']);
+  });
+
+  it('promotes workflow_ref into its own column, and the FK blocks a dangling one', async () => {
+    const [rt] = await db.select().from(sdmRecordTypes).where(eq(sdmRecordTypes.solutionId, SOL));
+    expect(rt.workflowRef).toBe('wf_assets');
+    expect(rt.def.workflow_ref).toBe('wf_assets'); // the column is a lift, not a move
+    await expect(stub().config.putRecordType({
+      solutionId: SOL,
+      def: { id: 'rt_ghost', name: 'Ghost', description: '', workflow_ref: 'wf_nope', custom_fields: [] },
+    })).rejects.toThrow();
+  });
+
+  it('records authorship per entity — created_by on insert, updated_by on update', async () => {
+    await as(admin).config.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
+    const [created] = await db.select().from(sdmRoles).where(and(eq(sdmRoles.solutionId, SOL), eq(sdmRoles.id, 'role_leads')));
+    expect(created.createdBy).toBe('admin@example.com');
+
+    await appointSolAdmin(db, { email: 'outsider@example.com', solutionId: SOL });
+    await as(outsider).config.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Team leads' } });
+    const [updated] = await db.select().from(sdmRoles).where(and(eq(sdmRoles.solutionId, SOL), eq(sdmRoles.id, 'role_leads')));
+    expect(updated.createdBy).toBe('admin@example.com'); // the author of record survives
+    expect(updated.updatedBy).toBe('outsider@example.com');
+  });
+
+  it('the menu is a row keyed by solution alone', async () => {
+    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'Crew', roles: ['role_crew'] }] });
+    const [menu] = await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL));
+    expect(menu.def).toEqual([{ label: 'Crew', roles: ['role_crew'] }]);
+    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [] });
+    expect(await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL))).toEqual([]);
+  });
+
+  it('config.put is the import path — rows absent from the incoming config go', async () => {
+    await stub().config.putAttribute({
+      solutionId: SOL,
+      def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
+    });
+    expect((await db.select().from(sdmAttributes).where(eq(sdmAttributes.solutionId, SOL)))).toHaveLength(2);
+    // The original config knows nothing of `serial`, so importing it removes it.
+    await stub().config.put({ solutionId: SOL, config });
+    const rows = await db.select().from(sdmAttributes).where(eq(sdmAttributes.solutionId, SOL));
+    expect(rows.map((r) => r.key)).toEqual(['name']);
+  });
+
+  it('a model cannot exist without its solution', async () => {
+    await expect(stub().config.putAttribute({
+      solutionId: 'test/ghost',
+      def: { key: 'x', label: 'X', description: '', type: 'text' },
+    })).rejects.toThrow(/test\/ghost/);
   });
 });
 

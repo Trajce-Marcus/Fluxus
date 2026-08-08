@@ -81,7 +81,12 @@ describe('config storage', () => {
   it('rejects an invalid SDM at save time', async () => {
     const broken = structuredClone(config);
     broken.workflows[0].activities[0].before_hook = 'records.nonexistent_type.count() > 0';
+    await ensureSolution(db, 'demo/broken', 'Broken');
     await expect(caller().config.put({ solutionId: 'demo/broken', config: broken })).rejects.toThrow(/SDM config rejected/);
+  });
+
+  it('refuses a config for a solution that does not exist', async () => {
+    await expect(caller().config.put({ solutionId: 'demo/ghost', config })).rejects.toThrow(/No SDM config stored for solution 'demo\/ghost'/);
   });
 
   it('blocks removing/renaming a record type that stored records still reference', async () => {

@@ -18,8 +18,16 @@
 // links to exactly one solution, so a runtime call resolves operation →
 // solution to read the config while its data stays operation-partitioned.
 
-import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrecision, index, primaryKey } from 'drizzle-orm/pg-core';
-import type { ActivityHistoryEntry, SolutionConfig } from '@fluxus/engine';
+import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrecision, foreignKey, index, primaryKey } from 'drizzle-orm/pg-core';
+import type {
+  ActivityHistoryEntry,
+  AttributeDef,
+  FunctionDef,
+  RecordTypeDef,
+  RoleDef,
+  SolutionConfig,
+  WorkflowRawDef,
+} from '@fluxus/engine';
 
 // A solution is the design artifact — the container for one SDM config, its
 // pages, role defs and default menu (CONSOLE_RUNTIME_SPEC §1). No data, users
@@ -266,10 +274,123 @@ export const solAdmins = pgTable('sol_admins', {
   index('sol_admins_solution').on(t.solutionId),
 ]);
 
+// **Nothing in this row is truth** (model storage split, step 2, 2026-08-08):
+// the model lives in the six `sdm_*` entity tables below and `config` is a
+// derived draft snapshot, refreshed on every write so `config.get` stays a
+// single fetch. Being purely derived, it is droppable and rebuildable at any
+// time — which is the property the split was designed to buy.
 export const sdmConfigs = pgTable('sdm_configs', {
   solutionId: text('solution_id').primaryKey(),
   config: jsonb('config').$type<SolutionConfig>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── The model, one table per collection (split from the blob 2026-08-08) ──────
+// The consistency unit is the whole graph (a workflow references attributes, so
+// validation is always global) while the change unit is ONE entity. A blob made
+// the *write* unit the whole graph too, so `config.put` was last-write-wins
+// across the entire model: two sol admins editing two different record types
+// had no logical conflict, yet one silently lost their work.
+//
+// Every row is keyed by solution and holds the entity exactly as the config
+// spells it. `def` is the entity **verbatim, including its own key/id** —
+// assembly is `rows.map(r => r.def)` with no reconstruction step, and the
+// duplicated identifier is the price of an assembler that cannot be wrong
+// (`def` is the established name: `pages.def`, `page_versions.def`).
+//
+// `created_by`/`updated_by` hold **email**, the users-model key, and are
+// **nullable**: null means the row predates per-entity authorship (the
+// backfill), never a fake author.
+
+export const sdmAttributes = pgTable('sdm_attributes', {
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  // `key`, not `id` — the config's own spelling for an attribute's identity.
+  key: text('key').notNull(),
+  def: jsonb('def').$type<AttributeDef>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.key] }),
+]);
+
+// Activities ride INSIDE their workflow def (ruled 2026-08-08). They were the
+// obvious sixth table — an activity is the largest object in the model — but
+// the change unit is really the workflow: one person owns one at a time, and
+// reviewing a workflow change wants the whole thing in one view. Nesting also
+// preserves their authored order for free. Splitting them out later is a
+// migration with no API change; assembly is per-collection either way.
+export const sdmWorkflows = pgTable('sdm_workflows', {
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  id: text('id').notNull(),
+  def: jsonb('def').$type<WorkflowRawDef>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.id] }),
+]);
+
+export const sdmRecordTypes = pgTable('sdm_record_types', {
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  id: text('id').notNull(),
+  // The one reference the split can hand to Postgres. Named `workflow_ref` to
+  // match the config field, not `workflow_id`, because it IS that field lifted
+  // out — the def still carries it, like every other identifier here.
+  workflowRef: text('workflow_ref').notNull(),
+  def: jsonb('def').$type<RecordTypeDef>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.id] }),
+  foreignKey({
+    columns: [t.solutionId, t.workflowRef],
+    foreignColumns: [sdmWorkflows.solutionId, sdmWorkflows.id],
+    name: 'sdm_record_types_workflow_fk',
+  }),
+]);
+
+export const sdmFunctions = pgTable('sdm_functions', {
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  id: text('id').notNull(),
+  def: jsonb('def').$type<FunctionDef>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.id] }),
+]);
+
+export const sdmRoles = pgTable('sdm_roles', {
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  id: text('id').notNull(),
+  def: jsonb('def').$type<RoleDef>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.id] }),
+]);
+
+// The odd one out — keyed by solution ALONE, because the solution's default
+// runtime menu (§5, M10) is the config's only non-collection field. It is a
+// table rather than a column on `sdm_configs` so that nothing in `sdm_configs`
+// is truth. `def` holds the menu array whole: menu items are not independently
+// authored entities, and one person edits a menu at a time (the same reasoning
+// that keeps activities inside their workflow).
+export const sdmMenus = pgTable('sdm_menus', {
+  solutionId: text('solution_id').primaryKey().references(() => solutions.id),
+  def: jsonb('def').$type<MenuItem[]>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
 });
 
 // Published SDM config versions — the model's change history, closing the gap

@@ -7,7 +7,7 @@
 // Concurrency is last-write-wins per record for now (single-writer dev
 // deployments); optimistic versioning slots into writeBack when it matters.
 
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   createEngine,
@@ -26,7 +26,7 @@ import {
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmConfigVersions, sdmConfigs, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmAttributes, sdmConfigVersions, sdmConfigs, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 
@@ -759,50 +759,88 @@ async function validateConfigGraph(db: DbOrTx, solutionId: string, config: Solut
 }
 
 /**
- * Store an SDM config for a solution — the Phase 4 shift: config becomes a
+ * Store a whole SDM config for a solution — the Phase 4 shift: config becomes a
  * stored artifact and "config-save-time validation" becomes literal. The
  * server rejects an invalid SDM at save, for humans and AI alike (same
  * guardrail posture as validatePage in the page builder). Config is
  * solution-plane and owns no records — an operation starts empty and every
  * record in it arrives through an activity, with no seeding path around that.
+ *
+ * Since the storage split this is the **import** path, not the editing path
+ * (the Console saves one entity at a time): it explodes the incoming config
+ * into rows, replacing all five collections and the menu, and **rows absent
+ * from the incoming config are deleted**. `rollbackConfig` depends on it, and
+ * installing a solution package will too.
  */
-export async function putConfig(db: Db, solutionId: string, config: SolutionConfig, sink: NotifySink = consoleNotifySink): Promise<void> {
-  await validateConfigGraph(db, solutionId, config, sink);
-
-  await db
-    .insert(sdmConfigs)
-    .values({ solutionId, config, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: sdmConfigs.solutionId, set: { config, updatedAt: new Date() } });
+export async function putConfig(
+  db: Db,
+  solutionId: string,
+  config: SolutionConfig,
+  sink: NotifySink = consoleNotifySink,
+  author: string | null = null,
+): Promise<void> {
+  await editConfig(db, solutionId, sink, async (tx) => {
+    // Deletes walk the FK order backwards and precede every insert: a record
+    // type that is going has to go before the workflow it points at can.
+    for (const collection of [...COLLECTIONS_IN_FK_ORDER].reverse()) {
+      await collection.removeExcept(tx, solutionId, collection.read(config).map((e) => identityOf(collection, e)));
+    }
+    for (const collection of COLLECTIONS_IN_FK_ORDER) {
+      for (const entity of collection.read(config)) {
+        await collection.put(tx, solutionId, identityOf(collection, entity), entity, author);
+      }
+    }
+    const menu = (config as { default_menu?: MenuItem[] }).default_menu;
+    if (menu && menu.length > 0) {
+      await tx
+        .insert(sdmMenus)
+        .values({ solutionId, def: menu, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({ target: sdmMenus.solutionId, set: { def: menu, updatedAt: new Date(), updatedBy: author } });
+    } else {
+      await tx.delete(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
+    }
+  });
 }
 
-// ── Per-entity config writes (model storage split, step 1) ────────────────────
+// ── The model as tables (storage split, step 2) ───────────────────────────────
 // The consistency unit is the whole graph; the **change unit is one entity**.
-// `config.put` conflates the two and is therefore last-write-wins across the
-// entire model — two sol admins editing two different record types have no
-// logical conflict, yet one silently loses their work. These mutations write one
-// entity while validating everything, which is what closes that hole.
+// The blob conflated the two, so `config.put` was last-write-wins across the
+// entire model — two sol admins editing two different record types had no
+// logical conflict, yet one silently lost their work. Step 1 narrowed the write
+// API to one entity per call; this is the storage underneath it.
 //
-// Step 1 keeps the storage exactly as it is: one jsonb blob. `spliceEntity` and
-// the `write` half of each collection are therefore **deliberately throwaway** —
-// step 2 lands the six `sdm_*` tables and swaps them for row-write-plus-assemble
-// with no change to the exported signatures, the validation, or the callers.
+// **The tables are truth. The assembled config is derived.** Every write
+// assembles the graph from the six tables, validates that, and refreshes
+// `sdm_configs.config` so `config.get` stays a single fetch — that column now
+// holds nothing but derivation, and is droppable and rebuildable at will.
 
-/** What a solution with no config row yet starts from (the first entity write
- *  creates the row) — the same empty model the Console opens on. */
+/** The assembly base, and what a solution with no rows yet reads as — the same
+ *  empty model the Console opens a fresh solution on. */
 const EMPTY_CONFIG: SolutionConfig = { attributes: [], recordTypes: [], workflows: [] };
 
 /**
- * One collection of the model, addressed the way the split addresses it: the
- * name errors use, the identity field the entity itself carries (`key` for
- * attributes, `id` for the rest — the config's own spelling), and read/write of
- * that collection within a config. Step 2 adds the table each maps to and
- * replaces `write`; nothing else about a collection changes.
+ * One collection of the model: the name errors use, the identity field the
+ * entity itself carries (`key` for attributes, `id` for the rest — the config's
+ * own spelling), where it sits within a config, and its rows.
+ *
+ * `def` is stored **verbatim, including its own key/id**, so `read`/`write` are
+ * a plain lift in and out of the config — assembly has no reconstruction step to
+ * get wrong.
  */
 export interface ConfigCollection<T> {
   name: string;
   idField: 'key' | 'id';
   read(config: SolutionConfig): T[];
   write(config: SolutionConfig, next: T[]): SolutionConfig;
+  /** Every def for a solution, ordered by identity — assembly is deterministic
+   *  by key, since rows carry no authored order (lost at migration, by design). */
+  list(tx: DbOrTx, solutionId: string): Promise<T[]>;
+  /** Insert or update one row. `created_by` on insert, `updated_by` on update. */
+  put(tx: DbOrTx, solutionId: string, id: string, def: T, author: string | null): Promise<void>;
+  /** Delete by identity, or (`ids` omitted) every row the given identities do
+   *  not name — the import path's "rows absent from the incoming config go". */
+  remove(tx: DbOrTx, solutionId: string, id: string): Promise<void>;
+  removeExcept(tx: DbOrTx, solutionId: string, keep: string[]): Promise<void>;
 }
 
 export const configCollections = {
@@ -811,37 +849,176 @@ export const configCollections = {
     idField: 'key',
     read: (c) => c.attributes ?? [],
     write: (c, next) => ({ ...c, attributes: next }),
+    list: async (tx, solutionId) => (await tx
+      .select({ def: sdmAttributes.def })
+      .from(sdmAttributes)
+      .where(eq(sdmAttributes.solutionId, solutionId))
+      .orderBy(asc(sdmAttributes.key))).map((r) => r.def),
+    put: async (tx, solutionId, key, def, author) => {
+      await tx
+        .insert(sdmAttributes)
+        .values({ solutionId, key, def, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({
+          target: [sdmAttributes.solutionId, sdmAttributes.key],
+          set: { def, updatedAt: new Date(), updatedBy: author },
+        });
+    },
+    remove: async (tx, solutionId, key) => {
+      await tx.delete(sdmAttributes).where(and(eq(sdmAttributes.solutionId, solutionId), eq(sdmAttributes.key, key)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmAttributes).where(and(
+        eq(sdmAttributes.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmAttributes.key, keep)) : undefined,
+      ));
+    },
   } as ConfigCollection<AttributeDef>,
+
+  // Activities ride inside their workflow (ruled 2026-08-08) — the change unit
+  // is the workflow, and nesting keeps their authored order for free.
+  workflows: {
+    name: 'workflows',
+    idField: 'id',
+    read: (c) => c.workflows ?? [],
+    write: (c, next) => ({ ...c, workflows: next }),
+    list: async (tx, solutionId) => (await tx
+      .select({ def: sdmWorkflows.def })
+      .from(sdmWorkflows)
+      .where(eq(sdmWorkflows.solutionId, solutionId))
+      .orderBy(asc(sdmWorkflows.id))).map((r) => r.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx
+        .insert(sdmWorkflows)
+        .values({ solutionId, id, def, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({
+          target: [sdmWorkflows.solutionId, sdmWorkflows.id],
+          set: { def, updatedAt: new Date(), updatedBy: author },
+        });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmWorkflows).where(and(eq(sdmWorkflows.solutionId, solutionId), eq(sdmWorkflows.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmWorkflows).where(and(
+        eq(sdmWorkflows.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmWorkflows.id, keep)) : undefined,
+      ));
+    },
+  } as ConfigCollection<WorkflowRawDef>,
+
   recordTypes: {
     name: 'recordTypes',
     idField: 'id',
     read: (c) => c.recordTypes ?? [],
     write: (c, next) => ({ ...c, recordTypes: next }),
+    list: async (tx, solutionId) => (await tx
+      .select({ def: sdmRecordTypes.def })
+      .from(sdmRecordTypes)
+      .where(eq(sdmRecordTypes.solutionId, solutionId))
+      .orderBy(asc(sdmRecordTypes.id))).map((r) => r.def),
+    // `workflow_ref` is promoted out of the def into its own column so the one
+    // reference the split can hand to Postgres is a real FK. The def still
+    // carries it — the column is a lift, not a move.
+    put: async (tx, solutionId, id, def, author) => {
+      await tx
+        .insert(sdmRecordTypes)
+        .values({ solutionId, id, workflowRef: def.workflow_ref, def, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({
+          target: [sdmRecordTypes.solutionId, sdmRecordTypes.id],
+          set: { workflowRef: def.workflow_ref, def, updatedAt: new Date(), updatedBy: author },
+        });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmRecordTypes).where(and(eq(sdmRecordTypes.solutionId, solutionId), eq(sdmRecordTypes.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmRecordTypes).where(and(
+        eq(sdmRecordTypes.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmRecordTypes.id, keep)) : undefined,
+      ));
+    },
   } as ConfigCollection<RecordTypeDef>,
-  workflows: {
-    name: 'workflows',
-    idField: 'id',
-    // Activities ride inside their workflow (ruled 2026-08-08) — the change
-    // unit is the workflow, and nesting keeps their authored order for free.
-    read: (c) => c.workflows ?? [],
-    write: (c, next) => ({ ...c, workflows: next }),
-  } as ConfigCollection<WorkflowRawDef>,
+
   functions: {
     name: 'functions',
     idField: 'id',
     read: (c) => c.functions ?? [],
     write: (c, next) => ({ ...c, functions: next }),
+    list: async (tx, solutionId) => (await tx
+      .select({ def: sdmFunctions.def })
+      .from(sdmFunctions)
+      .where(eq(sdmFunctions.solutionId, solutionId))
+      .orderBy(asc(sdmFunctions.id))).map((r) => r.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx
+        .insert(sdmFunctions)
+        .values({ solutionId, id, def, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({
+          target: [sdmFunctions.solutionId, sdmFunctions.id],
+          set: { def, updatedAt: new Date(), updatedBy: author },
+        });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmFunctions).where(and(eq(sdmFunctions.solutionId, solutionId), eq(sdmFunctions.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmFunctions).where(and(
+        eq(sdmFunctions.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmFunctions.id, keep)) : undefined,
+      ));
+    },
   } as ConfigCollection<FunctionDef>,
+
   roles: {
     name: 'access.roles',
     idField: 'id',
     read: (c) => c.access?.roles ?? [],
     write: (c, next) => ({ ...c, access: { ...c.access, roles: next } }),
+    list: async (tx, solutionId) => (await tx
+      .select({ def: sdmRoles.def })
+      .from(sdmRoles)
+      .where(eq(sdmRoles.solutionId, solutionId))
+      .orderBy(asc(sdmRoles.id))).map((r) => r.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx
+        .insert(sdmRoles)
+        .values({ solutionId, id, def, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({
+          target: [sdmRoles.solutionId, sdmRoles.id],
+          set: { def, updatedAt: new Date(), updatedBy: author },
+        });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmRoles).where(and(eq(sdmRoles.solutionId, solutionId), eq(sdmRoles.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmRoles).where(and(
+        eq(sdmRoles.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmRoles.id, keep)) : undefined,
+      ));
+    },
   } as ConfigCollection<RoleDef>,
 } as const;
 
-/** The identity an entity carries in its own def — assembly never reconstructs
- *  it, so a def that lacks one has nowhere to live. */
+/**
+ * Workflows before record types, always: `sdm_record_types.workflow_ref` is a
+ * real FK, so an insert order that put a record type first would be rejected by
+ * Postgres, and a delete order that dropped a workflow first likewise. Deletes
+ * walk this list backwards.
+ */
+// Typed at `unknown` because this list is walked heterogeneously: each entry
+// only ever hands its own defs back to its own methods, so the element type is
+// the one thing no caller here needs to know.
+const COLLECTIONS_IN_FK_ORDER: readonly ConfigCollection<unknown>[] = [
+  configCollections.attributes,
+  configCollections.workflows,
+  configCollections.recordTypes,
+  configCollections.functions,
+  configCollections.roles,
+];
+
+/** The identity an entity carries in its own def — nothing reconstructs it, so
+ *  a def that lacks one has nowhere to live. */
 function identityOf<T>(collection: ConfigCollection<T>, entity: unknown): string {
   const id = (entity as Record<string, unknown> | null | undefined)?.[collection.idField];
   if (typeof id !== 'string' || id.trim() === '') {
@@ -851,36 +1028,53 @@ function identityOf<T>(collection: ConfigCollection<T>, entity: unknown): string
 }
 
 /**
- * The lock every per-entity write takes: the solution's `sdm_configs` row,
+ * The lock every model write takes: the solution's `sdm_configs` row,
  * `FOR UPDATE`. It **serialises validation per solution** while leaving the
  * writes per entity — two admins editing different entities both keep their
  * work, they queue for the length of one validation. The row is created if
- * absent, because a solution's first entity write is also its first config.
+ * absent, because a solution's first entity write is also its first snapshot.
  */
-async function lockConfig(tx: DbOrTx, solutionId: string): Promise<SolutionConfig> {
+async function lockConfig(tx: DbOrTx, solutionId: string): Promise<void> {
   const locked = async () =>
-    (await tx.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId)).for('update'))[0];
-  const row = await locked();
-  if (row) return row.config;
+    (await tx.select({ solutionId: sdmConfigs.solutionId }).from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId)).for('update'))[0];
+  if (await locked()) return;
   // A concurrent first writer may win this insert; it then holds the row lock,
   // and the re-select blocks until it commits rather than clobbering it.
   await tx.insert(sdmConfigs).values({ solutionId, config: EMPTY_CONFIG }).onConflictDoNothing();
-  return (await locked())?.config ?? EMPTY_CONFIG;
+  await locked();
+}
+
+/** Assemble the graph from the six tables. This is the whole read model — no
+ *  reconstruction, just each collection's defs folded into an empty config. */
+async function assembleConfig(tx: DbOrTx, solutionId: string): Promise<SolutionConfig> {
+  let config = EMPTY_CONFIG;
+  for (const collection of COLLECTIONS_IN_FK_ORDER) {
+    config = collection.write(config, await collection.list(tx, solutionId));
+  }
+  const [menu] = await tx.select({ def: sdmMenus.def }).from(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
+  return menu ? ({ ...config, default_menu: menu.def } as SolutionConfig) : config;
 }
 
 /**
- * One transaction: lock the solution's config, splice in the single entity, run
- * the full graph validation, write back. Any error rolls the entity write back
- * with it, so a rejected edit leaves the stored model exactly as it was.
+ * One transaction: take the lock, write the rows, assemble, validate the whole
+ * graph, refresh the derived snapshot. Any error rolls the row writes back with
+ * it, so a rejected edit leaves the stored model exactly as it was.
  */
 async function editConfig(
   db: Db,
   solutionId: string,
   sink: NotifySink,
-  splice: (config: SolutionConfig) => SolutionConfig,
+  writeRows: (tx: DbOrTx) => Promise<void>,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const next = splice(await lockConfig(tx, solutionId));
+    // Every entity row is FK'd to `solutions`, so a model for a solution that
+    // does not exist is an orphan the database will refuse. Asked here so it
+    // reads as "no such solution" rather than as a constraint violation.
+    const [solution] = await tx.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, solutionId));
+    if (!solution) throw new SolutionNotFoundError(solutionId);
+    await lockConfig(tx, solutionId);
+    await writeRows(tx);
+    const next = await assembleConfig(tx, solutionId);
     await validateConfigGraph(tx, solutionId, next, sink);
     await validateDefaultMenu(tx, solutionId, next);
     await tx.update(sdmConfigs).set({ config: next, updatedAt: new Date() }).where(eq(sdmConfigs.solutionId, solutionId));
@@ -908,23 +1102,18 @@ export async function putConfigEntity<T>(
   collection: ConfigCollection<T>,
   entity: unknown,
   sink: NotifySink = consoleNotifySink,
+  author: string | null = null,
 ): Promise<void> {
   const id = identityOf(collection, entity);
-  await editConfig(db, solutionId, sink, (config) => {
-    const current = collection.read(config);
-    const at = current.findIndex((e) => identityOf(collection, e) === id);
-    // Replace in place, or append. Step 1 preserves authored array order; step 2
-    // drops it by design (rows assemble by key — see the SPEC's "Ordering").
-    const next = at === -1 ? [...current, entity as T] : current.map((e, i) => (i === at ? (entity as T) : e));
-    return collection.write(config, next);
-  });
+  await editConfig(db, solutionId, sink, (tx) => collection.put(tx, solutionId, id, entity as T, author));
 }
 
 /**
  * Remove one entity of a collection. Idempotent, like every other delete here:
  * an id that is already gone is a delete that already happened. A delete that
  * would dangle (an attribute an activity still uses, a workflow a record type
- * still points at) fails the graph validation and rolls back.
+ * still points at) fails validation and rolls back — the FK catches the
+ * record-type case earlier and more cheaply.
  */
 export async function deleteConfigEntity<T>(
   db: Db,
@@ -933,23 +1122,31 @@ export async function deleteConfigEntity<T>(
   id: string,
   sink: NotifySink = consoleNotifySink,
 ): Promise<void> {
-  await editConfig(db, solutionId, sink, (config) =>
-    collection.write(config, collection.read(config).filter((e) => identityOf(collection, e) !== id)),
-  );
+  await editConfig(db, solutionId, sink, (tx) => collection.remove(tx, solutionId, id));
 }
 
-/** Replace the solution's default runtime menu. No delete: `[]` is the empty
- *  menu, and dropping the key entirely is what "no default" already means. */
+/** Replace the solution's default runtime menu. No delete procedure: `[]` is the
+ *  empty menu, and it drops the row, because "no default" is the absent key. */
 export async function putDefaultMenu(
   db: Db,
   solutionId: string,
   menu: MenuItem[],
   sink: NotifySink = consoleNotifySink,
+  author: string | null = null,
 ): Promise<void> {
-  await editConfig(db, solutionId, sink, (config) => ({
-    ...config,
-    default_menu: menu.length > 0 ? menu : undefined,
-  } as SolutionConfig));
+  await editConfig(db, solutionId, sink, async (tx) => {
+    if (menu.length === 0) {
+      await tx.delete(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
+      return;
+    }
+    await tx
+      .insert(sdmMenus)
+      .values({ solutionId, def: menu, createdBy: author, updatedBy: author })
+      .onConflictDoUpdate({
+        target: sdmMenus.solutionId,
+        set: { def: menu, updatedAt: new Date(), updatedBy: author },
+      });
+  });
 }
 
 // ── SDM config publishing (ruled 2026-07-26) ─────────────────────────────────

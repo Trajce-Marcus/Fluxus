@@ -134,6 +134,13 @@
       "when": 1785201000000,
       "tag": "0018_org_owner_email",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785201100000,
+      "tag": "0019_model_entity_tables",
+      "breakpoints": true
     }
   ]
 }

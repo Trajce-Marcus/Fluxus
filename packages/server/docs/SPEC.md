@@ -39,7 +39,10 @@ because the entry append and record_map change preceded the hook.
 src/db/schema.ts       — Drizzle schema: orgs + solutions + operations (the tier,
                          CONSOLE_RUNTIME_SPEC §2), user_roles +
                          sol_admins (governance store, §2a),
-                         sdm_configs + pages (solution-keyed design artifacts),
+                         sdm_attributes/_workflows/_record_types/_functions/
+                         _roles/_menus (the model, one table per collection —
+                         truth since 2026-08-08), sdm_configs (its DERIVED
+                         snapshot) + pages (solution-keyed design artifacts),
                          page_versions (append-only published snapshots, §3),
                          records (transactional, operation-keyed),
                          rpt_activities + rpt_attributes (reporting,
@@ -514,8 +517,13 @@ because the config draft is what every host evaluates against, whereas a page
 draft is the builder's working copy. Nothing installs a config or a page: a
 migrated database is empty and stays empty until someone authors into it.
 
-DDL is drizzle-kit migrations (`migrations/`, generated from `schema.ts` via
-`npm run db:generate`): `createDb()` applies outstanding migrations
+DDL is drizzle-kit migrations (`migrations/`). `npm run db:generate` can write
+one from `schema.ts`, but in practice every migration since 0006 is
+**hand-written** — the prose header explaining why a change is being made is
+worth more than the generator's output, and the snapshots under `migrations/meta`
+(which only the generator reads) stopped at 0005 accordingly. A hand-written
+migration needs its `.sql` file and an entry in `meta/_journal.json`; the
+runtime migrator reads only those two. `createDb()` applies outstanding migrations
 idempotently at connect on both drivers (unless `applyMigrations: false` —
 the Vercel entry, where the bundle ships without migrations/ on disk), and
 `npm run db:migrate` runs the same step explicitly against `DATABASE_URL` —
@@ -528,11 +536,11 @@ The node-postgres pool handles idle-client `'error'` events (logged, client
 discarded and replaced on next query) — Neon reaps idle connections
 server-side, and an unhandled error event would crash the process.
 
-## Model storage: the SDM config as tables (designed 2026-08-08; **step 1 BUILT 2026-08-08**, the six tables NOT BUILT)
+## Model storage: the SDM config as tables (**BUILT 2026-08-08**, steps 1 and 2)
 
-Today one jsonb blob per solution (`sdm_configs.config`) holds attributes,
-record types, workflows, functions and `access.roles`. The mismatch that
-forces the change: the **consistency unit is the whole graph** (a workflow
+Until 2026-08-08 one jsonb blob per solution (`sdm_configs.config`) held
+attributes, record types, workflows, functions and `access.roles`. The mismatch
+that forced the change: the **consistency unit is the whole graph** (a workflow
 references attributes, so validation is always global) while the **change unit
 is one entity** (an author edits one attribute) — and a blob makes the *write*
 unit the whole graph too. `config.put` is therefore last-write-wins across the
@@ -610,7 +618,8 @@ per-collection either way.
 - **`sdm_configs`** — the row survives unchanged in shape, with its `config`
   column demoted from truth to a **derived draft snapshot**, refreshed on every
   write so `config.get` stays a single fetch. After the split the table holds
-  **nothing but derivation**.
+  **nothing but derivation** — `assembleConfig` rebuilds it from the six tables,
+  so it is droppable and rebuildable at any time.
 - **`config.get`** — unchanged, reads the snapshot.
 - **`config.put`** (whole config) — kept, as the **import** path: it explodes an
   incoming config into rows, replacing all five collections and the menu (rows
@@ -646,9 +655,6 @@ admin, like `config.put`. Each runs one transaction:
 5. any error → rollback, so the entity write disappears with it.
 6. success → refresh `sdm_configs.config` with the assembled graph, commit.
 
-Steps 2–3 are the ones step 1 substitutes (see *Build order*); everything else
-is what runs today.
-
 A delete that would dangle (an attribute an activity still uses, a workflow a
 record type still points at) fails at step 4 like any other invalid graph — the
 FK catches the record-type case earlier and more cheaply.
@@ -676,11 +682,27 @@ Details settled in the build:
   activities still name is a dangling ref either way), arrived at one step
   earlier.
 
-### Migration
+### Migration (BUILT: `0019_model_entity_tables`)
 
-One new migration creates the six tables and backfills by running each
-existing `sdm_configs.config` through the import path, leaving `config` in
-place as the snapshot. `*_by` columns land null for backfilled rows.
+One migration creates the six tables and backfills by exploding each existing
+`sdm_configs.config` with `jsonb_array_elements`, leaving `config` in place as
+the snapshot. `*_by` columns land null for backfilled rows — null means the row
+predates per-entity authorship, never a fake author. Like the backfills in 0003
+and 0016 it only SELECTs from rows that already exist, so on a fresh database it
+inserts nothing.
+
+Two things the backfill settles by doing: **authored array order is lost**
+(accepted above — nothing reads it), and **workflows are inserted before record
+types**, because `workflow_ref` is a real FK. Verified against a database
+migrated to 0018 and seeded with a blob config; the suite itself cannot cover it,
+since a test database is migrated from empty and has nothing to backfill.
+
+One behaviour the FKs add beyond the storage move: **a model cannot exist
+without its solution.** Every entity row references `solutions.id`, so
+`config.put` (and every per-entity write) on an unknown solution is refused —
+asked explicitly up front, so it reads as "no such solution" rather than as a
+constraint violation. Two older tests stored configs for solutions they never
+created and were fixed to create them.
 
 ### Build order (ruled 2026-08-08): the API moves before the storage
 
@@ -703,20 +725,23 @@ step 2 replaces them with a table write plus assembly, and touches nothing else.
 Step 1 keeps authored array order (a put replaces in place); step 2 drops it, as
 *Ordering* above says.
 
-**Step 2 — the tables underneath.** The migration lands and each procedure's
-body swaps blob-splicing for row-write-plus-assemble. No API change, no app
-change; the throwaway splice bodies are deleted here. A migration is a far
-safer thing to run when nothing above it is moving.
+**Step 2 — the tables underneath. BUILT 2026-08-08** (migration
+`0019_model_entity_tables`). Each procedure's body swapped blob-splicing for
+row-write-plus-assemble. No API change, no app change — the Console was not
+touched, which is the whole return on doing the API first. What the swap
+actually moved: each collection gained `list`/`put`/`remove`/`removeExcept` over
+its table, `editConfig` became lock → write rows → `assembleConfig` → validate →
+refresh snapshot, and `putConfig` became the exploder described above.
 
 Rejected: storage first, under an unchanged Console. It delivers nothing until
 step 2, and it leaves the editor to change its storage *and* its API in one
 later step. This order touches the Console once, early, and pays out
 immediately.
 
-The one thing step 1 cannot deliver is **per-entity authorship** — `created_by`
-/ `updated_by` arrive with the tables. Step 1 is covered by
-`test/configentities.test.ts`, whose first case is the lost update itself: two
-writers, two different entities, both saved.
+**Per-entity authorship** arrived with the tables, as planned: `created_by` on
+insert, `updated_by` on update, both the caller's email, both null for backfilled
+rows. Covered by `test/configentities.test.ts`, whose first case is the lost
+update itself — two writers, two different entities, both saved.
 
 ### Deliberately deferred
 

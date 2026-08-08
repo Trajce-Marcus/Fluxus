@@ -180,7 +180,7 @@ function entityPut<T>(collection: ConfigCollection<T>) {
     .mutation(async ({ ctx, input }) => {
       try {
         await requireSolAdmin(ctx, input.solutionId);
-        await putConfigEntity(ctx.db, input.solutionId, collection, input.def, ctx.sink);
+        await putConfigEntity(ctx.db, input.solutionId, collection, input.def, ctx.sink, ctx.user?.email ?? null);
         return { ok: true as const };
       } catch (err) {
         rethrow(err);
@@ -465,7 +465,7 @@ export const appRouter = t.router({
             if (!parsed.success) throw new TRPCError({ code: 'BAD_REQUEST', message: `default_menu is not a menu: ${parsed.error.message}` });
             await validateOperationMenu(ctx.db, input.solutionId, parsed.data, input.config as SolutionConfig);
           }
-          await putConfig(ctx.db, input.solutionId, input.config as SolutionConfig, ctx.sink);
+          await putConfig(ctx.db, input.solutionId, input.config as SolutionConfig, ctx.sink, ctx.user?.email ?? null);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
@@ -509,7 +509,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         try {
           await requireSolAdmin(ctx, input.solutionId);
-          await putDefaultMenu(ctx.db, input.solutionId, input.menu, ctx.sink);
+          await putDefaultMenu(ctx.db, input.solutionId, input.menu, ctx.sink, ctx.user?.email ?? null);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
