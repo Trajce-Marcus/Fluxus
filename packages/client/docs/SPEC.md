@@ -30,7 +30,14 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    `refresh`/`runActivity` work exactly as in the Runtime host — running an
    activity is how a solution builder tests a workflow. Omitting `operationId`
    yields an empty record set: legal for a solution with no operations yet,
-   but the exception, not the design. `saveConfig` round-trips `config.put`;
+   but the exception, not the design. Model writes are **per entity** (2026-08-08):
+   `putAttribute`/`deleteAttribute`, `putRecordType`/`deleteRecordType`,
+   `putWorkflow`/`deleteWorkflow`, `putFunction`/`deleteFunction`,
+   `putRole`/`deleteRole` and `putDefaultMenu` each round-trip the matching
+   `config.*` mutation, which validates the whole graph under a per-solution
+   lock — so two people editing two different entities no longer overwrite each
+   other. `saveConfig` still round-trips `config.put`, but as the **import**
+   path (installing or rolling back a whole config), not the editing path.
    `publishConfig`/`configVersions`/`rollbackConfig` are the model's version
    history (the surface pages have had since M3). `operationsForSolution`
    (static) lists a solution's operations for the Console data picker.

@@ -19,6 +19,14 @@ import * as schema from './schema';
 // (their difference is the raw-result HKT, unused by our queries).
 export type Db = PgliteDatabase<typeof schema>;
 
+/**
+ * A database handle or an open transaction — the same query-builder surface
+ * either way. Read helpers that a transactional writer also has to call (the
+ * per-entity config writes run their validation inside the lock) take this
+ * rather than `Db`, so they work on both sides.
+ */
+export type DbOrTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
+
 export interface CreateDbOptions {
   /** Postgres connection string; falls back to process.env.DATABASE_URL. */
   databaseUrl?: string;

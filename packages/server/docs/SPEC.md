@@ -50,14 +50,18 @@ src/auth.ts            — bearer-JWT verification against Neon Auth's JWKS
                          (jose), env-driven posture, the two-lookup
                          roles-resolver seam (stubbed)
 src/host.ts            — loadOperationHost (resolve operation → solution, then
-                         load) / writeBack (diff + projection) / putConfig;
+                         load) / writeBack (diff + projection) / putConfig +
+                         the per-entity model writes (configCollections,
+                         putConfigEntity/deleteConfigEntity/putDefaultMenu);
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig)
 src/router.ts          — the tRPC router: orgs.get/putProfile,
                          solutions.list/create/update/delete,
-                         operations.list/get/create/putConfig, config.get/put,
-                         pages.*, records.*, activities.run, files.*;
+                         operations.list/get/create/putConfig, config.get/put
+                         + the per-entity model writes (putAttribute…
+                         putDefaultMenu), pages.*, records.*, activities.run,
+                         files.*;
                          DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
 src/services/blob.ts   — the blob-store seam (R2): the ONLY module touching the
                          S3 client; presign helpers, key generation, cost
@@ -163,7 +167,7 @@ takes `operationId?` (both default `demo/sdm`):
   | `solAdmins.*`, `opAdmins.appoint` / `remove` | org admin |
   | `opUsers.add` | op admin **or** org admin |
   | `opUsers.remove`, `userRoles.*`, `operations.putConfig` | op admin |
-  | `config.put`, `pages.*`, `publish` | sol admin |
+  | `config.put`, the per-entity model writes, `pages.*`, `publish` | sol admin |
 
   **Sol admins have no user-facing grant at all** — including `solAdmins.list`,
   which carries real emails. A person building the model has no business over
@@ -315,6 +319,11 @@ takes `operationId?` (both default `demo/sdm`):
   stays menu-blind, so `put` validates it here — §5 shape, published-page +
   declared-role references (roles read from the **incoming** config via
   `validateOperationMenu`'s `rolesFrom` param), one nesting level.
+  Since 2026-08-08 `put` is the **import** path, not the editing path: the
+  Console saves one entity at a time through the eleven per-entity mutations
+  (`config.putAttribute` … `config.putDefaultMenu`), which run this same
+  validation under a per-solution lock. See "Model storage: the SDM config as
+  tables".
 - **`pages.list` / `pages.put` / `pages.delete`** `{ solutionId?, path, def }`
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
@@ -378,7 +387,7 @@ rev 6 §0). What the server implements:
   it. One grade, so one boolean (2026-08-04); the `read`/`write` split bought
   nothing once appointment moved onto the admin tiers. Keyed on **email**, so a
   caller with no email can never match. Checked by
-  `config.put`/`pages.*`/`publish` via `requireSolAdmin`;
+  `config.put`, the per-entity model writes, `pages.*` and `publish` via `requireSolAdmin`;
   `solutions.update|delete`, operations, users and roles left this check when the
   admin tiers landed. `requireSolAdmin` is a **no-op when auth is unconfigured**
   (env stub open, §7).
@@ -519,7 +528,7 @@ The node-postgres pool handles idle-client `'error'` events (logged, client
 discarded and replaced on next query) — Neon reaps idle connections
 server-side, and an unhandled error event would crash the process.
 
-## Model storage: the SDM config as tables (designed 2026-08-08, NOT BUILT)
+## Model storage: the SDM config as tables (designed 2026-08-08; **step 1 BUILT 2026-08-08**, the six tables NOT BUILT)
 
 Today one jsonb blob per solution (`sdm_configs.config`) holds attributes,
 record types, workflows, functions and `access.roles`. The mismatch that
@@ -615,9 +624,9 @@ attributes by `key`, the other four by `id`. Activities keep their existing
 `sort_order` inside the workflow def. Authored array order in today's blobs is
 **lost at migration** — accepted; nothing reads it.
 
-### The write path
+### The write path (BUILT 2026-08-08)
 
-New per-entity mutations sit beside `config.put`: `config.putAttribute` /
+Eleven per-entity mutations sit beside `config.put`: `config.putAttribute` /
 `deleteAttribute`, `config.putRecordType` / `deleteRecordType`,
 `config.putWorkflow` / `deleteWorkflow`, `config.putFunction` /
 `deleteFunction`, `config.putRole` / `deleteRole`, and
@@ -637,9 +646,35 @@ admin, like `config.put`. Each runs one transaction:
 5. any error → rollback, so the entity write disappears with it.
 6. success → refresh `sdm_configs.config` with the assembled graph, commit.
 
+Steps 2–3 are the ones step 1 substitutes (see *Build order*); everything else
+is what runs today.
+
 A delete that would dangle (an attribute an activity still uses, a workflow a
 record type still points at) fails at step 4 like any other invalid graph — the
 FK catches the record-type case earlier and more cheaply.
+
+Details settled in the build:
+
+- **A put addresses the entity by the identity its own `def` carries** — the
+  wire input is `{ solutionId, def }`, and `def` is opaque exactly as
+  `config.put`'s whole config is. A def with no `key`/`id` is rejected before
+  anything is locked: assembly never reconstructs an identity, so a def without
+  one has nowhere to live. A delete names it explicitly, in the collection's own
+  spelling: `deleteAttribute({ key })`, the other four `({ id })`.
+- **A put replaces or appends**; a **delete is idempotent** — an id already gone
+  is a delete that already happened, matching `deletePage`.
+- **The first entity write creates the `sdm_configs` row**, from the same empty
+  model the Console opens a fresh solution on. Authoring into a new solution
+  never needs a whole-config save first.
+- **`default_menu` validation moved into the host** (`validateDefaultMenu`) so
+  both doors run one implementation, and it runs on **every** entity write, not
+  just menu writes — that is what makes deleting a role a menu item still names
+  fail. `config.put`'s own behaviour and error text are unchanged.
+- A **rename is not one call**: it is `put` of the new identity plus `delete` of
+  the old, and the delete fails while anything still references the old one.
+  That is the same answer the whole-config door gave (a renamed attribute its
+  activities still name is a dangling ref either way), arrived at one step
+  earlier.
 
 ### Migration
 
@@ -649,13 +684,24 @@ place as the snapshot. `*_by` columns land null for backfilled rows.
 
 ### Build order (ruled 2026-08-08): the API moves before the storage
 
-**Step 1 — the per-entity procedures, over today's blob.** The concurrency fix
-does not need the tables. Each procedure runs the transaction described above
-with one substitution at steps 2–3: instead of writing a row and assembling,
-it splices the single entity into the parsed `sdm_configs.config` under the
-same `FOR UPDATE` lock. Validation, the lock, the signatures and the Console's
-call sites are all final. Two admins editing different record types both keep
-their work from this step onwards — which is the point of the whole exercise.
+**Step 1 — the per-entity procedures, over today's blob. BUILT 2026-08-08.**
+The concurrency fix does not need the tables. Each procedure runs the
+transaction described above with one substitution at steps 2–3: instead of
+writing a row and assembling, it splices the single entity into the parsed
+`sdm_configs.config` under the same `FOR UPDATE` lock. Validation, the lock, the
+signatures and the Console's call sites are all final. Two admins editing
+different record types both keep their work from this step onwards — which is
+the point of the whole exercise.
+
+What landed, and where the seam is: `configCollections` in `src/host.ts` names
+the five collections, each with the identity field its entities carry and a
+`read`/`write` pair over a config. `putConfigEntity` / `deleteConfigEntity` /
+`putDefaultMenu` share one `editConfig` transaction (lock → splice → validate →
+write back); the procedures are thin gate-plus-call. **The `write` half of each
+collection and the splice inside `editConfig` are the only throwaway parts** —
+step 2 replaces them with a table write plus assembly, and touches nothing else.
+Step 1 keeps authored array order (a put replaces in place); step 2 drops it, as
+*Ordering* above says.
 
 **Step 2 — the tables underneath.** The migration lands and each procedure's
 body swaps blob-splicing for row-write-plus-assemble. No API change, no app
@@ -668,7 +714,9 @@ later step. This order touches the Console once, early, and pays out
 immediately.
 
 The one thing step 1 cannot deliver is **per-entity authorship** — `created_by`
-/ `updated_by` arrive with the tables.
+/ `updated_by` arrive with the tables. Step 1 is covered by
+`test/configentities.test.ts`, whose first case is the lost update itself: two
+writers, two different entities, both saved.
 
 ### Deliberately deferred
 

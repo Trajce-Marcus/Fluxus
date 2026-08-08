@@ -8,7 +8,16 @@
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
-import type { SolutionConfig, RecordInstance, RunActivityResult } from '@fluxus/engine';
+import type {
+  AttributeDef,
+  FunctionDef,
+  RecordInstance,
+  RecordTypeDef,
+  RoleDef,
+  RunActivityResult,
+  SolutionConfig,
+  WorkflowRawDef,
+} from '@fluxus/engine';
 import type { AppRouter } from '@fluxus/server';
 import { runUpload, type Descriptor, type PresignRequest, type Presigned, type UploadService } from './upload';
 
@@ -551,10 +560,59 @@ export class FluxusClient {
     return rows.filter((o) => o.solutionId === options.solutionId).map((o) => ({ id: o.id, name: o.name }));
   }
 
-  /** Persist the solution's SDM config (Console SDM editor → config.put). The
-   *  caller reconnects afterwards to rebuild the adapter/pageRuntime. */
+  /** Replace the solution's whole SDM config — the **import** path (installing a
+   *  config, rolling one back), not the editing path. Editors save one entity at
+   *  a time; see the per-entity writes below. */
   async saveConfig(config: SolutionConfig): Promise<void> {
     await this.trpc.config.put.mutate({ solutionId: this.solutionId, config });
+  }
+
+  // ── Per-entity model writes ────────────────────────────────────────────────
+  // The change unit is one entity, so the write unit is too: an editor saves the
+  // attribute it touched, not the graph it happens to hold. The server still
+  // validates the whole graph under a per-solution lock, so two people editing
+  // two different entities no longer overwrite each other. The caller reloads
+  // afterwards to rebuild the adapter/pageRuntime, as with saveConfig.
+
+  async putAttribute(def: AttributeDef): Promise<void> {
+    await this.trpc.config.putAttribute.mutate({ solutionId: this.solutionId, def });
+  }
+  async deleteAttribute(key: string): Promise<void> {
+    await this.trpc.config.deleteAttribute.mutate({ solutionId: this.solutionId, key });
+  }
+
+  async putRecordType(def: RecordTypeDef): Promise<void> {
+    await this.trpc.config.putRecordType.mutate({ solutionId: this.solutionId, def });
+  }
+  async deleteRecordType(id: string): Promise<void> {
+    await this.trpc.config.deleteRecordType.mutate({ solutionId: this.solutionId, id });
+  }
+
+  /** Activities ride inside their workflow — the workflow is the change unit. */
+  async putWorkflow(def: WorkflowRawDef): Promise<void> {
+    await this.trpc.config.putWorkflow.mutate({ solutionId: this.solutionId, def });
+  }
+  async deleteWorkflow(id: string): Promise<void> {
+    await this.trpc.config.deleteWorkflow.mutate({ solutionId: this.solutionId, id });
+  }
+
+  async putFunction(def: FunctionDef): Promise<void> {
+    await this.trpc.config.putFunction.mutate({ solutionId: this.solutionId, def });
+  }
+  async deleteFunction(id: string): Promise<void> {
+    await this.trpc.config.deleteFunction.mutate({ solutionId: this.solutionId, id });
+  }
+
+  async putRole(def: RoleDef): Promise<void> {
+    await this.trpc.config.putRole.mutate({ solutionId: this.solutionId, def });
+  }
+  async deleteRole(id: string): Promise<void> {
+    await this.trpc.config.deleteRole.mutate({ solutionId: this.solutionId, id });
+  }
+
+  /** The solution's default runtime menu. No delete — `[]` is the empty menu. */
+  async putDefaultMenu(menu: MenuItem[]): Promise<void> {
+    await this.trpc.config.putDefaultMenu.mutate({ solutionId: this.solutionId, menu });
   }
 
   /**

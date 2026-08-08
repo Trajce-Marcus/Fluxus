@@ -30,6 +30,11 @@ import {
   getSolutionOrg,
   putOrgProfile,
   getSolutionConfig,
+  configCollections,
+  deleteConfigEntity,
+  putConfigEntity,
+  putDefaultMenu,
+  menuItemSchema,
   listConfigVersions,
   getPageVersion,
   insertPendingAttachment,
@@ -53,6 +58,7 @@ import {
   usedStorageBytes,
   validateOperationMenu,
   writeBack,
+  type ConfigCollection,
 } from './host';
 import {
   opAdminsRouter,
@@ -92,7 +98,7 @@ export { DEFAULT_OPERATION, DEFAULT_ORG, DEFAULT_SOLUTION, type AppContext };
 import { consoleNotifySink } from './services/notify';
 import { isPlatformAdmin, stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
 import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
-import type { MenuItem, OperationConfig } from './db/schema';
+import type { OperationConfig } from './db/schema';
 
 /**
  * Runtime-plane identity for one call: the verified user with `roles`
@@ -158,20 +164,41 @@ function matchesAccept(accept: string[], mime: string, name: string): boolean {
 
 // Menu shape (schema §5) — validated on operations.putConfig. Deeper validation
 // (page paths resolve to published versions; role ids exist) lands with M4.
-const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
-  z.object({
-    // Zod strips unknown keys, so the stable id has to be declared here or a
-    // saved override would come back without ids.
-    id: z.string().min(1).optional(),
-    label: z.string().min(1),
-    page: z.string().min(1).optional(),
-    roles: z.array(z.string().min(1)).optional(),
-    items: z.array(menuItemSchema).optional(),
-  }),
-);
 const operationConfigSchema: z.ZodType<OperationConfig> = z.object({
   menu: z.array(menuItemSchema).optional(),
 });
+
+/**
+ * The put half of one collection's per-entity mutations. `def` is opaque on the
+ * wire exactly as `config.put`'s whole config is — the entity's shape is the
+ * graph validation's business, not the transport's; all this layer insists on is
+ * that a def is an object carrying its own identity.
+ */
+function entityPut<T>(collection: ConfigCollection<T>) {
+  return t.procedure
+    .input(z.object({ solutionId: solutionInput, def: z.unknown() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await requireSolAdmin(ctx, input.solutionId);
+        await putConfigEntity(ctx.db, input.solutionId, collection, input.def, ctx.sink);
+        return { ok: true as const };
+      } catch (err) {
+        rethrow(err);
+      }
+    });
+}
+
+/** The delete half — its input names the entity's own identity field, so each
+ *  procedure asks for a `key` or an `id` as the model spells it. */
+async function entityDelete<T>(ctx: AppContext, solutionId: string, collection: ConfigCollection<T>, id: string) {
+  try {
+    await requireSolAdmin(ctx, solutionId);
+    await deleteConfigEntity(ctx.db, solutionId, collection, id, ctx.sink);
+    return { ok: true as const };
+  } catch (err) {
+    rethrow(err);
+  }
+}
 
 /** Arbitrary JSON — the activity payload's transport; the engine types it. */
 const jsonValue: z.ZodType<unknown> = z.lazy(() =>
@@ -444,6 +471,51 @@ export const appRouter = t.router({
           rethrow(err);
         }
       }),
+
+    // Per-entity model writes (model storage split, step 1). Same tier as
+    // config.put — sol admin — and the same validation: the consistency unit is
+    // the whole graph, only the *write* unit narrows to one entity. That is what
+    // ends the lost update two admins editing two different record types used to
+    // suffer. `def` is the entity verbatim, carrying its own key/id.
+    putAttribute: entityPut(configCollections.attributes),
+    deleteAttribute: t.procedure
+      .input(z.object({ solutionId: solutionInput, key: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.attributes, input.key)),
+
+    putRecordType: entityPut(configCollections.recordTypes),
+    deleteRecordType: t.procedure
+      .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.recordTypes, input.id)),
+
+    putWorkflow: entityPut(configCollections.workflows),
+    deleteWorkflow: t.procedure
+      .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.workflows, input.id)),
+
+    putFunction: entityPut(configCollections.functions),
+    deleteFunction: t.procedure
+      .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.functions, input.id)),
+
+    putRole: entityPut(configCollections.roles),
+    deleteRole: t.procedure
+      .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.roles, input.id)),
+
+    // The config's one non-collection field, so no delete: an empty array is
+    // the empty menu.
+    putDefaultMenu: t.procedure
+      .input(z.object({ solutionId: solutionInput, menu: z.array(menuItemSchema) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await requireSolAdmin(ctx, input.solutionId);
+          await putDefaultMenu(ctx.db, input.solutionId, input.menu, ctx.sink);
+          return { ok: true as const };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+
     // Model history (ruled 2026-07-26) — the same publish surface pages have.
     // Readme required: a version without release notes is a diff nobody can
     // read later, which is the whole point of keeping the history.

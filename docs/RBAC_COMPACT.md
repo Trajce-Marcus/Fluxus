@@ -44,7 +44,7 @@
 - `records.partition`/`list`: filter to readable types → visible-subset snapshot.
 - `records.get`: deny ⇒ **not-found** (never forbidden).
 - `activities.run`: gate is the run check; unreadable anchor ⇒ not-found, checked before gate. CREATE: `context.record` null.
-- `config.put`/page save: require **sol admin**; user/role administration is the owner, org-admin and op-admin tiers (see *Administration*).
+- `config.put`, the per-entity model writes (`config.putAttribute` … `putDefaultMenu`) and page save: require **sol admin**; user/role administration is the owner, org-admin and op-admin tiers (see *Administration*).
 - Hooks run with model authority (full partition, `SECURITY DEFINER` semantics).
 
 ## Users — one population, then grants (rewritten 2026-08-04; see [USERS.md](USERS.md))
@@ -199,7 +199,7 @@ No row-level read conditions, field-level permissions, role inheritance/groups/w
 | `opUsers.remove` | op admin | their operation, their list |
 | `userRoles.list` / `put` | op admin | the ORG admin is refused, deliberately |
 | `operations.putConfig` (menu override) | op admin | unchanged |
-| `config.put`, `pages.*`, `publish` | sol admin | unchanged |
+| `config.put`, the per-entity model writes, `pages.*`, `publish` | sol admin | unchanged |
 
 - **Suspension bites the tiers**, not just the entry gate: every `is*Admin` check re-reads the pool row, so a suspended person is no admin anywhere while their grants survive intact.
 - **Appointment refuses anyone not in the pool** — invite, then appoint, enforced in the store rather than assumed by the UI.

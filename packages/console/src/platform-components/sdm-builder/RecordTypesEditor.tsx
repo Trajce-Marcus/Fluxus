@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import type { SolutionConfig, CustomFieldDef, RecordTypeDef } from '@fluxus/engine';
-import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
+import { readConfig, idProblems, refreshSolutionViews, saveRecordTypes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'fk_ref'];
@@ -21,6 +21,7 @@ function recordTypeId(name: string): string {
 interface NewDraft { id: string; name: string; description: string; workflow_ref: string }
 
 export function RecordTypesEditor() {
+  const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -77,8 +78,9 @@ export function RecordTypesEditor() {
     setBusy(true);
     setError(null);
     try {
-      await commitConfig(draft);
+      await saveRecordTypes(loaded.recordTypes, draft.recordTypes);
       setDirty(false);
+      await refreshSolutionViews();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

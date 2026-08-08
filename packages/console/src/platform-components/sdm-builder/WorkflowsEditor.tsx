@@ -16,7 +16,7 @@ import type {
   SectionMarkerDef,
   WorkflowRawDef,
 } from '@fluxus/engine';
-import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
+import { readConfig, idProblems, refreshSolutionViews, saveWorkflows, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 type UsageItem = AttributeUsageDef | SectionMarkerDef;
@@ -30,6 +30,7 @@ function hookText(h: string | string[] | null | undefined): string {
 }
 
 export function WorkflowsEditor() {
+  const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [selWf, setSelWf] = useState(0);
   const [selAct, setSelAct] = useState(0);
@@ -124,8 +125,11 @@ export function WorkflowsEditor() {
     setBusy(true);
     setError(null);
     try {
-      await commitConfig(draft);
+      // One workflow is one save — an activity edit saves the workflow it
+      // belongs to, which is the change unit the model splits on.
+      await saveWorkflows(loaded.workflows, draft.workflows);
       setDirty(false);
+      await refreshSolutionViews();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

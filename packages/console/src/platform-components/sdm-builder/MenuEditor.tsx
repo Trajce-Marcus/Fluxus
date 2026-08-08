@@ -1,13 +1,13 @@
 // Solution-level default-menu editor (CONSOLE_RUNTIME_SPEC §5, M10): edits the
 // `default_menu` carried in the config artifact — what every operation inherits
-// unless it overrides. Saved through commitConfig like every SDM section, so it
-// versions/publishes with the model; validated server-side at config.put
-// (published pages + declared roles + one nesting level).
+// unless it overrides. Saved on its own (config.putDefaultMenu) like every SDM
+// section saves its own entities, so it versions/publishes with the model;
+// validated server-side (published pages + declared roles + one nesting level).
 
 import { useEffect, useState } from 'react';
 import type { SolutionConfig } from '@fluxus/engine';
 import type { MenuItem } from '@fluxus/client';
-import { readConfig, commitConfig, useDirty } from './useSolutionConfig';
+import { readConfig, refreshSolutionViews, saveDefaultMenu, useDirty } from './useSolutionConfig';
 import { consoleClient, sdmClient } from '../../sdm-runtime/engine';
 import { MenuItemsEditor } from '../admin/MenuItemsEditor';
 
@@ -36,11 +36,12 @@ export function MenuEditor() {
     setBusy(true);
     setError(null);
     try {
-      // Prune: empty items[] would read as a group; an empty menu drops the key
-      // (no default is `undefined`, not `[]`).
+      // Prune: empty items[] would read as a group. An empty menu saves as `[]`
+      // and the server drops the key — "no default" is the absent key, not `[]`.
       const clean = menu.map((it) => (it.items && it.items.length === 0 ? { ...it, items: undefined } : it));
-      await commitConfig({ ...draft, default_menu: clean.length > 0 ? clean : undefined } as SolutionConfig);
+      await saveDefaultMenu(clean);
       setDirty(false);
+      await refreshSolutionViews();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

@@ -10,7 +10,7 @@
 
 import { useState } from 'react';
 import type { SolutionConfig, RoleDef } from '@fluxus/engine';
-import { readConfig, commitConfig, idProblems, useDirty } from './useSolutionConfig';
+import { readConfig, idProblems, refreshSolutionViews, saveRoles, useDirty, useLoadedConfig } from './useSolutionConfig';
 
 /** `role_dispatchers` from "Dispatchers" — the §1 id convention. */
 function roleId(name: string): string {
@@ -27,6 +27,7 @@ interface Draft {
 }
 
 export function RolesEditor() {
+  const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,8 +73,9 @@ export function RolesEditor() {
     setBusy(true);
     setError(null);
     try {
-      await commitConfig(draft);
+      await saveRoles(loaded.access?.roles ?? [], roles);
       setDirty(false);
+      await refreshSolutionViews();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

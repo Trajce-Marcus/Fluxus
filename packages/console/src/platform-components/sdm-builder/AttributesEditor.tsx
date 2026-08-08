@@ -5,12 +5,13 @@
 
 import { useState } from 'react';
 import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
-import { readConfig, commitConfig, useDirty } from './useSolutionConfig';
+import { readConfig, idProblems, refreshSolutionViews, saveAttributes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
 const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'reference', 'list', 'photo', 'file'];
 
 export function AttributesEditor() {
+  const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -39,12 +40,17 @@ export function AttributesEditor() {
     setSel((s) => Math.max(0, s > i ? s - 1 : s));
   }
 
+  // The key is the attribute's identity — a save addresses each attribute by
+  // it, so empties and duplicates are gated here rather than sent.
+  const idErr = idProblems(attrs.map((a) => a.key));
+
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      await commitConfig(draft);
+      await saveAttributes(loaded.attributes, draft.attributes);
       setDirty(false);
+      await refreshSolutionViews();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -68,6 +74,7 @@ export function AttributesEditor() {
         </div>
 
         {error && <div className="admin-error">{error}</div>}
+        {idErr && <div className="admin-error">{idErr}</div>}
 
         {cur && (
           <div className="sdm-detail">
@@ -101,7 +108,7 @@ export function AttributesEditor() {
         )}
 
         <div className="admin-actions">
-          <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save attributes'}</button>
+          <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save attributes'}</button>
         </div>
       </div>
     </>

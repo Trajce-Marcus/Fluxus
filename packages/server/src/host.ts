@@ -8,18 +8,24 @@
 // deployments); optimistic versioning slots into writeBack when it matters.
 
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import {
   createEngine,
   MemoryAdapter,
   buildGeoModule,
   type ActivityDef,
   type ActivityHistoryEntry,
+  type AttributeDef,
+  type FunctionDef,
   type SolutionConfig,
   type ContextUser,
   type Engine,
   type RecordInstance,
+  type RecordTypeDef,
+  type RoleDef,
+  type WorkflowRawDef,
 } from '@fluxus/engine';
-import type { Db } from './db/client';
+import type { Db, DbOrTx } from './db/client';
 import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmConfigVersions, sdmConfigs, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
@@ -57,7 +63,7 @@ export class OrgNotFoundError extends Error {
   }
 }
 
-export async function getSolutionConfig(db: Db, solutionId: string): Promise<SolutionConfig> {
+export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise<SolutionConfig> {
   const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
   if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
   return rows[0].config;
@@ -383,7 +389,7 @@ export async function getPageVersion(db: Db, solutionId: string, path: string, v
 }
 
 /** The latest published version per path — what Runtime renders (published-only). */
-export async function listPublishedPages(db: Db, solutionId: string): Promise<{ path: string; def: unknown }[]> {
+export async function listPublishedPages(db: DbOrTx, solutionId: string): Promise<{ path: string; def: unknown }[]> {
   const rows = await db
     .select({ path: pageVersions.path, version: pageVersions.version, def: pageVersions.def })
     .from(pageVersions)
@@ -633,6 +639,20 @@ export class MenuValidationError extends Error {
   }
 }
 
+/** A menu's wire shape — the operation override's input schema, and what a
+ *  config's `default_menu` is checked against before its references are. */
+export const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
+  z.object({
+    // Zod strips unknown keys, so the stable id has to be declared here or a
+    // saved override would come back without ids.
+    id: z.string().min(1).optional(),
+    label: z.string().min(1),
+    page: z.string().min(1).optional(),
+    roles: z.array(z.string().min(1)).optional(),
+    items: z.array(menuItemSchema).optional(),
+  }),
+);
+
 /**
  * Validate a menu against its solution (CONSOLE_RUNTIME_SPEC §5): every leaf
  * `page` must resolve to a **published** page of the solution; every role id
@@ -641,7 +661,7 @@ export class MenuValidationError extends Error {
  * solution's `default_menu`) — the latter passes `rolesFrom` so roles are read
  * from the config being saved, not the stored one it is replacing.
  */
-export async function validateOperationMenu(db: Db, solutionId: string, menu: MenuItem[], rolesFrom?: SolutionConfig): Promise<void> {
+export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu: MenuItem[], rolesFrom?: SolutionConfig): Promise<void> {
   const published = new Set((await listPublishedPages(db, solutionId)).map((p) => p.path));
   const config = rolesFrom ?? (await getSolutionConfig(db, solutionId));
   const roleIds = new Set((config.access?.roles ?? []).map((r) => r.id));
@@ -698,14 +718,12 @@ export class ConfigValidationError extends Error {
 }
 
 /**
- * Store an SDM config for a solution — the Phase 4 shift: config becomes a
- * stored artifact and "config-save-time validation" becomes literal. The
- * server rejects an invalid SDM at save, for humans and AI alike (same
- * guardrail posture as validatePage in the page builder). Config is
- * solution-plane and owns no records — an operation starts empty and every
- * record in it arrives through an activity, with no seeding path around that.
+ * Everything a stored model has to satisfy, whichever door it came through:
+ * `config.put` (the whole graph at once) and the per-entity mutations below run
+ * exactly this. The consistency unit is the **whole graph** — a workflow
+ * references attributes — so no per-entity write gets a smaller check.
  */
-export async function putConfig(db: Db, solutionId: string, config: SolutionConfig, sink: NotifySink = consoleNotifySink): Promise<void> {
+async function validateConfigGraph(db: DbOrTx, solutionId: string, config: SolutionConfig, sink: NotifySink): Promise<void> {
   // Structural check first — MemoryAdapter resolves every attribute_ref and
   // workflow_ref, throwing on danglers…
   const adapter = new MemoryAdapter(config);
@@ -738,11 +756,200 @@ export async function putConfig(db: Db, solutionId: string, config: SolutionConf
       orphaned.map((t) => `recordTypes: stored records still reference '${t}' — rename or remove is blocked while records of this type exist`),
     );
   }
+}
+
+/**
+ * Store an SDM config for a solution — the Phase 4 shift: config becomes a
+ * stored artifact and "config-save-time validation" becomes literal. The
+ * server rejects an invalid SDM at save, for humans and AI alike (same
+ * guardrail posture as validatePage in the page builder). Config is
+ * solution-plane and owns no records — an operation starts empty and every
+ * record in it arrives through an activity, with no seeding path around that.
+ */
+export async function putConfig(db: Db, solutionId: string, config: SolutionConfig, sink: NotifySink = consoleNotifySink): Promise<void> {
+  await validateConfigGraph(db, solutionId, config, sink);
 
   await db
     .insert(sdmConfigs)
     .values({ solutionId, config, updatedAt: new Date() })
     .onConflictDoUpdate({ target: sdmConfigs.solutionId, set: { config, updatedAt: new Date() } });
+}
+
+// ── Per-entity config writes (model storage split, step 1) ────────────────────
+// The consistency unit is the whole graph; the **change unit is one entity**.
+// `config.put` conflates the two and is therefore last-write-wins across the
+// entire model — two sol admins editing two different record types have no
+// logical conflict, yet one silently loses their work. These mutations write one
+// entity while validating everything, which is what closes that hole.
+//
+// Step 1 keeps the storage exactly as it is: one jsonb blob. `spliceEntity` and
+// the `write` half of each collection are therefore **deliberately throwaway** —
+// step 2 lands the six `sdm_*` tables and swaps them for row-write-plus-assemble
+// with no change to the exported signatures, the validation, or the callers.
+
+/** What a solution with no config row yet starts from (the first entity write
+ *  creates the row) — the same empty model the Console opens on. */
+const EMPTY_CONFIG: SolutionConfig = { attributes: [], recordTypes: [], workflows: [] };
+
+/**
+ * One collection of the model, addressed the way the split addresses it: the
+ * name errors use, the identity field the entity itself carries (`key` for
+ * attributes, `id` for the rest — the config's own spelling), and read/write of
+ * that collection within a config. Step 2 adds the table each maps to and
+ * replaces `write`; nothing else about a collection changes.
+ */
+export interface ConfigCollection<T> {
+  name: string;
+  idField: 'key' | 'id';
+  read(config: SolutionConfig): T[];
+  write(config: SolutionConfig, next: T[]): SolutionConfig;
+}
+
+export const configCollections = {
+  attributes: {
+    name: 'attributes',
+    idField: 'key',
+    read: (c) => c.attributes ?? [],
+    write: (c, next) => ({ ...c, attributes: next }),
+  } as ConfigCollection<AttributeDef>,
+  recordTypes: {
+    name: 'recordTypes',
+    idField: 'id',
+    read: (c) => c.recordTypes ?? [],
+    write: (c, next) => ({ ...c, recordTypes: next }),
+  } as ConfigCollection<RecordTypeDef>,
+  workflows: {
+    name: 'workflows',
+    idField: 'id',
+    // Activities ride inside their workflow (ruled 2026-08-08) — the change
+    // unit is the workflow, and nesting keeps their authored order for free.
+    read: (c) => c.workflows ?? [],
+    write: (c, next) => ({ ...c, workflows: next }),
+  } as ConfigCollection<WorkflowRawDef>,
+  functions: {
+    name: 'functions',
+    idField: 'id',
+    read: (c) => c.functions ?? [],
+    write: (c, next) => ({ ...c, functions: next }),
+  } as ConfigCollection<FunctionDef>,
+  roles: {
+    name: 'access.roles',
+    idField: 'id',
+    read: (c) => c.access?.roles ?? [],
+    write: (c, next) => ({ ...c, access: { ...c.access, roles: next } }),
+  } as ConfigCollection<RoleDef>,
+} as const;
+
+/** The identity an entity carries in its own def — assembly never reconstructs
+ *  it, so a def that lacks one has nowhere to live. */
+function identityOf<T>(collection: ConfigCollection<T>, entity: unknown): string {
+  const id = (entity as Record<string, unknown> | null | undefined)?.[collection.idField];
+  if (typeof id !== 'string' || id.trim() === '') {
+    throw new ConfigValidationError([`${collection.name}: the entity carries no '${collection.idField}'`]);
+  }
+  return id;
+}
+
+/**
+ * The lock every per-entity write takes: the solution's `sdm_configs` row,
+ * `FOR UPDATE`. It **serialises validation per solution** while leaving the
+ * writes per entity — two admins editing different entities both keep their
+ * work, they queue for the length of one validation. The row is created if
+ * absent, because a solution's first entity write is also its first config.
+ */
+async function lockConfig(tx: DbOrTx, solutionId: string): Promise<SolutionConfig> {
+  const locked = async () =>
+    (await tx.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId)).for('update'))[0];
+  const row = await locked();
+  if (row) return row.config;
+  // A concurrent first writer may win this insert; it then holds the row lock,
+  // and the re-select blocks until it commits rather than clobbering it.
+  await tx.insert(sdmConfigs).values({ solutionId, config: EMPTY_CONFIG }).onConflictDoNothing();
+  return (await locked())?.config ?? EMPTY_CONFIG;
+}
+
+/**
+ * One transaction: lock the solution's config, splice in the single entity, run
+ * the full graph validation, write back. Any error rolls the entity write back
+ * with it, so a rejected edit leaves the stored model exactly as it was.
+ */
+async function editConfig(
+  db: Db,
+  solutionId: string,
+  sink: NotifySink,
+  splice: (config: SolutionConfig) => SolutionConfig,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const next = splice(await lockConfig(tx, solutionId));
+    await validateConfigGraph(tx, solutionId, next, sink);
+    await validateDefaultMenu(tx, solutionId, next);
+    await tx.update(sdmConfigs).set({ config: next, updatedAt: new Date() }).where(eq(sdmConfigs.solutionId, solutionId));
+  });
+}
+
+/**
+ * The solution's `default_menu` (§5, M10) — shape, then references, against the
+ * config it rides in. The engine is menu-blind, so this is the only place the
+ * config's one non-collection field is checked. A role delete that a menu item
+ * still names fails here, exactly like any other dangling reference.
+ */
+export async function validateDefaultMenu(db: DbOrTx, solutionId: string, config: SolutionConfig): Promise<void> {
+  const defaultMenu = (config as { default_menu?: unknown }).default_menu;
+  if (defaultMenu === undefined) return;
+  const parsed = z.array(menuItemSchema).safeParse(defaultMenu);
+  if (!parsed.success) throw new ConfigValidationError([`default_menu is not a menu: ${parsed.error.message}`]);
+  await validateOperationMenu(db, solutionId, parsed.data, config);
+}
+
+/** Add or replace one entity of a collection, by the identity its def carries. */
+export async function putConfigEntity<T>(
+  db: Db,
+  solutionId: string,
+  collection: ConfigCollection<T>,
+  entity: unknown,
+  sink: NotifySink = consoleNotifySink,
+): Promise<void> {
+  const id = identityOf(collection, entity);
+  await editConfig(db, solutionId, sink, (config) => {
+    const current = collection.read(config);
+    const at = current.findIndex((e) => identityOf(collection, e) === id);
+    // Replace in place, or append. Step 1 preserves authored array order; step 2
+    // drops it by design (rows assemble by key — see the SPEC's "Ordering").
+    const next = at === -1 ? [...current, entity as T] : current.map((e, i) => (i === at ? (entity as T) : e));
+    return collection.write(config, next);
+  });
+}
+
+/**
+ * Remove one entity of a collection. Idempotent, like every other delete here:
+ * an id that is already gone is a delete that already happened. A delete that
+ * would dangle (an attribute an activity still uses, a workflow a record type
+ * still points at) fails the graph validation and rolls back.
+ */
+export async function deleteConfigEntity<T>(
+  db: Db,
+  solutionId: string,
+  collection: ConfigCollection<T>,
+  id: string,
+  sink: NotifySink = consoleNotifySink,
+): Promise<void> {
+  await editConfig(db, solutionId, sink, (config) =>
+    collection.write(config, collection.read(config).filter((e) => identityOf(collection, e) !== id)),
+  );
+}
+
+/** Replace the solution's default runtime menu. No delete: `[]` is the empty
+ *  menu, and dropping the key entirely is what "no default" already means. */
+export async function putDefaultMenu(
+  db: Db,
+  solutionId: string,
+  menu: MenuItem[],
+  sink: NotifySink = consoleNotifySink,
+): Promise<void> {
+  await editConfig(db, solutionId, sink, (config) => ({
+    ...config,
+    default_menu: menu.length > 0 ? menu : undefined,
+  } as SolutionConfig));
 }
 
 // ── SDM config publishing (ruled 2026-07-26) ─────────────────────────────────
