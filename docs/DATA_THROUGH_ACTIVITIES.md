@@ -1,7 +1,8 @@
 # Data through activities — the read path, and guarding what comes back
 
-**Status: designed 2026-08-09; step 0 built 2026-08-09.** The build sequence is
-at the end — §4's removal is done, steps 1–5 have not started.
+**Status: designed 2026-08-09; steps 0 and 1 built 2026-08-09.** The build
+sequence is at the end — §4's removal and GET-in-the-engine are done, steps
+2–5 have not started.
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -53,7 +54,7 @@ app's own record, which is an ordinary create — and on a create the id comes
 
 ---
 
-## 2. GET activities
+## 2. GET activities — **BUILT 2026-08-09**
 
 The shape is already specified in [DSL_SPEC §5a](../packages/dsl/docs/DSL_SPEC.md)
 and is not restated here. What that section already settles: attributes are the
@@ -80,6 +81,33 @@ carry the cascade risk that keeps hooks from starting other workflows
 ([CLIENT_TRUST_BOUNDARY §1](CLIENT_TRUST_BOUNDARY.md) — a workflow triggers
 another by creating a record, never by calling an activity). This is what makes
 §3's fallback tier possible.
+
+### As built (step 1)
+
+Two decisions were taken during the build and are recorded here rather than
+left implicit:
+
+- **A second engine method, not a second branch.** `runQuery` sits beside
+  `runActivity` and shares the front of the pipeline (availability gate,
+  before hook) through extracted helpers. One pipeline in the sense that
+  matters — one set of checks — while the two results stay honestly different:
+  a write answers `{ status, warnings, recordId? }`, a read answers
+  `{ data, warnings }`. Folding a read into `RunActivityResult` would have left
+  every existing caller holding fields that mean nothing. The server followed:
+  `activities.query` is a tRPC **query**, not a mutation.
+- **The gate is the whole of the access control.** A GET returns what its
+  author declared it to return; there is no second read filter over the answer.
+  This matches how a write already works (an UPDATE may touch a record type
+  the caller cannot read) and follows from the platform's own thesis — the
+  activity is the unit of access. Worth revisiting if a GET is ever authored
+  by someone with less authority than the people who run it.
+
+Purity came free: `returns` is validated as an *expression*, and expression
+mode already rejected `create()`/`update()` and unqueued service effects. No
+new rule was written to say a read cannot write. `validateConfig` adds the
+shape rules — a GET needs a `returns`, may not have an after hook, and
+`returns` is rejected on anything else — plus literal-id resolution for
+`invoke`.
 
 ---
 
@@ -212,7 +240,7 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 | # | Step | Delivers |
 |---|---|---|
 | 0 | ✅ **BUILT 2026-08-09** — remove the `data` half of `callbackData`; rewrite the dispatch crew as a captured attribute | the rule that values arrive as attributes; independent of everything below |
-| 1 | GET in the engine — `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
+| 1 | ✅ **BUILT 2026-08-09** — GET in the engine: `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
 | 2 | A page names a GET for a dynamic prop instead of writing an inline expression | **the goal**: data requirements move out of the page and into the model |
 | 3 | Log GETs light; app record created or opened on first page open, as the anchor | observability, and the pipeline-is-the-log promise held for reads |
 | 4 | An input names its producer; the engine re-invokes it at submission | the guarding payoff — tier 1 absorbs tier 2 |

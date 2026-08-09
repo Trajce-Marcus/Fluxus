@@ -8,7 +8,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { DEMO_USER, isDescriptorType, validateSubmission, type SolutionConfig, type RunActivityResult } from '@fluxus/engine';
+import { DEMO_USER, isDescriptorType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -872,6 +872,65 @@ export const appRouter = t.router({
             await writeBack(ctx.db, host);
             throw err;
           }
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+
+    /**
+     * The read path (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES step 1). A `query`,
+     * not a mutation, because it is one: nothing persists, so there is no
+     * write-back and no confirmation round-trip. An app names a GET activity
+     * and the model answers — the query itself never leaves the server.
+     *
+     * Authorisation is the activity's own gate, exactly as for a write: an
+     * activity is the unit of access, and `show_condition` decides who may run
+     * this one. There is deliberately no second read filter over the answer —
+     * a GET returns what its author declared it to return.
+     *
+     * Not logged yet (step 3), so a read currently leaves no trace.
+     */
+    query: t.procedure
+      .input(
+        z.object({
+          operationId: operationInput,
+          activityId: z.string().min(1),
+          /** Anchor record — where the run's entry will land once GETs are
+           *  logged. Optional until app records exist (step 3). */
+          recordId: z.string().min(1).optional(),
+          /** The GET's parameters, which are its attributes. Same transport
+           *  and the same `validateSubmission` check as a write's payload. */
+          attributes: z.record(z.string(), jsonValue).default({}),
+        }),
+      )
+      .query(async ({ ctx, input }): Promise<QueryActivityResult> => {
+        try {
+          const user = await resolveUser(ctx, input.operationId);
+          const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+
+          const activity = findActivity(host, input.activityId);
+          if (!activity) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: `Activity not found: ${input.activityId}` });
+          }
+          if (activity.record_map !== 'GET') {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is not a GET activity — run it through activities.run` });
+          }
+
+          let anchorRecord = null;
+          if (input.recordId) {
+            anchorRecord = host.adapter.getRecord(input.recordId);
+            const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
+            if (readable !== null && !readable.has(anchorRecord.typeRef)) {
+              throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
+            }
+          }
+
+          const issues = validateSubmission(host.engine, activity, input.attributes, anchorRecord, {});
+          if (issues.length > 0) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
+          }
+
+          return host.engine.runQuery(activity, input.attributes, anchorRecord);
         } catch (err) {
           rethrow(err);
         }

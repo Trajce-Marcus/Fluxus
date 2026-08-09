@@ -34,7 +34,8 @@ This package is UI over two contracts it does not own: the **SDM schema** ([`@fl
 ├── RecordTypeList (its own nav pane — retired from the Runtime shell at M15)
 ├── RecordsGrid — sort, search, count, CSV import/export, FK links, CREATE launch
 └── RecordView — owns back/forward nav state (viewedTypeId derived from record.typeRef)
-    ├── AvailableActivities (record-level; CREATE excluded — it has no anchor record)
+    ├── AvailableActivities (record-level; CREATE excluded — it has no anchor
+    │   record; GET excluded — a query answers an app, not a button on a record)
     ├── RecordDetails (read-only custom fields; FKs via FkDisplay asLink)
     ├── RelatedRecords (reverse-FK index)
     └── ActivityHistoryList

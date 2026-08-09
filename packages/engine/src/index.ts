@@ -34,6 +34,7 @@ export {
   resolveFunctions,
   shortName,
   fullId,
+  toComponentValue,
   toDslRecord,
   DEMO_USER,
 } from './bridge';
@@ -67,6 +68,7 @@ export type {
   RecordTypeDef,
   RoleDef,
   ReverseRefEntry,
+  QueryActivityResult,
   RunActivityResult,
   WorkflowDef,
   WorkflowRawDef,

@@ -158,7 +158,13 @@ export interface ClientActivityRawDef {
   name: string;
   description: string;
   sort_order: number;
-  record_map?: 'CREATE' | 'UPDATE' | 'DELETE';
+  /**
+   * How the run touches storage. `GET` is the read path (DSL_SPEC §5a): it
+   * writes nothing and answers with its `returns` expression. The client is
+   * told which activities are GETs — it names them — but never gets the query
+   * itself; `returns` lives on the server grade below.
+   */
+  record_map?: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET';
   /**
    * FluxScript availability condition: whether this activity is offered (UI)
    * or invocable (pipeline gate — server-authoritative once the backend
@@ -183,6 +189,15 @@ export interface ActivityRawDef extends ClientActivityRawDef {
   before_hook: string | string[] | null;
   /** FluxScript, effects: mutations staged and committed atomically (DSL_SPEC §7). */
   after_hook: string | string[] | null;
+  /**
+   * GET activities only (DSL_SPEC §5a): the FluxScript expression that
+   * produces the answer, with the captured attributes as its parameters.
+   * Read-only — the validator rejects mutations and `queue` in it. Required on
+   * a GET, rejected on anything else. Server grade deliberately: an app names
+   * the activity, the model answers, and the query never reaches the browser
+   * (DATA_THROUGH_ACTIVITIES).
+   */
+  returns?: string | string[];
 }
 
 // Resolved activity (attributes resolved from the standalone collection, hook lines joined)
@@ -191,12 +206,14 @@ export interface ActivityDef {
   name: string;
   description: string;
   sort_order: number;
-  record_map?: 'CREATE' | 'UPDATE' | 'DELETE';
+  record_map?: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET';
   /** Availability condition — see ActivityRawDef.show_condition. */
   show_condition?: string;
   attributes: AttributeDef[];
   before_hook: string | null;
   after_hook: string | null;
+  /** GET only: the answer expression — see ActivityRawDef.returns. */
+  returns?: string | null;
 }
 
 export interface ClientWorkflowRawDef {
@@ -296,6 +313,18 @@ export interface ReverseRefEntry {
 // Outcome of running an activity. 'needs-confirmation': the before hook raised
 // warn()ings and nothing was persisted — re-run with acknowledgedWarnings to
 // proceed, or drop it to cancel (the gate is read-only, so cancelling is free).
+/**
+ * Outcome of a GET (DSL_SPEC §5a). No `status`: a read has nothing to persist,
+ * so there is no soft stop to confirm — the gate either blocks it (fail, which
+ * throws) or it answers. `warnings` are the before hook's, returned rather than
+ * blocking. `data` is plain JSON-safe data: records are flattened on the way
+ * out, because callers are SDM-blind.
+ */
+export interface QueryActivityResult {
+  data: unknown;
+  warnings: string[];
+}
+
 export interface RunActivityResult {
   status: 'done' | 'needs-confirmation';
   warnings: string[];

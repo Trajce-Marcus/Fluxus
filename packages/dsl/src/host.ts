@@ -114,6 +114,14 @@ export interface EvalHost {
    * Callable by declared name from any tier; parsed lazily and cached per evaluation.
    */
   functions?: string[];
+  /**
+   * `invoke(activityId, params?)` — run a GET activity and return its answer
+   * (DSL_SPEC §5a). The DSL knows nothing about activities, so the host that
+   * owns the model supplies this; absent ⇒ `invoke` fails loudly rather than
+   * returning null, because a guard that silently answers nothing is worse
+   * than one that breaks.
+   */
+  invoke?: (activityId: string, params: Record<string, unknown>) => unknown;
   /** Injectable clock, so hooks are testable (GRAMMAR §6). Defaults to real time. */
   now?: () => Date;
   quotas?: Partial<Quotas>;

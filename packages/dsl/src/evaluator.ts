@@ -764,6 +764,23 @@ class Evaluator {
       case 'now':
         need(0);
         return this.host.now ? this.host.now() : new Date();
+      case 'invoke': {
+        if (args.length < 1 || args.length > 2) {
+          throw new FluxRuntimeError(`invoke() takes 1–2 arguments, got ${args.length}`, expr.pos);
+        }
+        const activityId = evalArg(0);
+        if (typeof activityId !== 'string') {
+          throw new FluxRuntimeError(`invoke() needs an activity id, got ${describe(activityId)}`, expr.pos);
+        }
+        if (!this.host.invoke) {
+          throw new FluxRuntimeError(`invoke() is not available here — this host runs no activities`, expr.pos);
+        }
+        const raw = args.length === 2 ? evalArg(1) : {};
+        if (raw !== null && (typeof raw !== 'object' || Array.isArray(raw))) {
+          throw new FluxRuntimeError(`invoke() parameters must be an object, got ${describe(raw)}`, expr.pos);
+        }
+        return this.host.invoke(activityId, (raw ?? {}) as Record<string, unknown>);
+      }
       case 'date': {
         need(1);
         const raw = evalArg(0);

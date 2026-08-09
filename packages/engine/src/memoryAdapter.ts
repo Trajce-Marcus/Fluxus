@@ -1,6 +1,6 @@
 import type { Store } from './store';
 import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
-import { activityHooks } from './bridge';
+import { activityHooks, joinScript } from './bridge';
 
 // THE Store: all reference-Store behaviour (workflow resolution, constraint
 // checks, staged mutation halves) with no storage attached. Every host runs
@@ -63,6 +63,9 @@ export class MemoryAdapter implements Store {
             ...act,
             before_hook: hooks.before,
             after_hook: hooks.after,
+            // Same array-of-lines convenience as hooks; absent on a client
+            // config, where the query never leaves the server.
+            returns: joinScript((act as { returns?: string | string[] }).returns),
             attributes: act.attributes.map(entry =>
               'attribute_ref' in entry
                 ? resolveUsage(entry)

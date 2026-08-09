@@ -98,7 +98,9 @@ The validator checks every script against the SDM at **config-save time** — un
 
 ## The activity engine has multiple hosts
 
-The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine (`@fluxus/engine`, extracted from the then-`@fluxus/sdm` package July 2026) with three front doors:
+The activity pipeline — resolve attributes → evaluate show conditions → validate submissions against datasources → before hook (gate: validate only, `fail()` vetoes) → persist → after hook (effects: transactional record mutations, `queue`d service dispatch on commit) — is one UI-agnostic engine (`@fluxus/engine`, extracted from the then-`@fluxus/sdm` package July 2026) with three front doors.
+
+Since 2026-08-09 that pipeline has a **read half**: a GET activity (`record_map: "GET"`) shares the availability gate and the before hook, then answers with its `returns` expression instead of persisting (`engine.runQuery`, `activities.query`, `client.query()` — [DATA_THROUGH_ACTIVITIES](DATA_THROUGH_ACTIVITIES.md) step 1). It matters because the query then lives **in the model**: an app names an activity, and `returns` never reaches the browser. Reads are not yet logged, which is the one part of "the pipeline is the log" still outstanding. The three doors below are the write half.
 
 1. **SDM record workbench** — activity strip / CREATE launch on the grid. *(Live.)*
 2. **Page builder apps** — a component's named callback wired to `run-activity`; the callback contract is the anchor record alone. UI activities open the standard capture form; attribute-less activities pass straight to the hooks. Values reach an activity as declared attributes, never as a free-form object off the wire ([DATA_THROUGH_ACTIVITIES §4](DATA_THROUGH_ACTIVITIES.md)). Same gate, hooks, history. *(Live — Extraction stage 2, side channel removed 2026-08-09.)*

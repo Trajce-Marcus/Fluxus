@@ -292,7 +292,18 @@ takes `operationId?` (both default `demo/sdm`):
   `validateSubmission` does the authoritative per-type shape check. `recordId`
   anchors non-CREATE activities and is rejected on CREATE. Warn soft-stop
   returns `needs-confirmation` with nothing persisted; re-run with
-  `acknowledgedWarnings`.
+  `acknowledgedWarnings`. A GET is refused here — it has its own door.
+- **`activities.query`** `{ operationId?, activityId, recordId?, attributes }`
+  → `QueryActivityResult` — the read path (DSL_SPEC §5a, built 2026-08-09). A
+  tRPC **query, not a mutation**, because it is one: nothing persists, so there
+  is no write-back and no confirmation round-trip. The app names a GET activity
+  and the model answers; the query itself never reaches the browser (`returns`
+  lives on the server grade of the model and `projectConfig` cannot copy it).
+  The parameters are the activity's attributes and go through the same
+  `validateSubmission`. `recordId` is optional and, when given, is read-gated
+  like any anchor (unreadable ⇒ not-found). Authorisation is the activity's own
+  `show_condition`, with no second filter over the answer — see the engine SPEC
+  for why. Not logged yet (DATA_THROUGH_ACTIVITIES step 3).
 - **`files.presignUpload`** `{ solutionId?, attributeKey, name, mime, size, hash?,
   photo metadata? }` → `{ storageKey, uploadUrl, thumbKey?, thumbUploadUrl? }`
   / **`files.presignGet`** `{ solutionId?, key }` → `{ url }` — the blob upload/read

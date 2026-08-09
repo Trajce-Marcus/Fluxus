@@ -4,7 +4,7 @@
 // with the SDM still hand-edited as files, "save time" is app start, and
 // diagnostics land on the console.
 
-import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
+import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Call, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
 import type { ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
@@ -13,6 +13,21 @@ import { buildLoggerModule } from './services/logger';
 export interface Finding {
   where: string;
   diagnostic: Diagnostic;
+}
+
+/** Visit every Call node reachable from a parsed script (statements, args). */
+function walkCalls(node: unknown, visit: (call: Call) => void): void {
+  if (Array.isArray(node)) {
+    for (const item of node) walkCalls(item, visit);
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  const rec = node as Record<string, unknown>;
+  if (rec.kind === 'call') visit(node as Call);
+  for (const [key, value] of Object.entries(rec)) {
+    if (key === 'pos') continue;
+    walkCalls(value, visit);
+  }
 }
 
 // Either grade of config: the design plane validates the full model at save,
@@ -128,6 +143,37 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
     }
   }
 
+  // Every activity's record_map, so a literal invoke('act_…') can be resolved
+  // to a real GET below.
+  const recordMapById = new Map<string, string | undefined>();
+  for (const workflow of config.workflows) {
+    for (const activity of workflow.activities) recordMapById.set(activity.id, activity.record_map);
+  }
+
+  /**
+   * Resolve literal ids passed to `invoke(...)` against the model: the id must
+   * exist and must be a GET. A non-literal first argument is left to runtime —
+   * same posture as validatePage's activity-id check.
+   */
+  const checkInvokes = (where: string, source: string) => {
+    let body: Stmt[];
+    try {
+      body = parseScript(source).body;
+    } catch {
+      return; // syntax errors are already reported by the validator
+    }
+    walkCalls(body, (call) => {
+      if (call.callee.kind !== 'ident' || call.callee.name !== 'invoke') return;
+      const first = call.args[0]?.value;
+      if (first?.kind !== 'string') return;
+      if (!recordMapById.has(first.value)) {
+        note(where, `invoke('${first.value}') — no such activity`);
+      } else if (recordMapById.get(first.value) !== 'GET') {
+        note(where, `invoke('${first.value}') — only GET activities can be invoked`);
+      }
+    });
+  };
+
   for (const workflow of config.workflows) {
     const anchorType = rtByWorkflow.has(workflow.id) ? shortName(rtByWorkflow.get(workflow.id)!.id) : undefined;
     for (const activity of workflow.activities) {
@@ -163,6 +209,29 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
         for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
           findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
         }
+        checkInvokes(`${activity.id} ${phase}_hook`, source);
+      }
+
+      // GET activities (DSL_SPEC §5a): the `returns` expression IS the
+      // activity, so it is required — and it is only meaningful on a GET.
+      // Validated as an expression, which is what gives purity for free: the
+      // 'expression' mode already rejects create()/update() and unqueued
+      // service effects, so a read cannot write.
+      const returns = joinScript((activity as { returns?: string | string[] }).returns);
+      if (activity.record_map === 'GET') {
+        if (!returns) {
+          note(activity.id, "a GET activity needs a 'returns' expression — that is what it answers with");
+        } else {
+          collect(`${activity.id} returns`, returns, anchorType);
+          checkInvokes(`${activity.id} returns`, returns);
+        }
+        // Nothing persists, so there is nothing to react to. An after hook here
+        // is either dead code or an attempt to make a read write.
+        if (hooks.after) {
+          note(activity.id, 'a GET activity cannot have an after hook — reads never write');
+        }
+      } else if (returns) {
+        note(activity.id, `'returns' belongs to GET activities; this one is ${activity.record_map ?? 'log-only'}`);
       }
     }
   }

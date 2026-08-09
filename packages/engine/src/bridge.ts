@@ -3,7 +3,7 @@
 // EvalHosts for script execution. Scripts use short type names (records.assets),
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
-import { parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
+import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
 import type {
   ActivityRawDef,
   AttributeDef,
@@ -52,6 +52,33 @@ export function joinScript(script: string | string[] | null | undefined): string
 export function activityHooks(activity: ClientActivityRawDef): { before: string | null; after: string | null } {
   const full = activity as Partial<ActivityRawDef>;
   return { before: joinScript(full.before_hook), after: joinScript(full.after_hook) };
+}
+
+/**
+ * Flatten an evaluation result to plain data. Expression results carry DSL
+ * shapes — DslRecord (`{id, type, fields}`), FkPointer field values — and
+ * every consumer outside the DSL is SDM-blind: a page component, and now a
+ * GET activity's caller. Records flatten to `{ id, ...fields }`, pointers to
+ * their raw id. Moved here from page-runtime when GET landed, so the server
+ * and the page host shape results identically.
+ */
+export function toComponentValue(value: unknown): unknown {
+  if (value instanceof FkPointer) return value.id;
+  if (Array.isArray(value)) return value.map(toComponentValue);
+  if (value !== null && typeof value === 'object') {
+    const maybe = value as { id?: unknown; type?: unknown; fields?: unknown };
+    if (typeof maybe.type === 'string' && maybe.fields !== null && typeof maybe.fields === 'object') {
+      const flat: Record<string, unknown> = { id: maybe.id };
+      for (const [k, v] of Object.entries(maybe.fields as Record<string, unknown>)) {
+        flat[k] = toComponentValue(v);
+      }
+      return flat;
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, toComponentValue(v)]),
+    );
+  }
+  return value;
 }
 
 /** Named function sources for the evaluator/validator (bodies joined). */
@@ -211,6 +238,12 @@ export interface ScriptContext {
    * allowed, direct record writes never — mutations flow through activities.
    */
   readonlyRecords?: boolean;
+  /**
+   * Backs the `invoke(activityId, params)` built-in. Supplied by the engine,
+   * which is the only thing that can run an activity; a host that only
+   * evaluates leaves it absent and `invoke` fails loudly.
+   */
+  invoke?: (activityId: string, params: Record<string, unknown>) => unknown;
 }
 
 // ── Composite attributes (one question's row of sub-fields) ──────────────────
@@ -394,6 +427,7 @@ export function buildEvalHost(
     attributes,
     services,
     functions: resolveFunctions(config),
+    invoke: script.invoke,
     // Async queue dispatch failures land after the script returned — console
     // is the workbench's channel for them (a toast slot may take over later).
     onQueuedFailure: (label, message) => console.warn(`[queued ${label}] failed: ${message}`),

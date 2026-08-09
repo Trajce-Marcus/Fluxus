@@ -52,7 +52,8 @@ src/services/logger.ts — the engine-owned logger manifest (one builder:
                      createEngine binds the live sink; validateConfig
                      registers it with a no-op so configs using
                      services.logger validate identically everywhere)
-src/engine.ts      — createEngine: the runActivity pipeline + evaluation entry
+src/engine.ts      — createEngine: the runActivity (write) and runQuery (read)
+                     pipelines, `invoke`, and the evaluation entry
 ```
 
 What it deliberately does **not** own: UI of any kind, React, selection state,
@@ -75,10 +76,12 @@ One engine per host per SDM — a platform singleton created at bootstrap
 (fork 2), *not* inside any UI framework's state.
 
 - `engine.runActivity(activity, captured, anchorRecord, options?)` — the
-  pipeline: availability gate → before hook (read-only gate; warn = soft stop
-  returning `needs-confirmation`) → record_map mapping (CREATE/UPDATE/DELETE/
-  append) → history append → after hook (staged, atomic commit).
-  `options`: `acknowledgedWarnings`, `waived`.
+  write pipeline: availability gate → before hook (read-only gate; warn = soft
+  stop returning `needs-confirmation`) → record_map mapping (CREATE/UPDATE/
+  DELETE/append) → history append → after hook (staged, atomic commit).
+  `options`: `acknowledgedWarnings`, `waived`. Refuses a GET.
+- `engine.runQuery(activity, captured, anchorRecord)` — the read pipeline; see
+  "GET activities" below. Refuses anything that is not a GET.
 - `engine.activityAvailability(activity, anchorRecord)` /
   `isActivityAvailable(...)` — the activity-level `show_condition` gate,
   fail-closed. UIs use it to hide; `runActivity` re-checks it as the
@@ -97,6 +100,59 @@ One engine per host per SDM — a platform singleton created at bootstrap
 appended to, or deleted; absent when nothing persisted (needs-confirmation, or
 a DELETE whose confirm text didn't match). Hosts use it to react (the
 workbench deselects a deleted record).
+
+## GET activities — the read path (built 2026-08-09)
+
+`record_map: "GET"` (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES step 1). A GET
+answers a question instead of changing something: its **attributes are its
+parameters** and its **`returns` expression is the answer**. An app names the
+activity; the model holds the query.
+
+`runQuery` shares the front of the pipeline with `runActivity` — the same
+availability gate, then the same before hook as a gate — and then diverges:
+
+- **Nothing persists**, so there is no entry, no `record_map` mapping and no
+  write-back. Gate warnings come back **with the answer** rather than as a
+  soft stop, because "confirm and re-run" is meaningless for a call that
+  changed nothing. `fail()` in the gate still blocks.
+- **`QueryActivityResult`** is `{ data, warnings }` — no `status`. `data` is
+  plain JSON-safe data: records flatten to `{ id, ...fields }` and FK pointers
+  to their ids (`toComponentValue`, moved to the bridge so the server and the
+  page host shape results identically), because every caller is SDM-blind.
+- **The anchor is optional** for now. It is where the entry will land once
+  GETs are logged (step 3); until app records exist there is often no record
+  in play at read time.
+- **Not logged.** This is the one promise of "the pipeline is the log" the
+  read path does not yet keep — step 3.
+
+**Purity is the validator's job, twice over.** `returns` is checked as an
+*expression*, and expression mode already rejects `create()`/`update()` and
+unqueued service effects — so a read cannot write, and no new rule was needed
+to say so. At runtime the eval host is built with `readonlyRecords`, so
+anything that slipped past config-save throws rather than writing.
+
+`validateConfig` also enforces the shape: a GET **needs** a `returns`, may
+**not** have an after hook (nothing persisted, so there is nothing to react
+to), and `returns` on a non-GET is rejected.
+
+### `invoke(activityId, params?)`
+
+The hook-facing read door: run a GET and take its answer. Read-only by
+construction — it can only reach a GET — so it carries none of the cascade
+risk that keeps hooks from starting other workflows, and it is legal in before
+hooks, which is what makes it usable as a guard (DATA_THROUGH_ACTIVITIES §3
+tier 2). The DSL declares the built-in and stays scope-blind; the engine
+supplies the implementation through `ScriptContext.invoke`, resolves the id,
+refuses a non-GET, and blocks re-entry so a GET whose gate invokes itself
+fails instead of hanging. `validateConfig` resolves **literal** ids at
+config-save time (unknown id, or not a GET, is a finding); a computed id is
+left to runtime.
+
+**Who may run a GET is the activity's own gate**, exactly as for a write:
+`show_condition` and roles decide, and there is deliberately no second read
+filter over the answer — a GET returns what its author declared it to return.
+That is the same posture as an UPDATE that writes a record type the caller
+cannot read: the activity is the unit of access.
 
 ## App-triggered runs (Extraction stage 2, ruled 2026-07-11)
 

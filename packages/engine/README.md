@@ -2,8 +2,9 @@
 
 The shared activity engine — the SDM core every host drives. One pipeline
 (`runActivity`: availability gate → before hook → record_map mapping → history
-append → after hook), the `Store` contract, the core SDM types, and the bridge
-that wires FluxScript evaluation/validation to a live store.
+append → after hook), its read counterpart (`runQuery`: the same gate and hook,
+then a GET's `returns` expression), the `Store` contract, the core SDM types,
+and the bridge that wires FluxScript evaluation/validation to a live store.
 
 **Status:** Extraction milestone complete (July 2026). Two live hosts: the sdm
 workbench and the page builder (`run-activity` callback action — app-triggered

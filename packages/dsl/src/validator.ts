@@ -98,6 +98,12 @@ const BUILTINS: Record<string, { min: number; max: number }> = {
   round: { min: 1, max: 2 },
   fail: { min: 1, max: 1 },
   warn: { min: 1, max: 1 },
+  // invoke(activityId, params?) — run a GET activity and take its answer
+  // (DSL_SPEC §5a). Read-only, so it is legal everywhere, before hooks
+  // included; that is what makes it usable as a guard. Whether the id names a
+  // real GET is checked where the model is in hand (engine validateConfig),
+  // not here — the DSL stays scope-blind.
+  invoke: { min: 1, max: 2 },
 };
 
 const CHAIN_METHODS = new Set(['where', 'orderby', 'select', 'values', 'top']);
@@ -644,6 +650,9 @@ class Validator {
       }
       expr.args.forEach((arg) => this.check(arg.value, itemType));
       if (callee.name === 'now' || callee.name === 'date') return { kind: 'date' };
+      // A GET's answer is whatever its `returns` yields — a scalar, a row, a
+      // list. Only the activity knows, so the shape stays open here.
+      if (callee.name === 'invoke') return UNKNOWN;
       return SCALAR;
     }
 

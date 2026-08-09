@@ -15,11 +15,10 @@ import {
   executeScript,
   validateExpression,
   validateScript,
-  FkPointer,
   type Diagnostic,
   type ServiceModuleDef,
 } from '@fluxus/dsl';
-import { buildDslSchema, buildEvalHost, functionSignatures } from '@fluxus/engine';
+import { buildDslSchema, buildEvalHost, functionSignatures, toComponentValue } from '@fluxus/engine';
 import type { ClientSolutionConfig, MemoryAdapter } from '@fluxus/engine';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
@@ -123,29 +122,10 @@ export function evaluatePageExpression(
   return toComponentValue(evaluateExpression(source, host));
 }
 
-/**
- * Expression results carry DSL shapes — DslRecord ({id, type, fields}),
- * FkPointer field values. Components are SDM-blind and expect plain data,
- * so records flatten to `{ id, ...fields }` and pointers to their raw id.
- */
-export function toComponentValue(value: unknown): unknown {
-  if (value instanceof FkPointer) return value.id;
-  if (Array.isArray(value)) return value.map(toComponentValue);
-  if (value !== null && typeof value === 'object') {
-    const maybe = value as { id?: unknown; type?: unknown; fields?: unknown };
-    if (typeof maybe.type === 'string' && maybe.fields !== null && typeof maybe.fields === 'object') {
-      const flat: Record<string, unknown> = { id: maybe.id };
-      for (const [k, v] of Object.entries(maybe.fields as Record<string, unknown>)) {
-        flat[k] = toComponentValue(v);
-      }
-      return flat;
-    }
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, toComponentValue(v)]),
-    );
-  }
-  return value;
-}
+// Records flatten to plain data on their way to an SDM-blind component. The
+// transform moved to the engine bridge when GET activities landed — a GET's
+// caller needs the same shaping — and is re-exported here unchanged.
+export { toComponentValue };
 
 /**
  * Run a callback script: 'mutate' mode so service effects execute, but with a

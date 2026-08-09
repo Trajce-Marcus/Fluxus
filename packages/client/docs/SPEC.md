@@ -54,11 +54,15 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    on the server (availability gate, hooks, persistence, reporting projection
    all server-side), then `refresh()`. Refresh runs even when the call throws,
    because a failing after hook persists the entry by doctrine.
-4. **`savePage(path, def)` / `deletePage(path)`** (backend stage 3) — mutate
+4. **`query(input)`** — the read counterpart (DSL_SPEC §5a): name a GET
+   activity, hand it its parameters, get `{ data, warnings }` back. No
+   `refresh()` afterwards, because nothing changed. The app carries the
+   activity id, never the query.
+5. **`savePage(path, def)` / `deletePage(path)`** (backend stage 3) — mutate
    the local `pages` map first, then round-trip `pages.put`/`pages.delete`, so
    host reads of the page set stay synchronous. Defs are opaque `unknown`
    here: `PageDef` and its validation belong to the page builder.
-5. **`uploads`** (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the upload surface
+6. **`uploads`** (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the upload surface
    capture widgets inject: `upload(attributeKey, file, onProgress?)` and
    `resolveUrl(storageKey)`. The solution is bound here so widgets stay blind
    to it.

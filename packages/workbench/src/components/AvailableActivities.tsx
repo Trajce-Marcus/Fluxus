@@ -13,11 +13,12 @@ export function AvailableActivities({ record, workflow }: Props) {
   const { runActivity, isActivityAvailable } = useWorkbench();
   const [activeActivity, setActiveActivity] = useState<ActivityDef | null>(null);
 
-  // Record-level activities: CREATE excluded (no anchor; lives in the grid).
-  // Availability (activity show_condition) filters against the current record;
-  // runActivity re-checks the same rule as the pipeline gate.
+  // Record-level activities: CREATE excluded (no anchor; lives in the grid),
+  // GET excluded (a query answers an app, it is not a button on a record —
+  // DSL_SPEC §5a). Availability (activity show_condition) filters against the
+  // current record; runActivity re-checks the same rule as the pipeline gate.
   const activities = workflow.activities
-    .filter(a => a.record_map !== 'CREATE' && isActivityAvailable(a, record))
+    .filter(a => a.record_map !== 'CREATE' && a.record_map !== 'GET' && isActivityAvailable(a, record))
     .sort((a, b) => a.sort_order - b.sort_order);
 
   if (activities.length === 0) return null;

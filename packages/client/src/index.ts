@@ -12,6 +12,7 @@ import type {
   AttributeDef,
   ClientSolutionConfig,
   FunctionDef,
+  QueryActivityResult,
   RecordInstance,
   RecordTypeDef,
   RoleDef,
@@ -461,6 +462,14 @@ export interface RunInput {
   acknowledgedWarnings?: boolean;
 }
 
+/** What a GET activity is asked (DSL_SPEC §5a) — its parameters are its attributes. */
+export interface QueryInput {
+  activityId: string;
+  /** Anchor record, where the entry will land once GETs are logged (step 3). */
+  recordId?: string;
+  attributes?: Record<string, unknown>;
+}
+
 /**
  * The connected client for one operation's snapshot.
  *
@@ -766,5 +775,20 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     } finally {
       await this.refresh();
     }
+  }
+
+  /**
+   * Ask a GET activity its question (DSL_SPEC §5a). The counterpart to
+   * `runActivity`: the app names an activity in the model and the server
+   * answers, instead of the app carrying its own query. Nothing changes, so
+   * there is no snapshot refresh afterwards.
+   */
+  async query(input: QueryInput): Promise<QueryActivityResult> {
+    return (await this.trpc.activities.query.query({
+      operationId: this.operationId,
+      activityId: input.activityId,
+      recordId: input.recordId,
+      attributes: input.attributes ?? {},
+    })) as QueryActivityResult;
   }
 }

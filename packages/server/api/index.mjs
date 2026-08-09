@@ -53037,6 +53037,23 @@ var Evaluator = class {
       case "now":
         need(0);
         return this.host.now ? this.host.now() : /* @__PURE__ */ new Date();
+      case "invoke": {
+        if (args.length < 1 || args.length > 2) {
+          throw new FluxRuntimeError(`invoke() takes 1\u20132 arguments, got ${args.length}`, expr.pos);
+        }
+        const activityId = evalArg(0);
+        if (typeof activityId !== "string") {
+          throw new FluxRuntimeError(`invoke() needs an activity id, got ${describe(activityId)}`, expr.pos);
+        }
+        if (!this.host.invoke) {
+          throw new FluxRuntimeError(`invoke() is not available here \u2014 this host runs no activities`, expr.pos);
+        }
+        const raw2 = args.length === 2 ? evalArg(1) : {};
+        if (raw2 !== null && (typeof raw2 !== "object" || Array.isArray(raw2))) {
+          throw new FluxRuntimeError(`invoke() parameters must be an object, got ${describe(raw2)}`, expr.pos);
+        }
+        return this.host.invoke(activityId, raw2 ?? {});
+      }
       case "date": {
         need(1);
         const raw2 = evalArg(0);
@@ -53376,7 +53393,13 @@ var BUILTINS = {
   abs: { min: 1, max: 1 },
   round: { min: 1, max: 2 },
   fail: { min: 1, max: 1 },
-  warn: { min: 1, max: 1 }
+  warn: { min: 1, max: 1 },
+  // invoke(activityId, params?) — run a GET activity and take its answer
+  // (DSL_SPEC §5a). Read-only, so it is legal everywhere, before hooks
+  // included; that is what makes it usable as a guard. Whether the id names a
+  // real GET is checked where the model is in hand (engine validateConfig),
+  // not here — the DSL stays scope-blind.
+  invoke: { min: 1, max: 2 }
 };
 var CHAIN_METHODS2 = /* @__PURE__ */ new Set(["where", "orderby", "select", "values", "top"]);
 var DATE_METHODS2 = /* @__PURE__ */ new Set(["adddays", "addmonths", "addyears"]);
@@ -53832,6 +53855,7 @@ var Validator = class {
       }
       expr.args.forEach((arg) => this.check(arg.value, itemType));
       if (callee.name === "now" || callee.name === "date") return { kind: "date" };
+      if (callee.name === "invoke") return UNKNOWN;
       return SCALAR;
     }
     if (callee.kind === "member") {
@@ -54030,6 +54054,24 @@ function joinScript(script) {
 function activityHooks(activity) {
   const full = activity;
   return { before: joinScript(full.before_hook), after: joinScript(full.after_hook) };
+}
+function toComponentValue(value) {
+  if (value instanceof FkPointer) return value.id;
+  if (Array.isArray(value)) return value.map(toComponentValue);
+  if (value !== null && typeof value === "object") {
+    const maybe = value;
+    if (typeof maybe.type === "string" && maybe.fields !== null && typeof maybe.fields === "object") {
+      const flat = { id: maybe.id };
+      for (const [k5, v] of Object.entries(maybe.fields)) {
+        flat[k5] = toComponentValue(v);
+      }
+      return flat;
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([k5, v]) => [k5, toComponentValue(v)])
+    );
+  }
+  return value;
 }
 function resolveFunctions(config) {
   return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? "");
@@ -54234,6 +54276,7 @@ function buildEvalHost(adapter, config, script, services = []) {
     attributes,
     services,
     functions: resolveFunctions(config),
+    invoke: script.invoke,
     // Async queue dispatch failures land after the script returned — console
     // is the workbench's channel for them (a toast slot may take over later).
     onQueuedFailure: (label, message2) => console.warn(`[queued ${label}] failed: ${message2}`),
@@ -54325,6 +54368,19 @@ function buildLoggerModule(sink) {
 }
 
 // ../engine/src/validateConfig.ts
+function walkCalls(node, visit) {
+  if (Array.isArray(node)) {
+    for (const item of node) walkCalls(item, visit);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  const rec = node;
+  if (rec.kind === "call") visit(node);
+  for (const [key, value] of Object.entries(rec)) {
+    if (key === "pos") continue;
+    walkCalls(value, visit);
+  }
+}
 function validateConfig(config, services = []) {
   const registry = services.some((m3) => m3.name.toLowerCase() === "logger") ? services : [...services, buildLoggerModule(() => {
   })];
@@ -54410,6 +54466,28 @@ function validateConfig(config, services = []) {
       }
     }
   }
+  const recordMapById = /* @__PURE__ */ new Map();
+  for (const workflow of config.workflows) {
+    for (const activity of workflow.activities) recordMapById.set(activity.id, activity.record_map);
+  }
+  const checkInvokes = (where, source) => {
+    let body;
+    try {
+      body = parseScript(source).body;
+    } catch {
+      return;
+    }
+    walkCalls(body, (call) => {
+      if (call.callee.kind !== "ident" || call.callee.name !== "invoke") return;
+      const first = call.args[0]?.value;
+      if (first?.kind !== "string") return;
+      if (!recordMapById.has(first.value)) {
+        note(where, `invoke('${first.value}') \u2014 no such activity`);
+      } else if (recordMapById.get(first.value) !== "GET") {
+        note(where, `invoke('${first.value}') \u2014 only GET activities can be invoked`);
+      }
+    });
+  };
   for (const workflow of config.workflows) {
     const anchorType = rtByWorkflow.has(workflow.id) ? shortName(rtByWorkflow.get(workflow.id).id) : void 0;
     for (const activity of workflow.activities) {
@@ -54440,6 +54518,21 @@ function validateConfig(config, services = []) {
         for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
           findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
         }
+        checkInvokes(`${activity.id} ${phase}_hook`, source);
+      }
+      const returns = joinScript(activity.returns);
+      if (activity.record_map === "GET") {
+        if (!returns) {
+          note(activity.id, "a GET activity needs a 'returns' expression \u2014 that is what it answers with");
+        } else {
+          collect(`${activity.id} returns`, returns, anchorType);
+          checkInvokes(`${activity.id} returns`, returns);
+        }
+        if (hooks.after) {
+          note(activity.id, "a GET activity cannot have an after hook \u2014 reads never write");
+        }
+      } else if (returns) {
+        note(activity.id, `'returns' belongs to GET activities; this one is ${activity.record_map ?? "log-only"}`);
       }
     }
   }
@@ -54490,13 +54583,81 @@ function createEngine({ store, config, services: hostServices = [], user }) {
       return { available: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
-  function runActivity(activity, captured, anchorRecord, options) {
+  const inFlight = /* @__PURE__ */ new Set();
+  function findActivity2(activityId) {
+    for (const rt of store.listRecordTypes()) {
+      const found = store.getRecordTypeDef(rt.id).workflow.activities.find((a5) => a5.id === activityId);
+      if (found) return found;
+    }
+    return null;
+  }
+  function invoke(activityId, params, anchorRecord) {
+    const activity = findActivity2(activityId);
+    if (!activity) throw new Error(`invoke('${activityId}') \u2014 no such activity`);
+    if (activity.record_map !== "GET") {
+      throw new Error(`invoke('${activityId}') \u2014 only GET activities can be invoked; this one is ${activity.record_map ?? "log-only"}`);
+    }
+    if (inFlight.has(activityId)) {
+      throw new Error(`invoke('${activityId}') \u2014 already running; a GET cannot invoke itself`);
+    }
+    inFlight.add(activityId);
+    try {
+      return runQuery(activity, params, anchorRecord).data;
+    } finally {
+      inFlight.delete(activityId);
+    }
+  }
+  function enforceAvailability(activity, anchorRecord) {
     const availability = activityAvailability(activity, anchorRecord);
     if (!availability.available) {
       throw new Error(
         availability.error ? `'${activity.name}' availability check failed \u2014 blocked: ${availability.error}` : `'${activity.name}' is not available for this record`
       );
     }
+  }
+  function runGate(activity, scriptContext) {
+    if (!activity.before_hook) return [];
+    try {
+      const result = executeScript(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: "read" });
+      return result.warnings;
+    } catch (err) {
+      if (err instanceof FluxFailError) throw new Error(err.message);
+      throw new Error(`Before hook error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  function runQuery(activity, captured, anchorRecord) {
+    if (activity.record_map !== "GET") {
+      throw new Error(`'${activity.name}' is not a GET activity \u2014 run it through runActivity`);
+    }
+    if (!activity.returns) {
+      throw new Error(`GET activity '${activity.id}' has no 'returns' expression`);
+    }
+    enforceAvailability(activity, anchorRecord);
+    runLog = [];
+    const stringValues = flattenCaptured(activity.attributes, captured);
+    const liveAttributes = { ...coerceCaptured(activity.attributes, stringValues) };
+    const scriptContext = {
+      liveAttributes,
+      anchorRecord,
+      activity: { id: activity.id, name: activity.name },
+      user,
+      // Defence in depth under the validator's purity check: a mutation that
+      // slipped past config-save throws here rather than writing.
+      readonlyRecords: true,
+      invoke: (id, params) => invoke(id, params, anchorRecord)
+    };
+    const warnings = runGate(activity, scriptContext);
+    const answer = evaluateExpression(
+      activity.returns,
+      buildEvalHost(store, config, scriptContext, services)
+    );
+    return { data: toComponentValue(answer), warnings };
+  }
+  function runActivity(activity, captured, anchorRecord, options) {
+    if (activity.record_map === "GET") {
+      throw new Error(`'${activity.name}' is a GET activity \u2014 read it through runQuery`);
+    }
+    enforceAvailability(activity, anchorRecord);
     const warnings = [];
     const waived = options?.waived ?? {};
     runLog = [];
@@ -54511,19 +54672,12 @@ function createEngine({ store, config, services: hostServices = [], user }) {
       liveAttributes,
       anchorRecord,
       activity: { id: activity.id, name: activity.name },
-      user
+      user,
+      invoke: (id, params) => invoke(id, params, anchorRecord)
     };
-    if (activity.before_hook) {
-      try {
-        const result = executeScript(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: "read" });
-        warnings.push(...result.warnings);
-      } catch (err) {
-        if (err instanceof FluxFailError) throw new Error(err.message);
-        throw new Error(`Before hook error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      if (warnings.length > 0 && !options?.acknowledgedWarnings) {
-        return { status: "needs-confirmation", warnings };
-      }
+    warnings.push(...runGate(activity, scriptContext));
+    if (warnings.length > 0 && !options?.acknowledgedWarnings) {
+      return { status: "needs-confirmation", warnings };
     }
     const gateWarnings = [...warnings];
     let targetRecordId;
@@ -54615,6 +54769,7 @@ function createEngine({ store, config, services: hostServices = [], user }) {
     activityAvailability,
     isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
     runActivity,
+    runQuery,
     evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
     validateConfig: () => validateConfig(config, services),
     reportConfigFindings: () => reportConfigFindings(config, services)
@@ -54660,6 +54815,9 @@ var MemoryAdapter = class {
             ...act,
             before_hook: hooks.before,
             after_hook: hooks.after,
+            // Same array-of-lines convenience as hooks; absent on a client
+            // config, where the query never leaves the server.
+            returns: joinScript(act.returns),
             attributes: act.attributes.map(
               (entry) => "attribute_ref" in entry ? resolveUsage(entry) : {
                 key: `_section_${++sectionSeq}`,
@@ -58571,6 +58729,58 @@ var appRouter = t.router({
           await writeBack(ctx.db, host);
           throw err;
         }
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    /**
+     * The read path (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES step 1). A `query`,
+     * not a mutation, because it is one: nothing persists, so there is no
+     * write-back and no confirmation round-trip. An app names a GET activity
+     * and the model answers — the query itself never leaves the server.
+     *
+     * Authorisation is the activity's own gate, exactly as for a write: an
+     * activity is the unit of access, and `show_condition` decides who may run
+     * this one. There is deliberately no second read filter over the answer —
+     * a GET returns what its author declared it to return.
+     *
+     * Not logged yet (step 3), so a read currently leaves no trace.
+     */
+    query: t.procedure.input(
+      external_exports.object({
+        operationId: operationInput,
+        activityId: external_exports.string().min(1),
+        /** Anchor record — where the run's entry will land once GETs are
+         *  logged. Optional until app records exist (step 3). */
+        recordId: external_exports.string().min(1).optional(),
+        /** The GET's parameters, which are its attributes. Same transport
+         *  and the same `validateSubmission` check as a write's payload. */
+        attributes: external_exports.record(external_exports.string(), jsonValue).default({})
+      })
+    ).query(async ({ ctx, input }) => {
+      try {
+        const user = await resolveUser(ctx, input.operationId);
+        const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+        const activity = findActivity(host, input.activityId);
+        if (!activity) {
+          throw new TRPCError({ code: "NOT_FOUND", message: `Activity not found: ${input.activityId}` });
+        }
+        if (activity.record_map !== "GET") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `'${input.activityId}' is not a GET activity \u2014 run it through activities.run` });
+        }
+        let anchorRecord = null;
+        if (input.recordId) {
+          anchorRecord = host.adapter.getRecord(input.recordId);
+          const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
+          if (readable !== null && !readable.has(anchorRecord.typeRef)) {
+            throw new TRPCError({ code: "NOT_FOUND", message: `Record not found: ${input.recordId}` });
+          }
+        }
+        const issues = validateSubmission(host.engine, activity, input.attributes, anchorRecord, {});
+        if (issues.length > 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: issues.map((i5) => i5.message).join(" \xB7 ") });
+        }
+        return host.engine.runQuery(activity, input.attributes, anchorRecord);
       } catch (err) {
         rethrow(err);
       }

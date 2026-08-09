@@ -1,13 +1,14 @@
 // The shared activity engine: one pipeline, host-agnostic. A host (workbench,
 // page builder) constructs an Engine from its Store + config + service modules
 // and drives all record mutation through runActivity — no write path bypasses
-// activities. Extracted from the sdm workbench at the Extraction milestone;
-// UI concerns (selection, toasts, console channels) stay with the host.
+// activities — and all model-defined reads through runQuery. Extracted from
+// the sdm workbench at the Extraction milestone; UI concerns (selection,
+// toasts, console channels) stay with the host.
 
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ActivityDef, ClientSolutionConfig, ContextUser, RecordInstance, RunActivityResult } from './types';
+import type { ActivityDef, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
-import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, type ScriptContext } from './bridge';
+import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
 
@@ -52,6 +53,16 @@ export interface Engine {
     anchorRecord: RecordInstance | null,
     options?: RunActivityOptions
   ): RunActivityResult;
+  /**
+   * The read path: run a GET activity's `returns` with the captured
+   * attributes as its parameters (DSL_SPEC §5a). Same gate and same before
+   * hook as a write; nothing persists.
+   */
+  runQuery(
+    activity: ActivityDef,
+    captured: Record<string, unknown>,
+    anchorRecord: RecordInstance | null,
+  ): QueryActivityResult;
   /**
    * Evaluate a FluxScript expression (datasource, show condition) against the
    * live store, with the given script context injected as the four roots.
@@ -115,15 +126,48 @@ export function createEngine({ store, config, services: hostServices = [], user 
     }
   }
 
-  function runActivity(
-    activity: ActivityDef,
-    captured: Record<string, unknown>,
-    anchorRecord: RecordInstance | null,
-    options?: RunActivityOptions
-  ): RunActivityResult {
-    // Availability gate — first step of the pipeline, before the before hook.
-    // The UI hides unavailable activities, but the gate is the enforcement
-    // point (headless callers skip the UI entirely).
+  // `invoke(activityId, params)` — the hook-facing read door (DSL_SPEC §5a).
+  // Read-only by construction: it can only reach a GET, so it carries none of
+  // the cascade risk that keeps hooks from starting other workflows (a
+  // workflow triggers another by creating a record, never by calling an
+  // activity — CLIENT_TRUST_BOUNDARY §1).
+  //
+  // The in-flight set stops a GET whose gate invokes itself from hanging the
+  // request. Recursion is the only way a read can run away, since nothing it
+  // does changes what the next read sees.
+  const inFlight = new Set<string>();
+
+  function findActivity(activityId: string): ActivityDef | null {
+    for (const rt of store.listRecordTypes()) {
+      const found = store.getRecordTypeDef(rt.id).workflow.activities.find((a) => a.id === activityId);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function invoke(activityId: string, params: Record<string, unknown>, anchorRecord: RecordInstance | null): unknown {
+    const activity = findActivity(activityId);
+    if (!activity) throw new Error(`invoke('${activityId}') — no such activity`);
+    if (activity.record_map !== 'GET') {
+      throw new Error(`invoke('${activityId}') — only GET activities can be invoked; this one is ${activity.record_map ?? 'log-only'}`);
+    }
+    if (inFlight.has(activityId)) {
+      throw new Error(`invoke('${activityId}') — already running; a GET cannot invoke itself`);
+    }
+    inFlight.add(activityId);
+    try {
+      // The invoking run's anchor carries through: a guard asks its question
+      // about the record it is guarding.
+      return runQuery(activity, params, anchorRecord).data;
+    } finally {
+      inFlight.delete(activityId);
+    }
+  }
+
+  // Availability gate — first step of every pipeline, read or write, before
+  // the before hook. The UI hides unavailable activities, but the gate is the
+  // enforcement point (headless callers skip the UI entirely).
+  function enforceAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null): void {
     const availability = activityAvailability(activity, anchorRecord);
     if (!availability.available) {
       throw new Error(
@@ -132,6 +176,84 @@ export function createEngine({ store, config, services: hostServices = [], user 
           : `'${activity.name}' is not available for this record`
       );
     }
+  }
+
+  // before hook = gate (DSL_SPEC §6): read-only; fail() rejects the run before
+  // anything persists. A runtime error in the hook also blocks — a broken gate
+  // must not wave submissions through. Returns the warnings it raised; what a
+  // caller does with them differs (a write offers a soft stop, a read cannot).
+  function runGate(activity: ActivityDef, scriptContext: ScriptContext): string[] {
+    if (!activity.before_hook) return [];
+    try {
+      const result = executeScript(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: 'read' });
+      return result.warnings;
+    } catch (err) {
+      if (err instanceof FluxFailError) throw new Error(err.message);
+      throw new Error(`Before hook error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * The read path (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES step 1). Shares the
+   * front of the pipeline with `runActivity` — availability gate, then the
+   * before hook as a gate — and then answers with the `returns` expression
+   * instead of touching storage. Nothing persists, so there is no entry, no
+   * record_map and no soft stop: gate warnings ride back with the answer
+   * rather than asking for confirmation, because re-running a read that
+   * changed nothing would only run it again.
+   *
+   * Logging is step 3. Today a GET leaves no trace, which is the one promise
+   * of "the pipeline is the log" this does not yet keep.
+   */
+  function runQuery(
+    activity: ActivityDef,
+    captured: Record<string, unknown>,
+    anchorRecord: RecordInstance | null,
+  ): QueryActivityResult {
+    if (activity.record_map !== 'GET') {
+      throw new Error(`'${activity.name}' is not a GET activity — run it through runActivity`);
+    }
+    if (!activity.returns) {
+      throw new Error(`GET activity '${activity.id}' has no 'returns' expression`);
+    }
+    enforceAvailability(activity, anchorRecord);
+    runLog = [];
+
+    // Parameters are attributes, so they arrive and coerce exactly as a
+    // capture form's values do (DATA_THROUGH_ACTIVITIES §2).
+    const stringValues = flattenCaptured(activity.attributes, captured);
+    const liveAttributes = { ...coerceCaptured(activity.attributes, stringValues) };
+    const scriptContext: ScriptContext = {
+      liveAttributes,
+      anchorRecord,
+      activity: { id: activity.id, name: activity.name },
+      user,
+      // Defence in depth under the validator's purity check: a mutation that
+      // slipped past config-save throws here rather than writing.
+      readonlyRecords: true,
+      invoke: (id, params) => invoke(id, params, anchorRecord),
+    };
+
+    const warnings = runGate(activity, scriptContext);
+    const answer = evaluateExpression(
+      activity.returns,
+      buildEvalHost(store, config, scriptContext, services),
+    );
+    // Callers are SDM-blind (an app page, another host's fetch), so records
+    // flatten to plain data on the way out — the same shaping a component gets.
+    return { data: toComponentValue(answer), warnings };
+  }
+
+  function runActivity(
+    activity: ActivityDef,
+    captured: Record<string, unknown>,
+    anchorRecord: RecordInstance | null,
+    options?: RunActivityOptions
+  ): RunActivityResult {
+    if (activity.record_map === 'GET') {
+      throw new Error(`'${activity.name}' is a GET activity — read it through runQuery`);
+    }
+    enforceAvailability(activity, anchorRecord);
 
     const warnings: string[] = [];
     // Attributes declared unavailable: scripts see them as null, they never
@@ -160,24 +282,14 @@ export function createEngine({ store, config, services: hostServices = [], user 
       anchorRecord,
       activity: { id: activity.id, name: activity.name },
       user,
+      invoke: (id, params) => invoke(id, params, anchorRecord),
     };
 
-    // before hook = gate (DSL_SPEC §6): read-only; fail() rejects the activity
-    // before anything persists. A runtime error in the hook also blocks — a
-    // broken gate must not wave submissions through.
-    if (activity.before_hook) {
-      try {
-        const result = executeScript(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: 'read' });
-        warnings.push(...result.warnings);
-      } catch (err) {
-        if (err instanceof FluxFailError) throw new Error(err.message);
-        throw new Error(`Before hook error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      // Gate warnings are a soft stop: hand them back for the user to confirm.
-      // Nothing has persisted (the gate is read-only), so cancelling is free.
-      if (warnings.length > 0 && !options?.acknowledgedWarnings) {
-        return { status: 'needs-confirmation', warnings };
-      }
+    warnings.push(...runGate(activity, scriptContext));
+    // Gate warnings are a soft stop: hand them back for the user to confirm.
+    // Nothing has persisted (the gate is read-only), so cancelling is free.
+    if (warnings.length > 0 && !options?.acknowledgedWarnings) {
+      return { status: 'needs-confirmation', warnings };
     }
     // Acknowledged gate warnings ride the entry; after-hook warnings are
     // execution outcome and only travel in the result.
@@ -302,6 +414,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
     activityAvailability,
     isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
     runActivity,
+    runQuery,
     evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
     validateConfig: () => validateConfig(config, services),
     reportConfigFindings: () => reportConfigFindings(config, services),

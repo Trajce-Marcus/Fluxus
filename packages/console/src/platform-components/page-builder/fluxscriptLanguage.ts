@@ -31,7 +31,7 @@ const KEYWORDS = [
 
 const ROOTS = ['context', 'records', 'services', 'attributes', 'callbackData'];
 
-const BUILTINS = ['iif', 'date', 'now', 'exact', 'len', 'fail', 'warn'];
+const BUILTINS = ['iif', 'date', 'now', 'exact', 'len', 'fail', 'warn', 'invoke'];
 
 let registered = false;
 
