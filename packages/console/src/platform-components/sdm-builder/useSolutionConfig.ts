@@ -18,7 +18,7 @@ import { shellStore } from '../shell/store';
 
 /** A deep clone of the current config — safe to mutate as a draft. */
 export function readConfig(): SolutionConfig {
-  return structuredClone(sdmClient.config) as SolutionConfig;
+  return structuredClone(sdmClient.config);
 }
 
 /** The config as it stood when the editor mounted: the baseline a per-entity

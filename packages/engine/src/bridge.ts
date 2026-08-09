@@ -4,7 +4,15 @@
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
 import { parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
-import type { AttributeDef, SolutionConfig, ContextUser, RecordInstance } from './types';
+import type {
+  ActivityRawDef,
+  AttributeDef,
+  ClientActivityRawDef,
+  ClientCustomFieldDef,
+  ClientSolutionConfig,
+  ContextUser,
+  RecordInstance,
+} from './types';
 import type { Store } from './store';
 
 /**
@@ -18,6 +26,14 @@ export const shortName = (rtId: string): string => rtId.replace(/^rt_/, '');
 export const fullId = (short: string): string => `rt_${short}`;
 
 /**
+ * What to show a person for a custom field. `label` is optional and arrived
+ * late (2026-08-09), so the key is the fallback — every field stored before it
+ * has no label, and none of them should suddenly render blank. One helper so
+ * that fallback is stated once instead of at each display site.
+ */
+export const fieldLabel = (field: ClientCustomFieldDef): string => field.label?.trim() || field.key;
+
+/**
  * Scripts in the SDM JSON (hooks, function bodies) are canonically strings; an
  * array of lines is a hand-editing convenience, joined on load (DSL_SPEC §8).
  */
@@ -26,8 +42,20 @@ export function joinScript(script: string | string[] | null | undefined): string
   return Array.isArray(script) ? script.join('\n') : script;
 }
 
+/**
+ * An activity's two hooks, joined, from a config of either grade — absent on
+ * the client's grade (CLIENT_TRUST_BOUNDARY §2), where they read as null. The
+ * one place that widens `ClientActivityRawDef` back to the full def, so the
+ * assumption "hooks may simply not be here" is stated once instead of at every
+ * hook-reading site.
+ */
+export function activityHooks(activity: ClientActivityRawDef): { before: string | null; after: string | null } {
+  const full = activity as Partial<ActivityRawDef>;
+  return { before: joinScript(full.before_hook), after: joinScript(full.after_hook) };
+}
+
 /** Named function sources for the evaluator/validator (bodies joined). */
-export function resolveFunctions(config: SolutionConfig): string[] {
+export function resolveFunctions(config: ClientSolutionConfig): string[] {
   return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? '');
 }
 
@@ -35,7 +63,7 @@ export function resolveFunctions(config: SolutionConfig): string[] {
  * Signature map for ValidateOptions.functions, parsed from the bodies.
  * Unparseable bodies are skipped — validateConfig reports those.
  */
-export function functionSignatures(config: SolutionConfig): Record<string, { params: string[] }> {
+export function functionSignatures(config: ClientSolutionConfig): Record<string, { params: string[] }> {
   const out: Record<string, { params: string[] }> = {};
   for (const fn of config.functions ?? []) {
     try {
@@ -73,7 +101,7 @@ export function serializeFields(fields: Record<string, unknown>): Record<string,
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
 }
 
-export function buildDslSchema(config: SolutionConfig, services: ServiceModuleDef[] = []): DslSchema {
+export function buildDslSchema(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): DslSchema {
   const types: DslSchema['types'] = {};
   for (const rt of config.recordTypes) {
     const fields: DslSchema['types'][string]['fields'] = {};
@@ -94,7 +122,7 @@ export function toDslRecord(record: RecordInstance): DslRecord {
   return { id: record.id, type: shortName(record.typeRef), fields: record.customFields };
 }
 
-export function buildRecordsHost(adapter: Store, config: SolutionConfig): RecordsHost {
+export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): RecordsHost {
   const byShortName = new Map(config.recordTypes.map((rt) => [shortName(rt.id), rt]));
 
   return {
@@ -335,7 +363,7 @@ export function coerceValue(type: string | undefined, raw: string): unknown {
 
 export function buildEvalHost(
   adapter: Store,
-  config: SolutionConfig,
+  config: ClientSolutionConfig,
   script: ScriptContext,
   services: ServiceModuleDef[] = [],
 ): EvalHost {

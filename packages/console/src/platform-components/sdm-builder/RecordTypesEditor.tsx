@@ -170,7 +170,7 @@ export function RecordTypesEditor() {
             <div className="sdm-fields">
               <div className="sdm-fields-head">Custom fields</div>
               <table className="admin-table">
-                <thead><tr><th>Key</th><th>Type</th><th>Req</th><th>Uniq</th><th>FK type</th><th>FK display</th><th /></tr></thead>
+                <thead><tr><th>Key</th><th>Label</th><th>Type</th><th>Req</th><th>Uniq</th><th>FK type</th><th>FK display</th><th /></tr></thead>
                 <tbody>
                   {fields.map((f, i) => {
                     // An fk_ref points at another record type in this draft, so
@@ -180,6 +180,10 @@ export function RecordTypesEditor() {
                     return (
                       <tr key={i}>
                         <td><input className="admin-mono" value={f.key} onChange={(e) => editField(i, { key: e.target.value })} /></td>
+                        {/* What a person sees wherever the field appears. Blank
+                            ⇒ the key stands in (`fieldLabel`), which is what
+                            every field authored before labels existed does. */}
+                        <td><input value={f.label ?? ''} placeholder={f.key} onChange={(e) => editField(i, { label: e.target.value || undefined })} /></td>
                         <td><select value={f.type} onChange={(e) => editField(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></td>
                         <td><input type="checkbox" checked={!!f.required} onChange={(e) => editField(i, { required: e.target.checked })} /></td>
                         <td><input type="checkbox" checked={!!f.unique} onChange={(e) => editField(i, { unique: e.target.checked })} /></td>

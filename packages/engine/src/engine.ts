@@ -5,7 +5,7 @@
 // UI concerns (selection, toasts, console channels) stay with the host.
 
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ActivityDef, SolutionConfig, ContextUser, RecordInstance, RunActivityResult } from './types';
+import type { ActivityDef, ClientSolutionConfig, ContextUser, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
 import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
@@ -13,7 +13,14 @@ import { buildLoggerModule } from './services/logger';
 
 export interface EngineOptions {
   store: Store;
-  config: SolutionConfig;
+  /**
+   * Either grade of the model (CLIENT_TRUST_BOUNDARY §2). The server passes the
+   * full one, a browser host the trimmed one; the engine reads hooks off the
+   * Store's resolved activities, never off the config, so the pipeline is the
+   * same either way — a browser simply has no hook bodies to run, which is the
+   * point.
+   */
+  config: ClientSolutionConfig;
   services?: ServiceModuleDef[];
   /**
    * The identity every evaluation sees as `context.user` and every committed

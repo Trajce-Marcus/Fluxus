@@ -1,9 +1,18 @@
 # The record behind every run — client trust boundary, model trimming, audit
 
-**Status: designed 2026-08-08/09. Not built, except the storage split
-(`sdm_configs` → six `sdm_*` tables), which shipped 2026-08-08/09 and is
-specced in [packages/server/docs/SPEC.md](../packages/server/docs/SPEC.md)
-"Model storage: the SDM config as tables".**
+**Status: designed 2026-08-08/09. Built so far:**
+
+- **the storage split** (`sdm_configs` → six `sdm_*` tables), 2026-08-08/09 —
+  [packages/server/docs/SPEC.md](../packages/server/docs/SPEC.md) "Model
+  storage: the SDM config as tables";
+- **§2, trim by role** (sequencing step 1), 2026-08-09 — `ClientSolutionConfig`,
+  `projectConfig`, `config.getForOperation`, `config.get` tightened to sol
+  admin. Specced in the same file under "What the client is given", in
+  [packages/engine/docs/SPEC.md](../packages/engine/docs/SPEC.md) "Two grades of
+  model", and in [packages/client/docs/SPEC.md](../packages/client/docs/SPEC.md).
+  The per-**page** trim, the other half of §2, is still waiting on §7.
+
+The rest of this document is design, not code.
 
 This is the single doc for the whole design. It replaces the narrower
 client-trust version of 2026-08-08 and folds in the live parts of
@@ -133,7 +142,10 @@ the first commits, and it can be retried without repeating the first.
 
 ## 2. What the client is given
 
-**Today.** `config.get` returns the entire `SolutionConfig`, unfiltered — no
+**BUILT 2026-08-09**, except the per-page cut at the end of this section. What
+follows is the design as written; where the build differs, a note says so.
+
+**Before it.** `config.get` returned the entire `SolutionConfig`, unfiltered — no
 role filter, no trimming. Records *are* filtered, by `computeReadable`. That
 asymmetry is the finding: **the data is filtered, the model is not.** A runtime
 user who can read one record type still receives every other type's
@@ -187,6 +199,34 @@ it anyway), and the server revalidates regardless.
 referenced by any shipped expression, with no further pruning. Tighten only if
 it turns out to matter.
 
+**As built (2026-08-09)**, four places where the code says more than the table
+above did:
+
+- **Record-type fields** ship as key + label + type + FK wiring
+  (`fk_record_type`, `fk_display_field`). The design's "keys + labels" had no
+  counterpart in the model — a custom field had no label — so **`label` was
+  added to the field definition** (optional, key as the fallback, editable in
+  the Console) rather than dropped from the design. Storage constraints
+  (`required`, `unique`, `immutable`, `indexed`, `default`) are stripped:
+  nothing client-side builds a record.
+- **`max_count` ships after all.** The design listed both file ceilings as
+  stripped; on review only `max_size_mb` is, because it gates the presign
+  before bytes move. `max_count` is what the capture widget checks so the user
+  is stopped at the add tile instead of at submit — client-side **validation**,
+  never enforcement, exactly as validation expressions are (`validateSubmission`
+  holds the real ceiling).
+- **The attribute pool ships by reference**, not wholesale — an attribute
+  reached only by a workflow that did not survive describes a form this caller
+  can never open. Composite sub-usages are followed, so the walk is transitive.
+- **Function reachability is transitive** through function bodies, because a
+  shipped function may call another. Detection is a bare-name call scan,
+  deliberately over-inclusive: shipping an uncalled function is harmless, and
+  missing one breaks an expression.
+- **`default_menu` rides through untouched.** The runtime cannot render its
+  navigation without it, and the operation's own override — which usually wins —
+  arrives untrimmed from `operations.get` anyway. It is not part of
+  `ClientSolutionConfig`: the engine is menu-blind.
+
 ### Make the type system enforce it
 
 Define `ClientSolutionConfig` first, then have `SolutionConfig` **extend** it.
@@ -223,6 +263,10 @@ unaffected: it still receives the full model through `config.get`.
 **The storage split helps.** Now that the model is rows rather than one blob,
 the trim selects the columns and rows it wants, and "unreadable types" and
 "unrunnable activities" become `WHERE` clauses rather than a filter pass.
+
+**As built:** in memory, over the model `getSolutionConfig` already assembles —
+one round trip either way, and a pure function is testable without a database.
+Pushing the row cuts into SQL stays available as an optimisation.
 
 ---
 
@@ -538,8 +582,8 @@ concept, two implementations.
 
 ## Sequencing
 
-1. **Trim by role** — biggest security win per unit of work, and independent of
-   everything else once `ClientSolutionConfig` exists.
+1. ~~**Trim by role**~~ — **DONE 2026-08-09.** Biggest security win per unit of
+   work, and independent of everything else once `ClientSolutionConfig` exists.
 2. **Gap 1, `callbackData`** — independent of all of it, and the sharpest live
    gap; it can go first if judged urgent.
 3. **The signing seam** — then the operation handle (gap 2) and the
@@ -559,5 +603,11 @@ concept, two implementations.
 **Used in this document, not yet endorsed:** *app record* · *run record* ·
 *hook history* (and its table and column names) · the stamp columns on
 `records` · *runner* · the record-page URL shape.
+
+**Introduced by the build, awaiting endorsement:** the per-entity narrow types
+(`ClientAttributeDef`, `ClientAttributeTypeConfig`, `ClientCustomFieldDef`,
+`ClientRecordTypeDef`, `ClientActivityRawDef`, `ClientWorkflowRawDef`) —
+mechanical derivations of the endorsed `ClientSolutionConfig`, renameable
+together if the prefix is not wanted.
 
 GLOSSARY carries the endorsed set; the rest go in when they are settled.

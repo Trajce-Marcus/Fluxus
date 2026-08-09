@@ -75,8 +75,11 @@ describe('sol-admin enforcement', () => {
 
   it('reading the model is the same grant as building it', async () => {
     // What the retired `read` grade would have bought. Someone who may open the
-    // solution may look at it; someone who may not, may not.
+    // solution may look at it; someone who may not, may not — `config.get` is
+    // the design plane's door and hands over hooks and access rules whole
+    // (CLIENT_TRUST_BOUNDARY §2). The runtime plane has its own, trimmed door.
     await expect(as(builder).config.get({ solutionId: SOL })).resolves.toBeDefined();
+    await expect(as(outsider).config.get({ solutionId: SOL })).rejects.toThrow(denied);
   });
 
   it('a caller with no email can never match a row', async () => {

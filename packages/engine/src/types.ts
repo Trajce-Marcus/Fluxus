@@ -1,18 +1,42 @@
 // ── SDM config types (shape of the hand-edited JSON) ─────────────────────────
+//
+// Every config type comes in two grades (docs/CLIENT_TRUST_BOUNDARY.md §2):
+// a `Client*` grade — what a browser on the RUNTIME plane is given — and the
+// full grade, which **extends** it with the fields only the server and the
+// design plane may see. The narrow one is declared first and the full one
+// extends it, deliberately: code typed against the narrow grade cannot compile
+// a reference to a stripped field, so the trim is structurally unreachable
+// rather than merely filtered at runtime. `projectConfig` (server) is the one
+// place that turns the full grade into the narrow one.
 
-export interface CustomFieldDef {
+export interface ClientCustomFieldDef {
   key: string;
+  /**
+   * What a person is shown where the field appears — grid headings, the record
+   * view, the schema navigator. **Optional, and the key is the fallback**: the
+   * key was the only name a field had until 2026-08-09, so every stored field
+   * predates this and a missing label must read as "use the key". Go through
+   * `fieldLabel(cf)` rather than reading it directly, so the fallback is one
+   * rule rather than a habit.
+   */
+  label?: string;
   type: string; // "text" | "int" | "bool" | "date" | "fk_ref" | ...
+  fk_record_type?: string;   // required when type === "fk_ref"
+  fk_display_field?: string; // required when type === "fk_ref"
+}
+
+/** Storage constraints are the server's business — nothing client-side builds
+ *  a record, so a browser is given the field's identity and its FK wiring
+ *  (which it needs to display and to traverse) and nothing else. */
+export interface CustomFieldDef extends ClientCustomFieldDef {
   default?: string;
   required?: boolean;
   unique?: boolean;
   immutable?: boolean;
   indexed?: boolean;
-  fk_record_type?: string;   // required when type === "fk_ref"
-  fk_display_field?: string; // required when type === "fk_ref"
 }
 
-export interface AttributeTypeConfig {
+export interface ClientAttributeTypeConfig {
   fk_record_type?: string;
   values?: string[];
   expression?: unknown;
@@ -38,12 +62,14 @@ export interface AttributeTypeConfig {
   /** Input step + display rounding — presentation only, like `multiline` (§1). */
   decimal_places?: number;
   // ── 'photo' / 'file' attributes (§1) ──
-  /** Per-attribute file-count ceiling for a multi value; enforced at presign + submit. */
-  max_count?: number;
-  /** Per-attribute byte ceiling (MB); enforced at presign, re-checked at submit. */
-  max_size_mb?: number;
   /** 'file' only: file-dialog filter — a list of extensions/MIME types. */
   accept?: string[];
+  /**
+   * Per-attribute file-count ceiling for a multi value. Ships to the client so
+   * the widget can stop the user at the add tile — **validation, never
+   * enforcement**: `validateSubmission` holds the real ceiling at submit.
+   */
+  max_count?: number;
   // ── 'composite' attributes (one question's row of sub-fields) ──
   /**
    * The sub-attributes of a composite: usage wrappers pointing at REAL pool
@@ -55,18 +81,25 @@ export interface AttributeTypeConfig {
   attributes?: AttributeUsageDef[];
 }
 
-export interface AttributeDef {
+/** The presign gate (CLIENT_TRUST_BOUNDARY §2): this ceiling is applied before
+ *  any bytes move, so the browser is not told it. */
+export interface AttributeTypeConfig extends ClientAttributeTypeConfig {
+  /** Per-attribute byte ceiling (MB); enforced at presign, re-checked at submit. */
+  max_size_mb?: number;
+}
+
+export interface ClientAttributeDef {
   key: string;
   label: string;
   description: string;
   type: string; // "text" | "reference" | "list" | "composite" | "section" (resolved marker) | ...
-  type_config?: AttributeTypeConfig;
+  type_config?: ClientAttributeTypeConfig;
   /**
    * Resolved sub-attributes of a composite (pool defs merged with the usage
    * overrides from type_config.attributes). Populated at resolution time by
    * the adapter; absent on raw pool defs and non-composite types.
    */
-  sub_attributes?: AttributeDef[];
+  sub_attributes?: ClientAttributeDef[];
   /** FluxScript expression; carried over from the usage wrapper during resolution. */
   show_condition?: string;
   /** Must be captured before the activity can submit; carried over from the usage wrapper. */
@@ -82,6 +115,14 @@ export interface AttributeDef {
    * is never written. Carried over from the usage wrapper.
    */
   can_waive?: boolean;
+}
+
+/** An attribute is the same thing on both planes — validation expressions ship
+ *  deliberately (the client validates inline, the server revalidates) — so all
+ *  the full grade adds is the storage gate inside `type_config`. */
+export interface AttributeDef extends ClientAttributeDef {
+  type_config?: AttributeTypeConfig;
+  sub_attributes?: AttributeDef[];
 }
 
 /**
@@ -112,7 +153,7 @@ export interface AttributeUsageDef {
 // Raw activity shape (as it appears in the JSON config).
 // Hooks are FluxScript scripts; an array of lines is a hand-editing convenience
 // (joined on load), same as function bodies.
-export interface ActivityRawDef {
+export interface ClientActivityRawDef {
   id: string;
   name: string;
   description: string;
@@ -129,6 +170,15 @@ export interface ActivityRawDef {
   show_condition?: string;
   /** Ordered capture list: attribute usages plus presentation section markers. */
   attributes: (AttributeUsageDef | SectionMarkerDef)[];
+}
+
+/**
+ * Hooks are the prize (CLIENT_TRUST_BOUNDARY §2): business logic and every
+ * effect never leave the server, so they are absent — not null — from the
+ * client's grade. Read them through `activityHooks` wherever a config may be
+ * either grade.
+ */
+export interface ActivityRawDef extends ClientActivityRawDef {
   /** FluxScript, validate-only: may fail()/warn(), never mutates (DSL_SPEC §6). */
   before_hook: string | string[] | null;
   /** FluxScript, effects: mutations staged and committed atomically (DSL_SPEC §7). */
@@ -149,10 +199,14 @@ export interface ActivityDef {
   after_hook: string | null;
 }
 
-export interface WorkflowRawDef {
+export interface ClientWorkflowRawDef {
   id: string;
   name: string;
   description: string;
+  activities: ClientActivityRawDef[];
+}
+
+export interface WorkflowRawDef extends ClientWorkflowRawDef {
   activities: ActivityRawDef[];
 }
 
@@ -163,12 +217,16 @@ export interface WorkflowDef {
   activities: ActivityDef[];
 }
 
-export interface RecordTypeDef {
+export interface ClientRecordTypeDef {
   id: string;
   name: string;
   description: string;
   workflow_ref: string;
   id_field?: string;
+  custom_fields: ClientCustomFieldDef[];
+}
+
+export interface RecordTypeDef extends ClientRecordTypeDef {
   custom_fields: CustomFieldDef[];
   /** RBAC read surface (RBAC_COMPACT): role ids that may read this type.
    *  **Default deny** — absent/empty means no role reads it, not "open". The
@@ -198,16 +256,32 @@ export interface FunctionDef {
   body: string | string[];
 }
 
-// One solution's model, exactly as stored: `sdm_configs.config` keyed by
-// solution id, and every snapshot in `sdm_config_versions`. Renamed from
+/**
+ * The model as a browser on the runtime plane receives it — the output of
+ * `projectConfig` and the input every client-side host is typed against
+ * (CLIENT_TRUST_BOUNDARY §2). Trimmed two ways: field by field (no hooks, no
+ * storage gate, no read rules) and row by row (no unreadable record type, no
+ * unrunnable activity, no unreferenced attribute or function).
+ *
+ * `access` is absent entirely — the client learns its own roles from `me`, and
+ * has no business knowing the rules that exclude it.
+ */
+export interface ClientSolutionConfig {
+  attributes: ClientAttributeDef[];
+  recordTypes: ClientRecordTypeDef[];
+  workflows: ClientWorkflowRawDef[];
+  functions?: FunctionDef[];
+}
+
+// One solution's model, exactly as stored: the six `sdm_*` tables assembled by
+// `getSolutionConfig`, and every snapshot in `sdm_config_versions`. Renamed from
 // `ConfigRaw` 2026-08-07 — the `Raw` suffix paired with nothing (there is no
 // cooked top-level config), while the inner `*RawDef` types still do carry the
 // unresolved-vs-resolved distinction.
-export interface SolutionConfig {
+export interface SolutionConfig extends ClientSolutionConfig {
   attributes: AttributeDef[];
   recordTypes: RecordTypeDef[];
   workflows: WorkflowRawDef[];
-  functions?: FunctionDef[];
   /** Solution-scoped RBAC role definitions (RBAC_COMPACT). Absent ⇒ RBAC
    *  dormant (adoption posture): all record types/pages read open. */
   access?: { roles?: RoleDef[] };

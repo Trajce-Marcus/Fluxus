@@ -9,8 +9,8 @@ record.
 One class, `FluxusClient`, owning the movements every remote host makes:
 
 1. **`connect({url, operationId})`** — resolve the operation to its solution
-   (`operations.get`), then fetch `config.get` + `pages.list` (by `solutionId`)
-   and `records.partition` (by `operationId`) in parallel and build a
+   (`operations.get`), then fetch `config.getForOperation` + `pages.list` and
+   `records.partition` in parallel and build a
    `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
    **effective menu** (§5 amended M10): `operation.config.menu ??
    config.default_menu ?? []` — the operation's whole-menu override when set,
@@ -21,9 +21,16 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    (M13) — all resolved from the one `operations.get` call. `connectSolution`
    passes `''` for `orgName`: display names are Runtime chrome, and Console has
    its own solution banner.
+   Since 2026-08-09 the model arrives **trimmed to the caller's roles**
+   (`config.getForOperation`, CLIENT_TRUST_BOUNDARY §2): no hooks, no access
+   rules, no record type they cannot read. Hence the door is keyed on the
+   operation, not the solution — the trim is decided by roles *in that
+   operation*. The data was always filtered this way; now the model is too.
 1a. **`connectSolution({url, solutionId, operationId?})`** (CONSOLE_RUNTIME_SPEC
    §3, design plane) — bind to a solution to author its model + draft pages:
-   fetch `config.get` + draft `pages.list` by `solutionId`, plus **that
+   fetch `config.get` (the whole model, hooks included — authoring them is the
+   job; **sol-admin gated** since 2026-08-09, and a refusal is surfaced rather
+   than opened as a blank editor) + draft `pages.list` by `solutionId`, plus **that
    operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
    the data you build against is one operation's). No menu/roles (`enforced`
    false: Console is the design plane). With an operation bound,
@@ -110,10 +117,20 @@ real gate. `ConsoleClient.listPublishedPaths` feeds the menu editors, and
 settings surface — profile reads and edits over the `orgs` row (`OrgProfile`).
 No create and no plan/status writes; the server owns both rules.
 `ConsoleClient.getSolutionConfig` (M10) lets the Console's operation view show
-the `default_menu` an operation inherits.
+the `default_menu` an operation inherits — sol-admin gated since the client trim,
+so an op admin who does not build the solution sees an empty inherited menu.
 
 ## Contracts and postures
 
+- **Two grades of model** (CLIENT_TRUST_BOUNDARY §2, 2026-08-09):
+  `FluxusClient<C extends ClientSolutionConfig>` is generic in the grade it
+  holds. `connect` yields the narrow one (hooks, access rules and the storage
+  gate never left the server); `connectSolution` yields the full
+  `SolutionConfig`, because the design plane authors hooks. **Hosts that only
+  render and run take `FluxusClient` unparameterised** and get the narrow
+  grade — which is what makes a stray `before_hook` read a compile error there
+  rather than a runtime `undefined`. Console types its design singleton
+  `FluxusClient<SolutionConfig>`.
 - **Snapshot model** (stage 2 ruling): bootstrap fetch + refetch-after-run.
   The Store contract stays synchronous; the browser mirrors the server's own
   per-request partition-snapshot model. No per-read laziness until partition

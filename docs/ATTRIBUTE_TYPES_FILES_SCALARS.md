@@ -35,7 +35,7 @@ Multi capture UI is **built for photo and file only** in this round; the flag is
 
 ## 3. Config vs validation — the boundary principle *(TT: reuse expressions instead of slots)*
 
-**type_config holds only capture-shaping keys — things that must act *before a value exists*:** `accept` (file dialog filter), `max_size_mb` (enforced at presign, before bytes move), `max_count` (add-tile disables), `multi` (structural), `multiline`/`decimal_places` (input shape). Closed set; no format mini-language, ever.
+**type_config holds only capture-shaping keys — things that must act *before a value exists*:** `accept` (file dialog filter), `max_size_mb` (enforced at presign, before bytes move), `max_count` (add-tile disables — client-side validation only; `validateSubmission` is what enforces it), `multi` (structural), `multiline`/`decimal_places` (input shape). Closed set; no format mini-language, ever.
 
 **Every judgement about the value uses the existing FluxScript `validation`** with dot access into descriptor fields: `value > 0 and value <= 500`, `value.size <= 20000000`, `value.taken_at >= ctx.record.created_at`. The planned `min`/`max` slots were dropped before build. Descriptor dot-access is the composite addressing mechanism reused — no new expression machinery.
 

@@ -59,9 +59,14 @@ src/host.ts            — loadOperationHost (resolve operation → solution, th
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig)
+src/projection.ts      — the client projection: computeReadable (the record-type
+                         read filter, shared by the data and model cuts) and
+                         projectConfig (the stored model → the browser's copy).
+                         The ONE place that decides what leaves the server
 src/router.ts          — the tRPC router: orgs.get/putProfile,
                          solutions.list/create/update/delete,
-                         operations.list/get/create/putConfig, config.get/put
+                         operations.list/get/create/putConfig,
+                         config.get/getForOperation/put
                          + the per-entity model writes (putAttribute…
                          putDefaultMenu), pages.*, records.*, activities.run,
                          files.*;
@@ -308,7 +313,11 @@ takes `operationId?` (both default `demo/sdm`):
   **RBAC stage 1**: all three apply the record-type read filter (below) — a
   deny reads as not-found on `get`, and unreadable types drop out of
   `partition`/`list`.
-- **`config.get` / `config.put`** `{ solutionId?, config }` — the Phase 4 shift:
+- **`config.get` / `config.put`** `{ solutionId?, config }` — the **design
+  plane's** door: the whole model, hooks and access rules included, because
+  authoring them is the job. Since 2026-08-09 `get` requires **sol admin** like
+  `put` — reading a model and writing it are the same privilege in a one-grade
+  world (see "What the client is given" below). The Phase 4 shift:
   the SDM config is a stored artifact and "config-save-time validation" is
   literal. `put` rejects on structural danglers (MemoryAdapter resolution),
   any error-severity `validateConfig` finding, or (2026-07-26) a record-type
@@ -327,6 +336,13 @@ takes `operationId?` (both default `demo/sdm`):
   (`config.putAttribute` … `config.putDefaultMenu`), which run this same
   validation under a per-solution lock. See "Model storage: the SDM config as
   tables".
+- **`config.getForOperation`** `{ operationId? }` → `ClientSolutionConfig` — the
+  **runtime plane's** door (BUILT 2026-08-09): the model trimmed to what this
+  caller may see. Keyed on the operation, not the solution, because what
+  survives is decided by the caller's roles *in that operation*; entry
+  (`requireOpUser`) is checked before anything is trimmed.
+  `FluxusClient.connect` uses this; `connectSolution` (Console) uses
+  `config.get`. See "What the client is given" below.
 - **`pages.list` / `pages.put` / `pages.delete`** `{ solutionId?, path, def }`
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
@@ -398,10 +414,12 @@ rev 6 §0). What the server implements:
   when auth is **configured** (`ctx.authConfigured`) AND the solution declares
   `access.roles`; otherwise everything reads open (env stub / adoption
   posture). When active it is **default deny** — a type is readable only if its
-  `access.read` lists a role the caller holds. Applied by `records.*` and by
+  `access.read` lists a role the caller holds. Applied by `records.*`, by
   the `activities.run` anchor check (unreadable anchor ⇒ not-found, *before*
-  the run gate). Activity `run` itself is the engine's existing availability
-  gate reading `context.user.roles`.
+  the run gate), and since 2026-08-09 by `projectConfig` — one answer
+  (`computeReadable`, `src/projection.ts`) governing both halves of a snapshot,
+  the data and the model. Activity `run` itself is the engine's existing
+  availability gate reading `context.user.roles`.
 - **Author**: `runActivity` stamps the verified user id on each new history
   entry (`entry.author`, engine-side); the projection copies it to
   `rpt_activities.author` (`'demo'` for pre-auth entries and the stub).
@@ -536,6 +554,76 @@ The node-postgres pool handles idle-client `'error'` events (logged, client
 discarded and replaced on next query) — Neon reaps idle connections
 server-side, and an unhandled error event would crash the process.
 
+## What the client is given (**BUILT 2026-08-09**)
+
+Design authority: root [docs/CLIENT_TRUST_BOUNDARY.md](../../../docs/CLIENT_TRUST_BOUNDARY.md) §2,
+step 1 of its sequencing. The finding it closes: **the data was filtered, the
+model was not.** `config.get` returned the entire `SolutionConfig` to anyone —
+so a runtime user who could read one record type still received every other
+type's definition, every activity, **every hook body**, and the `access.read`
+rules that excluded them.
+
+The fix is not one endpoint filtering harder — a sol admin authoring in the
+Console genuinely needs the whole model — it is **two separate procedures for
+two audiences**:
+
+| | Audience | Gate | Returns |
+|---|---|---|---|
+| `config.get` `{ solutionId }` | design plane (Console) | **sol admin** | `SolutionConfig`, whole |
+| `config.getForOperation` `{ operationId }` | runtime plane | op user, then the role trim | `ClientSolutionConfig` |
+
+**One pure function.** `projectConfig(config, { roles, enforced })` in
+`src/projection.ts` is the only thing that turns one into the other — one place
+to audit, one place to test (`test/projection.test.ts`).
+
+It trims **in memory**, over the model `getSolutionConfig` already assembled,
+rather than pushing the cuts down as `WHERE` clauses. That is a deliberate first
+cut: assembly is one round trip either way, and a pure function is testable
+without a database. Pushing the row cuts into SQL is a later optimisation, not a
+redesign.
+
+**It builds its output by naming each field that goes in.** Removing fields
+instead (`delete config.hooks`) leaks every field added to the model later,
+until somebody remembers; naming what goes in makes new fields invisible until
+somebody deliberately exposes them. This is the rule the whole module rests on.
+
+| | Ships | Stripped |
+|---|---|---|
+| attributes | `key`, `label`, `description`, `type`, display config, `max_count`, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | the presign gate (`max_size_mb`); attributes no surviving form reaches, and pool orphans |
+| record types | `id`, `name`, `description`, `workflow_ref`, `id_field`, custom field key + label + type + FK wiring | `access.read`; storage constraints (`required`/`unique`/`immutable`/`indexed`/`default`); **unreadable types entirely** |
+| activities | `id`, `name`, `description`, `sort_order`, `record_map`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely** |
+| workflows | `id`, `name`, `description`, and the activities that survive | workflows serving no surviving record type |
+| functions | those reachable from a shipped expression, transitively | the rest — including every hook-only helper |
+| roles | — | **the whole `access` block**; the client gets its own roles from `me` |
+| `default_menu` | rides through untouched | — |
+
+**Hooks are the prize**: business logic and every effect never leave the server.
+**Validation expressions are deliberately kept** — the client needs them for
+inline validation, they are not secret (the user discovers the rule by hitting
+it anyway), and the server revalidates regardless.
+
+`default_menu` ships because the runtime cannot render its navigation without
+it, and the operation's own override — which usually wins — arrives untrimmed
+from `operations.get` anyway.
+
+**The type system enforces it.** `ClientSolutionConfig` is declared first in
+`@fluxus/engine` and `SolutionConfig` **extends** it, so client-side code typed
+against the narrow grade cannot compile a reference to `before_hook`: the trim
+is structurally unreachable, not merely filtered at runtime. `FluxusClient` is
+generic in its grade — see the client SPEC.
+
+**Consequences to know about**, both from the `config.get` tightening:
+
+- An org admin who is not a sol admin of a solution can no longer open its model
+  in the Console. `connectSolution` surfaces the refusal rather than opening a
+  blank editor.
+- The operation-menu screen's "inherited default" read (`getSolutionConfig`)
+  goes through `config.get`, so an op admin who does not build the solution sees
+  an empty inherited menu. Its call already catches and degrades.
+
+**Still to come** (§2, blocked on §7): the second cut, **by page** — the larger
+payload win — lands as another option on this same function.
+
 ## Model storage: the SDM config as tables (**BUILT 2026-08-08**, steps 1–2; the derived snapshot dropped 2026-08-09)
 
 Until 2026-08-08 one jsonb blob per solution (`sdm_configs.config`) held
@@ -625,7 +713,9 @@ per-collection either way.
   would have run hosts on a model the tables disagreed with, invisibly. The
   lock moved to the `solutions` row (below). Reversibility was never at stake:
   a derived table is rebuildable by definition.
-- **`config.get`** — unchanged, reads the snapshot.
+- **`config.get`** — unchanged by the split (it assembles the tables). Since
+  2026-08-09 it is sol-admin gated and no longer the runtime plane's door — see
+  "What the client is given" above.
 - **`config.put`** (whole config) — kept, as the **import** path: it explodes an
   incoming config into rows, replacing all five collections and the menu (rows
   absent from the incoming config are deleted). `rollbackConfig` depends on it,

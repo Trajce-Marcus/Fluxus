@@ -29,7 +29,8 @@ src/types.ts       — SDM config + runtime types (SolutionConfig, RecordTypeDef
                      — there is no cooked top-level config. The inner
                      `WorkflowRawDef`/`ActivityRawDef` keep theirs, because
                      those do pair with resolved forms. Type-only rename: no
-                     stored jsonb changed.
+                     stored jsonb changed. Since 2026-08-09 every config type
+                     comes in two grades — see "Two grades of model" below.
 src/store.ts       — the Store contract (the persistence seam)
 src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storage
                      (extracted from LocalStorageAdapter at DSL Phase 4;
@@ -159,6 +160,38 @@ record to the anchor and passes the object as `options.callbackData`.
 - Async `queue` dispatch failures land on `console.warn` via the bridge's
   `onQueuedFailure`; becomes host-supplied when a second host needs it to
   differ.
+
+### Two grades of model (BUILT 2026-08-09)
+
+Design authority: root [docs/CLIENT_TRUST_BOUNDARY.md](../../../docs/CLIENT_TRUST_BOUNDARY.md) §2.
+Every config type has a `Client*` grade — what a browser on the **runtime**
+plane is given — and a full grade that **extends** it:
+
+```
+ClientSolutionConfig      ← SolutionConfig      (adds access.roles)
+ClientRecordTypeDef       ← RecordTypeDef       (adds access.read + storage constraints)
+ClientActivityRawDef      ← ActivityRawDef      (adds before_hook / after_hook)
+ClientAttributeTypeConfig ← AttributeTypeConfig (adds max_count / max_size_mb)
+ClientCustomFieldDef · ClientAttributeDef · ClientWorkflowRawDef
+```
+
+**The narrow one is declared first, deliberately.** Code typed against it
+cannot compile a reference to `before_hook` — the trim is structurally
+unreachable rather than merely filtered at runtime. The engine defines the
+shapes; `projectConfig` (server) is the only thing that performs the trim.
+
+Everything here that takes a config takes the **narrow** grade —
+`MemoryAdapter`, `EngineOptions.config`, the bridge, `validateConfig` — because
+the full grade is assignable to it and nothing in the engine needs a stripped
+field. Two places do read hooks off a raw config (`MemoryAdapter`'s workflow
+resolution, `validateConfig`'s hook pass) and both go through
+**`activityHooks(activity)`** (`src/bridge.ts`): the one place that widens back
+to the full def, so "hooks may simply not be here" is stated once. On a client
+config they resolve to `null`, which is already a legal state.
+
+**The client never executes a hook** regardless: scripts and persistence are
+server-side by ruling, and a browser evaluates expressions only
+(`show_condition`, `validation`, datasources).
 
 ### RBAC config surface (RBAC_COMPACT; enforced outside the engine)
 

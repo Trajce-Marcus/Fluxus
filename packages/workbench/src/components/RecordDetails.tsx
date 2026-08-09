@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
 import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
 import { useWorkbench } from '../WorkbenchContext';
+import { fieldLabel } from '@fluxus/engine';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -33,7 +34,7 @@ export function RecordDetails({ record, typeDef, navigateTo }: Props) {
           return (
             <Fragment key={cf.key}>
               <dt style={{ fontSize: 13, color: '#64748b', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                {cf.key}
+                {fieldLabel(cf)}
               </dt>
               <dd style={{ margin: 0, fontSize: 13, color: '#0f172a' }}>
                 {isLink ? (

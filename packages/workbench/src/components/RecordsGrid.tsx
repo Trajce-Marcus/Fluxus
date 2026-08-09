@@ -7,6 +7,7 @@ import { CsvImportModal } from './CsvImportModal';
 import { NoOperationNotice } from './OperationPicker';
 import { PhotoCountCell, isDescriptorValue } from './attributeWidgets';
 import { exportToCSV, exportToJSON } from '../export';
+import { fieldLabel } from '@fluxus/engine';
 import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
@@ -377,7 +378,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                       zIndex: 2,
                     }}
                   >
-                    {cf.key}{sortIcon(cf.key)}
+                    {fieldLabel(cf)}{sortIcon(cf.key)}
                   </th>
                 ))}
               </tr>

@@ -68,6 +68,7 @@ import {
   userRolesRouter,
   usersRouter,
 } from './routers/users';
+import { computeReadable, projectConfig } from './projection';
 import {
   hasConsoleAccess,
   isOpAdmin,
@@ -112,26 +113,6 @@ async function resolveUser(ctx: AppContext, operationId: string) {
   // Roles resolve on the EMAIL (0015), like every other grant — the auth id
   // only exists once someone has signed in, and grants precede that.
   return { ...user, roles: await roles.runtimeRoles(user.email, operationId) };
-}
-
-/**
- * The record-type read surface (RBAC_COMPACT: role list, default deny, server
- * partition filter). Returns the set of type ids readable to the caller in the
- * operation, or `null` when RBAC is dormant/off (everything readable):
- *   - auth unconfigured (env stub) ⇒ null (open), OR
- *   - the solution declares no `access.roles` ⇒ null (adoption posture).
- * Otherwise **default deny**: a type is readable only if its `access.read`
- * lists a role the user holds. A held role set comes from `runtimeRoles`.
- */
-function computeReadable(authConfigured: boolean | undefined, config: SolutionConfig, roles: string[] | undefined): Set<string> | null {
-  if (!authConfigured) return null; // env stub ⇒ everything open
-  if (!config.access?.roles?.length) return null; // solution opted out ⇒ open (adoption)
-  const held = new Set(roles ?? []);
-  const readable = new Set<string>();
-  for (const rt of config.recordTypes) {
-    if ((rt.access?.read ?? []).some((r) => held.has(r))) readable.add(rt.id); // default deny
-  }
-  return readable;
 }
 
 /** The caller's resolved roles + the operation's linked-solution config. */
@@ -441,11 +422,33 @@ export const appRouter = t.router({
   userRoles: userRolesRouter,
 
   config: t.router({
+    // Two doors, not one filter (CLIENT_TRUST_BOUNDARY §2). This is the design
+    // plane's: the whole model, hooks and access rules included, because
+    // authoring them is the job. **Sol admin** — `config.put` already requires
+    // it, and reading a model and writing it are the same privilege in a
+    // one-grade world.
     get: t.procedure
       .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
+          await requireSolAdmin(ctx, input.solutionId);
           return await getSolutionConfig(ctx.db, input.solutionId);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    /**
+     * The runtime plane's door: the model trimmed to what this caller may see.
+     * Keyed on the **operation**, not the solution, because what survives the
+     * trim is decided by the caller's roles *in that operation* — and entry to
+     * the operation is itself the first check (`resolveUser` → `requireOpUser`).
+     */
+    getForOperation: t.procedure
+      .input(z.object({ operationId: operationInput }).default({}))
+      .query(async ({ ctx, input }) => {
+        try {
+          const { user, config } = await operationContext(ctx, input.operationId);
+          return projectConfig(config, { roles: user.roles, enforced: ctx.authConfigured });
         } catch (err) {
           rethrow(err);
         }

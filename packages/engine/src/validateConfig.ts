@@ -5,9 +5,9 @@
 // diagnostics land on the console.
 
 import { validateExpression, validateScript, validateFunction, parseFunction, lintSchema, type Diagnostic, type ServiceModuleDef } from '@fluxus/dsl';
-import type { SolutionConfig } from './types';
+import type { ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
-import { buildDslSchema, joinScript, shortName } from './bridge';
+import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
 
 export interface Finding {
@@ -15,7 +15,10 @@ export interface Finding {
   diagnostic: Diagnostic;
 }
 
-export function validateConfig(config: SolutionConfig, services: ServiceModuleDef[] = []): Finding[] {
+// Either grade of config: the design plane validates the full model at save,
+// while a browser host re-reports its trimmed copy as a version-drift net. The
+// hook pass below simply finds nothing to check on the trimmed one.
+export function validateConfig(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): Finding[] {
   // services.logger is engine-owned and part of every host's registry
   // (createEngine appends it, name reserved) — validation must see the same
   // registry the engine runs with, whoever is validating.
@@ -153,8 +156,9 @@ export function validateConfig(config: SolutionConfig, services: ServiceModuleDe
       // Hooks (scripts tier): before = gate (validate only), after = effects.
       // `callbackData` is legal in any hook — every activity may be
       // app-triggered (Extraction stage 2); it is null on direct runs.
+      const hooks = activityHooks(activity);
       for (const phase of ['before', 'after'] as const) {
-        const source = joinScript(phase === 'before' ? activity.before_hook : activity.after_hook);
+        const source = phase === 'before' ? hooks.before : hooks.after;
         if (!source) continue;
         for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions, extraRoots: ['callbackData'] })) {
           findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
@@ -166,7 +170,7 @@ export function validateConfig(config: SolutionConfig, services: ServiceModuleDe
   return findings;
 }
 
-export function reportConfigFindings(config: SolutionConfig, services: ServiceModuleDef[] = []): void {
+export function reportConfigFindings(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): void {
   const findings = validateConfig(config, services);
   for (const { where, diagnostic } of findings) {
     const log = diagnostic.severity === 'error' ? console.error : console.warn;

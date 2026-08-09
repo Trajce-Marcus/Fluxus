@@ -6,10 +6,11 @@
 // adapter identity never changes — hosts wire their engine and subscriptions
 // to it once and refresh flows through Store.subscribe.
 
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
 import type {
   AttributeDef,
+  ClientSolutionConfig,
   FunctionDef,
   RecordInstance,
   RecordTypeDef,
@@ -461,14 +462,26 @@ export interface RunInput {
   callbackData?: unknown;
 }
 
-export class FluxusClient {
+/**
+ * The connected client for one operation's snapshot.
+ *
+ * Generic in the **grade of model it holds** (CLIENT_TRUST_BOUNDARY §2):
+ * `connect` (the runtime plane) yields a `ClientSolutionConfig` — hooks, access
+ * rules and the storage gate never left the server — while `connectSolution`
+ * (the design plane, sol admin) yields the full `SolutionConfig`, because
+ * authoring hooks is the job. Hosts that only render and run take
+ * `FluxusClient` unparameterised and get the narrow grade, which is what makes
+ * a stray `config.workflows[0].activities[0].before_hook` a compile error there
+ * rather than a runtime `undefined`.
+ */
+export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig> {
   private constructor(
     private readonly trpc: Trpc,
     /** The operation this client runs; its record partition key. */
     readonly operationId: string,
     /** The operation's linked solution; the config + pages key. */
     readonly solutionId: string,
-    readonly config: SolutionConfig,
+    readonly config: C,
     readonly adapter: MemoryAdapter,
     /**
      * Page definitions (path → def), snapshotted at connect like the record
@@ -523,7 +536,7 @@ export class FluxusClient {
     solutionId: string;
     operationId?: string;
     getToken?: () => Promise<string | null>;
-  }): Promise<FluxusClient> {
+  }): Promise<FluxusClient<SolutionConfig>> {
     const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
     const { solutionId, operationId } = options;
     // pages.list is the reachability probe (it never throws for an existing
@@ -532,11 +545,17 @@ export class FluxusClient {
     // to the empty model, and `config.get` throws only for a solution that does
     // not exist — which this call has no way to recover from anyway. Kept so an
     // older server still opens the editor blank rather than failing boot.
+    //
+    // A refusal is NOT swallowed: `config.get` is sol-admin gated since the
+    // client trim (CLIENT_TRUST_BOUNDARY §2), and a Console user who may open
+    // the org but does not build this solution must be told that, not shown an
+    // empty model they will then fail to save into.
     const [pageRows, config, partition] = await Promise.all([
       trpc.pages.list.query({ solutionId, published: false }),
-      (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch(
-        () => ({ attributes: [], recordTypes: [], workflows: [] }) as SolutionConfig,
-      ),
+      (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch((err) => {
+        if (err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN') throw err;
+        return { attributes: [], recordTypes: [], workflows: [] } as SolutionConfig;
+      }),
       operationId
         ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
         : Promise.resolve([] as RecordInstance[]),
@@ -635,11 +654,16 @@ export class FluxusClient {
   }
 
   /**
-   * Resolve the operation to its solution, then fetch config + page set (by
-   * solution) and the record partition (by operation) and build the local
-   * snapshot. Throws (with the server's message) when the server is
-   * unreachable or the operation/solution is missing — hosts surface that as
-   * their boot error; there is no localStorage fallback by ruling.
+   * Resolve the operation to its solution, then fetch config + page set and the
+   * record partition (both by operation) and build the local snapshot. Throws
+   * (with the server's message) when the server is unreachable or the
+   * operation/solution is missing — hosts surface that as their boot error;
+   * there is no localStorage fallback by ruling.
+   *
+   * The model arrives **trimmed to this caller's roles** (`getForOperation`,
+   * CLIENT_TRUST_BOUNDARY §2): no hooks, no access rules, no record type they
+   * cannot read. The data was always filtered this way; since 2026-08-09 the
+   * model is too.
    */
   static async connect(options: ConnectOptions = {}): Promise<FluxusClient> {
     const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
@@ -648,7 +672,7 @@ export class FluxusClient {
     const solutionId = op.solutionId;
     const published = options.pages === 'published';
     const [config, partition, pageRows, me] = await Promise.all([
-      trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>,
+      trpc.config.getForOperation.query({ operationId }) as Promise<ClientSolutionConfig>,
       trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>,
       // operationId lets published mode filter pages to those openable to the
       // caller (page access control, §6).

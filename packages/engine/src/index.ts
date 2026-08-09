@@ -17,6 +17,7 @@ export { validateSubmission } from './validateSubmission';
 export type { SubmissionIssue } from './validateSubmission';
 
 export {
+  activityHooks,
   buildDslSchema,
   buildEvalHost,
   buildRecordsHost,
@@ -24,6 +25,7 @@ export {
   coerceCapturedValue,
   coerceValue,
   compositeSubs,
+  fieldLabel,
   flattenCaptured,
   functionSignatures,
   isBlank,
@@ -68,4 +70,17 @@ export type {
   RunActivityResult,
   WorkflowDef,
   WorkflowRawDef,
+} from './types';
+
+// The client's grade of the model (CLIENT_TRUST_BOUNDARY §2) — what
+// `config.getForOperation` returns and what every browser-side host is typed
+// against. Each is the base its full-grade namesake above extends.
+export type {
+  ClientActivityRawDef,
+  ClientAttributeDef,
+  ClientAttributeTypeConfig,
+  ClientCustomFieldDef,
+  ClientRecordTypeDef,
+  ClientSolutionConfig,
+  ClientWorkflowRawDef,
 } from './types';

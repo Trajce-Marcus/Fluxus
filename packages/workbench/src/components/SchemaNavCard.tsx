@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { fieldLabel } from '@fluxus/engine';
 import type { RecordTypeDef } from '@fluxus/engine';
 
 interface Props {
@@ -45,7 +46,7 @@ export const SchemaNavCard = forwardRef<HTMLDivElement, Props>(
               }}
             >
               <span style={{ float: 'right', fontSize: 10 }}>{f.type}</span>
-              {f.key}
+              {fieldLabel(f)}
             </div>
           );
         })}

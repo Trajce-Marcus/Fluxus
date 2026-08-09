@@ -1,6 +1,6 @@
 import type { Store } from './store';
-import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, SolutionConfig, ReverseRefEntry } from './types';
-import { joinScript } from './bridge';
+import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
+import { activityHooks } from './bridge';
 
 // THE Store: all reference-Store behaviour (workflow resolution, constraint
 // checks, staged mutation halves) with no storage attached. Every host runs
@@ -19,7 +19,11 @@ export class MemoryAdapter implements Store {
   private listeners: Set<() => void> = new Set();
   private reverseIndex: Map<string, ReverseRefEntry[]>;
 
-  constructor(config: SolutionConfig, options: MemoryAdapterOptions = {}) {
+  // Either grade of config (CLIENT_TRUST_BOUNDARY §2): the server host builds
+  // one from the full model, a browser host from the trimmed copy. Nothing here
+  // needs a field the trim removes — the client never builds a record and never
+  // runs a hook — so the narrow grade is the honest parameter type.
+  constructor(config: ClientSolutionConfig, options: MemoryAdapterOptions = {}) {
     this.recordTypes = config.recordTypes;
 
     // Build an attribute lookup keyed by attribute.key, then resolve each
@@ -51,22 +55,26 @@ export class MemoryAdapter implements Store {
       wf.id,
       {
         ...wf,
-        activities: wf.activities.map(act => ({
-          ...act,
-          // Hooks may be written as arrays of lines in the JSON — joined here
-          before_hook: joinScript(act.before_hook),
-          after_hook: joinScript(act.after_hook),
-          attributes: act.attributes.map(entry =>
-            'attribute_ref' in entry
-              ? resolveUsage(entry)
-              : {
-                  key: `_section_${++sectionSeq}`,
-                  label: entry.section,
-                  description: entry.description ?? '',
-                  type: 'section',
-                }
-          ),
-        })),
+        activities: wf.activities.map(act => {
+          // Hooks may be written as arrays of lines in the JSON — joined here;
+          // absent altogether on a client config, where they resolve to null.
+          const hooks = activityHooks(act);
+          return {
+            ...act,
+            before_hook: hooks.before,
+            after_hook: hooks.after,
+            attributes: act.attributes.map(entry =>
+              'attribute_ref' in entry
+                ? resolveUsage(entry)
+                : {
+                    key: `_section_${++sectionSeq}`,
+                    label: entry.section,
+                    description: entry.description ?? '',
+                    type: 'section',
+                  }
+            ),
+          };
+        }),
       },
     ]));
 

@@ -108,3 +108,33 @@ describe('record-type read filter (default deny, enforced when configured)', () 
     expect(rows.map((r) => r.id).sort()).toEqual(['A1', 'B1', 'G1']);
   });
 });
+
+// The model was the asymmetry (CLIENT_TRUST_BOUNDARY §2): the data has been
+// filtered since M2, while `config.get` handed every runtime user the whole
+// SDM. `config.getForOperation` closes it with the same answer that filters the
+// partition — projectConfig's own cases live in projection.test.ts.
+describe('the model is filtered the same way the data is', () => {
+  it('ships only what this caller may read, and no hooks', async () => {
+    const model = await enforced(u1).config.getForOperation({ operationId: OP });
+    expect(model.recordTypes.map((rt) => rt.id)).toEqual(['rt_alpha']);
+    expect(model.workflows.map((wf) => wf.id)).toEqual(['wf_alpha']);
+    expect(JSON.stringify(model)).not.toContain('_hook');
+    expect('access' in model).toBe(false);
+  });
+
+  it('an unassigned user gets an empty model, as they get an empty partition', async () => {
+    const model = await enforced(u2).config.getForOperation({ operationId: OP });
+    expect(model.recordTypes).toEqual([]);
+  });
+
+  it('entry is checked before anything is trimmed', async () => {
+    const stranger: ContextUser = { id: 'u3', name: 'U3', email: 'u3@example.com', roles: [] };
+    await expect(enforced(stranger).config.getForOperation({ operationId: OP })).rejects.toThrow(/not a user/i);
+  });
+
+  it('the env stub gets the whole model, minus what never ships', async () => {
+    const model = await open().config.getForOperation({ operationId: OP });
+    expect(model.recordTypes.map((rt) => rt.id).sort()).toEqual(['rt_alpha', 'rt_beta', 'rt_gamma']);
+    expect(JSON.stringify(model)).not.toContain('_hook');
+  });
+});

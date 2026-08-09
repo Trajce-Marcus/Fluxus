@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
+import { fieldLabel } from '@fluxus/engine';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -103,7 +104,7 @@ function RelatedRecordsTable({ records, typeDef, sourceTypeId, navigateTo }: Tab
                   whiteSpace: 'nowrap',
                 }}
               >
-                {cf.key}
+                {fieldLabel(cf)}
               </th>
             ))}
           </tr>
