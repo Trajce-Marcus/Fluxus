@@ -78,7 +78,8 @@ export function AppointDialog({ title, sub, submitLabel, candidates, onSubmit, o
         )}
         {!candidates && (
           <p className="admin-hint">
-            They must already be in the organisation. If they are not, an org admin has to invite them.
+            They must already be in the organisation. If they are not, invite them first — appointment
+            always names somebody the organisation already knows.
           </p>
         )}
         <div className="admin-row admin-modal-actions">

@@ -72,7 +72,7 @@ org admins ──────────┬────────────
 | Actor | May | May not |
 |---|---|---|
 | **Platform admin** | Register an organisation and name its owner. | Anything inside an org. Not implicitly anything within one. |
-| **Org owner** | Appoint and remove org admins. Make themselves an org admin. | Nothing else *as owner* — the owner is a root, not a super-admin. Ordinary org-admin work needs the self-appointment. |
+| **Org owner** | Appoint and remove org admins — and read that list, invite, and nothing more. | Nothing else *as owner* — the owner is a root, not a super-admin. Ordinary org-admin work, including browsing the people, needs the self-appointment. |
 | **Org admin** | Invite users, suspend and remove them. Create solutions and appoint their sol admins. Create operations and appoint their op admins. | Appoint another org admin. Add ordinary users to an operation, or assign roles — both belong to the op admin. |
 | **Sol admin** | Build the solution: model, pages, default menu. | Appoint anyone, including another sol admin. Invite. See or govern any user list. |
 | **Op admin** | Invite users. Add them to *their* operation and assign their roles. Set that operation's menu override. | Appoint another op admin. Reach outside their operation. |
@@ -230,6 +230,28 @@ themselves one if they intend to do ordinary org-admin work.
 org admin, or a sol admin of any solution. The owner's derivation is what makes
 the first appointment reachable: signing in as owner with no grants opens
 Organisation → Users and nothing else.
+
+**What that screen owes the owner** (fixed 2026-08-09 — it was reachable but not
+usable, and each half failed for the same reason: the owner is deliberately not
+an org admin, so anything gated on `org_admins` shut them out of their own root).
+
+- **They read the org-admin roster.** `orgAdmins.list` answered org admins only,
+  while appoint and remove answered the owner only — so the owner could write a
+  list they could not read. A list a caller may not read renders as an empty one,
+  so an owner who had already appointed several admins was told nobody
+  administered the organisation. The read now answers either; everything else at
+  the org tier stays the admin's.
+- **They appoint by typing an address.** Only an org admin may browse the people,
+  so the owner's appoint dialog was a picker over a list they could not fetch —
+  empty, with the button disabled. They now get the same typed-address dialog an
+  op admin gets, and the server answers for the pool. This is what makes
+  appointing *themselves* possible, which is the ordinary first act.
+- **They may invite**, and now have the button. `users.invite` has always
+  admitted the owner — whoever may appoint may invite — but the screen offered it
+  only alongside the pool, which the owner cannot see.
+
+None of this widens the owner's authority: they still appoint org admins and
+nothing else, and every other org-tier act needs the self-appointment.
 
 `npm run bootstrap` stays as lockout recovery and the first admin on a fresh
 deployment.

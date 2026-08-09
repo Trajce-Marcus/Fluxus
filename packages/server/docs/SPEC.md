@@ -147,7 +147,7 @@ takes `operationId?` (both default `demo/sdm`):
   | Router | Procedures | Tier |
   |---|---|---|
   | `users` | `list` `{orgId?}`, `invite` `{email,name?,operationId?,orgId?}`, `setStatus` `{email,status,orgId?}`, `expire` `{email,orgId?}`, `unexpire` | org admin; `invite` also owner or op admin of the named operation |
-  | `orgAdmins` | `list`, `owner`, `appoint` `{email}`, `remove` `{email}` | list = org admin; **appoint/remove = owner only** |
+  | `orgAdmins` | `list`, `owner`, `appoint` `{email}`, `remove` `{email}` | list = org admin **or owner**; **appoint/remove = owner only** |
   | `solAdmins` | `list` `{solutionId}`, `listByOrg` `{orgId?}`, `appoint` `{solutionId,email}`, `remove` | org admin, including the read |
   | `opAdmins` | `list` `{operationId}`, `listBySolution` `{solutionId}`, `appoint`, `remove` | appoint/remove = org admin; `list` = op **or** org admin |
   | `opUsers` | `list` `{operationId}`, `add` `{operationId,email}`, `remove` | `list`/`add` = op **or** org admin; `remove` = op admin |
@@ -185,6 +185,15 @@ takes `operationId?` (both default `demo/sdm`):
   the menu override until they appoint themselves one. A speed bump, not a wall
   — the point is that the grant becomes explicit and auditable rather than
   ambient. **The owner is not implicitly an org admin** for the same reason.
+
+  The one read that crosses (2026-08-09): **`orgAdmins.list` answers the owner as
+  well as an org admin**. The owner is that list's sole editor and deliberately
+  not an admin, so gating the read on `org_admins` alone locked them out of the
+  only list they govern — and a list a caller may not read renders as an empty
+  one, which is a lie about who administers the organisation. It stays a read:
+  `users.list` and the rest of the org tier remain the admin's. Same shape as
+  `opAdmins.list`/`opUsers.list` answering either tier, and like those it is a
+  local helper in the router, not a sixth gate.
 
   **Suspension bites every tier**: each `is*Admin` re-reads the pool row, so a
   suspended person is no admin anywhere while their grants survive intact for

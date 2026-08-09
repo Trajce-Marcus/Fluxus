@@ -72,6 +72,18 @@ async function requireOpOrOrgAdmin(ctx: AppContext, operationId: string, orgId: 
   throw new TRPCError({ code: 'FORBIDDEN', message: `Requires admin of operation '${operationId}'` });
 }
 
+/** The org-admin roster, read by either the owner or an org admin. The owner is
+ *  its sole editor and is deliberately NOT an admin (USERS.md §3), so gating the
+ *  read on `org_admins` alone locked the owner out of the one list they govern —
+ *  and an unreadable list renders as an empty one, which is a lie about who
+ *  administers the organisation. Same shape as above: either tier, only here. */
+async function requireOrgAdminOrOwner(ctx: AppContext, orgId: string): Promise<void> {
+  if (!ctx.authConfigured) return;
+  if (await isOrgAdmin(ctx, orgId)) return;
+  if (await isOrgOwner(ctx, orgId)) return;
+  throw new TRPCError({ code: 'FORBIDDEN', message: 'Requires organisation admin' });
+}
+
 /**
  * The organisation's people. Being here grants nothing — it answers only
  * "does this person exist to us", which is why `invite` takes no level, no
@@ -195,9 +207,10 @@ export const orgAdminsRouter = t.router({
     .input(z.object({ orgId: orgInput }).default({}))
     .query(async ({ ctx, input }) => {
       try {
-        // Visible to any org admin — they work alongside these people — but
-        // editable only by the owner, which the mutations below enforce.
-        await requireOrgAdmin(ctx, input.orgId);
+        // Visible to any org admin — they work alongside these people — and to
+        // the owner, whose list this is. Editable by the owner alone, which the
+        // mutations below enforce.
+        await requireOrgAdminOrOwner(ctx, input.orgId);
         return await listOrgAdmins(ctx.db, input.orgId);
       } catch (err) {
         rethrow(err);

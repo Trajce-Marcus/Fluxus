@@ -14,9 +14,11 @@ import { EmptyList, ListHead } from '../shared/UserTabs';
 
 export function OrgAdminsTable({ admins, users, owner, isOwner, busyRow, act, onChanged }: {
   admins: Grant[];
-  /** The pool, to choose from. Only an org admin can read it — and only an
-   *  owner can act here — so this is populated whenever the controls are. */
-  users: User[];
+  /** The pool to choose from, or **null when the caller cannot read it**. Only
+   *  an org admin may read the pool, and the owner is deliberately not one, so
+   *  the caller who acts here is precisely the one who may be unable to browse:
+   *  null gives them the typed-address dialog instead of an empty picker. */
+  users: User[] | null;
   owner: string | null;
   isOwner: boolean;
   busyRow: string | null;
@@ -86,7 +88,7 @@ export function OrgAdminsTable({ admins, users, owner, isOwner, busyRow, act, on
           sub="They must already be in the organisation. This hands them authority over its people, its
                solutions and its operations."
           submitLabel="Appoint"
-          candidates={users.filter((u) => !held.has(u.email))}
+          candidates={users && users.filter((u) => !held.has(u.email))}
           onSubmit={(email) => consoleClient.appointOrgAdmin(email)}
           onClose={() => setAppoint(false)}
           onDone={() => { setAppoint(false); onChanged(); }}

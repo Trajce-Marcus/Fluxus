@@ -104,6 +104,19 @@ describe('the owner is the root, and appoints only org admins', () => {
     await expect(as(owner).users.list({})).resolves.toBeDefined();
   });
 
+  it('the owner reads the list they govern, without being an admin', async () => {
+    // The read the owner cannot do without is this one: they are its sole
+    // editor, and a list they cannot see is one they cannot appoint against.
+    // Gating it on `org_admins` alone hid it from the owner, and an unreadable
+    // list renders as an empty one — a lie about who administers the org.
+    expect(emails(await as(owner).orgAdmins.list({}))).toEqual(['boss@example.com']);
+    // Still only a read. Everything else at the org tier stays the admin's.
+    await expect(as(owner).users.list({})).rejects.toThrow(/organisation admin/);
+    // And it is not open to everyone: the tier below sees nothing here.
+    await expect(as(solBoss).orgAdmins.list({})).rejects.toThrow(forbidden);
+    await expect(as(worker).orgAdmins.list({})).rejects.toThrow(forbidden);
+  });
+
   it('appointment refuses anyone who is not in the organisation', async () => {
     // Invite, then appoint. Enforced everywhere, so no grant table can name
     // somebody the organisation does not know.

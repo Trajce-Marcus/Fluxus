@@ -22,7 +22,9 @@ import { useUserScreen } from './shared/useUserScreen';
 interface OrgUsersData {
   orgAdmin: boolean;
   orgOwner: boolean;
-  users: User[];
+  /** Null when the caller may not read the pool — an owner who is not an org
+   *  admin. The appoint dialog turns that into a typed address. */
+  users: User[] | null;
   admins: Grant[];
   solAdmins: SolAdminRow[];
   solutions: SolutionRef[];
@@ -36,14 +38,15 @@ export function OrgUsersScreen() {
   const { data, error, busyRow, act, reload } = useUserScreen<OrgUsersData>(async () => {
     const me = await consoleClient.me();
     if (!me.orgAdmin && !me.orgOwner) {
-      return { orgAdmin: false, orgOwner: false, users: [], admins: [], solAdmins: [], solutions: [], owner: null };
+      return { orgAdmin: false, orgOwner: false, users: null, admins: [], solAdmins: [], solutions: [], owner: null };
     }
     // The owner may not be an org admin, so the pool and the sol-admin list are
     // fetched only when someone may actually read them. An owner with no grants
-    // still gets this screen — it is where they appoint the first org admin.
+    // still gets this screen — it is where they appoint the first org admin —
+    // and reads the org-admin roster, which is the list they govern.
     const [users, admins, solAdmins, solutions, owner] = await Promise.all([
-      me.orgAdmin ? consoleClient.listUsers() : Promise.resolve([]),
-      me.orgAdmin ? consoleClient.listOrgAdmins() : Promise.resolve([]),
+      me.orgAdmin ? consoleClient.listUsers() : Promise.resolve(null),
+      consoleClient.listOrgAdmins(),
       me.orgAdmin ? consoleClient.listSolAdminsByOrg() : Promise.resolve([]),
       me.orgAdmin ? consoleClient.listSolutions() : Promise.resolve([]),
       consoleClient.orgOwner(),
@@ -64,7 +67,7 @@ export function OrgUsersScreen() {
       id: 'all',
       label: 'All users',
       render: () => (
-        <AllUsersTable users={data.users} busyRow={busyRow} act={act} onInvite={() => setInvite(true)} />
+        <AllUsersTable users={data.users ?? []} busyRow={busyRow} act={act} onInvite={() => setInvite(true)} />
       ),
     },
     {
@@ -124,11 +127,17 @@ export function OrgUsersScreen() {
           ) : !data.orgAdmin && data.orgOwner ? (
             // A fresh organisation: the owner holds no grants yet, and this is
             // the screen that exists so they can make the first appointment.
+            // They cannot read the pool (that is an org admin's), so appointment
+            // here is by typed address and the server answers for the pool —
+            // and Invite is theirs, because whoever may appoint may invite.
             <>
-              <UserTabs tabs={tabs.filter((t) => t.id === 'org-admins')} active="org-admins" onSelect={() => {}} />
+              <div className="admin-head-row">
+                <UserTabs tabs={tabs.filter((t) => t.id === 'org-admins')} active="org-admins" onSelect={() => {}} />
+                <button className="admin-btn" onClick={() => setInvite(true)}>Invite user</button>
+              </div>
               <OrgAdminsTable
                 admins={data.admins}
-                users={data.users}
+                users={null}
                 owner={data.owner}
                 isOwner
                 busyRow={busyRow}
@@ -137,7 +146,8 @@ export function OrgUsersScreen() {
               />
               <p className="users-note">
                 You own this organisation but administer nothing in it yet. Appoint yourself an org admin to
-                invite people and create solutions.
+                invite people and create solutions. Your own address is{' '}
+                {data.owner ? <span className="admin-mono">{data.owner}</span> : 'the one you signed in with'}.
               </p>
             </>
           ) : (

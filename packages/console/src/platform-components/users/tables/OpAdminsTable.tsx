@@ -25,6 +25,8 @@ export interface OperationRef {
 export function OpAdminsTable({ rows, operations, users, readOnly, busyRow, act, onChanged }: {
   rows: OpAdminRow[];
   operations: OperationRef[];
+  /** The pool to pick from, or null when the caller cannot read it — which the
+   *  dialog turns into its typed-address mode, never an empty picker. */
   users: User[] | null;
   readOnly?: boolean;
   busyRow: string | null;
@@ -113,7 +115,7 @@ export function OpAdminsTable({ rows, operations, users, readOnly, busyRow, act,
           sub="They must already be in the organisation. They will run this operation — its users, their
                roles, and its menu — and can enter it without being added separately."
           submitLabel="Appoint"
-          candidates={(users ?? []).filter((u) => !rows.some((r) => r.operationId === appointTo.id && r.email === u.email))}
+          candidates={users && users.filter((u) => !rows.some((r) => r.operationId === appointTo.id && r.email === u.email))}
           onSubmit={(email) => consoleClient.appointOpAdmin(appointTo.id, email)}
           onClose={() => setAppointTo(null)}
           onDone={() => { setAppointTo(null); onChanged(); }}

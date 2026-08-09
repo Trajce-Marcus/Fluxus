@@ -27,7 +27,9 @@ export function SolAdminsTable({ rows, solutions, users, readOnly, busyRow, act,
   /** The solutions to group by — one entry when a single solution's screen is
    *  showing this, the org's whole catalogue when the organisation's is. */
   solutions: SolutionRef[];
-  /** Null in read-only mode: nobody is choosing anyone. */
+  /** The pool to pick from, or **null when the caller cannot read it** — in
+   *  read-only mode nobody is choosing anyone, and where they are, null hands
+   *  the dialog its typed-address mode rather than an empty picker. */
   users: User[] | null;
   readOnly?: boolean;
   busyRow: string | null;
@@ -110,7 +112,7 @@ export function SolAdminsTable({ rows, solutions, users, readOnly, busyRow, act,
           sub="They must already be in the organisation. They will be able to change this solution's model
                and pages — and will still need adding to an operation to see any live data."
           submitLabel="Appoint"
-          candidates={(users ?? []).filter((u) => !rows.some((r) => r.solutionId === appointTo.id && r.email === u.email))}
+          candidates={users && users.filter((u) => !rows.some((r) => r.solutionId === appointTo.id && r.email === u.email))}
           onSubmit={(email) => consoleClient.appointSolAdmin(appointTo.id, email)}
           onClose={() => setAppointTo(null)}
           onDone={() => { setAppointTo(null); onChanged(); }}
