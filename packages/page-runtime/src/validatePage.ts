@@ -5,7 +5,7 @@
 // activity references against real activity ids. Same posture as the engine's
 // config-save validation: diagnostics land on the console.
 
-import { parseScript, type Call, type Diagnostic, type Stmt } from '@fluxus/dsl';
+import { parseExpression, parseScript, type Call, type Diagnostic, type Stmt } from '@fluxus/dsl';
 import type { PageDef } from './pageDef';
 import { componentManifests } from './componentManifests';
 
@@ -19,7 +19,7 @@ export interface PageFinding {
 export interface PageValidationHost {
   validateExpression(source: string): Diagnostic[];
   validateCallback(source: string): Diagnostic[];
-  findActivity(activityId: string): unknown | null;
+  findActivity(activityId: string): { activity: { record_map?: string } } | null;
 }
 
 const note = (findings: PageFinding[], where: string, message: string, severity: Diagnostic['severity'] = 'error') => {
@@ -56,6 +56,9 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
       for (const diagnostic of host.validateExpression(source)) {
         findings.push({ where: w, diagnostic });
       }
+      for (const diagnostic of checkRefs(host, source, 'expression')) {
+        findings.push({ where: w, diagnostic });
+      }
     }
 
     // Required dynamic-data props left unbound render empty — worth a warning.
@@ -74,8 +77,8 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
       for (const diagnostic of host.validateCallback(source)) {
         findings.push({ where: w, diagnostic });
       }
-      for (const finding of checkActivityRefs(host, source)) {
-        findings.push({ where: w, diagnostic: finding });
+      for (const diagnostic of checkRefs(host, source, 'callback')) {
+        findings.push({ where: w, diagnostic });
       }
     }
   }
@@ -84,26 +87,57 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
 }
 
 /**
- * Resolve literal activity ids passed to services.activities.run against
- * the SDM. Non-literal first arguments are left to runtime — the reference
- * check is for the common, statically-knowable case.
+ * Resolve literal activity ids against the SDM — `services.activities.run` in
+ * a callback, and `invoke` in a dynamic-prop expression (the page naming its
+ * producer, DATA_THROUGH_ACTIVITIES step 2). Non-literal first arguments are
+ * left to runtime; the reference check is for the common, statically-knowable
+ * case, and it is the only check that knows which surface the source came from.
  */
-function checkActivityRefs(host: PageValidationHost, source: string): Diagnostic[] {
-  let body: Stmt[];
+function checkRefs(host: PageValidationHost, source: string, kind: 'expression' | 'callback'): Diagnostic[] {
+  let root: Stmt[] | unknown;
   try {
-    body = parseScript(source).body;
+    root = kind === 'callback' ? parseScript(source).body : parseExpression(source);
   } catch {
-    return []; // syntax errors already reported by validatePageCallback
+    return []; // syntax errors already reported by the shared validators
   }
   const out: Diagnostic[] = [];
-  walk(body, (call) => {
+  walk(root, (call) => {
     const callee = call.callee;
+    const first = call.args[0]?.value;
+
+    // invoke(activityId, params?) — only a GET can answer, and only a dynamic
+    // prop can wait for one: a callback script is synchronous and void, so the
+    // page host supplies no `invoke` there and the evaluator would fail at run
+    // time. Say so at save time instead.
+    if (callee.kind === 'ident' && callee.name === 'invoke') {
+      if (kind === 'callback') {
+        out.push({
+          severity: 'error',
+          message: 'invoke() is not available in a callback — name the GET from a dynamic prop instead',
+          line: call.pos.line,
+          col: call.pos.col,
+        });
+      } else if (first?.kind === 'string') {
+        const found = host.findActivity(first.value);
+        if (!found) {
+          out.push({ severity: 'error', message: `Unknown activity '${first.value}'`, line: first.pos.line, col: first.pos.col });
+        } else if (found.activity.record_map !== 'GET') {
+          out.push({
+            severity: 'error',
+            message: `'${first.value}' is not a GET activity — only a GET can answer invoke()`,
+            line: first.pos.line,
+            col: first.pos.col,
+          });
+        }
+      }
+      return;
+    }
+
     if (
       callee.kind === 'member' && callee.name === 'run' &&
       callee.object.kind === 'member' && callee.object.name === 'activities' &&
       callee.object.object.kind === 'ident' && callee.object.object.name === 'services'
     ) {
-      const first = call.args[0]?.value;
       if (first?.kind === 'string' && !host.findActivity(first.value)) {
         out.push({
           severity: 'error',

@@ -30,7 +30,14 @@ export interface ContextKeyDef {
 export interface SlotConfig {
   componentName: string;
   staticConfig: Record<string, unknown>;
-  /** propName → FluxScript expression source. */
+  /**
+   * propName → FluxScript expression source. The expression may carry the
+   * query itself, or name a GET activity that does —
+   * `invoke('act_get_work_orders', { status: context.page.status })` — which
+   * is where a page's data requirements move into the model
+   * (DATA_THROUGH_ACTIVITIES step 2). One stored shape either way: the
+   * producer is named *in* the expression, not beside it.
+   */
   dynamicProps: Record<string, string>;
   /** callbackName → FluxScript script source. */
   callbacks: Record<string, string>;

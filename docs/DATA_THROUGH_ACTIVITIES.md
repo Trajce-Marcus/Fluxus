@@ -1,8 +1,9 @@
 # Data through activities — the read path, and guarding what comes back
 
-**Status: designed 2026-08-09; steps 0 and 1 built 2026-08-09.** The build
-sequence is at the end — §4's removal and GET-in-the-engine are done, steps
-2–5 have not started.
+**Status: designed 2026-08-09; steps 0–2 built (0 and 1 on 2026-08-09, 2 on
+2026-08-10).** The build sequence is at the end — **the spine is complete**:
+§4's removal, GET-in-the-engine, and a page that names a GET are done. Steps
+3–5, which make it production-shaped, have not started.
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -26,12 +27,15 @@ The write half is built and holds. The read half is specified
 ([DSL_SPEC §5a](../packages/dsl/docs/DSL_SPEC.md)) and is not built — which is
 why the rule is currently true of writes only.
 
-**Where the code diverges today.** A page's `dynamicProps` entry is a FluxScript
+**Where the code diverged.** A page's `dynamicProps` entry was a FluxScript
 expression stored on the page, evaluated in the browser against records the
 client was handed at connect ([pageHost.ts](../packages/page-runtime/src/pageHost.ts)).
-So reads bypass the pipeline entirely: no server-side act, no authorisation at
-read time, no log entry, and the query itself lives in the page rather than the
-model. Closing that is what this document is about.
+So reads bypassed the pipeline entirely: no server-side act, no authorisation at
+read time, no log entry, and the query itself lived in the page rather than the
+model. Closing that is what this document is about. Since step 2 a prop **may**
+name a GET instead; carrying its own query is still permitted, and reads that
+do still bypass everything above. Whether that stays a choice is step 5's
+question, not this one's.
 
 ### The anchor is where the entry lands, not what the query is about
 
@@ -108,6 +112,77 @@ new rule was written to say a read cannot write. `validateConfig` adds the
 shape rules — a GET needs a `returns`, may not have an after hook, and
 `returns` is rejected on anything else — plus literal-id resolution for
 `invoke`.
+
+### A page names one — **BUILT 2026-08-10 (step 2)**
+
+**There was no syntax to design.** The open question was how a prop names its
+producer; the answer is that it already could. `invoke` is a *DSL built-in*,
+declared globally and explicitly legal in expressions, resolved through
+`EvalHost.invoke` — and a host that runs no activities leaves that absent so
+`invoke` fails loudly. The page host was exactly such a host. Supplying the
+function is the whole of "the page names its producer":
+
+```
+workOrders: invoke('act_get_work_orders', { status: context.page.status })
+```
+
+The prop's stored shape is unchanged — still one expression string — so there
+is no second binding format to validate, migrate or teach, and the page carries
+the activity's *name* where it used to carry the query. It also means the same
+text runs unchanged on the server, where `invoke` is already native; §3's tier-1
+direction (a declared producer the engine re-runs at submission) inherits that
+for free rather than needing a shape of its own.
+
+**The rejected alternative** was a structured binding — `dynamicProps[prop]`
+becoming `string | { activity, params }`. It would have made async trivial and a
+page's data requirements readable without parsing FluxScript. It was declined as
+a second wiring language beside FluxScript: the same dropdown-built union
+[PAGE_WIRING_DESIGN](../packages/console/docs/PAGE_WIRING_DESIGN.md) decision 2
+removed once already, and a shape the server would have to learn to interpret
+where `invoke` already works.
+
+**The real problem was time, not syntax.** The evaluator is synchronous; a GET
+is a round trip. Rather than making the language async, evaluation runs in
+**rounds** — a round evaluates with an `invoke` that records requests and
+returns a placeholder, the round's requests are fetched together, the next round
+evaluates again with the answers. A round that asks for nothing new is the
+answer. This is sound only because reads are pure: datasource posture already
+guarantees the expression has nothing to repeat. Two consequences worth stating:
+
+- **It sees more than an AST walk would.** An expression may reach `invoke`
+  through a named function (DSL_SPEC §8); no walk of the expression alone finds
+  that. Running it does.
+- **The placeholder is a symbol, not null.** The evaluator reads an unknown
+  object's members as nulls, so a null placeholder made
+  `invoke(…).first.status` silently null and sent the *next* GET a question
+  nobody meant — which the server correctly rejected for a missing required
+  parameter. Reaching into a symbol throws instead, the round is abandoned, and
+  the round holding the answer asks the real question. A GET fed by a GET
+  therefore converges rather than being a special case. (Found by the test, not
+  by reasoning.)
+
+**A gap the first real use exposed.** The Console's SDM editor could not author a
+GET at all — its record-map select offered CREATE/UPDATE/DELETE and there was no
+`returns` field anywhere, because it shipped (M8, 2026-07-21) three weeks before
+GET activities existed. A page could name a producer nobody could write. Closed
+the same day: the select offers GET, which swaps the after-hook field for
+`returns`, and switching maps clears whichever of the two the new one forbids —
+the rules `validateConfig` already enforced, now visible before save rather than
+after. The symptom was a page saving clean against `validatePage` (which
+correctly said `Unknown activity`) while the server answered
+`Activity not found`, because the activity was only ever in the bootstrap
+fixture and never in anyone's database.
+
+Two things are deliberately *not* here. `invoke` is unavailable in a **callback**
+— a callback script is synchronous and returns nothing, so there is no round to
+wait in; `validatePage` rejects it at save. And a page's GET carries **no anchor
+record**: a page has none of its own until step 3, so the run is anchorless, which
+is exactly the hole step 3 fills.
+
+**On §6's question of whether the query language is expressive enough** — the
+only honest answer this step produced is that nothing was missing for the case
+built. It is one GET over one record type, so it is weak evidence; the question
+stays open until a real page needs a real set.
 
 ---
 
@@ -241,20 +316,24 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 |---|---|---|
 | 0 | ✅ **BUILT 2026-08-09** — remove the `data` half of `callbackData`; rewrite the dispatch crew as a captured attribute | the rule that values arrive as attributes; independent of everything below |
 | 1 | ✅ **BUILT 2026-08-09** — GET in the engine: `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
-| 2 | A page names a GET for a dynamic prop instead of writing an inline expression | **the goal**: data requirements move out of the page and into the model |
+| 2 | ✅ **BUILT 2026-08-10** — a page names a GET for a dynamic prop instead of writing an inline expression: `invoke` supplied to the page host, evaluated in rounds, checked by `validatePage` | **the goal**: data requirements move out of the page and into the model |
 | 3 | Log GETs light; app record created or opened on first page open, as the anchor | observability, and the pipeline-is-the-log promise held for reads |
 | 4 | An input names its producer; the engine re-invokes it at submission | the guarding payoff — tier 1 absorbs tier 2 |
 | 5 | Reconcile the connect-time snapshot: refresh-after-run by re-invoke, and whether connect stays one big GET or pages fetch their own | production shape; decide on evidence |
 
-Steps 0–2 are the spine. 3–5 are what make it production-shaped.
+Steps 0–2 are the spine, and it is **complete as of 2026-08-10**. 3–5 are what
+make it production-shaped.
 
 ---
 
 ## 6. Open
 
-- **The syntax by which an input names a GET activity as its producer** (step
-  4). Not settled — the existing `datasource` string is the obvious place to
-  extend, but nothing is decided.
+- ~~**The syntax by which an input names a GET activity as its producer**~~ —
+  **answered by step 2 (2026-08-10): it is `invoke`.** A producer names a GET
+  inside the expression it already is, so a `datasource` reading
+  `invoke('act_get_crews', { region: attributes.region })` needs no new syntax
+  and already evaluates server-side. What step 4 still has to build is the
+  *re-run at submission*, not a way to say it.
 - **A route for a component to supply an attribute value directly** — the
   ticked-ids case, where the component already knows the value and a blank form
   would be absurd. Deferred until a real case needs it; not required by any
@@ -263,13 +342,27 @@ Steps 0–2 are the spine. 3–5 are what make it production-shaped.
 - **Volume**: one bootstrap GET versus per-page GETs. A scaling decision, to be
   made on evidence, not up front.
 - **Whether the query language is expressive enough** for what components
-  actually need. Unknown until step 2 is used in anger.
+  actually need. Step 2 is built but has been used on one GET over one record
+  type, which proves little — still open, now for want of a real page rather
+  than for want of a caller.
+- **Whether a prop may keep carrying its own query.** Step 2 added naming a GET
+  without removing the inline alternative, so both are legal and only the named
+  one is authorised at read time. Deliberate for now; it belongs with step 5.
 - **Read service calls are not logged individually** (datasource-evaluation
   volume) — proposed 2026-07-10, still never confirmed.
 
 ---
 
 ## Decision log
+
+**2026-08-10** — A prop names its producer with **`invoke` inside the expression
+it already is**, not with a structured binding beside it. One stored shape, one
+language, and the same text is what the server will re-run at step 4. The
+alternative was rejected as a second wiring language.
+
+**2026-08-10** — A synchronous evaluator reaches an asynchronous GET by
+**re-evaluating in rounds**, not by making the language async. Legitimate only
+because reads are pure — which datasource posture already enforced.
 
 **2026-08-09** — `callbackData`'s `data` half is removed rather than declared.
 A declaration strong enough to authorise is the attribute-and-producer

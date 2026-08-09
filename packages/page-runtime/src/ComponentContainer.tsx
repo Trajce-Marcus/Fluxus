@@ -88,19 +88,31 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is
   // permissive), so the trigger is the whole page layer, not a declared slice.
+  //
+  // Async since a prop may name a GET activity (DATA_THROUGH_ACTIVITIES step
+  // 2): the props of one component are evaluated together so two GET-backed
+  // props cost one wait, not two, and a re-run that overtakes an in-flight one
+  // discards the stale answer rather than painting it.
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    const result: Record<string, unknown> = {};
-    try {
-      for (const [propName, source] of Object.entries(config.dynamicProps)) {
-        result[propName] = runtime.evaluateExpression(source, pageCtx);
+    void (async () => {
+      try {
+        const entries = await Promise.all(
+          Object.entries(config.dynamicProps).map(
+            async ([propName, source]) => [propName, await runtime.evaluateExpression(source, pageCtx)] as const,
+          ),
+        );
+        if (cancelled) return;
+        setDynamicData(Object.fromEntries(entries));
+      } catch (err) {
+        if (cancelled) return;
+        onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setDynamicData(result);
-    } catch (err) {
-      onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
-    } finally {
-      setLoading(false);
-    }
+    })();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(pageCtx.page), config, refreshTick]);
 

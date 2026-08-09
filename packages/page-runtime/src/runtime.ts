@@ -17,6 +17,7 @@ import {
   validatePageCallback,
   type CallbackPayload,
   type PageContext,
+  type PageQueryFn,
   type PageServiceHandlers,
 } from './pageHost';
 import { validatePage, reportPageFindings, type PageFinding } from './validatePage';
@@ -37,8 +38,11 @@ export interface PageRuntime {
   /** Read a page definition from the client's page snapshot. */
   getPage(path: string): PageDef | null;
   listPagePaths(): string[];
-  /** Evaluate a dynamic-prop expression (datasource posture, reads only). */
-  evaluateExpression(source: string, pageCtx: PageContext): unknown;
+  /**
+   * Evaluate a dynamic-prop expression (datasource posture, reads only).
+   * Async: the expression may name a GET activity, which the server answers.
+   */
+  evaluateExpression(source: string, pageCtx: PageContext): Promise<unknown>;
   /** Run a callback script with the payload as the `callbackData` root. */
   runCallback(
     source: string,
@@ -57,6 +61,17 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
   const store = client.adapter;
   const config = client.config;
 
+  // The page's door to a GET activity (DATA_THROUGH_ACTIVITIES step 2): the
+  // page names the activity, the model answers. No anchor record is sent — a
+  // page has none of its own until app records land with GET logging (step 3).
+  // The gate's warnings have nowhere to go on a read, so they go to the
+  // console rather than being dropped silently.
+  const query: PageQueryFn = async (activityId, params) => {
+    const result = await client.query({ activityId, attributes: params });
+    for (const warning of result.warnings) console.warn(`[invoke ${activityId}] ${warning}`);
+    return result.data;
+  };
+
   const findActivity = (activityId: string): FoundActivity | null => {
     for (const rt of store.listRecordTypes()) {
       const typeDef = store.getRecordTypeDef(rt.id);
@@ -73,7 +88,7 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
     findActivity,
     getPage: (path) => (client.pages.get(path) as PageDef | undefined) ?? null,
     listPagePaths: () => [...client.pages.keys()].sort(),
-    evaluateExpression: (source, pageCtx) => evaluatePageExpression(store, config, source, pageCtx),
+    evaluateExpression: (source, pageCtx) => evaluatePageExpression(store, config, source, pageCtx, query),
     runCallback: (source, callbackData, pageCtx, handlers) =>
       runPageCallback(store, config, source, callbackData, pageCtx, handlers),
     validateExpression: (source) => validatePageExpression(config, source),

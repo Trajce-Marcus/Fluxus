@@ -122,8 +122,11 @@ Storage is unchanged from the SDM runtime: captured attributes persist to activi
 
 **Built 2026-08-09** (DATA_THROUGH_ACTIVITIES step 1): the engine's `runQuery`,
 the server's `activities.query`, the client's `query()`, and the `invoke`
-built-in below. Logging (the third bullet) is **not** built — that is step 3,
-so today a GET leaves no trace. Everything else in this section is live.
+built-in below. **First caller 2026-08-10** (step 2): a page's dynamic prop
+names a GET with `invoke` instead of carrying its own query, which needed no
+language change — only the page host supplying `EvalHost.invoke`. Logging (the
+third bullet) is **not** built — that is step 3, so today a GET leaves no trace.
+Everything else in this section is live.
 
 The read path (settled July 2026). Alongside CREATE/UPDATE/DELETE, a **GET** activity answers a question: its attributes are its parameters (validated by the trio), and a `returns` expression produces the response:
 
@@ -154,7 +157,11 @@ host's knowledge, supplied through `EvalHost.invoke`, and a host that runs no
 activities leaves it absent so `invoke` fails loudly instead of answering
 null. The host also refuses re-entry, so a GET whose gate invokes itself
 fails rather than hangs. Literal ids are resolved at config-save time by the
-engine's `validateConfig` — the DSL stays scope-blind.
+engine's `validateConfig` — the DSL stays scope-blind. A host whose answer is a
+round trip away rather than in hand supplies `invoke` all the same and waits
+outside the evaluator: the page runtime re-evaluates the expression in rounds
+until nothing new is asked for (page-runtime SPEC). The language does not know
+the difference, which is the point of the built-in being host-supplied.
 
 ## 6. Hooks
 
