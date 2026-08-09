@@ -49,4 +49,15 @@ export interface PageDef {
   componentDependencies?: PageComponentEntry[];
   contextSchema?: ContextKeyDef[];
   slotConfigs?: Record<string, SlotConfig | null>;
+  /**
+   * Who may open this page (CONSOLE_RUNTIME_SPEC §6): role ids, **default
+   * deny** once the solution declares `access.roles` — a published page with
+   * none never reaches the browser. Enforced server-side, which reads only
+   * this shallow convention off the otherwise opaque def (`pageOpenable`).
+   * Declared here since 2026-08-10 so the Console can author it; the rule
+   * itself is older, and pages written before it carry nothing.
+   *
+   * Distinct from a menu item's `roles`, which decide only what is *listed*.
+   */
+  access?: { open?: string[] };
 }

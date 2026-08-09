@@ -1,7 +1,13 @@
 // SDM Attributes editor: the solution's attribute pool (SolutionConfig.attributes) —
 // the reusable capture fields activities compose. Slice 1: key/label/
-// description/type plus the common type_config knobs (fk target, list values,
-// multi, multiline). Composite/section/DSL-driven configs stay hand-edited.
+// description/type plus the common type_config knobs (fk target, list
+// datasource, multi, multiline). Composite/section configs stay hand-edited.
+//
+// The list branch wrote `type_config.values` until 2026-08-10 — a key nothing in
+// the platform reads, while the capture form and `validateSubmission` both read
+// `datasource` and fail closed without it. So every list attribute authored here
+// was unusable. It now edits the datasource; `values` is surfaced read-only
+// where an existing solution still carries one.
 
 import { useState } from 'react';
 import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
@@ -98,9 +104,28 @@ export function AttributesEditor() {
               <label className="admin-field"><span>FK record type</span>
                 <input className="admin-mono" value={cur.type_config?.fk_record_type ?? ''} onChange={(e) => editCfg({ fk_record_type: e.target.value })} placeholder="rt_assets" /></label>
             )}
+            {/* A list attribute's choices come from its `datasource` — the declared
+                producer the capture form renders and `validateSubmission` re-runs
+                server-side to check what came back (DATA_THROUGH_ACTIVITIES §3).
+                It is required: a list without one fails every submission closed. */}
             {cur.type === 'list' && (
-              <label className="admin-field"><span>Values (comma-separated)</span>
-                <input value={(cur.type_config?.values ?? []).join(', ')} onChange={(e) => editCfg({ values: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} /></label>
+              <>
+                <label className="admin-field"><span>Datasource (FluxScript expression yielding a list)</span>
+                  <textarea className="sdm-code" value={cur.type_config?.datasource ?? ''} onChange={(e) => editCfg({ datasource: e.target.value || undefined })}
+                    placeholder="['Crew A', 'Crew B', 'Crew C']  —  or  records.crews.where(active).select(id, name)" /></label>
+                {!cur.type_config?.datasource && (
+                  <p className="admin-error">A list attribute without a datasource is rejected on every submission.</p>
+                )}
+                {/* `values` predates the datasource and is read nowhere in the
+                    platform. Shown only where a solution still carries one, so
+                    nothing disappears silently — and never written afresh. */}
+                {(cur.type_config?.values?.length ?? 0) > 0 && (
+                  <p className="admin-muted">
+                    Legacy <code>values</code> ({cur.type_config?.values?.join(', ')}) — ignored by the platform.
+                    Put them in the datasource above as a FluxScript list to make them real.
+                  </p>
+                )}
+              </>
             )}
 
             <button className="admin-btn admin-btn-ghost" onClick={() => remove(sel)}>Delete attribute</button>

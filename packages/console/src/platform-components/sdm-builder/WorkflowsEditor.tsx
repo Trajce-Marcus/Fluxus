@@ -5,8 +5,13 @@
 // Slice 2 (lean): id/name/description/sort_order/record_map/show_condition per
 // activity, plus a lean attribute-usage composer — pick a pool attribute,
 // toggle required, insert section headings, reorder. FluxScript overrides
-// (show_condition/validation/can_waive on a usage) stay hand-edited; hooks and
-// the activity show_condition are plain textareas (no DSL tooling yet).
+// (show_condition/validation/can_waive on a usage) stay hand-edited; hooks,
+// `returns` and the activity show_condition are plain textareas (no DSL
+// tooling yet).
+//
+// GET activities became authorable here 2026-08-10: the record map offers GET,
+// which swaps the after hook for the `returns` expression. Until then a page
+// could name a producer no one could write.
 
 import { useState } from 'react';
 import type {
@@ -22,9 +27,13 @@ import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 type UsageItem = AttributeUsageDef | SectionMarkerDef;
 const isUsage = (it: UsageItem): it is AttributeUsageDef => 'attribute_ref' in it;
 
-const RECORD_MAPS = ['', 'CREATE', 'UPDATE', 'DELETE'] as const;
+// GET is the read path (DSL_SPEC §5a): it answers with a `returns` expression
+// instead of touching storage. Added 2026-08-10 — the editor predated GET
+// activities by three weeks, so a page could name a producer nobody could
+// author (DATA_THROUGH_ACTIVITIES step 2).
+const RECORD_MAPS = ['', 'CREATE', 'UPDATE', 'DELETE', 'GET'] as const;
 
-/** before_hook/after_hook may be stored as joined lines; show as text. */
+/** before_hook/after_hook and `returns` may be stored as joined lines; show as text. */
 function hookText(h: string | string[] | null | undefined): string {
   return Array.isArray(h) ? h.join('\n') : (h ?? '');
 }
@@ -79,6 +88,20 @@ export function WorkflowsEditor() {
   }
   function editAct(patch: Partial<ActivityRawDef>) {
     setActs(acts.map((a, i) => (i === selAct ? { ...a, ...patch } : a)));
+  }
+  /**
+   * Changing the record map moves the fields that are legal with it, so the
+   * draft doesn't carry a combination `validateConfig` will reject on save: a
+   * GET needs `returns` and cannot have an after hook, and `returns` belongs to
+   * nothing else.
+   */
+  function setRecordMap(value: string) {
+    const record_map = (value || undefined) as ActivityRawDef['record_map'];
+    editAct(
+      record_map === 'GET'
+        ? { record_map, after_hook: null }
+        : { record_map, returns: undefined },
+    );
   }
   function addAct() {
     const next: ActivityRawDef = {
@@ -196,7 +219,7 @@ export function WorkflowsEditor() {
                     <label className="admin-field"><span>Sort order</span>
                       <input type="number" value={act.sort_order} onChange={(e) => editAct({ sort_order: Number(e.target.value) })} /></label>
                     <label className="admin-field"><span>Record map</span>
-                      <select value={act.record_map ?? ''} onChange={(e) => editAct({ record_map: (e.target.value || undefined) as ActivityRawDef['record_map'] })}>
+                      <select value={act.record_map ?? ''} onChange={(e) => setRecordMap(e.target.value)}>
                         {RECORD_MAPS.map((m) => <option key={m} value={m}>{m || '(none)'}</option>)}
                       </select></label>
                     <label className="admin-field"><span>Show condition (FluxScript)</span>
@@ -233,10 +256,23 @@ export function WorkflowsEditor() {
                       {pool.length === 0 && <p className="admin-muted">Define pool attributes first (Attributes tab).</p>}
                     </div>
 
+                    {/* A GET's `returns` IS the activity — the query an app names
+                        instead of carrying it in the page. Its attributes above
+                        are its parameters. */}
+                    {act.record_map === 'GET' && (
+                      <label className="admin-field"><span>Returns (FluxScript expression — what it answers with)</span>
+                        <textarea className="sdm-code" value={hookText(act.returns)} onChange={(e) => editAct({ returns: e.target.value || undefined })}
+                          placeholder="records.work_orders.where(status = attributes.status).select(id, location, status)" /></label>
+                    )}
+
                     <label className="admin-field"><span>Before hook (FluxScript — validate)</span>
                       <textarea className="sdm-code" value={hookText(act.before_hook)} onChange={(e) => editAct({ before_hook: e.target.value || null })} /></label>
-                    <label className="admin-field"><span>After hook (FluxScript — effects)</span>
-                      <textarea className="sdm-code" value={hookText(act.after_hook)} onChange={(e) => editAct({ after_hook: e.target.value || null })} /></label>
+                    {act.record_map === 'GET' ? (
+                      <p className="admin-muted">A GET has no after hook — nothing persists, so there is nothing to react to.</p>
+                    ) : (
+                      <label className="admin-field"><span>After hook (FluxScript — effects)</span>
+                        <textarea className="sdm-code" value={hookText(act.after_hook)} onChange={(e) => editAct({ after_hook: e.target.value || null })} /></label>
+                    )}
 
                     <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'act' ? removeAct() : setArmed('act'))}>
                       {armed === 'act' ? 'Really delete?' : 'Delete activity'}</button>

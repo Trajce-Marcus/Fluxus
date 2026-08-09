@@ -76,6 +76,27 @@ export function saveSlotConfigs(path: string, slotConfigs: Record<string, SlotCo
   savePage(path, { ...existing, slotConfigs });
 }
 
+/**
+ * Page access (CONSOLE_RUNTIME_SPEC §6): the role ids that may open the page.
+ * Default deny once the solution declares roles, so a page left empty here is
+ * published but unreachable — which is why the editor says so out loud.
+ */
+export function loadPageAccess(path: string): string[] {
+  return loadPage(path)?.access?.open ?? [];
+}
+
+export function savePageAccess(path: string, open: string[]): void {
+  const existing = loadPage(path) ?? {};
+  // Absent stays absent, as everywhere else in the model: an empty list and no
+  // list mean the same thing to `pageOpenable`, so don't store an empty one.
+  savePage(path, { ...existing, access: open.length > 0 ? { open } : undefined });
+}
+
+/** The solution's declared roles — the only ids page access may name. */
+export function solutionRoles(): { id: string; name: string }[] {
+  return (sdmClient.config as { access?: { roles?: { id: string; name: string }[] } }).access?.roles ?? [];
+}
+
 export function listPagePaths(): string[] {
   return pageRuntime.listPagePaths();
 }

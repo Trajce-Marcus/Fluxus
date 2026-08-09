@@ -55,7 +55,7 @@ One language, one validator, every surface (PAGE_WIRING_DESIGN):
 
 ## Page definition (pageDef.ts, layout.ts, manifest.ts)
 
-`PageDef` (`template?`, `layout?`, `componentDependencies?`, `contextSchema?`, `slotConfigs?`), the layout types (`Panel`, `LayoutDefinition` — full property set in the page builder's LAYOUT_EDITOR_SPEC.md), and the component contract (`PropSchema` with kinds `static-config` / `dynamic-data` / `callback`; `ComponentManifest`) all live here — the renderer and the editor share one definition of a page. Pages persist on `@fluxus/server` (opaque jsonb); the Console-side write path (`savePage` + background round-trip) stays in the page builder's `persistence.ts`.
+`PageDef` (`template?`, `layout?`, `componentDependencies?`, `contextSchema?`, `slotConfigs?`, `access?`), the layout types (`Panel`, `LayoutDefinition` — full property set in the page builder's LAYOUT_EDITOR_SPEC.md), and the component contract (`PropSchema` with kinds `static-config` / `dynamic-data` / `callback`; `ComponentManifest`) all live here — the renderer and the editor share one definition of a page. `access.open` (role ids that may open the page, **default deny** once the solution declares roles) was added to the type on 2026-08-10 so the Console could author it; the server has enforced the same shallow convention off the opaque def since M4 (`pageOpenable`), which meant a published page nothing could open — filtered out of the snapshot, and reported by the Runtime as missing. Pages persist on `@fluxus/server` (opaque jsonb); the Console-side write path (`savePage` + background round-trip) stays in the page builder's `persistence.ts`.
 
 ## validatePage
 

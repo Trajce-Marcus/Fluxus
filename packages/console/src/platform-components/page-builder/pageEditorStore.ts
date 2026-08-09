@@ -4,6 +4,8 @@ import {
   savePageComponents,
   loadContextSchema,
   saveContextSchema,
+  loadPageAccess,
+  savePageAccess,
   loadSlotConfigs,
   saveSlotConfigs,
   type PageComponentEntry,
@@ -17,6 +19,8 @@ export interface PageEditorState {
   mode: 'builder' | 'layout';
   pageComponents: PageComponentEntry[];
   contextSchema: ContextKeyDef[];
+  /** Role ids that may open the page (CONSOLE_RUNTIME_SPEC §6). */
+  accessOpen: string[];
   selectedComponentName: string | null;
   selectedSlotId: string | null;
   col1Collapsed: boolean;
@@ -31,6 +35,7 @@ function getStore(pagePath: string) {
       mode: 'builder',
       pageComponents: loadPageComponents(pagePath),
       contextSchema: loadContextSchema(pagePath),
+      accessOpen: loadPageAccess(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
       col1Collapsed: false,
@@ -85,6 +90,19 @@ export function removeContextKey(pagePath: string, key: string): void {
     const contextSchema = prev.contextSchema.filter((k) => k.key !== key);
     saveContextSchema(pagePath, contextSchema);
     return { ...prev, contextSchema };
+  });
+}
+
+// ── Page access ──────────────────────────────────────────────────────────────
+
+/** Grant or revoke one role's entry to the page. */
+export function togglePageAccess(pagePath: string, roleId: string): void {
+  getStore(pagePath).set((prev) => {
+    const accessOpen = prev.accessOpen.includes(roleId)
+      ? prev.accessOpen.filter((r) => r !== roleId)
+      : [...prev.accessOpen, roleId];
+    savePageAccess(pagePath, accessOpen);
+    return { ...prev, accessOpen };
   });
 }
 

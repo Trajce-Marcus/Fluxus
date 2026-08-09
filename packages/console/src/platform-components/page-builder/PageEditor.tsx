@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
-import { loadPageLayout } from './persistence';
+import { loadPageLayout, solutionRoles } from './persistence';
 import type { Panel } from './layout-editor/types';
 import type { SlotConfig } from './persistence';
 import {
@@ -14,6 +14,7 @@ import {
   removePageComponent,
   addContextKey,
   removeContextKey,
+  togglePageAccess,
   setStaticConfig,
   setDynamicProp,
   setCallback,
@@ -230,6 +231,45 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
   );
 }
 
+// ── Page access ──────────────────────────────────────────────────────────────
+// Who may open the page (CONSOLE_RUNTIME_SPEC §6). Deny by default once the
+// solution declares roles: a published page naming none is filtered out of the
+// snapshot server-side and the Runtime reports it missing, which is a puzzling
+// way to learn about a permission — hence the warning rather than a silent
+// empty list. A solution with no roles has RBAC dormant, so the section says
+// that instead of showing an empty box.
+
+function PageAccessSection({ accessOpen, pagePath }: { accessOpen: string[]; pagePath: string }) {
+  const roles = solutionRoles();
+
+  return (
+    <div className="pe-config-section pe-config-divider">
+      <p className="pe-config-label">Page Access</p>
+      {roles.length === 0 ? (
+        <p className="pe-config-hint">No roles declared — every signed-in user may open this page.</p>
+      ) : (
+        <>
+          <ul className="pe-ctx-list">
+            {roles.map((role) => (
+              <li key={role.id} className="pe-ctx-item">
+                <label className="pe-access-role">
+                  <input type="checkbox" checked={accessOpen.includes(role.id)}
+                    onChange={() => togglePageAccess(pagePath, role.id)} />
+                  <span className="pe-ctx-key">{role.name}</span>
+                </label>
+                <span className="pe-ctx-type">{role.id}</span>
+              </li>
+            ))}
+          </ul>
+          {accessOpen.length === 0 && (
+            <p className="pe-ctx-error">No role may open this page — it will not reach the Runtime.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── FluxScript bindings (dynamic props + callbacks) ──────────────────────────
 // One expression per dynamic prop, one script per callback — the stored
 // artifact is the source text; this UI merely writes it (decision 2/6). The
@@ -346,10 +386,11 @@ interface Col3Props {
   selectedSlotId: string | null;
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
+  accessOpen: string[];
   pagePath: string;
 }
 
-function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pagePath }: Col3Props) {
+function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, pagePath }: Col3Props) {
   const config = selectedSlotId ? (slotConfigs[selectedSlotId] ?? null) : null;
 
   return (
@@ -357,6 +398,7 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pagePath }: 
       <div className="pe-col-header">Configuration</div>
       <div className="pe-col-scroll">
         <PageContextSection contextSchema={contextSchema} pagePath={pagePath} />
+        <PageAccessSection accessOpen={accessOpen} pagePath={pagePath} />
 
         {selectedSlotId && config && (
           <>
@@ -424,7 +466,7 @@ function PageEditorComponent({ pagePath }: Props) {
 
   const layout = loadPageLayout(pagePath);
   const slots = layout ? collectLeafPanels(layout.root) : [];
-  const { mode, pageComponents, contextSchema, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
+  const { mode, pageComponents, contextSchema, accessOpen, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
 
   if (mode === 'layout') {
     return (
@@ -452,7 +494,7 @@ function PageEditorComponent({ pagePath }: Props) {
           <ComponentsColumn pageComponents={pageComponents} selectedComponentName={selectedComponentName} pagePath={pagePath} />
         )}
         <SlotsColumn slots={slots} selectedSlotId={selectedSlotId} selectedComponentName={selectedComponentName} slotConfigs={slotConfigs} pagePath={pagePath} />
-        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pagePath={pagePath} />
+        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} accessOpen={accessOpen} pagePath={pagePath} />
         <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} />
       </div>
     </div>
@@ -541,6 +583,8 @@ export const css = `
   .pe-ctx-select { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); font-size: 0.72rem; padding: 2px 4px; }
   .pe-ctx-confirm { background: var(--color-accent); border: none; border-radius: 3px; color: #fff; cursor: pointer; font-size: 0.72rem; padding: 2px 8px; }
   .pe-ctx-error { width: 100%; margin: 2px 0 0; font-size: 0.7rem; color: #f48771; }
+  .pe-access-role { display: flex; align-items: center; gap: 5px; flex: 1; cursor: pointer; }
+  .pe-access-role input { accent-color: var(--color-accent); margin: 0; }
 
   .pe-bindings-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .pe-binding-row { display: flex; flex-direction: column; gap: 3px; }
