@@ -626,11 +626,11 @@ var require_dist_cjs = __commonJS({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/transport/getSmithyContext.js
-var import_types, getSmithyContext;
+var import_types7, getSmithyContext;
 var init_getSmithyContext = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/transport/getSmithyContext.js"() {
-    import_types = __toESM(require_dist_cjs());
-    getSmithyContext = (context) => context[import_types.SMITHY_CONTEXT_KEY] || (context[import_types.SMITHY_CONTEXT_KEY] = {});
+    import_types7 = __toESM(require_dist_cjs());
+    getSmithyContext = (context) => context[import_types7.SMITHY_CONTEXT_KEY] || (context[import_types7.SMITHY_CONTEXT_KEY] = {});
   }
 });
 
@@ -2017,10 +2017,10 @@ var init_schemaLogFilter = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/client/smithy-client/command.js
-var import_types2, Command, ClassBuilder;
+var import_types8, Command, ClassBuilder;
 var init_command = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/client/smithy-client/command.js"() {
-    import_types2 = __toESM(require_dist_cjs());
+    import_types8 = __toESM(require_dist_cjs());
     init_MiddlewareStack();
     init_schemaLogFilter();
     Command = class {
@@ -2041,7 +2041,7 @@ var init_command = __esm({
           commandName,
           inputFilterSensitiveLog,
           outputFilterSensitiveLog,
-          [import_types2.SMITHY_CONTEXT_KEY]: {
+          [import_types8.SMITHY_CONTEXT_KEY]: {
             commandInstance: this,
             ...smithyContext
           },
@@ -2343,15 +2343,15 @@ var init_emitWarningIfUnsupportedVersion2 = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/client/smithy-client/extensions/checksum.js
-var import_types3, knownAlgorithms, getChecksumConfiguration, resolveChecksumRuntimeConfig;
+var import_types9, knownAlgorithms, getChecksumConfiguration, resolveChecksumRuntimeConfig;
 var init_checksum = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/client/smithy-client/extensions/checksum.js"() {
-    import_types3 = __toESM(require_dist_cjs());
-    knownAlgorithms = Object.values(import_types3.AlgorithmId);
+    import_types9 = __toESM(require_dist_cjs());
+    knownAlgorithms = Object.values(import_types9.AlgorithmId);
     getChecksumConfiguration = (runtimeConfig) => {
       const checksumAlgorithms = [];
-      for (const id in import_types3.AlgorithmId) {
-        const algorithmId = import_types3.AlgorithmId[id];
+      for (const id in import_types9.AlgorithmId) {
+        const algorithmId = import_types9.AlgorithmId[id];
         if (runtimeConfig[algorithmId] === void 0) {
           continue;
         }
@@ -2649,7 +2649,7 @@ var init_client_command_builder = __esm({
 // ../../node_modules/@smithy/core/dist-es/submodules/client/index.js
 var client_exports = {};
 __export(client_exports, {
-  AlgorithmId: () => import_types3.AlgorithmId,
+  AlgorithmId: () => import_types9.AlgorithmId,
   Client: () => Client,
   Command: () => Command,
   NoOpLogger: () => NoOpLogger,
@@ -3996,20 +3996,20 @@ var init_constants3 = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/config/shared-ini-file-loader/getConfigData.js
-var import_types4, getConfigData;
+var import_types10, getConfigData;
 var init_getConfigData = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/config/shared-ini-file-loader/getConfigData.js"() {
-    import_types4 = __toESM(require_dist_cjs());
+    import_types10 = __toESM(require_dist_cjs());
     init_constants3();
     getConfigData = (data) => Object.entries(data).filter(([key]) => {
       const indexOfSeparator = key.indexOf(CONFIG_PREFIX_SEPARATOR);
       if (indexOfSeparator === -1) {
         return false;
       }
-      return Object.values(import_types4.IniSectionType).includes(key.substring(0, indexOfSeparator));
+      return Object.values(import_types10.IniSectionType).includes(key.substring(0, indexOfSeparator));
     }).reduce((acc, [key, value]) => {
       const indexOfSeparator = key.indexOf(CONFIG_PREFIX_SEPARATOR);
-      const updatedKey = key.substring(0, indexOfSeparator) === import_types4.IniSectionType.PROFILE ? key.substring(indexOfSeparator + 1) : key;
+      const updatedKey = key.substring(0, indexOfSeparator) === import_types10.IniSectionType.PROFILE ? key.substring(indexOfSeparator + 1) : key;
       acc[updatedKey] = value;
       return acc;
     }, {
@@ -4041,10 +4041,10 @@ var init_getCredentialsFilepath = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/config/shared-ini-file-loader/parseIni.js
-var import_types5, prefixKeyRegex, profileNameBlockList, parseIni;
+var import_types11, prefixKeyRegex, profileNameBlockList, parseIni;
 var init_parseIni = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/config/shared-ini-file-loader/parseIni.js"() {
-    import_types5 = __toESM(require_dist_cjs());
+    import_types11 = __toESM(require_dist_cjs());
     init_constants3();
     prefixKeyRegex = /^([\w-]+)\s(["'])?([\w-@+.%:/]+)\2$/;
     profileNameBlockList = ["__proto__", "profile __proto__"];
@@ -4062,7 +4062,7 @@ var init_parseIni = __esm({
           const matches = prefixKeyRegex.exec(sectionName);
           if (matches) {
             const [, prefix, , name] = matches;
-            if (Object.values(import_types5.IniSectionType).includes(prefix)) {
+            if (Object.values(import_types11.IniSectionType).includes(prefix)) {
               currentSection = [prefix, name].join(CONFIG_PREFIX_SEPARATOR);
             }
           } else {
@@ -4157,12 +4157,12 @@ var init_loadSharedConfigFiles = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/config/shared-ini-file-loader/getSsoSessionData.js
-var import_types6, getSsoSessionData;
+var import_types12, getSsoSessionData;
 var init_getSsoSessionData = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/config/shared-ini-file-loader/getSsoSessionData.js"() {
-    import_types6 = __toESM(require_dist_cjs());
+    import_types12 = __toESM(require_dist_cjs());
     init_loadSharedConfigFiles();
-    getSsoSessionData = (data) => Object.entries(data).filter(([key]) => key.startsWith(import_types6.IniSectionType.SSO_SESSION + CONFIG_PREFIX_SEPARATOR)).reduce((acc, [key, value]) => ({ ...acc, [key.substring(key.indexOf(CONFIG_PREFIX_SEPARATOR) + 1)]: value }), {});
+    getSsoSessionData = (data) => Object.entries(data).filter(([key]) => key.startsWith(import_types12.IniSectionType.SSO_SESSION + CONFIG_PREFIX_SEPARATOR)).reduce((acc, [key, value]) => ({ ...acc, [key.substring(key.indexOf(CONFIG_PREFIX_SEPARATOR) + 1)]: value }), {});
   }
 });
 
@@ -5450,14 +5450,14 @@ var init_isIpAddress = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/endpoints/util-endpoints/lib/parseURL.js
-var import_types12, DEFAULT_PORTS, parseURL;
+var import_types18, DEFAULT_PORTS, parseURL;
 var init_parseURL = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/endpoints/util-endpoints/lib/parseURL.js"() {
-    import_types12 = __toESM(require_dist_cjs());
+    import_types18 = __toESM(require_dist_cjs());
     init_isIpAddress();
     DEFAULT_PORTS = {
-      [import_types12.EndpointURLScheme.HTTP]: 80,
-      [import_types12.EndpointURLScheme.HTTPS]: 443
+      [import_types18.EndpointURLScheme.HTTP]: 80,
+      [import_types18.EndpointURLScheme.HTTPS]: 443
     };
     parseURL = (value) => {
       const whatwgURL = (() => {
@@ -5486,7 +5486,7 @@ var init_parseURL = __esm({
         return null;
       }
       const scheme = protocol.slice(0, -1);
-      if (!Object.values(import_types12.EndpointURLScheme).includes(scheme)) {
+      if (!Object.values(import_types18.EndpointURLScheme).includes(scheme)) {
         return null;
       }
       const isIp = isIpAddress(hostname);
@@ -9769,15 +9769,15 @@ var init_HttpInterceptingShapeSerializer = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/submodules/protocols/protocol-http/Field.js
-var import_types23, Field;
+var import_types29, Field;
 var init_Field = __esm({
   "../../node_modules/@smithy/core/dist-es/submodules/protocols/protocol-http/Field.js"() {
-    import_types23 = __toESM(require_dist_cjs());
+    import_types29 = __toESM(require_dist_cjs());
     Field = class {
       name;
       kind;
       values;
-      constructor({ name, kind = import_types23.FieldPosition.HEADER, values = [] }) {
+      constructor({ name, kind = import_types29.FieldPosition.HEADER, values = [] }) {
         this.name = name;
         this.kind = kind;
         this.values = values;
@@ -11633,11 +11633,11 @@ var init_DefaultIdentityProviderConfig = __esm({
 });
 
 // ../../node_modules/@smithy/core/dist-es/legacy-root-exports/util-identity-and-auth/httpAuthSchemes/httpApiKeyAuth.js
-var import_types24, HttpApiKeyAuthSigner;
+var import_types30, HttpApiKeyAuthSigner;
 var init_httpApiKeyAuth = __esm({
   "../../node_modules/@smithy/core/dist-es/legacy-root-exports/util-identity-and-auth/httpAuthSchemes/httpApiKeyAuth.js"() {
     init_protocols();
-    import_types24 = __toESM(require_dist_cjs());
+    import_types30 = __toESM(require_dist_cjs());
     HttpApiKeyAuthSigner = class {
       async sign(httpRequest, identity2, signingProperties) {
         if (!signingProperties) {
@@ -11653,9 +11653,9 @@ var init_httpApiKeyAuth = __esm({
           throw new Error("request could not be signed with `apiKey` since the `apiKey` is not defined");
         }
         const clonedRequest = HttpRequest.clone(httpRequest);
-        if (signingProperties.in === import_types24.HttpApiKeyAuthLocation.QUERY) {
+        if (signingProperties.in === import_types30.HttpApiKeyAuthLocation.QUERY) {
           clonedRequest.query[signingProperties.name] = identity2.apiKey;
-        } else if (signingProperties.in === import_types24.HttpApiKeyAuthLocation.HEADER) {
+        } else if (signingProperties.in === import_types30.HttpApiKeyAuthLocation.HEADER) {
           clonedRequest.headers[signingProperties.name] = signingProperties.scheme ? `${signingProperties.scheme} ${identity2.apiKey}` : identity2.apiKey;
         } else {
           throw new Error("request can only be signed with `apiKey` locations `query` or `header`, but found: `" + signingProperties.in + "`");
@@ -35471,6 +35471,17 @@ var ForeignKey = class {
     return name ?? `${chunks.join("_")}_fk`;
   }
 };
+function foreignKey(config) {
+  function mappedConfig() {
+    const { name, columns, foreignColumns } = config;
+    return {
+      name,
+      columns,
+      foreignColumns
+    };
+  }
+  return new ForeignKeyBuilder(mappedConfig);
+}
 
 // ../../node_modules/drizzle-orm/tracing-utils.js
 function iife(fn, ...args) {
@@ -42440,26 +42451,76 @@ function drizzle2(...params) {
 var schema_exports = {};
 __export(schema_exports, {
   attachments: () => attachments,
-  implementerLevels: () => implementerLevels,
+  opAdmins: () => opAdmins,
+  opUsers: () => opUsers,
   operations: () => operations,
+  orgAdmins: () => orgAdmins,
+  orgs: () => orgs,
   pageVersions: () => pageVersions,
   pages: () => pages,
   records: () => records,
-  roleAssignments: () => roleAssignments,
   rptActivities: () => rptActivities,
   rptAttributes: () => rptAttributes,
+  sdmAttributes: () => sdmAttributes,
   sdmConfigVersions: () => sdmConfigVersions,
-  sdmConfigs: () => sdmConfigs,
-  solutions: () => solutions
+  sdmFunctions: () => sdmFunctions,
+  sdmMenus: () => sdmMenus,
+  sdmRecordTypes: () => sdmRecordTypes,
+  sdmRoles: () => sdmRoles,
+  sdmWorkflows: () => sdmWorkflows,
+  solAdmins: () => solAdmins,
+  solutions: () => solutions,
+  userRoles: () => userRoles,
+  users: () => users
 });
 var solutions = pgTable("solutions", {
+  // **Globally unique, and deliberately so** — a solution is a distributable
+  // package, and package registries (npm, crates, …) all key on a global name.
+  // That is why `org_id` below is scoping only and the PK stays this column:
+  // no foreign key or composite key anywhere has to know about the org.
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  // Which org's workspace this row lives in (added 2026-08-02) — the last table
+  // to carry the org key; solutions predate the org tier (M13/M14), which is
+  // the only reason it was missing. **Scoping, not identity**: two orgs that
+  // install the same solution have different org_id and the same package. What
+  // a solution *is* stays answered by `id` + `origin`/`origin_ref`.
+  orgId: text("org_id").notNull().default("default"),
+  origin: text("origin").notNull().default("authored"),
+  originRef: text("origin_ref"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (t8) => [
+  index("solutions_org").on(t8.orgId)
+]);
+var orgs = pgTable("orgs", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** The root of authority (USERS.md §3, migration 0016). Named at registration,
+   *  which also writes their `users` row — the org's first user. The owner is
+   *  NOT implicitly an org admin: they appoint org admins, and appoint
+   *  themselves one if they mean to do ordinary org-admin work. Console access
+   *  is derived from this column, which is what makes that first appointment
+   *  reachable on a fresh org.
+   *
+   *  **Also the org's contact address.** `contact_email` was dropped in
+   *  migration 0018: the two were born identical (registration set both) and
+   *  nothing read the contact for behaviour. A separate billing contact waits
+   *  for billing to give it a meaning — and for anything that actually sends
+   *  mail. Not editable through the org profile: changing it is ownership
+   *  transfer, which would let an org admin promote themselves to root. */
+  ownerEmail: text("owner_email"),
+  plan: text("plan").notNull().default("free"),
+  status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
 var operations = pgTable("operations", {
   id: text("id").primaryKey(),
   orgId: text("org_id").notNull().default("default"),
+  // BINDING AND PERMANENT (ruled 2026-07-27). An operation is created against
+  // exactly one solution and can never be re-pointed at another: its record
+  // partition, user roles and menu override are all written against that
+  // solution's model, so re-linking would orphan every one of them. Enforced by
+  // absence — there is no update path, and none may be added.
   solutionId: text("solution_id").notNull().references(() => solutions.id),
   name: text("name").notNull(),
   config: jsonb("config").$type().notNull().default({}),
@@ -42467,27 +42528,151 @@ var operations = pgTable("operations", {
 }, (t8) => [
   index("operations_solution").on(t8.solutionId)
 ]);
-var roleAssignments = pgTable("role_assignments", {
+var users = pgTable("users", {
+  orgId: text("org_id").notNull().default("default"),
+  email: text("email").notNull(),
+  name: text("name"),
+  /** Bound at first successful sign-in; null while the invite is outstanding. */
+  authUserId: text("auth_user_id"),
+  /** Lifecycle lives here so it bites everywhere at once. Two ways to end
+   *  someone's access, and the difference is what survives:
+   *
+   *    suspended  reversible pause — every grant survives, so reinstating is one
+   *               act; meanwhile they are no admin anywhere and enter nothing.
+   *    expired    the end of the relationship — every grant is dropped, but the
+   *               row stays forever.
+   *
+   *  **The row is never deleted** (migration 0017). `author` on a history entry
+   *  is an auth id, and this row is the only bridge from that id to a name;
+   *  deleting it would leave the append-only spine recording acts it can no
+   *  longer attribute. There is no hard delete. */
+  status: text("status").$type().notNull().default("invited"),
+  invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+  /** When the relationship ended. Null unless `status` is 'expired' — the two
+   *  are set and cleared together. */
+  expiredAt: timestamp("expired_at", { withTimezone: true })
+}, (t8) => [
+  primaryKey({ columns: [t8.orgId, t8.email] }),
+  // Sign-in resolves an authenticated caller back to their pool row, so this
+  // lookup is on the hot path of every gated request.
+  index("users_auth_user").on(t8.authUserId)
+]);
+var orgAdmins = pgTable("org_admins", {
+  orgId: text("org_id").notNull().default("default"),
+  email: text("email").notNull(),
+  appointedAt: timestamp("appointed_at", { withTimezone: true }).notNull().defaultNow()
+}, (t8) => [
+  primaryKey({ columns: [t8.orgId, t8.email] })
+]);
+var opUsers = pgTable("op_users", {
   orgId: text("org_id").notNull().default("default"),
   operationId: text("operation_id").notNull(),
-  userId: text("user_id").notNull(),
+  email: text("email").notNull(),
+  addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow()
+}, (t8) => [
+  primaryKey({ columns: [t8.orgId, t8.operationId, t8.email] }),
+  index("op_users_operation").on(t8.operationId),
+  index("op_users_email").on(t8.email)
+]);
+var opAdmins = pgTable("op_admins", {
+  orgId: text("org_id").notNull().default("default"),
+  operationId: text("operation_id").notNull(),
+  email: text("email").notNull(),
+  appointedAt: timestamp("appointed_at", { withTimezone: true }).notNull().defaultNow()
+}, (t8) => [
+  primaryKey({ columns: [t8.orgId, t8.operationId, t8.email] }),
+  index("op_admins_operation").on(t8.operationId),
+  index("op_admins_email").on(t8.email)
+]);
+var userRoles = pgTable("user_roles", {
+  orgId: text("org_id").notNull().default("default"),
+  operationId: text("operation_id").notNull(),
+  email: text("email").notNull(),
   roleIds: jsonb("role_ids").$type().notNull().default([])
 }, (t8) => [
-  primaryKey({ columns: [t8.orgId, t8.operationId, t8.userId] }),
-  index("role_assignments_operation").on(t8.operationId)
+  primaryKey({ columns: [t8.orgId, t8.operationId, t8.email] }),
+  index("user_roles_operation").on(t8.operationId)
 ]);
-var implementerLevels = pgTable("implementer_levels", {
-  userId: text("user_id").notNull(),
+var solAdmins = pgTable("sol_admins", {
+  email: text("email").notNull(),
   solutionId: text("solution_id").notNull(),
-  level: text("level").$type().notNull()
+  appointedAt: timestamp("appointed_at", { withTimezone: true }).notNull().defaultNow()
 }, (t8) => [
-  primaryKey({ columns: [t8.userId, t8.solutionId] }),
-  index("implementer_levels_solution").on(t8.solutionId)
+  primaryKey({ columns: [t8.email, t8.solutionId] }),
+  index("sol_admins_solution").on(t8.solutionId)
 ]);
-var sdmConfigs = pgTable("sdm_configs", {
-  solutionId: text("solution_id").primaryKey(),
-  config: jsonb("config").$type().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+var sdmAttributes = pgTable("sdm_attributes", {
+  solutionId: text("solution_id").notNull().references(() => solutions.id),
+  // `key`, not `id` — the config's own spelling for an attribute's identity.
+  key: text("key").notNull(),
+  def: jsonb("def").$type().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by")
+}, (t8) => [
+  primaryKey({ columns: [t8.solutionId, t8.key] })
+]);
+var sdmWorkflows = pgTable("sdm_workflows", {
+  solutionId: text("solution_id").notNull().references(() => solutions.id),
+  id: text("id").notNull(),
+  def: jsonb("def").$type().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by")
+}, (t8) => [
+  primaryKey({ columns: [t8.solutionId, t8.id] })
+]);
+var sdmRecordTypes = pgTable("sdm_record_types", {
+  solutionId: text("solution_id").notNull().references(() => solutions.id),
+  id: text("id").notNull(),
+  // The one reference the split can hand to Postgres. Named `workflow_ref` to
+  // match the config field, not `workflow_id`, because it IS that field lifted
+  // out — the def still carries it, like every other identifier here.
+  workflowRef: text("workflow_ref").notNull(),
+  def: jsonb("def").$type().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by")
+}, (t8) => [
+  primaryKey({ columns: [t8.solutionId, t8.id] }),
+  foreignKey({
+    columns: [t8.solutionId, t8.workflowRef],
+    foreignColumns: [sdmWorkflows.solutionId, sdmWorkflows.id],
+    name: "sdm_record_types_workflow_fk"
+  })
+]);
+var sdmFunctions = pgTable("sdm_functions", {
+  solutionId: text("solution_id").notNull().references(() => solutions.id),
+  id: text("id").notNull(),
+  def: jsonb("def").$type().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by")
+}, (t8) => [
+  primaryKey({ columns: [t8.solutionId, t8.id] })
+]);
+var sdmRoles = pgTable("sdm_roles", {
+  solutionId: text("solution_id").notNull().references(() => solutions.id),
+  id: text("id").notNull(),
+  def: jsonb("def").$type().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by")
+}, (t8) => [
+  primaryKey({ columns: [t8.solutionId, t8.id] })
+]);
+var sdmMenus = pgTable("sdm_menus", {
+  solutionId: text("solution_id").primaryKey().references(() => solutions.id),
+  def: jsonb("def").$type().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by")
 });
 var sdmConfigVersions = pgTable("sdm_config_versions", {
   solutionId: text("solution_id").notNull(),
@@ -52569,8 +52754,8 @@ var Evaluator = class {
       }
       case "isnull": {
         const target = this.eval(expr.target, scope);
-        const isNull2 = target === null;
-        return expr.negated ? !isNull2 : isNull2;
+        const isNull3 = target === null;
+        return expr.negated ? !isNull3 : isNull3;
       }
       case "member":
         return this.member(this.eval(expr.object, scope), expr.name, expr.pos);
@@ -53842,6 +54027,10 @@ function joinScript(script) {
   if (script === null || script === void 0) return null;
   return Array.isArray(script) ? script.join("\n") : script;
 }
+function activityHooks(activity) {
+  const full = activity;
+  return { before: joinScript(full.before_hook), after: joinScript(full.after_hook) };
+}
 function resolveFunctions(config) {
   return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? "");
 }
@@ -54244,10 +54433,11 @@ function validateConfig(config, services = []) {
           collect(`${activity.id} \u2192 '${usage.attribute_ref}' datasource`, attr.type_config.datasource, anchorType);
         }
       }
+      const hooks = activityHooks(activity);
       for (const phase of ["before", "after"]) {
-        const source = joinScript(phase === "before" ? activity.before_hook : activity.after_hook);
+        const source = phase === "before" ? hooks.before : hooks.after;
         if (!source) continue;
-        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions, extraRoots: ["callbackData"] })) {
+        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
           findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
         }
       }
@@ -54321,9 +54511,7 @@ function createEngine({ store, config, services: hostServices = [], user }) {
       liveAttributes,
       anchorRecord,
       activity: { id: activity.id, name: activity.name },
-      user,
-      // The one data object of an app-triggered run; null on direct runs.
-      extras: { callbackData: options?.callbackData ?? null }
+      user
     };
     if (activity.before_hook) {
       try {
@@ -54440,6 +54628,10 @@ var MemoryAdapter = class {
   records;
   listeners = /* @__PURE__ */ new Set();
   reverseIndex;
+  // Either grade of config (CLIENT_TRUST_BOUNDARY §2): the server host builds
+  // one from the full model, a browser host from the trimmed copy. Nothing here
+  // needs a field the trim removes — the client never builds a record and never
+  // runs a hook — so the narrow grade is the honest parameter type.
   constructor(config, options = {}) {
     this.recordTypes = config.recordTypes;
     const attrMap = new Map(config.attributes.map((a5) => [a5.key, a5]));
@@ -54462,20 +54654,22 @@ var MemoryAdapter = class {
       wf.id,
       {
         ...wf,
-        activities: wf.activities.map((act) => ({
-          ...act,
-          // Hooks may be written as arrays of lines in the JSON — joined here
-          before_hook: joinScript(act.before_hook),
-          after_hook: joinScript(act.after_hook),
-          attributes: act.attributes.map(
-            (entry) => "attribute_ref" in entry ? resolveUsage(entry) : {
-              key: `_section_${++sectionSeq}`,
-              label: entry.section,
-              description: entry.description ?? "",
-              type: "section"
-            }
-          )
-        }))
+        activities: wf.activities.map((act) => {
+          const hooks = activityHooks(act);
+          return {
+            ...act,
+            before_hook: hooks.before,
+            after_hook: hooks.after,
+            attributes: act.attributes.map(
+              (entry) => "attribute_ref" in entry ? resolveUsage(entry) : {
+                key: `_section_${++sectionSeq}`,
+                label: entry.section,
+                description: entry.description ?? "",
+                type: "section"
+              }
+            )
+          };
+        })
       }
     ]));
     this.reverseIndex = /* @__PURE__ */ new Map();
@@ -54489,29 +54683,9 @@ var MemoryAdapter = class {
       }
     }
     this.records = new Map(options.initialRecords ?? []);
-    if (options.seed) this.seedRecords(config);
   }
   /** Persistence hook, called after every mutation — no-op in memory. */
   persist() {
-  }
-  // Load an entity file's sample records, but only for types that have no
-  // records yet — user data is never touched or duplicated.
-  seedRecords(config) {
-    let seeded = false;
-    for (const group4 of config.seeds ?? []) {
-      const hasAny = [...this.records.values()].some((r5) => r5.typeRef === group4.typeId);
-      if (hasAny) continue;
-      for (const seed of group4.records) {
-        this.records.set(seed.id, {
-          id: seed.id,
-          typeRef: group4.typeId,
-          customFields: seed.fields,
-          activityHistory: []
-        });
-        seeded = true;
-      }
-    }
-    if (seeded) this.persist();
   }
   // For record types with id_field set, rename any record whose stored id doesn't
   // match the natural key value, then patch FK references pointing at the old ids.
@@ -54926,6 +55100,205 @@ function validateSubmission(engine, activity, captured, anchorRecord, waived = {
   return issues;
 }
 
+// src/users/types.ts
+function normaliseEmail(email) {
+  return email.trim().toLowerCase();
+}
+var DEFAULT_ORG_ID = "default";
+
+// src/users/pool.ts
+var COLUMNS = {
+  email: users.email,
+  name: users.name,
+  authUserId: users.authUserId,
+  status: users.status,
+  expiredAt: users.expiredAt
+};
+async function listUsers(db, orgId = DEFAULT_ORG_ID) {
+  const rows = await db.select(COLUMNS).from(users).where(eq(users.orgId, orgId));
+  return rows.sort((a5, b5) => a5.email.localeCompare(b5.email));
+}
+async function getUser(db, input) {
+  const [row] = await db.select(COLUMNS).from(users).where(and(eq(users.orgId, input.orgId ?? DEFAULT_ORG_ID), eq(users.email, normaliseEmail(input.email)))).limit(1);
+  return row ?? null;
+}
+async function inviteUser(db, input) {
+  const name = input.name ?? null;
+  await db.insert(users).values({ orgId: input.orgId ?? DEFAULT_ORG_ID, email: normaliseEmail(input.email), name }).onConflictDoUpdate({ target: [users.orgId, users.email], set: name === null ? { orgId: input.orgId ?? DEFAULT_ORG_ID } : { name } });
+}
+async function setUserStatus(db, input) {
+  await db.update(users).set({ status: input.status }).where(and(
+    eq(users.orgId, input.orgId ?? DEFAULT_ORG_ID),
+    eq(users.email, normaliseEmail(input.email)),
+    // An expired person is not suspendable or reinstatable — they have no
+    // grants to pause or restore. `unexpireUser` is the way back.
+    ne(users.status, "expired")
+  ));
+}
+async function expireUser(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  await db.delete(orgAdmins).where(and(eq(orgAdmins.orgId, orgId), eq(orgAdmins.email, email)));
+  await db.delete(opAdmins).where(and(eq(opAdmins.orgId, orgId), eq(opAdmins.email, email)));
+  await db.delete(opUsers).where(and(eq(opUsers.orgId, orgId), eq(opUsers.email, email)));
+  await db.delete(userRoles).where(and(eq(userRoles.orgId, orgId), eq(userRoles.email, email)));
+  await db.delete(solAdmins).where(eq(solAdmins.email, email));
+  await db.update(users).set({ status: "expired", expiredAt: /* @__PURE__ */ new Date() }).where(and(eq(users.orgId, orgId), eq(users.email, email)));
+}
+async function unexpireUser(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  const row = await getUser(db, { email, orgId });
+  if (!row || row.status !== "expired") return;
+  await db.update(users).set({ status: row.authUserId ? "active" : "invited", expiredAt: null }).where(and(eq(users.orgId, orgId), eq(users.email, email)));
+}
+async function bindAuthUser(db, input) {
+  await db.update(users).set({ authUserId: input.authUserId, status: "active" }).where(and(
+    eq(users.orgId, input.orgId ?? DEFAULT_ORG_ID),
+    eq(users.email, normaliseEmail(input.email)),
+    // Self-disarming: once bound this matches nothing, so calling it on every
+    // authenticated request costs an indexed no-op rather than a write.
+    isNull(users.authUserId),
+    // An expired person who still holds a valid session must not be
+    // resurrected by signing in — that would flip them back to `active` and
+    // undo an administrator's decision. They hold no grants either way, but
+    // the status must not lie about where they stand.
+    ne(users.status, "expired")
+  ));
+}
+async function isActiveUser(db, input) {
+  const row = await getUser(db, input);
+  return row !== null && row.status !== "suspended" && row.status !== "expired";
+}
+
+// src/users/org-admins.ts
+async function listOrgAdmins(db, orgId = DEFAULT_ORG_ID) {
+  const rows = await db.select({ email: orgAdmins.email }).from(orgAdmins).where(eq(orgAdmins.orgId, orgId));
+  return rows.sort((a5, b5) => a5.email.localeCompare(b5.email));
+}
+async function appointOrgAdmin(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  await assertInPool(db, email, orgId);
+  await db.insert(orgAdmins).values({ orgId, email }).onConflictDoNothing();
+}
+async function removeOrgAdmin(db, input) {
+  await db.delete(orgAdmins).where(and(eq(orgAdmins.orgId, input.orgId ?? DEFAULT_ORG_ID), eq(orgAdmins.email, normaliseEmail(input.email))));
+}
+async function isOrgAdmin(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  const [row] = await db.select({ email: orgAdmins.email }).from(orgAdmins).where(and(eq(orgAdmins.orgId, orgId), eq(orgAdmins.email, email))).limit(1);
+  if (!row) return false;
+  return isActiveUser(db, { email, orgId });
+}
+async function getOwnerEmail(db, orgId = DEFAULT_ORG_ID) {
+  const [row] = await db.select({ ownerEmail: orgs.ownerEmail }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  return row?.ownerEmail ?? null;
+}
+async function isOrgOwner(db, input) {
+  const owner = await getOwnerEmail(db, input.orgId ?? DEFAULT_ORG_ID);
+  return owner !== null && owner === normaliseEmail(input.email);
+}
+async function assertInPool(db, email, orgId) {
+  const [inPool] = await db.select({ email: users.email }).from(users).where(and(eq(users.orgId, orgId), eq(users.email, email))).limit(1);
+  if (!inPool) throw new Error(`'${email}' is not in this organisation \u2014 invite them first`);
+}
+
+// src/users/sol-admins.ts
+async function listSolAdmins(db, solutionId) {
+  const rows = await db.select({ email: solAdmins.email }).from(solAdmins).where(eq(solAdmins.solutionId, solutionId));
+  return rows.sort((a5, b5) => a5.email.localeCompare(b5.email));
+}
+async function listSolAdminsByOrg(db, orgId = DEFAULT_ORG_ID) {
+  const rows = await db.select({ solutionId: solAdmins.solutionId, email: solAdmins.email }).from(solAdmins).innerJoin(solutions, eq(solutions.id, solAdmins.solutionId)).where(eq(solutions.orgId, orgId));
+  return rows.sort((a5, b5) => a5.solutionId.localeCompare(b5.solutionId) || a5.email.localeCompare(b5.email));
+}
+async function appointSolAdmin(db, input) {
+  const email = normaliseEmail(input.email);
+  await assertInPool(db, email, input.orgId ?? DEFAULT_ORG_ID);
+  await db.insert(solAdmins).values({ email, solutionId: input.solutionId }).onConflictDoNothing();
+}
+async function removeSolAdmin(db, input) {
+  await db.delete(solAdmins).where(and(eq(solAdmins.solutionId, input.solutionId), eq(solAdmins.email, normaliseEmail(input.email))));
+}
+async function isAnySolAdmin(db, email) {
+  const [row] = await db.select({ email: solAdmins.email }).from(solAdmins).where(eq(solAdmins.email, normaliseEmail(email))).limit(1);
+  return !!row;
+}
+
+// src/users/op-admins.ts
+async function listOpAdmins(db, operationId, orgId = DEFAULT_ORG_ID) {
+  const rows = await db.select({ email: opAdmins.email }).from(opAdmins).where(and(eq(opAdmins.orgId, orgId), eq(opAdmins.operationId, operationId)));
+  return rows.sort((a5, b5) => a5.email.localeCompare(b5.email));
+}
+async function listOpAdminsForOperations(db, operationIds, orgId = DEFAULT_ORG_ID) {
+  if (operationIds.length === 0) return [];
+  const rows = await db.select({ operationId: opAdmins.operationId, email: opAdmins.email }).from(opAdmins).where(eq(opAdmins.orgId, orgId));
+  const wanted = new Set(operationIds);
+  return rows.filter((r5) => wanted.has(r5.operationId)).sort((a5, b5) => a5.operationId.localeCompare(b5.operationId) || a5.email.localeCompare(b5.email));
+}
+async function appointOpAdmin(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  await assertInPool(db, email, orgId);
+  await db.insert(opAdmins).values({ orgId, operationId: input.operationId, email }).onConflictDoNothing();
+}
+async function removeOpAdmin(db, input) {
+  await db.delete(opAdmins).where(and(
+    eq(opAdmins.orgId, input.orgId ?? DEFAULT_ORG_ID),
+    eq(opAdmins.operationId, input.operationId),
+    eq(opAdmins.email, normaliseEmail(input.email))
+  ));
+}
+async function isOpAdmin(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  const [row] = await db.select({ email: opAdmins.email }).from(opAdmins).where(and(eq(opAdmins.orgId, orgId), eq(opAdmins.operationId, input.operationId), eq(opAdmins.email, email))).limit(1);
+  if (!row) return false;
+  return isActiveUser(db, { email, orgId });
+}
+
+// src/users/op-users.ts
+async function listOpUsers(db, operationId, orgId = DEFAULT_ORG_ID) {
+  const rows = await db.select({ email: opUsers.email }).from(opUsers).where(and(eq(opUsers.orgId, orgId), eq(opUsers.operationId, operationId)));
+  return rows.sort((a5, b5) => a5.email.localeCompare(b5.email));
+}
+async function addOpUser(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  await assertInPool(db, email, orgId);
+  await db.insert(opUsers).values({ orgId, operationId: input.operationId, email }).onConflictDoNothing();
+}
+async function removeOpUser(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  await db.delete(opUsers).where(and(eq(opUsers.orgId, orgId), eq(opUsers.operationId, input.operationId), eq(opUsers.email, email)));
+  await db.delete(userRoles).where(and(eq(userRoles.operationId, input.operationId), eq(userRoles.email, email)));
+}
+async function isOpUser(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  const [row] = await db.select({ email: opUsers.email }).from(opUsers).where(and(eq(opUsers.orgId, orgId), eq(opUsers.operationId, input.operationId), eq(opUsers.email, email))).limit(1);
+  if (row) return true;
+  return isOpAdmin(db, { operationId: input.operationId, email, orgId });
+}
+
+// src/users/roles.ts
+async function listUserRoles(db, operationId) {
+  const rows = await db.select({ email: userRoles.email, roleIds: userRoles.roleIds }).from(userRoles).where(eq(userRoles.operationId, operationId));
+  return rows.map((r5) => ({ email: r5.email, roleIds: r5.roleIds })).sort((a5, b5) => a5.email.localeCompare(b5.email));
+}
+async function putUserRoles(db, input) {
+  const orgId = input.orgId ?? DEFAULT_ORG_ID;
+  const email = normaliseEmail(input.email);
+  if (input.roleIds.length === 0) {
+    await db.delete(userRoles).where(and(eq(userRoles.operationId, input.operationId), eq(userRoles.email, email)));
+    return;
+  }
+  await db.insert(userRoles).values({ orgId, operationId: input.operationId, email, roleIds: input.roleIds }).onConflictDoUpdate({ target: [userRoles.orgId, userRoles.operationId, userRoles.email], set: { roleIds: input.roleIds } });
+}
+
 // src/services/notify.ts
 var consoleNotifySink = {
   append: (event) => {
@@ -54965,18 +55338,40 @@ function buildNotifyModule(sink) {
 // src/host.ts
 var SolutionNotFoundError = class extends Error {
   constructor(solutionId) {
-    super(`No SDM config stored for solution '${solutionId}' \u2014 put one via config.put (or npm run seed)`);
+    super(`No SDM config stored for solution '${solutionId}' \u2014 author one in the Console, or put one via config.put`);
   }
 };
 var OperationNotFoundError = class extends Error {
   constructor(operationId) {
-    super(`No operation '${operationId}' \u2014 create one in the Console (or npm run seed)`);
+    super(`No operation '${operationId}' \u2014 create one in the Console`);
+  }
+};
+var OrgNotFoundError = class extends Error {
+  constructor(orgId) {
+    super(`No org '${orgId}' \u2014 the workspace is not onboarded; register it via platform.registerOrg`);
   }
 };
 async function getSolutionConfig(db, solutionId) {
-  const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
-  if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
-  return rows[0].config;
+  const [row] = await db.select({
+    attributes: sql`(SELECT jsonb_agg(${sdmAttributes.def} ORDER BY ${sdmAttributes.key}) FROM ${sdmAttributes} WHERE ${eq(sdmAttributes.solutionId, solutionId)})`,
+    recordTypes: sql`(SELECT jsonb_agg(${sdmRecordTypes.def} ORDER BY ${sdmRecordTypes.id}) FROM ${sdmRecordTypes} WHERE ${eq(sdmRecordTypes.solutionId, solutionId)})`,
+    workflows: sql`(SELECT jsonb_agg(${sdmWorkflows.def} ORDER BY ${sdmWorkflows.id}) FROM ${sdmWorkflows} WHERE ${eq(sdmWorkflows.solutionId, solutionId)})`,
+    functions: sql`(SELECT jsonb_agg(${sdmFunctions.def} ORDER BY ${sdmFunctions.id}) FROM ${sdmFunctions} WHERE ${eq(sdmFunctions.solutionId, solutionId)})`,
+    roles: sql`(SELECT jsonb_agg(${sdmRoles.def} ORDER BY ${sdmRoles.id}) FROM ${sdmRoles} WHERE ${eq(sdmRoles.solutionId, solutionId)})`,
+    defaultMenu: sql`(SELECT ${sdmMenus.def} FROM ${sdmMenus} WHERE ${eq(sdmMenus.solutionId, solutionId)})`
+  }).from(solutions).where(eq(solutions.id, solutionId));
+  if (!row) throw new SolutionNotFoundError(solutionId);
+  return {
+    attributes: row.attributes ?? [],
+    recordTypes: row.recordTypes ?? [],
+    workflows: row.workflows ?? [],
+    // Absent collections stay absent — `functions` and `access` are optional in
+    // the config, and no `access.roles` at all is what switches RBAC off, which
+    // an empty array would not say.
+    ...row.functions ? { functions: row.functions } : {},
+    ...row.roles ? { access: { roles: row.roles } } : {},
+    ...row.defaultMenu ? { default_menu: row.defaultMenu } : {}
+  };
 }
 async function getOperation(db, operationId) {
   const rows = await db.select().from(operations).where(eq(operations.id, operationId));
@@ -55180,21 +55575,89 @@ async function listPublishedPages(db, solutionId) {
   }
   return [...latest.entries()].map(([path, v]) => ({ path, def: v.def }));
 }
-async function listSolutions(db) {
-  const rows = await db.select().from(solutions);
-  return rows.map((r5) => ({ id: r5.id, name: r5.name }));
+async function getOrgName(db, orgId) {
+  const rows = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId));
+  return rows[0]?.name ?? orgId;
+}
+async function getOrg(db, orgId) {
+  const rows = await db.select().from(orgs).where(eq(orgs.id, orgId));
+  const r5 = rows[0];
+  if (!r5) return { id: orgId, name: orgId, ownerEmail: null, plan: "free", status: "active", createdAt: null };
+  return { id: r5.id, name: r5.name, ownerEmail: r5.ownerEmail, plan: r5.plan, status: r5.status, createdAt: r5.createdAt };
+}
+async function listOrgs(db) {
+  const rows = await db.select().from(orgs).orderBy(asc(orgs.name));
+  return rows.map((r5) => ({
+    id: r5.id,
+    name: r5.name,
+    ownerEmail: r5.ownerEmail,
+    plan: r5.plan,
+    status: r5.status,
+    createdAt: r5.createdAt
+  }));
+}
+var OrgExistsError = class extends Error {
+  constructor(orgId) {
+    super(`Org '${orgId}' already exists`);
+  }
+};
+async function registerOrg(db, input) {
+  const existing = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, input.id));
+  if (existing.length > 0) throw new OrgExistsError(input.id);
+  const ownerEmail = normaliseEmail(input.ownerEmail);
+  await db.insert(orgs).values({
+    id: input.id,
+    name: input.name,
+    ownerEmail,
+    ...input.plan ? { plan: input.plan } : {}
+  });
+  await db.insert(users).values({ orgId: input.id, email: ownerEmail, name: input.ownerName ?? null, status: "invited" }).onConflictDoUpdate({ target: [users.orgId, users.email], set: { name: input.ownerName ?? null } });
+}
+async function putOrgProfile(db, orgId, input) {
+  const res = await db.update(orgs).set({ name: input.name }).where(eq(orgs.id, orgId)).returning({ id: orgs.id });
+  if (res.length === 0) throw new OrgNotFoundError(orgId);
+}
+async function listSolutions(db, orgId = "default") {
+  const rows = await db.select().from(solutions).where(eq(solutions.orgId, orgId)).orderBy(asc(solutions.name));
+  return rows.map((r5) => ({ id: r5.id, name: r5.name, origin: r5.origin }));
+}
+async function getSolutionName(db, solutionId) {
+  const rows = await db.select({ name: solutions.name }).from(solutions).where(eq(solutions.id, solutionId));
+  return rows[0]?.name ?? solutionId;
 }
 async function createSolution(db, input) {
-  await db.insert(solutions).values({ id: input.id, name: input.name });
+  await db.insert(solutions).values({ id: input.id, name: input.name, orgId: input.orgId ?? "default" });
+  if (input.createdBy) {
+    await db.insert(solAdmins).values({ email: normaliseEmail(input.createdBy), solutionId: input.id }).onConflictDoNothing();
+  }
+}
+async function updateSolution(db, input) {
+  const rows = await db.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, input.solutionId));
+  if (rows.length === 0) throw new SolutionNotFoundError(input.solutionId);
+  await db.update(solutions).set({ name: input.name }).where(eq(solutions.id, input.solutionId));
+}
+var NotImplementedError = class extends Error {
+};
+async function deleteSolution(db, solutionId) {
+  const rows = await db.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, solutionId));
+  if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
+  throw new NotImplementedError(
+    `Deleting a solution is not implemented yet \u2014 it must cascade to the operations running it, and their records. Nothing was deleted.`
+  );
 }
 async function listOperations(db) {
-  const rows = await db.select().from(operations);
+  const rows = await db.select().from(operations).orderBy(asc(operations.name));
   return rows.map((r5) => ({ id: r5.id, orgId: r5.orgId, solutionId: r5.solutionId, name: r5.name, config: r5.config }));
 }
 async function createOperation(db, input) {
-  const sol = await db.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, input.solutionId));
+  const sol = await db.select({ id: solutions.id, orgId: solutions.orgId }).from(solutions).where(eq(solutions.id, input.solutionId));
   if (sol.length === 0) throw new SolutionNotFoundError(input.solutionId);
-  await db.insert(operations).values({ id: input.id, solutionId: input.solutionId, name: input.name });
+  await db.insert(operations).values({ id: input.id, solutionId: input.solutionId, name: input.name, orgId: sol[0].orgId });
+}
+async function getSolutionOrg(db, solutionId) {
+  const rows = await db.select({ orgId: solutions.orgId }).from(solutions).where(eq(solutions.id, solutionId));
+  if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
+  return rows[0].orgId;
 }
 async function putOperationConfig(db, operationId, config) {
   const res = await db.update(operations).set({ config }).where(eq(operations.id, operationId)).returning({ id: operations.id });
@@ -55207,13 +55670,29 @@ ${findings.join("\n")}`);
     this.findings = findings;
   }
 };
-async function validateOperationMenu(db, solutionId, menu) {
+var menuItemSchema = external_exports.lazy(
+  () => external_exports.object({
+    // Zod strips unknown keys, so the stable id has to be declared here or a
+    // saved override would come back without ids.
+    id: external_exports.string().min(1).optional(),
+    label: external_exports.string().min(1),
+    page: external_exports.string().min(1).optional(),
+    roles: external_exports.array(external_exports.string().min(1)).optional(),
+    items: external_exports.array(menuItemSchema).optional()
+  })
+);
+async function validateOperationMenu(db, solutionId, menu, rolesFrom) {
   const published = new Set((await listPublishedPages(db, solutionId)).map((p3) => p3.path));
-  const config = await getSolutionConfig(db, solutionId);
+  const config = rolesFrom ?? await getSolutionConfig(db, solutionId);
   const roleIds = new Set((config.access?.roles ?? []).map((r5) => r5.id));
   const errors = [];
+  const seenIds = /* @__PURE__ */ new Set();
   const walk = (items, depth) => {
     for (const it of items) {
+      if (it.id) {
+        if (seenIds.has(it.id)) errors.push(`"${it.label}" \u2192 duplicate item id "${it.id}"`);
+        seenIds.add(it.id);
+      }
       if (it.page && !published.has(it.page)) errors.push(`"${it.label}" \u2192 no published page "${it.page}"`);
       for (const r5 of it.roles ?? []) if (!roleIds.has(r5)) errors.push(`"${it.label}" \u2192 unknown role "${r5}"`);
       if (it.items && it.items.length > 0) {
@@ -55233,25 +55712,6 @@ function pageOpenable(authConfigured, config, roles, def) {
   const held = new Set(roles ?? []);
   return open.some((r5) => held.has(r5));
 }
-async function listRoleAssignments(db, operationId) {
-  const rows = await db.select({ userId: roleAssignments.userId, roleIds: roleAssignments.roleIds }).from(roleAssignments).where(eq(roleAssignments.operationId, operationId));
-  return rows.map((r5) => ({ userId: r5.userId, roleIds: r5.roleIds }));
-}
-async function putRoleAssignment(db, input) {
-  const orgId = input.orgId ?? "default";
-  if (input.roleIds.length === 0) {
-    await db.delete(roleAssignments).where(and(eq(roleAssignments.operationId, input.operationId), eq(roleAssignments.userId, input.userId)));
-    return;
-  }
-  await db.insert(roleAssignments).values({ orgId, operationId: input.operationId, userId: input.userId, roleIds: input.roleIds }).onConflictDoUpdate({ target: [roleAssignments.orgId, roleAssignments.operationId, roleAssignments.userId], set: { roleIds: input.roleIds } });
-}
-async function listImplementerLevels(db, solutionId) {
-  const rows = await db.select({ userId: implementerLevels.userId, level: implementerLevels.level }).from(implementerLevels).where(eq(implementerLevels.solutionId, solutionId));
-  return rows.map((r5) => ({ userId: r5.userId, level: r5.level }));
-}
-async function putImplementerLevel(db, input) {
-  await db.insert(implementerLevels).values({ userId: input.userId, solutionId: input.solutionId, level: input.level }).onConflictDoUpdate({ target: [implementerLevels.userId, implementerLevels.solutionId], set: { level: input.level } });
-}
 var ConfigValidationError = class extends Error {
   constructor(findings) {
     super(`SDM config rejected:
@@ -55259,7 +55719,7 @@ ${findings.join("\n")}`);
     this.findings = findings;
   }
 };
-async function putConfig(db, solutionId, config, sink = consoleNotifySink) {
+async function validateConfigGraph(db, solutionId, config, sink) {
   const adapter = new MemoryAdapter(config);
   for (const rt of config.recordTypes) adapter.getRecordTypeDef(rt.id);
   const engine = createEngine({
@@ -55279,7 +55739,186 @@ async function putConfig(db, solutionId, config, sink = consoleNotifySink) {
       orphaned.map((t8) => `recordTypes: stored records still reference '${t8}' \u2014 rename or remove is blocked while records of this type exist`)
     );
   }
-  await db.insert(sdmConfigs).values({ solutionId, config, updatedAt: /* @__PURE__ */ new Date() }).onConflictDoUpdate({ target: sdmConfigs.solutionId, set: { config, updatedAt: /* @__PURE__ */ new Date() } });
+}
+async function putConfig(db, solutionId, config, sink = consoleNotifySink, author = null) {
+  await editConfig(db, solutionId, sink, async (tx) => {
+    for (const collection of [...COLLECTIONS_IN_FK_ORDER].reverse()) {
+      await collection.removeExcept(tx, solutionId, collection.read(config).map((e5) => identityOf(collection, e5)));
+    }
+    for (const collection of COLLECTIONS_IN_FK_ORDER) {
+      for (const entity of collection.read(config)) {
+        await collection.put(tx, solutionId, identityOf(collection, entity), entity, author);
+      }
+    }
+    const menu = config.default_menu;
+    if (menu && menu.length > 0) {
+      await tx.insert(sdmMenus).values({ solutionId, def: menu, createdBy: author, updatedBy: author }).onConflictDoUpdate({ target: sdmMenus.solutionId, set: { def: menu, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author } });
+    } else {
+      await tx.delete(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
+    }
+  });
+}
+var configCollections = {
+  attributes: {
+    name: "attributes",
+    idField: "key",
+    read: (c5) => c5.attributes ?? [],
+    list: async (tx, solutionId) => (await tx.select({ def: sdmAttributes.def }).from(sdmAttributes).where(eq(sdmAttributes.solutionId, solutionId)).orderBy(asc(sdmAttributes.key))).map((r5) => r5.def),
+    put: async (tx, solutionId, key, def, author) => {
+      await tx.insert(sdmAttributes).values({ solutionId, key, def, createdBy: author, updatedBy: author }).onConflictDoUpdate({
+        target: [sdmAttributes.solutionId, sdmAttributes.key],
+        set: { def, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author }
+      });
+    },
+    remove: async (tx, solutionId, key) => {
+      await tx.delete(sdmAttributes).where(and(eq(sdmAttributes.solutionId, solutionId), eq(sdmAttributes.key, key)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmAttributes).where(and(
+        eq(sdmAttributes.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmAttributes.key, keep)) : void 0
+      ));
+    }
+  },
+  // Activities ride inside their workflow (ruled 2026-08-08) — the change unit
+  // is the workflow, and nesting keeps their authored order for free.
+  workflows: {
+    name: "workflows",
+    idField: "id",
+    read: (c5) => c5.workflows ?? [],
+    list: async (tx, solutionId) => (await tx.select({ def: sdmWorkflows.def }).from(sdmWorkflows).where(eq(sdmWorkflows.solutionId, solutionId)).orderBy(asc(sdmWorkflows.id))).map((r5) => r5.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx.insert(sdmWorkflows).values({ solutionId, id, def, createdBy: author, updatedBy: author }).onConflictDoUpdate({
+        target: [sdmWorkflows.solutionId, sdmWorkflows.id],
+        set: { def, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author }
+      });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmWorkflows).where(and(eq(sdmWorkflows.solutionId, solutionId), eq(sdmWorkflows.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmWorkflows).where(and(
+        eq(sdmWorkflows.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmWorkflows.id, keep)) : void 0
+      ));
+    }
+  },
+  recordTypes: {
+    name: "recordTypes",
+    idField: "id",
+    read: (c5) => c5.recordTypes ?? [],
+    list: async (tx, solutionId) => (await tx.select({ def: sdmRecordTypes.def }).from(sdmRecordTypes).where(eq(sdmRecordTypes.solutionId, solutionId)).orderBy(asc(sdmRecordTypes.id))).map((r5) => r5.def),
+    // `workflow_ref` is promoted out of the def into its own column so the one
+    // reference the split can hand to Postgres is a real FK. The def still
+    // carries it — the column is a lift, not a move.
+    put: async (tx, solutionId, id, def, author) => {
+      await tx.insert(sdmRecordTypes).values({ solutionId, id, workflowRef: def.workflow_ref, def, createdBy: author, updatedBy: author }).onConflictDoUpdate({
+        target: [sdmRecordTypes.solutionId, sdmRecordTypes.id],
+        set: { workflowRef: def.workflow_ref, def, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author }
+      });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmRecordTypes).where(and(eq(sdmRecordTypes.solutionId, solutionId), eq(sdmRecordTypes.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmRecordTypes).where(and(
+        eq(sdmRecordTypes.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmRecordTypes.id, keep)) : void 0
+      ));
+    }
+  },
+  functions: {
+    name: "functions",
+    idField: "id",
+    read: (c5) => c5.functions ?? [],
+    list: async (tx, solutionId) => (await tx.select({ def: sdmFunctions.def }).from(sdmFunctions).where(eq(sdmFunctions.solutionId, solutionId)).orderBy(asc(sdmFunctions.id))).map((r5) => r5.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx.insert(sdmFunctions).values({ solutionId, id, def, createdBy: author, updatedBy: author }).onConflictDoUpdate({
+        target: [sdmFunctions.solutionId, sdmFunctions.id],
+        set: { def, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author }
+      });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmFunctions).where(and(eq(sdmFunctions.solutionId, solutionId), eq(sdmFunctions.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmFunctions).where(and(
+        eq(sdmFunctions.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmFunctions.id, keep)) : void 0
+      ));
+    }
+  },
+  roles: {
+    name: "access.roles",
+    idField: "id",
+    read: (c5) => c5.access?.roles ?? [],
+    list: async (tx, solutionId) => (await tx.select({ def: sdmRoles.def }).from(sdmRoles).where(eq(sdmRoles.solutionId, solutionId)).orderBy(asc(sdmRoles.id))).map((r5) => r5.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx.insert(sdmRoles).values({ solutionId, id, def, createdBy: author, updatedBy: author }).onConflictDoUpdate({
+        target: [sdmRoles.solutionId, sdmRoles.id],
+        set: { def, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author }
+      });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmRoles).where(and(eq(sdmRoles.solutionId, solutionId), eq(sdmRoles.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmRoles).where(and(
+        eq(sdmRoles.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmRoles.id, keep)) : void 0
+      ));
+    }
+  }
+};
+var COLLECTIONS_IN_FK_ORDER = [
+  configCollections.attributes,
+  configCollections.workflows,
+  configCollections.recordTypes,
+  configCollections.functions,
+  configCollections.roles
+];
+function identityOf(collection, entity) {
+  const id = entity?.[collection.idField];
+  if (typeof id !== "string" || id.trim() === "") {
+    throw new ConfigValidationError([`${collection.name}: the entity carries no '${collection.idField}'`]);
+  }
+  return id;
+}
+async function editConfig(db, solutionId, sink, writeRows) {
+  await db.transaction(async (tx) => {
+    const [solution] = await tx.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, solutionId)).for("update");
+    if (!solution) throw new SolutionNotFoundError(solutionId);
+    await writeRows(tx);
+    const next = await getSolutionConfig(tx, solutionId);
+    await validateConfigGraph(tx, solutionId, next, sink);
+    await validateDefaultMenu(tx, solutionId, next);
+  });
+}
+async function validateDefaultMenu(db, solutionId, config) {
+  const defaultMenu = config.default_menu;
+  if (defaultMenu === void 0) return;
+  const parsed = external_exports.array(menuItemSchema).safeParse(defaultMenu);
+  if (!parsed.success) throw new ConfigValidationError([`default_menu is not a menu: ${parsed.error.message}`]);
+  await validateOperationMenu(db, solutionId, parsed.data, config);
+}
+async function putConfigEntity(db, solutionId, collection, entity, sink = consoleNotifySink, author = null) {
+  const id = identityOf(collection, entity);
+  await editConfig(db, solutionId, sink, (tx) => collection.put(tx, solutionId, id, entity, author));
+}
+async function deleteConfigEntity(db, solutionId, collection, id, sink = consoleNotifySink) {
+  await editConfig(db, solutionId, sink, (tx) => collection.remove(tx, solutionId, id));
+}
+async function putDefaultMenu(db, solutionId, menu, sink = consoleNotifySink, author = null) {
+  await editConfig(db, solutionId, sink, async (tx) => {
+    if (menu.length === 0) {
+      await tx.delete(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
+      return;
+    }
+    await tx.insert(sdmMenus).values({ solutionId, def: menu, createdBy: author, updatedBy: author }).onConflictDoUpdate({
+      target: sdmMenus.solutionId,
+      set: { def: menu, updatedAt: /* @__PURE__ */ new Date(), updatedBy: author }
+    });
+  });
 }
 var ConfigDraftNotFoundError = class extends Error {
   constructor(solutionId) {
@@ -55293,9 +55932,10 @@ async function appendConfigVersion(db, solutionId, config, readme, publishedBy) 
   return { version: version2 };
 }
 async function publishConfig(db, solutionId, readme, publishedBy) {
-  const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
-  if (rows.length === 0) throw new ConfigDraftNotFoundError(solutionId);
-  return appendConfigVersion(db, solutionId, rows[0].config, readme, publishedBy);
+  const config = await getSolutionConfig(db, solutionId);
+  const empty = config.attributes.length === 0 && config.recordTypes.length === 0 && config.workflows.length === 0 && (config.functions?.length ?? 0) === 0 && (config.access?.roles?.length ?? 0) === 0;
+  if (empty) throw new ConfigDraftNotFoundError(solutionId);
+  return appendConfigVersion(db, solutionId, config, readme, publishedBy);
 }
 async function rollbackConfig(db, solutionId, version2, readme, publishedBy) {
   const config = await getConfigVersion(db, solutionId, version2);
@@ -56721,22 +57361,34 @@ function createRemoteJWKSet(url, options) {
 // src/auth.ts
 var stubRolesResolver = {
   runtimeRoles: async () => [],
-  implementerLevel: async () => "admin"
+  isSolAdmin: async () => true
 };
 function createDbRolesResolver(db) {
   return {
-    runtimeRoles: async (userId, operationId) => {
-      const rows = await db.select({ roleIds: roleAssignments.roleIds }).from(roleAssignments).where(and(eq(roleAssignments.operationId, operationId), eq(roleAssignments.userId, userId)));
+    runtimeRoles: async (email, operationId) => {
+      const key = email?.trim().toLowerCase();
+      if (!key) return [];
+      const rows = await db.select({ roleIds: userRoles.roleIds }).from(userRoles).where(and(eq(userRoles.operationId, operationId), eq(userRoles.email, key)));
       return rows[0]?.roleIds ?? [];
     },
-    implementerLevel: async (userId, solutionId) => {
-      const rows = await db.select({ userId: implementerLevels.userId, level: implementerLevels.level }).from(implementerLevels).where(eq(implementerLevels.solutionId, solutionId));
-      if (rows.length === 0) return "admin";
-      return rows.find((r5) => r5.userId === userId)?.level ?? "none";
+    isSolAdmin: async (email, solutionId) => {
+      const key = email?.trim().toLowerCase();
+      if (!key) return false;
+      const [row] = await db.select({ email: solAdmins.email }).from(solAdmins).where(and(eq(solAdmins.solutionId, solutionId), eq(solAdmins.email, key))).limit(1);
+      return !!row;
     }
   };
 }
 var unauthorized = (message2) => new TRPCError({ code: "UNAUTHORIZED", message: message2 });
+function platformAdmins(env2 = process.env) {
+  return new Set(
+    (env2.FLUXUS_PLATFORM_ADMINS ?? "").split(",").map((e5) => e5.trim().toLowerCase()).filter(Boolean)
+  );
+}
+function isPlatformAdmin(email, env2) {
+  const key = email?.trim().toLowerCase();
+  return key ? platformAdmins(env2).has(key) : false;
+}
 function createAuth(env2 = process.env) {
   const baseUrl = env2.NEON_AUTH_URL ?? env2.NEON_AUTH_BASE_URL;
   if (!baseUrl) {
@@ -56763,6 +57415,536 @@ function createAuth(env2 = process.env) {
       const name = typeof payload.name === "string" && payload.name.length > 0 ? payload.name : email ?? payload.sub;
       return { id: payload.sub, name, email, roles: [] };
     }
+  };
+}
+
+// src/trpc.ts
+var DEFAULT_SOLUTION = "demo/sdm";
+var DEFAULT_OPERATION = "demo/sdm";
+var DEFAULT_ORG = "default";
+var t = initTRPC.context().create();
+var solutionInput = external_exports.string().min(1).default(DEFAULT_SOLUTION);
+var operationInput = external_exports.string().min(1).default(DEFAULT_OPERATION);
+var orgInput = external_exports.string().min(1).default(DEFAULT_ORG);
+var emailInput = external_exports.string().email();
+function rethrow(err) {
+  if (err instanceof SolutionNotFoundError) throw new TRPCError({ code: "NOT_FOUND", message: err.message });
+  if (err instanceof NotImplementedError) throw new TRPCError({ code: "NOT_IMPLEMENTED", message: err.message });
+  if (err instanceof OperationNotFoundError) throw new TRPCError({ code: "NOT_FOUND", message: err.message });
+  if (err instanceof OrgNotFoundError) throw new TRPCError({ code: "NOT_FOUND", message: err.message });
+  if (err instanceof OrgExistsError) throw new TRPCError({ code: "CONFLICT", message: err.message });
+  if (err instanceof ConfigValidationError) throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+  if (err instanceof TRPCError) throw err;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: err instanceof Error ? err.message : String(err)
+  });
+}
+
+// src/gates.ts
+function callerEmail(ctx) {
+  const email = (ctx.user ?? DEMO_USER).email?.trim().toLowerCase();
+  return email || null;
+}
+async function isOrgOwner2(ctx, orgId = DEFAULT_ORG) {
+  const email = callerEmail(ctx);
+  return email ? isOrgOwner(ctx.db, { email, orgId }) : false;
+}
+async function isOrgAdmin2(ctx, orgId = DEFAULT_ORG) {
+  const email = callerEmail(ctx);
+  return email ? isOrgAdmin(ctx.db, { email, orgId }) : false;
+}
+async function isOpAdmin2(ctx, operationId, orgId = DEFAULT_ORG) {
+  const email = callerEmail(ctx);
+  return email ? isOpAdmin(ctx.db, { operationId, email, orgId }) : false;
+}
+async function requireOrgOwner(ctx, orgId = DEFAULT_ORG) {
+  if (!ctx.authConfigured) return;
+  if (await isOrgOwner2(ctx, orgId)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: "Requires the organisation owner" });
+}
+async function requireOrgAdmin(ctx, orgId = DEFAULT_ORG) {
+  if (!ctx.authConfigured) return;
+  if (await isOrgAdmin2(ctx, orgId)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: "Requires organisation admin" });
+}
+async function requireOpAdmin(ctx, operationId, orgId = DEFAULT_ORG) {
+  if (!ctx.authConfigured) return;
+  if (await isOpAdmin2(ctx, operationId, orgId)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: `Requires admin of operation '${operationId}'` });
+}
+async function requireSolAdmin(ctx, solutionId) {
+  if (!ctx.authConfigured) return;
+  const user = ctx.user ?? DEMO_USER;
+  const roles = ctx.roles ?? stubRolesResolver;
+  if (await roles.isSolAdmin(user.email, solutionId)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: "Requires being an admin of this solution" });
+}
+async function requireOpUser(ctx, operationId, user, orgId = DEFAULT_ORG) {
+  if (!ctx.authConfigured) return;
+  const email = user.email?.trim().toLowerCase();
+  if (email && await isOpUser(ctx.db, { operationId, email, orgId })) return;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: `You are not a user of operation '${operationId}'`
+  });
+}
+async function requirePlatformAdmin(ctx) {
+  if (isPlatformAdmin(ctx.user?.email)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: "Requires platform admin" });
+}
+async function hasConsoleAccess(ctx, orgId = DEFAULT_ORG) {
+  if (!ctx.authConfigured) return true;
+  const email = callerEmail(ctx);
+  if (!email) return false;
+  if (await isOrgOwner(ctx.db, { email, orgId })) return true;
+  if (await isOrgAdmin(ctx.db, { email, orgId })) return true;
+  return isAnySolAdmin(ctx.db, email);
+}
+
+// src/routers/users.ts
+async function requireOpOrOrgAdmin(ctx, operationId, orgId) {
+  if (!ctx.authConfigured) return;
+  if (await isOpAdmin2(ctx, operationId, orgId)) return;
+  if (await isOrgAdmin2(ctx, orgId)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: `Requires admin of operation '${operationId}'` });
+}
+var usersRouter = t.router({
+  list: t.procedure.input(external_exports.object({ orgId: orgInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, input.orgId);
+      return await listUsers(ctx.db, input.orgId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /**
+   * Invite someone into the organisation — the only way anyone gets in, and it
+   * carries no admin connotation whatever (agreed 2026-08-04). **Whoever may
+   * appoint may also invite**: the owner appoints org admins, org admins appoint
+   * sol and op admins, op admins place people in their operation. Sol admins
+   * never do — a person is needed either for an operation or to build another
+   * solution, and neither appointment is theirs to make.
+   */
+  invite: t.procedure.input(external_exports.object({
+    email: emailInput,
+    name: external_exports.string().nullish(),
+    orgId: orgInput,
+    /** Present when an op admin invites: the operation whose admin they claim
+     *  to be, since they have no org-wide standing to invite from. */
+    operationId: external_exports.string().min(1).optional()
+  })).mutation(async ({ ctx, input }) => {
+    try {
+      if (ctx.authConfigured) {
+        const viaOp = input.operationId ? await isOpAdmin2(ctx, input.operationId, input.orgId) : false;
+        if (!viaOp && !await isOrgAdmin2(ctx, input.orgId) && !await isOrgOwner2(ctx, input.orgId)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Requires an admin who may appoint" });
+        }
+      }
+      await inviteUser(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /** Suspend and reinstate — the reversible pause. Every grant survives, but a
+   *  suspended person is no admin anywhere and enters nothing while it lasts.
+   *  `expired` is refused here: it drops grants, which no status write should do
+   *  silently. Org-wide, so org-admin work. */
+  setStatus: t.procedure.input(external_exports.object({
+    email: emailInput,
+    status: external_exports.enum(["invited", "active", "suspended"]),
+    orgId: orgInput
+  })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, input.orgId);
+      await setUserStatus(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /**
+   * End the relationship. Drops every grant at every tier and stamps
+   * `expired_at` — but **keeps the person**, because the record history that
+   * names them as author has no other way to resolve who they were.
+   *
+   * This replaced a hard delete (2026-08-04). There is no other terminal path:
+   * two, one of which quietly damages the audit trail, is a choice nobody should
+   * have to make correctly under pressure.
+   */
+  expire: t.procedure.input(external_exports.object({ email: emailInput, orgId: orgInput })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, input.orgId);
+      await expireUser(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /** Bring an expired person back — as a plain member with **no grants**.
+   *  Expiry dropped them and kept nothing to restore, so whoever needs them
+   *  appoints them again. */
+  unexpire: t.procedure.input(external_exports.object({ email: emailInput, orgId: orgInput })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, input.orgId);
+      await unexpireUser(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  })
+});
+var orgAdminsRouter = t.router({
+  list: t.procedure.input(external_exports.object({ orgId: orgInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, input.orgId);
+      return await listOrgAdmins(ctx.db, input.orgId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /** The org's owner, so the Console can say whose organisation this is and
+   *  decide whether to offer the appointment controls at all. */
+  owner: t.procedure.input(external_exports.object({ orgId: orgInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      return { email: await getOwnerEmail(ctx.db, input.orgId) };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  appoint: t.procedure.input(external_exports.object({ email: emailInput, orgId: orgInput })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireOrgOwner(ctx, input.orgId);
+      await appointOrgAdmin(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  remove: t.procedure.input(external_exports.object({ email: emailInput, orgId: orgInput })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireOrgOwner(ctx, input.orgId);
+      await removeOrgAdmin(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  })
+});
+var solAdminsRouter = t.router({
+  list: t.procedure.input(external_exports.object({ solutionId: solutionInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
+      return await listSolAdmins(ctx.db, input.solutionId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /** Every solution's admins in one call — the organisation's *Sol admins* tab,
+   *  which is where the appointments are made. */
+  listByOrg: t.procedure.input(external_exports.object({ orgId: orgInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, input.orgId);
+      return await listSolAdminsByOrg(ctx.db, input.orgId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  appoint: t.procedure.input(external_exports.object({ solutionId: solutionInput, email: emailInput })).mutation(async ({ ctx, input }) => {
+    try {
+      const orgId = await getSolutionOrg(ctx.db, input.solutionId);
+      await requireOrgAdmin(ctx, orgId);
+      await appointSolAdmin(ctx.db, { ...input, orgId });
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  remove: t.procedure.input(external_exports.object({ solutionId: solutionInput, email: emailInput })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
+      await removeSolAdmin(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  })
+});
+var opAdminsRouter = t.router({
+  list: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOpOrOrgAdmin(ctx, input.operationId, op2.orgId);
+      return await listOpAdmins(ctx.db, input.operationId, op2.orgId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /** The op admins of every operation running one solution — the solution's
+   *  *Op admins* tab. */
+  listBySolution: t.procedure.input(external_exports.object({ solutionId: solutionInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      const orgId = await getSolutionOrg(ctx.db, input.solutionId);
+      await requireOrgAdmin(ctx, orgId);
+      const ops = (await listOperations(ctx.db)).filter((o3) => o3.solutionId === input.solutionId);
+      return await listOpAdminsForOperations(ctx.db, ops.map((o3) => o3.id), orgId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  appoint: t.procedure.input(external_exports.object({ operationId: operationInput, email: emailInput })).mutation(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOrgAdmin(ctx, op2.orgId);
+      await appointOpAdmin(ctx.db, { ...input, orgId: op2.orgId });
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  remove: t.procedure.input(external_exports.object({ operationId: operationInput, email: emailInput })).mutation(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOrgAdmin(ctx, op2.orgId);
+      await removeOpAdmin(ctx.db, { ...input, orgId: op2.orgId });
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  })
+});
+var opUsersRouter = t.router({
+  list: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOpOrOrgAdmin(ctx, input.operationId, op2.orgId);
+      return await listOpUsers(ctx.db, input.operationId, op2.orgId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  /**
+   * Add someone from the organisation to this operation. The op admin cannot
+   * browse the pool — they have no org-wide read — so they type an address and
+   * the server answers for it, refusing with "not in this organisation" when
+   * nobody has invited that person yet.
+   */
+  add: t.procedure.input(external_exports.object({ operationId: operationInput, email: emailInput })).mutation(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOpOrOrgAdmin(ctx, input.operationId, op2.orgId);
+      await addOpUser(ctx.db, { ...input, orgId: op2.orgId });
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  remove: t.procedure.input(external_exports.object({ operationId: operationInput, email: emailInput })).mutation(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOpAdmin(ctx, input.operationId, op2.orgId);
+      await removeOpUser(ctx.db, { ...input, orgId: op2.orgId });
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  })
+});
+var userRolesRouter = t.router({
+  roles: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      const config = await getSolutionConfig(ctx.db, op2.solutionId);
+      return config.access?.roles ?? [];
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  list: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOpAdmin(ctx, input.operationId, op2.orgId);
+      return await listUserRoles(ctx.db, input.operationId);
+    } catch (err) {
+      rethrow(err);
+    }
+  }),
+  put: t.procedure.input(external_exports.object({ operationId: operationInput, email: emailInput, roleIds: external_exports.array(external_exports.string().min(1)) })).mutation(async ({ ctx, input }) => {
+    try {
+      const op2 = await getOperation(ctx.db, input.operationId);
+      await requireOpAdmin(ctx, input.operationId, op2.orgId);
+      await putUserRoles(ctx.db, input);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  })
+});
+
+// src/projection.ts
+function computeReadable(authConfigured, config, roles) {
+  if (!authConfigured) return null;
+  if (!config.access?.roles?.length) return null;
+  const held = new Set(roles ?? []);
+  const readable = /* @__PURE__ */ new Set();
+  for (const rt of config.recordTypes) {
+    if ((rt.access?.read ?? []).some((r5) => held.has(r5))) readable.add(rt.id);
+  }
+  return readable;
+}
+function clientCustomField(cf) {
+  return {
+    key: cf.key,
+    ...cf.label !== void 0 ? { label: cf.label } : {},
+    type: cf.type,
+    ...cf.fk_record_type !== void 0 ? { fk_record_type: cf.fk_record_type } : {},
+    ...cf.fk_display_field !== void 0 ? { fk_display_field: cf.fk_display_field } : {}
+  };
+}
+function clientTypeConfig(cfg) {
+  const out = {};
+  if (cfg.fk_record_type !== void 0) out.fk_record_type = cfg.fk_record_type;
+  if (cfg.values !== void 0) out.values = cfg.values;
+  if (cfg.expression !== void 0) out.expression = cfg.expression;
+  if (cfg.multi !== void 0) out.multi = cfg.multi;
+  if (cfg.datasource !== void 0) out.datasource = cfg.datasource;
+  if (cfg.key_field !== void 0) out.key_field = cfg.key_field;
+  if (cfg.display_field !== void 0) out.display_field = cfg.display_field;
+  if (cfg.columns !== void 0) out.columns = cfg.columns;
+  if (cfg.multiline !== void 0) out.multiline = cfg.multiline;
+  if (cfg.decimal_places !== void 0) out.decimal_places = cfg.decimal_places;
+  if (cfg.accept !== void 0) out.accept = cfg.accept;
+  if (cfg.max_count !== void 0) out.max_count = cfg.max_count;
+  if (cfg.attributes !== void 0) out.attributes = cfg.attributes.map(clientUsage);
+  return out;
+}
+function clientUsage(usage) {
+  return {
+    attribute_ref: usage.attribute_ref,
+    ...usage.show_condition !== void 0 ? { show_condition: usage.show_condition } : {},
+    ...usage.required !== void 0 ? { required: usage.required } : {},
+    ...usage.validation !== void 0 ? { validation: usage.validation } : {},
+    ...usage.validation_message !== void 0 ? { validation_message: usage.validation_message } : {},
+    ...usage.can_waive !== void 0 ? { can_waive: usage.can_waive } : {}
+  };
+}
+function clientAttribute(attr) {
+  return {
+    key: attr.key,
+    label: attr.label,
+    description: attr.description,
+    type: attr.type,
+    ...attr.type_config !== void 0 ? { type_config: clientTypeConfig(attr.type_config) } : {},
+    ...attr.show_condition !== void 0 ? { show_condition: attr.show_condition } : {},
+    ...attr.required !== void 0 ? { required: attr.required } : {},
+    ...attr.validation !== void 0 ? { validation: attr.validation } : {},
+    ...attr.validation_message !== void 0 ? { validation_message: attr.validation_message } : {},
+    ...attr.can_waive !== void 0 ? { can_waive: attr.can_waive } : {}
+  };
+}
+function clientActivity(act) {
+  return {
+    id: act.id,
+    name: act.name,
+    description: act.description,
+    sort_order: act.sort_order,
+    ...act.record_map !== void 0 ? { record_map: act.record_map } : {},
+    ...act.show_condition !== void 0 ? { show_condition: act.show_condition } : {},
+    attributes: act.attributes.map(
+      (entry) => "attribute_ref" in entry ? clientUsage(entry) : { section: entry.section, ...entry.description !== void 0 ? { description: entry.description } : {} }
+    )
+  };
+}
+function clientRecordType(rt) {
+  return {
+    id: rt.id,
+    name: rt.name,
+    description: rt.description,
+    workflow_ref: rt.workflow_ref,
+    ...rt.id_field !== void 0 ? { id_field: rt.id_field } : {},
+    custom_fields: rt.custom_fields.map(clientCustomField)
+  };
+}
+function shippedExpressions(workflows, attributes) {
+  const sources = [];
+  const push = (source) => {
+    if (source) sources.push(source);
+  };
+  for (const wf of workflows) {
+    for (const act of wf.activities) {
+      push(act.show_condition);
+      for (const entry of act.attributes) {
+        if (!("attribute_ref" in entry)) continue;
+        push(entry.show_condition);
+        push(entry.validation);
+      }
+    }
+  }
+  for (const attr of attributes) {
+    push(attr.show_condition);
+    push(attr.validation);
+    push(attr.type_config?.datasource);
+  }
+  return sources;
+}
+var CALLS = /([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+function calledNames(source) {
+  const names = /* @__PURE__ */ new Set();
+  for (const [, name] of source.matchAll(CALLS)) names.add(name.toLowerCase());
+  return names;
+}
+function reachableFunctions(all, sources) {
+  if (all.length === 0) return [];
+  const byName = new Map(all.map((fn) => [fn.name.toLowerCase(), fn]));
+  const kept = /* @__PURE__ */ new Map();
+  const queue = sources.flatMap((source) => [...calledNames(source)]);
+  while (queue.length > 0) {
+    const name = queue.pop();
+    const fn = byName.get(name);
+    if (!fn || kept.has(name)) continue;
+    kept.set(name, fn);
+    const body = Array.isArray(fn.body) ? fn.body.join("\n") : fn.body;
+    queue.push(...calledNames(body));
+  }
+  return all.filter((fn) => kept.has(fn.name.toLowerCase()));
+}
+function projectConfig(config, { roles, enforced }) {
+  const readable = computeReadable(enforced, config, roles);
+  const recordTypes = config.recordTypes.filter((rt) => readable === null || readable.has(rt.id));
+  const shippedWorkflowIds = new Set(recordTypes.map((rt) => rt.workflow_ref));
+  const workflows = config.workflows.filter((wf) => shippedWorkflowIds.has(wf.id)).map((wf) => ({
+    id: wf.id,
+    name: wf.name,
+    description: wf.description,
+    activities: wf.activities.map(clientActivity)
+  }));
+  const pool = new Map(config.attributes.map((a5) => [a5.key, a5]));
+  const referenced = /* @__PURE__ */ new Set();
+  const reach = (key) => {
+    if (referenced.has(key)) return;
+    const attr = pool.get(key);
+    if (!attr) return;
+    referenced.add(key);
+    for (const sub of attr.type_config?.attributes ?? []) reach(sub.attribute_ref);
+  };
+  for (const wf of workflows) {
+    for (const act of wf.activities) {
+      for (const entry of act.attributes) {
+        if ("attribute_ref" in entry) reach(entry.attribute_ref);
+      }
+    }
+  }
+  const attributes = config.attributes.filter((a5) => referenced.has(a5.key)).map(clientAttribute);
+  const functions = reachableFunctions(config.functions ?? [], shippedExpressions(workflows, attributes));
+  const defaultMenu = config.default_menu;
+  return {
+    attributes,
+    recordTypes: recordTypes.map(clientRecordType),
+    workflows,
+    // Absent stays absent, as everywhere else in the model.
+    ...functions.length > 0 ? { functions } : {},
+    ...defaultMenu !== void 0 ? { default_menu: defaultMenu } : {}
   };
 }
 
@@ -56817,32 +57999,11 @@ function createBlobStore() {
 }
 
 // src/router.ts
-var DEFAULT_SOLUTION = "demo/sdm";
-var DEFAULT_OPERATION = "demo/sdm";
 async function resolveUser(ctx, operationId) {
   const user = ctx.user ?? DEMO_USER;
+  await requireOpUser(ctx, operationId, user);
   const roles = ctx.roles ?? stubRolesResolver;
-  return { ...user, roles: await roles.runtimeRoles(user.id, operationId) };
-}
-var IMPLEMENTER_RANK = { none: 0, read: 1, write: 2, admin: 3 };
-async function requireImplementer(ctx, solutionId, level) {
-  if (!ctx.authConfigured) return;
-  const user = ctx.user ?? DEMO_USER;
-  const roles = ctx.roles ?? stubRolesResolver;
-  const held = await roles.implementerLevel(user.id, solutionId);
-  if (IMPLEMENTER_RANK[held] < IMPLEMENTER_RANK[level]) {
-    throw new TRPCError({ code: "FORBIDDEN", message: `Requires implementer '${level}' on this solution` });
-  }
-}
-function computeReadable(authConfigured, config, roles) {
-  if (!authConfigured) return null;
-  if (!config.access?.roles?.length) return null;
-  const held = new Set(roles ?? []);
-  const readable = /* @__PURE__ */ new Set();
-  for (const rt of config.recordTypes) {
-    if ((rt.access?.read ?? []).some((r5) => held.has(r5))) readable.add(rt.id);
-  }
-  return readable;
+  return { ...user, roles: await roles.runtimeRoles(user.email, operationId) };
 }
 async function operationContext(ctx, operationId) {
   const user = await resolveUser(ctx, operationId);
@@ -56867,33 +58028,32 @@ function matchesAccept(accept, mime, name) {
     return t8 === m3;
   });
 }
-var t = initTRPC.context().create();
-var solutionInput = external_exports.string().min(1).default(DEFAULT_SOLUTION);
-var operationInput = external_exports.string().min(1).default(DEFAULT_OPERATION);
-var menuItemSchema = external_exports.lazy(
-  () => external_exports.object({
-    label: external_exports.string().min(1),
-    page: external_exports.string().min(1).optional(),
-    roles: external_exports.array(external_exports.string().min(1)).optional(),
-    items: external_exports.array(menuItemSchema).optional()
-  })
-);
 var operationConfigSchema = external_exports.object({
   menu: external_exports.array(menuItemSchema).optional()
 });
+function entityPut(collection) {
+  return t.procedure.input(external_exports.object({ solutionId: solutionInput, def: external_exports.unknown() })).mutation(async ({ ctx, input }) => {
+    try {
+      await requireSolAdmin(ctx, input.solutionId);
+      await putConfigEntity(ctx.db, input.solutionId, collection, input.def, ctx.sink, ctx.user?.email ?? null);
+      return { ok: true };
+    } catch (err) {
+      rethrow(err);
+    }
+  });
+}
+async function entityDelete(ctx, solutionId, collection, id) {
+  try {
+    await requireSolAdmin(ctx, solutionId);
+    await deleteConfigEntity(ctx.db, solutionId, collection, id, ctx.sink);
+    return { ok: true };
+  } catch (err) {
+    rethrow(err);
+  }
+}
 var jsonValue = external_exports.lazy(
   () => external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean(), external_exports.null(), external_exports.array(jsonValue), external_exports.record(external_exports.string(), jsonValue)])
 );
-function rethrow(err) {
-  if (err instanceof SolutionNotFoundError) throw new TRPCError({ code: "NOT_FOUND", message: err.message });
-  if (err instanceof OperationNotFoundError) throw new TRPCError({ code: "NOT_FOUND", message: err.message });
-  if (err instanceof ConfigValidationError) throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
-  if (err instanceof TRPCError) throw err;
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: err instanceof Error ? err.message : String(err)
-  });
-}
 var appRouter = t.router({
   // Solutions + operations (CONSOLE_RUNTIME_SPEC §2–3): plain auth-tier CRUD,
   // no SDM/activities. operations.get is the Runtime's resolution door —
@@ -56901,15 +58061,122 @@ var appRouter = t.router({
   // The caller's identity + roles resolved for an operation, and whether RBAC
   // is enforced (auth configured). The Runtime host uses this for cosmetic
   // menu filtering; server-side page/record filtering is the real gate.
-  me: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
-    const u = await resolveUser(ctx, input.operationId);
-    return { id: u.id, name: u.name, email: u.email, roles: u.roles ?? [], authConfigured: ctx.authConfigured === true };
+  // `operationId` is OPTIONAL (2026-08-02). With one, this resolves the caller
+  // inside that operation — roles, op-admin tier — and so passes the entry
+  // gate like every other operation-scoped call. Without one it answers the
+  // org-level question only: "am I an org admin, may I use the Console". The
+  // Console's Organisation → Users screen needs exactly that and has no
+  // operation in hand, and routing it through an arbitrary operation's gate
+  // would make org administration depend on op membership, which is precisely
+  // the coupling the identity/authorization split exists to prevent.
+  me: t.procedure.input(external_exports.object({ operationId: external_exports.string().min(1).optional(), orgId: orgInput }).default({})).query(async ({ ctx, input }) => {
+    const scoped = input.operationId !== void 0;
+    const u = scoped ? await resolveUser(ctx, input.operationId) : ctx.user ?? DEMO_USER;
+    const orgId = scoped ? (await getOperation(ctx.db, input.operationId)).orgId : input.orgId;
+    const orgAdmin = ctx.authConfigured ? await isOrgAdmin2(ctx, orgId) : true;
+    const opAdmin = !scoped ? false : ctx.authConfigured ? await isOpAdmin2(ctx, input.operationId, orgId) : true;
+    const orgOwner = ctx.authConfigured ? await isOrgOwner2(ctx, orgId) : true;
+    const console2 = await hasConsoleAccess(ctx, orgId);
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      roles: u.roles ?? [],
+      authConfigured: ctx.authConfigured === true,
+      orgOwner,
+      orgAdmin,
+      opAdmin,
+      console: console2
+    };
+  }),
+  // The org tier (§1a, M14): the tenant everything hangs under. Profile reads
+  // and edits only — no create (registration needs user → org resolution, which
+  // the auth tier does not do yet) and no plan/status writes (ours to set).
+  orgs: t.router({
+    get: t.procedure.input(external_exports.object({ orgId: orgInput }).default({})).query(async ({ ctx, input }) => getOrg(ctx.db, input.orgId)),
+    putProfile: t.procedure.input(external_exports.object({
+      orgId: orgInput,
+      name: external_exports.string().min(1)
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        await putOrgProfile(ctx.db, input.orgId, { name: input.name });
+        return { ok: true };
+      } catch (err) {
+        rethrow(err);
+      }
+    })
+  }),
+  // The platform plane (ruled 2026-08-03) — `@fluxus/platform`'s door, and the
+  // only place orgs are created or read across. Bare bones by intent: list and
+  // register. Usage and billing belong here eventually, but usage falls out of
+  // the log rather than a counter table, so neither is invented early.
+  platform: t.router({
+    /** Every org. The one cross-org read in the API. */
+    listOrgs: t.procedure.query(async ({ ctx }) => {
+      try {
+        await requirePlatformAdmin(ctx);
+        return await listOrgs(ctx.db);
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    /**
+     * Register an org and its owner in one act — see `registerOrg` for why
+     * they cannot be two. This is what makes `npm run bootstrap` recovery-only:
+     * every org after the first gets its first admin from here.
+     *
+     * The id is a URL slug because it IS the URL — the Console and Runtime read
+     * their org from `/o/<orgId>/…` (ruled 2026-08-03, Neon's shape), so
+     * anything that would need escaping there cannot be an org id.
+     */
+    registerOrg: t.procedure.input(external_exports.object({
+      id: external_exports.string().regex(/^[a-z0-9][a-z0-9-]*$/, "Lower-case letters, digits and hyphens only").max(63),
+      name: external_exports.string().min(1),
+      ownerEmail: external_exports.string().email(),
+      ownerName: external_exports.string().nullish()
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        await requirePlatformAdmin(ctx);
+        await registerOrg(ctx.db, input);
+        return { ok: true };
+      } catch (err) {
+        rethrow(err);
+      }
+    })
   }),
   solutions: t.router({
-    list: t.procedure.query(async ({ ctx }) => listSolutions(ctx.db)),
-    create: t.procedure.input(external_exports.object({ id: external_exports.string().min(1), name: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
+    // Scoped to the org (2026-08-02): `solutions.org_id` decides whose list
+    // this is. Ids stay globally unique — a solution is a distributable
+    // package — so the column filters the catalogue and nothing else.
+    list: t.procedure.input(external_exports.object({ orgId: orgInput }).default({})).query(async ({ ctx, input }) => listSolutions(ctx.db, input.orgId)),
+    create: t.procedure.input(external_exports.object({ id: external_exports.string().min(1), name: external_exports.string().min(1), orgId: orgInput })).mutation(async ({ ctx, input }) => {
       try {
-        await createSolution(ctx.db, input);
+        await requireOrgAdmin(ctx, input.orgId);
+        await createSolution(ctx.db, { ...input, createdBy: (ctx.user ?? DEMO_USER).email });
+        return { ok: true };
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    // Editing an existing solution is ORG-admin work (ruled 2026-08-02, was
+    // design-plane 'admin'): the org admin creates solutions, so renaming and
+    // destroying one are the inverse of a call they already own. Moving these
+    // two is what let the design plane's third grade collapse — 'admin' on a
+    // solution had nothing else left to guard. `update` rather than `rename`
+    // because the profile will grow beyond the name.
+    update: t.procedure.input(external_exports.object({ solutionId: external_exports.string().min(1), name: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
+      try {
+        await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
+        await updateSolution(ctx.db, input);
+        return { ok: true };
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    delete: t.procedure.input(external_exports.object({ solutionId: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
+      try {
+        await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
+        await deleteSolution(ctx.db, input.solutionId);
         return { ok: true };
       } catch (err) {
         rethrow(err);
@@ -56920,14 +58187,19 @@ var appRouter = t.router({
     list: t.procedure.query(async ({ ctx }) => listOperations(ctx.db)),
     get: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
       try {
-        return await getOperation(ctx.db, input.operationId);
+        const op2 = await getOperation(ctx.db, input.operationId);
+        const [solutionName, orgName] = await Promise.all([
+          getSolutionName(ctx.db, op2.solutionId),
+          getOrgName(ctx.db, op2.orgId)
+        ]);
+        return { ...op2, solutionName, orgName };
       } catch (err) {
         rethrow(err);
       }
     }),
     create: t.procedure.input(external_exports.object({ id: external_exports.string().min(1), solutionId: external_exports.string().min(1), name: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "admin");
+        await requireOrgAdmin(ctx, await getSolutionOrg(ctx.db, input.solutionId));
         await createOperation(ctx.db, input);
         return { ok: true };
       } catch (err) {
@@ -56937,7 +58209,7 @@ var appRouter = t.router({
     putConfig: t.procedure.input(external_exports.object({ operationId: operationInput, config: operationConfigSchema })).mutation(async ({ ctx, input }) => {
       try {
         const op2 = await getOperation(ctx.db, input.operationId);
-        await requireImplementer(ctx, op2.solutionId, "write");
+        await requireOpAdmin(ctx, input.operationId, op2.orgId);
         await validateOperationMenu(ctx.db, op2.solutionId, input.config.menu ?? []);
         await putOperationConfig(ctx.db, input.operationId, input.config);
         return { ok: true };
@@ -56946,71 +58218,79 @@ var appRouter = t.router({
       }
     })
   }),
-  // Governance admin (CONSOLE_RUNTIME_SPEC §2a/§3, RBAC_COMPACT): user→role
-  // assignments (per operation) and implementer levels (per solution). Both
-  // require implementer `admin`, checked on the solution. `roles` reads the
-  // linked solution's declared role defs, for the assignment picker.
-  assignments: t.router({
-    roles: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
-      try {
-        const op2 = await getOperation(ctx.db, input.operationId);
-        const config = await getSolutionConfig(ctx.db, op2.solutionId);
-        return config.access?.roles ?? [];
-      } catch (err) {
-        rethrow(err);
-      }
-    }),
-    list: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
-      try {
-        const op2 = await getOperation(ctx.db, input.operationId);
-        await requireImplementer(ctx, op2.solutionId, "admin");
-        return await listRoleAssignments(ctx.db, input.operationId);
-      } catch (err) {
-        rethrow(err);
-      }
-    }),
-    put: t.procedure.input(external_exports.object({ operationId: operationInput, userId: external_exports.string().min(1), roleIds: external_exports.array(external_exports.string().min(1)) })).mutation(async ({ ctx, input }) => {
-      try {
-        const op2 = await getOperation(ctx.db, input.operationId);
-        await requireImplementer(ctx, op2.solutionId, "admin");
-        await putRoleAssignment(ctx.db, input);
-        return { ok: true };
-      } catch (err) {
-        rethrow(err);
-      }
-    })
-  }),
-  implementers: t.router({
-    list: t.procedure.input(external_exports.object({ solutionId: solutionInput }).default({})).query(async ({ ctx, input }) => {
-      try {
-        await requireImplementer(ctx, input.solutionId, "admin");
-        return await listImplementerLevels(ctx.db, input.solutionId);
-      } catch (err) {
-        rethrow(err);
-      }
-    }),
-    put: t.procedure.input(external_exports.object({ solutionId: solutionInput, userId: external_exports.string().min(1), level: external_exports.enum(["read", "write", "admin"]) })).mutation(async ({ ctx, input }) => {
-      try {
-        await requireImplementer(ctx, input.solutionId, "admin");
-        await putImplementerLevel(ctx.db, input);
-        return { ok: true };
-      } catch (err) {
-        rethrow(err);
-      }
-    })
-  }),
+  // Users, admins and roles (USERS.md) — one router per list, each governed by
+  // one tier. The whole surface lives in ./routers/users.ts; the gates it reads
+  // are in ./gates.ts.
+  users: usersRouter,
+  orgAdmins: orgAdminsRouter,
+  solAdmins: solAdminsRouter,
+  opAdmins: opAdminsRouter,
+  opUsers: opUsersRouter,
+  userRoles: userRolesRouter,
   config: t.router({
+    // Two doors, not one filter (CLIENT_TRUST_BOUNDARY §2). This is the design
+    // plane's: the whole model, hooks and access rules included, because
+    // authoring them is the job. **Sol admin** — `config.put` already requires
+    // it, and reading a model and writing it are the same privilege in a
+    // one-grade world.
     get: t.procedure.input(external_exports.object({ solutionId: solutionInput }).default({})).query(async ({ ctx, input }) => {
       try {
+        await requireSolAdmin(ctx, input.solutionId);
         return await getSolutionConfig(ctx.db, input.solutionId);
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    /**
+     * The runtime plane's door: the model trimmed to what this caller may see.
+     * Keyed on the **operation**, not the solution, because what survives the
+     * trim is decided by the caller's roles *in that operation* — and entry to
+     * the operation is itself the first check (`resolveUser` → `requireOpUser`).
+     */
+    getForOperation: t.procedure.input(external_exports.object({ operationId: operationInput }).default({})).query(async ({ ctx, input }) => {
+      try {
+        const { user, config } = await operationContext(ctx, input.operationId);
+        return projectConfig(config, { roles: user.roles, enforced: ctx.authConfigured });
       } catch (err) {
         rethrow(err);
       }
     }),
     put: t.procedure.input(external_exports.object({ solutionId: solutionInput, config: external_exports.unknown() })).mutation(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "write");
-        await putConfig(ctx.db, input.solutionId, input.config, ctx.sink);
+        await requireSolAdmin(ctx, input.solutionId);
+        const defaultMenu = input.config.default_menu;
+        if (defaultMenu !== void 0) {
+          const parsed = external_exports.array(menuItemSchema).safeParse(defaultMenu);
+          if (!parsed.success) throw new TRPCError({ code: "BAD_REQUEST", message: `default_menu is not a menu: ${parsed.error.message}` });
+          await validateOperationMenu(ctx.db, input.solutionId, parsed.data, input.config);
+        }
+        await putConfig(ctx.db, input.solutionId, input.config, ctx.sink, ctx.user?.email ?? null);
+        return { ok: true };
+      } catch (err) {
+        rethrow(err);
+      }
+    }),
+    // Per-entity model writes (model storage split, step 1). Same tier as
+    // config.put — sol admin — and the same validation: the consistency unit is
+    // the whole graph, only the *write* unit narrows to one entity. That is what
+    // ends the lost update two admins editing two different record types used to
+    // suffer. `def` is the entity verbatim, carrying its own key/id.
+    putAttribute: entityPut(configCollections.attributes),
+    deleteAttribute: t.procedure.input(external_exports.object({ solutionId: solutionInput, key: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.attributes, input.key)),
+    putRecordType: entityPut(configCollections.recordTypes),
+    deleteRecordType: t.procedure.input(external_exports.object({ solutionId: solutionInput, id: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.recordTypes, input.id)),
+    putWorkflow: entityPut(configCollections.workflows),
+    deleteWorkflow: t.procedure.input(external_exports.object({ solutionId: solutionInput, id: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.workflows, input.id)),
+    putFunction: entityPut(configCollections.functions),
+    deleteFunction: t.procedure.input(external_exports.object({ solutionId: solutionInput, id: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.functions, input.id)),
+    putRole: entityPut(configCollections.roles),
+    deleteRole: t.procedure.input(external_exports.object({ solutionId: solutionInput, id: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.roles, input.id)),
+    // The config's one non-collection field, so no delete: an empty array is
+    // the empty menu.
+    putDefaultMenu: t.procedure.input(external_exports.object({ solutionId: solutionInput, menu: external_exports.array(menuItemSchema) })).mutation(async ({ ctx, input }) => {
+      try {
+        await requireSolAdmin(ctx, input.solutionId);
+        await putDefaultMenu(ctx.db, input.solutionId, input.menu, ctx.sink, ctx.user?.email ?? null);
         return { ok: true };
       } catch (err) {
         rethrow(err);
@@ -57021,7 +58301,7 @@ var appRouter = t.router({
     // read later, which is the whole point of keeping the history.
     publish: t.procedure.input(external_exports.object({ solutionId: solutionInput, readme: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "write");
+        await requireSolAdmin(ctx, input.solutionId);
         const publishedBy = ctx.user?.id ?? DEMO_USER.id;
         return await publishConfig(ctx.db, input.solutionId, input.readme, publishedBy);
       } catch (err) {
@@ -57034,7 +58314,7 @@ var appRouter = t.router({
     // make the rollback observable.
     rollback: t.procedure.input(external_exports.object({ solutionId: solutionInput, version: external_exports.number().int().positive() })).mutation(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "write");
+        await requireSolAdmin(ctx, input.solutionId);
         const publishedBy = ctx.user?.id ?? DEMO_USER.id;
         return await rollbackConfig(ctx.db, input.solutionId, input.version, `Rollback to v${input.version}`, publishedBy);
       } catch (err) {
@@ -57060,12 +58340,12 @@ var appRouter = t.router({
       }
     }),
     put: t.procedure.input(external_exports.object({ solutionId: solutionInput, path: external_exports.string().min(1), def: external_exports.unknown() })).mutation(async ({ ctx, input }) => {
-      await requireImplementer(ctx, input.solutionId, "write");
+      await requireSolAdmin(ctx, input.solutionId);
       await putPage(ctx.db, input.solutionId, input.path, input.def ?? {});
       return { ok: true };
     }),
     delete: t.procedure.input(external_exports.object({ solutionId: solutionInput, path: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
-      await requireImplementer(ctx, input.solutionId, "write");
+      await requireSolAdmin(ctx, input.solutionId);
       await deletePage(ctx.db, input.solutionId, input.path);
       return { ok: true };
     }),
@@ -57073,18 +58353,18 @@ var appRouter = t.router({
     // notes. Append-only — rollback republishes an older def as a new version.
     publish: t.procedure.input(external_exports.object({ solutionId: solutionInput, path: external_exports.string().min(1), readme: external_exports.string().min(1) })).mutation(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "write");
+        await requireSolAdmin(ctx, input.solutionId);
         const publishedBy = ctx.user?.id ?? DEMO_USER.id;
         return await publishPage(ctx.db, input.solutionId, input.path, input.readme, publishedBy);
       } catch (err) {
         rethrow(err);
       }
     }),
-    // Every published page path (unfiltered) — the implementer/authoring plane
-    // (menu editor, §5). Console preview is access-exempt (§6). Implementer read.
+    // Every published page path (unfiltered) — the design/authoring plane
+    // (menu editor, §5). Console preview is access-exempt (§6). Sol-user read.
     publishedPaths: t.procedure.input(external_exports.object({ solutionId: solutionInput }).default({})).query(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "read");
+        await requireSolAdmin(ctx, input.solutionId);
         return (await listPublishedPages(ctx.db, input.solutionId)).map((p3) => p3.path).sort();
       } catch (err) {
         rethrow(err);
@@ -57095,7 +58375,7 @@ var appRouter = t.router({
     // is untouched (append-only, never delete/edit).
     rollback: t.procedure.input(external_exports.object({ solutionId: solutionInput, path: external_exports.string().min(1), version: external_exports.number().int().positive() })).mutation(async ({ ctx, input }) => {
       try {
-        await requireImplementer(ctx, input.solutionId, "write");
+        await requireSolAdmin(ctx, input.solutionId);
         const publishedBy = ctx.user?.id ?? DEMO_USER.id;
         return await rollbackPage(ctx.db, input.solutionId, input.path, input.version, `Rollback to v${input.version}`, publishedBy);
       } catch (err) {
@@ -57251,8 +58531,7 @@ var appRouter = t.router({
          *  check per the attribute's type. */
         attributes: external_exports.record(external_exports.string(), jsonValue).default({}),
         waived: external_exports.record(external_exports.string(), external_exports.string()).optional(),
-        acknowledgedWarnings: external_exports.boolean().optional(),
-        callbackData: external_exports.unknown().optional()
+        acknowledgedWarnings: external_exports.boolean().optional()
       })
     ).mutation(async ({ ctx, input }) => {
       try {
@@ -57284,8 +58563,7 @@ var appRouter = t.router({
         try {
           const result = host.engine.runActivity(activity, input.attributes, anchorRecord, {
             acknowledgedWarnings: input.acknowledgedWarnings,
-            waived: input.waived,
-            callbackData: input.callbackData
+            waived: input.waived
           });
           if (result.status === "done") await writeBack(ctx.db, host);
           return result;
@@ -57316,12 +58594,14 @@ function createApp(options) {
       // Throws UNAUTHORIZED (→ 401) when auth is configured and the token is
       // missing/invalid — tRPC turns a createContext failure into an error
       // response for every call in the batch.
-      createContext: async () => ({
-        ...base,
-        roles,
-        authConfigured: auth.configured,
-        user: await auth.authenticate(c5.req.header("authorization"))
-      })
+      createContext: async () => {
+        const user = await auth.authenticate(c5.req.header("authorization"));
+        if (auth.configured && user.email) {
+          await bindAuthUser(base.db, { email: user.email, authUserId: user.id }).catch(() => {
+          });
+        }
+        return { ...base, roles, authConfigured: auth.configured, user };
+      }
     })
   );
   return app;

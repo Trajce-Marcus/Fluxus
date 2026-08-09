@@ -63,6 +63,15 @@
     "type": "text"
   },
   {
+    "key": "crew",
+    "label": "Crew",
+    "description": "Which crew the work order is dispatched to. A list attribute — the datasource is the declared producer, so validateSubmission checks the choice against it server-side.",
+    "type": "list",
+    "type_config": {
+      "datasource": "['Crew A', 'Crew B', 'Crew C']"
+    }
+  },
+  {
     "key": "raise_notes",
     "label": "Raise Notes",
     "description": "Free notes at raise time — not stored on the Record (no matching custom field).",

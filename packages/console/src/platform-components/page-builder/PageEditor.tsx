@@ -321,7 +321,7 @@ function CallbacksSection({ slotId, config, pagePath }: { slotId: string; config
             onEdit={() => setEditing({
               kind: 'callback',
               name: prop.name,
-              hint: `${prop.description ?? ''} — payload arrives as callbackData.value / callbackData.data`.replace(/^ — /, ''),
+              hint: `${prop.description ?? ''} — the emitted value arrives as callbackData.value`.replace(/^ — /, ''),
             })}
           />
         ))}

@@ -459,7 +459,6 @@ export interface RunInput {
   attributes?: Record<string, unknown>;
   waived?: Record<string, string>;
   acknowledgedWarnings?: boolean;
-  callbackData?: unknown;
 }
 
 /**
@@ -763,7 +762,6 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
         attributes: input.attributes ?? {},
         waived: input.waived,
         acknowledgedWarnings: input.acknowledgedWarnings,
-        callbackData: input.callbackData,
       })) as RunActivityResult;
     } finally {
       await this.refresh();

@@ -1,7 +1,7 @@
 # Data through activities — the read path, and guarding what comes back
 
-**Status: designed 2026-08-09. Nothing here is built.** This is the design
-record for a build that has not started; the build sequence is at the end.
+**Status: designed 2026-08-09; step 0 built 2026-08-09.** The build sequence is
+at the end — §4's removal is done, steps 1–5 have not started.
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -148,7 +148,7 @@ note telling authors to be careful.
 
 ---
 
-## 4. `callbackData` is removed
+## 4. `callbackData` is removed — **BUILT 2026-08-09**
 
 **Only the `data` half.** The name means two things at its two ends, which is
 what made this hard to discuss:
@@ -182,7 +182,7 @@ activity with attributes), `validateSubmission` checks the choice against the
 datasource, and the hooks read `attributes.crew`. No new mechanism is needed —
 which is why this step can be taken first, before any of the rest.
 
-### Removal surface
+### Removal surface — all done
 
 | Where | What |
 |---|---|
@@ -193,6 +193,16 @@ which is why this step can be taken first, before any of the rest.
 | page-runtime | the third argument through `services.activities.run` → `runActivity` → `ComponentContainer`; `packCallbackData` keeps `value` only; `WorkOrderList.onDispatch` emits the record alone, and its manifest text with it |
 | docs | GLOSSARY (`callbackData`, "Callback (page)"), engine / server / page-runtime SPECs, DSL_SPEC, PAGE_WIRING_DESIGN, CLIENT_TRUST_BOUNDARY §3 gap 1 |
 
+**As built.** The crew attribute is a `list` with the literal datasource
+`['Crew A', 'Crew B', 'Crew C']` — a declared producer, so `validateSubmission`
+already checks the submitted crew against it server-side (§3 tier 1, the
+mechanism that exists today). `required: true` replaced the before hook's null
+guard entirely, so the hook is gone: what the gate hand-checked, the pipeline
+now checks. Dispatch is no longer attribute-less, so it opens the standard
+capture form — from a page and from the workbench alike, which is the point.
+`extras` itself stays on `ScriptContext`: validation rules still inject `value`
+through it, and page callbacks still inject `callbackData`.
+
 ---
 
 ## 5. Build sequence
@@ -201,7 +211,7 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 
 | # | Step | Delivers |
 |---|---|---|
-| 0 | Remove the `data` half of `callbackData`; rewrite the dispatch crew as a captured attribute | the rule that values arrive as attributes; independent of everything below |
+| 0 | ✅ **BUILT 2026-08-09** — remove the `data` half of `callbackData`; rewrite the dispatch crew as a captured attribute | the rule that values arrive as attributes; independent of everything below |
 | 1 | GET in the engine — `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
 | 2 | A page names a GET for a dynamic prop instead of writing an inline expression | **the goal**: data requirements move out of the page and into the model |
 | 3 | Log GETs light; app record created or opened on first page open, as the anchor | observability, and the pipeline-is-the-log promise held for reads |

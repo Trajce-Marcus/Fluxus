@@ -278,7 +278,10 @@ takes `operationId?` (both default `demo/sdm`):
   sol-user resolver is dormant-open today, so a bypass would make the gate a
   no-op — someone who builds the solution adds themselves like anyone else.
 - **`activities.run`** `{ operationId?, activityId, recordId?, attributes, waived?,
-  acknowledgedWarnings?, callbackData? }` → `RunActivityResult`. The headless
+  acknowledgedWarnings? }` → `RunActivityResult`. There is no free-form side
+  channel: the `callbackData: z.unknown()` input was **removed 2026-08-09**
+  (DATA_THROUGH_ACTIVITIES §4) — every value a run carries arrives as a
+  declared attribute and goes through `validateSubmission`. The headless
   contract (DSL_SPEC §5): the activity's attribute list is its parameter
   signature; `validateSubmission` (engine) enforces the trio — show
   conditions (hidden ⇒ exempt from required, but supplying a hidden value is

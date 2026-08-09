@@ -1,6 +1,7 @@
 // Demo app component for Extraction stage 2: a hand-authored, model-blind
 // work order list whose named callbacks are wired (in the container config) to
-// activities. Note the callback contract: (record, data object).
+// activities. Note the callback contract: the anchor record, and nothing else
+// — what an activity needs it declares as attributes and captures itself.
 
 import type { PropSchema } from '../manifest';
 
@@ -14,8 +15,8 @@ export interface WorkOrderRow {
 
 interface WorkOrderListProps {
   workOrders: WorkOrderRow[];
-  /** Named callback: dispatch this work order. Emits (record, { crew }). */
-  onDispatch?: (record: string, data: { crew: string }) => void;
+  /** Named callback: dispatch this work order. Emits (record) — the activity's form captures the crew. */
+  onDispatch?: (record: string) => void;
   /** Named callback: reschedule. Emits (record) — the activity's form captures the rest. */
   onReschedule?: (record: string) => void;
 }
@@ -38,7 +39,7 @@ function WorkOrderListComponent({ workOrders = [], onDispatch, onReschedule }: W
               <td>{wo.due_date}</td>
               <td className="wol-actions">
                 {onDispatch && (
-                  <button className="wol-btn" onClick={() => onDispatch(wo.id, { crew: 'Crew A' })}>
+                  <button className="wol-btn" onClick={() => onDispatch(wo.id)}>
                     Dispatch
                   </button>
                 )}
@@ -72,7 +73,7 @@ const css = `
 
 const schema: PropSchema[] = [
   { name: 'workOrders',   kind: 'dynamic-data', type: 'array',    required: true,  description: 'Work order rows (id, location, status, crew, due_date)' },
-  { name: 'onDispatch',   kind: 'callback',     type: 'function', required: false, description: 'Dispatch a work order — emits (record, { crew })' },
+  { name: 'onDispatch',   kind: 'callback',     type: 'function', required: false, description: 'Dispatch a work order — emits (record); the activity captures the crew' },
   { name: 'onReschedule', kind: 'callback',     type: 'function', required: false, description: 'Reschedule a work order — emits (record)' },
 ];
 

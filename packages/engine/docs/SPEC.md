@@ -101,19 +101,22 @@ workbench deselects a deleted record).
 ## App-triggered runs (Extraction stage 2, ruled 2026-07-11)
 
 An app triggers an activity through a host's named-callback wiring; the
-callback contract is **(record, one data object)** — the host resolves the
-record to the anchor and passes the object as `options.callbackData`.
+callback contract is **the record alone** — the host resolves it to the anchor.
+An app-triggered run and a workbench run are then the same run.
 
-- **`callbackData` root** — the data object, injected as an embedding-point
-  extra root into both hooks (like `value` in validation rules); `null` on
-  direct (workbench-form) runs. The validator accepts it in any hook — every
-  activity may be app-triggered. Untyped (validated as UNKNOWN); its shape is
-  the solution builder's contract with their component.
+- **No side channel** (changed 2026-08-09, DATA_THROUGH_ACTIVITIES §4). The
+  `callbackData` root in hooks, `RunActivityOptions.callbackData` and the
+  server's `z.unknown()` pass-through are **removed**. Values reach an activity
+  as **declared attributes**, and get types, `required`, `validation`,
+  `show_condition`, storage and logging with them; an undeclared object off the
+  wire got none of those, and the hook author had to hand-check what the
+  pipeline checks for free everywhere else. `callbackData` survives only in
+  page callback scripts, as `{ value }` — the anchor, authorised on every run.
 - **UI vs non-UI activity** — with attributes, the host opens the standard
   capture form and the run proceeds normally; with no attributes there is
   nothing to fill in and the run passes straight to the hooks.
 - **Hook-written attributes** — hooks may assign onto the `attributes` root
-  (`attributes.crew = callbackData.crew`); new or changed keys land on the
+  (`attributes.wo = context.record.id`); new or changed keys land on the
   history entry alongside what the user typed. Enabled by the live-bag
   mechanism (`ScriptContext.liveAttributes`): the same object is shared with
   the evaluator un-copied, and the engine diffs it after the after hook. If

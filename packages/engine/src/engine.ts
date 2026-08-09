@@ -39,13 +39,6 @@ export interface ActivityAvailability {
 export interface RunActivityOptions {
   acknowledgedWarnings?: boolean;
   waived?: Record<string, string>;
-  /**
-   * The one data object an app-triggered run carries (Extraction stage 2).
-   * Hooks read it via the `callbackData` root; null/absent on direct runs.
-   * Which record to anchor on travels alongside it in the host's callback
-   * contract — it is the host's job to pass the right anchorRecord.
-   */
-  callbackData?: unknown;
 }
 
 export interface Engine {
@@ -167,8 +160,6 @@ export function createEngine({ store, config, services: hostServices = [], user 
       anchorRecord,
       activity: { id: activity.id, name: activity.name },
       user,
-      // The one data object of an app-triggered run; null on direct runs.
-      extras: { callbackData: options?.callbackData ?? null },
     };
 
     // before hook = gate (DSL_SPEC §6): read-only; fail() rejects the activity

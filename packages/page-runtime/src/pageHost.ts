@@ -23,19 +23,18 @@ import { buildDslSchema, buildEvalHost, functionSignatures } from '@fluxus/engin
 import type { ClientSolutionConfig, MemoryAdapter } from '@fluxus/engine';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
-// Components emit (value, data?) — a selection value or anchor record id, plus
-// an optional data object (the Extraction stage 2 contract). The host packs
-// both under one root so scripts see `callbackData.value` / `callbackData.data`.
+// Components emit one value — a selection value or anchor record id. The host
+// packs it under one root so scripts see `callbackData.value`. The free-form
+// `data` half was removed (DATA_THROUGH_ACTIVITIES §4): values reach an
+// activity as declared attributes, never as an undeclared object off the wire.
+// `value` stays because it is the anchor, and an anchor is authorised on every
+// run.
 
 export interface CallbackPayload {
   value: unknown;
-  data: unknown;
 }
 
-export const packCallbackData = (value: unknown, data: unknown): CallbackPayload => ({
-  value,
-  data: data ?? null,
-});
+export const packCallbackData = (value: unknown): CallbackPayload => ({ value });
 
 // ── services.page + services.activities ──────────────────────────────────────
 // Two modules with one handler set. `page` is honestly UI-only; `activities`
@@ -56,7 +55,7 @@ export interface PageServiceHandlers {
    * owns presentation: UI activities open the standard capture form; the
    * run's outcome (gate fail, soft-stop) surfaces through the host.
    */
-  runActivity(activityId: string, record: unknown, data: unknown): void;
+  runActivity(activityId: string, record: unknown): void;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -84,10 +83,10 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
       description: 'Run activities — the host-neutral mutation path',
       functions: {
         run: {
-          params: ['activityId', 'record', 'data'],
-          description: 'Run an activity: the anchor record (id or null) and the callback data object',
+          params: ['activityId', 'record'],
+          description: 'Run an activity on an anchor record (id, or null for a CREATE)',
           kind: 'effect',
-          fn: (activityId, record, data) => handlers.runActivity(String(activityId), record, data),
+          fn: (activityId, record) => handlers.runActivity(String(activityId), record),
         },
       },
     },

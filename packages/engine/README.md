@@ -7,8 +7,8 @@ that wires FluxScript evaluation/validation to a live store.
 
 **Status:** Extraction milestone complete (July 2026). Two live hosts: the sdm
 workbench and the page builder (`run-activity` callback action — app-triggered
-runs with the `callbackData` root, hook-written entry attributes, and
-`services.logger`).
+runs carrying the anchor record and nothing else, hook-written entry
+attributes, and `services.logger`).
 
 - Depends on `@fluxus/dsl` only. Hosts depend on this package and supply a
   `Store` implementation (or configure the bundled `LocalStorageAdapter`),

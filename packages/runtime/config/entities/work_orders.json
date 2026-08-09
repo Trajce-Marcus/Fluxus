@@ -225,20 +225,20 @@
       {
         "id": "act_dispatch_work_orders",
         "name": "Dispatch Work Order",
-        "description": "Dispatch this work order to a crew. Non-UI: no attributes, so an app trigger passes straight to the hooks with the crew in the callback data object (merged from the page-builder host sample at backend stage 2).",
+        "description": "Dispatch this work order to a crew. The crew is a captured list attribute, so the standard capture form opens whether the run comes from an app or the workbench, and validateSubmission checks the choice against the attribute's datasource.",
         "sort_order": 5,
         "show_condition": "context.record.status <> 'Dispatched' and context.record.status <> 'Completed'",
-        "attributes": [],
-        "before_hook": [
-          "if callbackData.crew is null {",
-          "  fail('Dispatch needs a crew — trigger it from an app with callback data { crew: ... }')",
-          "}"
+        "attributes": [
+          {
+            "attribute_ref": "crew",
+            "required": true
+          }
         ],
+        "before_hook": null,
         "after_hook": [
           "attributes.wo = context.record.id",
-          "attributes.crew = callbackData.crew",
-          "context.record.update({ status: 'Dispatched', crew: callbackData.crew })",
-          "services.logger.note('Dispatched ' + context.record.id + ' to ' + callbackData.crew)"
+          "context.record.update({ status: 'Dispatched', crew: attributes.crew })",
+          "services.logger.note('Dispatched ' + context.record.id + ' to ' + attributes.crew)"
         ]
       },
       {

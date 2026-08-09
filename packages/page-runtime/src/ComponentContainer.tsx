@@ -22,7 +22,6 @@ interface Props {
 interface PendingForm {
   activity: ActivityDef;
   anchorRecord: RecordInstance | null;
-  callbackData: unknown;
 }
 
 export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError }: Props) {
@@ -41,13 +40,11 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     activity: ActivityDef,
     captured: Record<string, string>,
     anchorRecord: RecordInstance | null,
-    callbackData: unknown,
   ): Promise<boolean> => {
     const input = {
       activityId: activity.id,
       recordId: anchorRecord?.id,
       attributes: captured,
-      callbackData,
     };
     let result = await runtime.client.runActivity(input);
     if (result.status === 'needs-confirmation') {
@@ -59,21 +56,22 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     return true;
   }, [runtime]);
 
-  // services.activities.run — the callback contract stays (record, data):
-  // UI activity (has attributes) → standard capture form; non-UI → straight
-  // to the hooks with the data object as the `callbackData` root.
-  const launchActivity = useCallback((activityId: string, record: unknown, data: unknown) => {
+  // services.activities.run — the callback contract is the anchor record
+  // alone: UI activity (has attributes) → standard capture form; attribute-less
+  // → straight to the hooks. Values reach the hooks only as declared
+  // attributes (DATA_THROUGH_ACTIVITIES §4).
+  const launchActivity = useCallback((activityId: string, record: unknown) => {
     const found = runtime.findActivity(activityId);
     if (!found) throw new Error(`Unknown activity '${activityId}'`);
     const anchorRecord = record === null || record === undefined || record === ''
       ? null
       : runtime.store.getRecord(String(record));
     if (found.activity.attributes.length > 0) {
-      setPendingForm({ activity: found.activity, anchorRecord, callbackData: data ?? null });
+      setPendingForm({ activity: found.activity, anchorRecord });
     } else {
       // Async now (server round trip): the callback script has already
       // returned, so failures surface through the host error channel.
-      runNow(found.activity, {}, anchorRecord, data ?? null).catch((err: unknown) => {
+      runNow(found.activity, {}, anchorRecord).catch((err: unknown) => {
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       });
     }
@@ -130,9 +128,9 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     if (prop.kind !== 'callback') continue;
     const source = config.callbacks[prop.name];
     if (!source) continue;
-    resolvedProps[prop.name] = (value: unknown, data?: unknown) => {
+    resolvedProps[prop.name] = (value: unknown) => {
       try {
-        runtime.runCallback(source, packCallbackData(value, data), pageCtx, serviceHandlers);
+        runtime.runCallback(source, packCallbackData(value), pageCtx, serviceHandlers);
       } catch (err) {
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       }
@@ -147,7 +145,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
         <ActivityFormModal
           activity={pendingForm.activity}
           anchorRecord={pendingForm.anchorRecord}
-          onSubmit={(captured) => runNow(pendingForm.activity, captured, pendingForm.anchorRecord, pendingForm.callbackData)}
+          onSubmit={(captured) => runNow(pendingForm.activity, captured, pendingForm.anchorRecord)}
           onClose={() => setPendingForm(null)}
         />
       )}

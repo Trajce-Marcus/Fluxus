@@ -40,12 +40,12 @@ One language, one validator, every surface (PAGE_WIRING_DESIGN):
 
 **Dynamic props are single expressions**, evaluated with **datasource posture**: `'read'` mode and a records host without a mutation surface, so effects and writes fail loudly. Results are flattened for SDM-blind components (`toComponentValue`: `DslRecord {id, type, fields}` → `{id, ...fields}`, FkPointers → raw ids).
 
-**Callbacks are scripts.** Components emit `(value, data?)`; the host packs both under the **`callbackData` root**. Scripts run in `'mutate'` mode (service effects execute) against a read-only records host — direct record writes throw: **mutations flow only through activities**. The validator's `'callback'` mode enforces the same statically.
+**Callbacks are scripts.** Components emit one `value`; the host packs it under the **`callbackData` root**, so scripts read `callbackData.value`. The free-form second argument was removed 2026-08-09 ([DATA_THROUGH_ACTIVITIES §4](../../../docs/DATA_THROUGH_ACTIVITIES.md)) — `value` stays because it is the anchor, and an anchor is authorised on every run; anything else an activity needs it declares as an attribute and captures itself. Scripts run in `'mutate'` mode (service effects execute) against a read-only records host — direct record writes throw: **mutations flow only through activities**. The validator's `'callback'` mode enforces the same statically.
 
 **`services.page` + `services.activities`** — two modules, one handler set (`PageServiceHandlers`, supplied per component instance by `ComponentContainer`):
 
 - `services.page` — UI-local effects only this host injects: `setContext(key, value)`, `hideComponent()`.
-- `services.activities.run(activityId, record, data)` — the host-neutral activity surface (ruled 2026-07-12): identical manifest across hosts, each host supplies its implementation. The only mutation path from a page; callback contract (record, one data object); outcomes flow back by re-evaluating dynamic props after the run.
+- `services.activities.run(activityId, record)` — the host-neutral activity surface (ruled 2026-07-12): identical manifest across hosts, each host supplies its implementation. The only mutation path from a page; the callback contract is the anchor record alone; outcomes flow back by re-evaluating dynamic props after the run.
 
 ## Page definition (pageDef.ts, layout.ts, manifest.ts)
 

@@ -154,13 +154,13 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
         }
       }
       // Hooks (scripts tier): before = gate (validate only), after = effects.
-      // `callbackData` is legal in any hook — every activity may be
-      // app-triggered (Extraction stage 2); it is null on direct runs.
+      // No extra roots: values reach a hook as declared attributes, never as a
+      // free-form object off the wire (DATA_THROUGH_ACTIVITIES §4).
       const hooks = activityHooks(activity);
       for (const phase of ['before', 'after'] as const) {
         const source = phase === 'before' ? hooks.before : hooks.after;
         if (!source) continue;
-        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions, extraRoots: ['callbackData'] })) {
+        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
           findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
         }
       }

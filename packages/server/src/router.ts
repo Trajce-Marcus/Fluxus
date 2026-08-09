@@ -816,7 +816,6 @@ export const appRouter = t.router({
           attributes: z.record(z.string(), jsonValue).default({}),
           waived: z.record(z.string(), z.string()).optional(),
           acknowledgedWarnings: z.boolean().optional(),
-          callbackData: z.unknown().optional(),
         }),
       )
       .mutation(async ({ ctx, input }): Promise<RunActivityResult> => {
@@ -859,7 +858,6 @@ export const appRouter = t.router({
             const result = host.engine.runActivity(activity, input.attributes, anchorRecord, {
               acknowledgedWarnings: input.acknowledgedWarnings,
               waived: input.waived,
-              callbackData: input.callbackData,
             });
             // needs-confirmation persists nothing by doctrine — the diff is
             // empty and write-back is a no-op, but skip it explicitly.

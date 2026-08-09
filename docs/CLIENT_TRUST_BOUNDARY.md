@@ -310,17 +310,20 @@ which already exists.
 
 ### Gap 1 — `callbackData: z.unknown()` (the sharpest)
 
-> **SUPERSEDED 2026-08-09 by [DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md).**
-> The resolution below is **withdrawn**: `callbackData`'s `data` half is
-> **removed**, not declared. A declaration strong enough to authorise turned
-> out to be the attribute-and-producer mechanism under another name, so there
-> was no third thing to design. Part 2's authority rule survives intact and is
-> restated there. The analysis below is kept as the record of how the gap was
-> found.
+> **CLOSED 2026-08-09 — the gap no longer exists.** Superseded by
+> [DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md) and then **built**
+> (its step 0): the resolution below is **withdrawn** — `callbackData`'s `data`
+> half is **removed**, not declared. A declaration strong enough to authorise
+> turned out to be the attribute-and-producer mechanism under another name, so
+> there was no third thing to design. The `z.unknown()` input, the hook root
+> and the third callback argument are gone; the demo dispatch captures its crew
+> as a list attribute, exactly as part 2 below predicted. Part 2's authority
+> rule survives intact and is restated there. The analysis below is kept as the
+> record of how the gap was found — read it in the past tense.
 
 Arbitrary client JSON handed straight to hooks as the `callbackData` root
-([router.ts:816](../packages/server/src/router.ts#L816)) — an unvalidated
-channel into server-side script execution.
+(then `router.ts`'s `callbackData: z.unknown()`) — an unvalidated channel into
+server-side script execution.
 
 **What it is for**, precisely, because the name is used twice: in a *page
 callback script* `callbackData` is the packed component payload
@@ -597,8 +600,9 @@ concept, two implementations.
 
 1. ~~**Trim by role**~~ — **DONE 2026-08-09.** Biggest security win per unit of
    work, and independent of everything else once `ClientSolutionConfig` exists.
-2. **Gap 1, `callbackData`** — independent of all of it, and the sharpest live
-   gap; it can go first if judged urgent.
+2. ~~**Gap 1, `callbackData`**~~ — **DONE 2026-08-09**, as step 0 of
+   [DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md): removed rather
+   than declared.
 3. **The signing seam** — then the operation handle (gap 2) and the
    confirmation token (gap 3), which are mechanical once one signer exists.
 4. **The stamp and hook history** — independent of the client work; do it
