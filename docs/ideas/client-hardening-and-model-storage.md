@@ -1,13 +1,18 @@
 # Idea: model storage split, client projection, and tamper-resistant runtime binding
 
-**Status:** design discussion 2026-08-08. **Nothing built.** Five interlocking threads that came out of one conversation.
+> **SUPERSEDED 2026-08-09. Historical discussion only — do not treat anything
+> below as current design.** All five threads have moved:
+>
+> - **1 (storage split)** — BUILT. → [packages/server/docs/SPEC.md](../../packages/server/docs/SPEC.md) "Model storage: the SDM config as tables". Table and column names endorsed; **activities stay inside their workflow** — the sixth table proposed here was rejected, since the change unit is the workflow and nesting also preserves activity order.
+> - **2–5** → [docs/CLIENT_TRUST_BOUNDARY.md](../CLIENT_TRUST_BOUNDARY.md), which is now the single doc for the whole design.
+>
+> Where the two disagree, that doc wins. Notably it **reverses** this file on
+> two points: thread 4's three-way page taxonomy collapses to two kinds (pages
+> about a record, and pure views), and thread 5's "app as a special record
+> type" is resolved as an **ordinary** record type, with the only special
+> behaviour living on the page.
 
-**Threads 1–3 are now specced** (2026-08-08), storage kept separate from security:
-
-- **1** → [packages/server/docs/SPEC.md](../../packages/server/docs/SPEC.md) "Model storage: the SDM config as tables". Table and column names endorsed; **activities stay inside their workflow** — the sixth table proposed here was rejected, since the change unit is the workflow and nesting also preserves activity order.
-- **2–3** → [docs/CLIENT_TRUST_BOUNDARY.md](../CLIENT_TRUST_BOUNDARY.md).
-
-**Threads 4–5 remain open discussion** — 5 in particular still needs the requirement tested against its three no-change resolutions before it is spec-able. Names marked *(unendorsed)* below still need the user's OK before they enter code or schema.
+**Status:** design discussion 2026-08-08. Five interlocking threads that came out of one conversation.
 
 **Why it hangs together:** all five are the same question asked at different layers — *what does the client actually need, and what must never be taken from it?*
 

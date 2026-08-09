@@ -1,30 +1,137 @@
-# Client trust boundary — projection, session binding, record handles
+# The record behind every run — client trust boundary, model trimming, audit
 
-**Status: designed 2026-08-08, NOT BUILT.** Spans engine / server / client,
-which is why it lives here rather than in one package. The storage half of the
-same conversation — splitting `sdm_configs` into tables — is deliberately kept
-apart, in [packages/server/docs/SPEC.md](../packages/server/docs/SPEC.md)
-"Model storage: the SDM config as tables". Threads 4–5 of the source discussion
-(page anchors, app-as-record-type) remain open in
-[docs/ideas/client-hardening-and-model-storage.md](ideas/client-hardening-and-model-storage.md).
+**Status: designed 2026-08-08/09. Not built, except the storage split
+(`sdm_configs` → six `sdm_*` tables), which shipped 2026-08-08/09 and is
+specced in [packages/server/docs/SPEC.md](../packages/server/docs/SPEC.md)
+"Model storage: the SDM config as tables".**
 
-Two questions, one boundary:
+This is the single doc for the whole design. It replaces the narrower
+client-trust version of 2026-08-08 and folds in the live parts of
+[docs/ideas/client-hardening-and-model-storage.md](ideas/client-hardening-and-model-storage.md),
+which is now the historical discussion only. It spans engine, server, client
+and the page builder, which is why it sits in root `docs/`.
+
+**The filename is stale** — this is no longer only about the client trust
+boundary. Rename needs endorsement; `GLOSSARY.md` links to it twice.
+
+Two questions started it:
 
 1. **What is the client given?** Today, the whole model. It should be a
-   projection.
+   trimmed copy.
 2. **What is the client allowed to say?** Today, its own operation, and an
    arbitrary JSON blob that reaches server-side script. Some of that should be
-   bound, not accepted.
+   held by the server, not accepted from the browser.
 
-The concepts have names: **server-authoritative state** (the client is a view,
-never a source of truth) and **"derive, don't accept"** (if the server can
-compute a value from what it already knows, it must never take that value as
-input). The attack classes closed are IDOR, parameter tampering and mass
-assignment.
+Answering the second properly turned out to need a third answer — **what is
+every run actually about?** — and that is now section 1, because the rest
+rests on it.
+
+The plain-language versions of the two ideas the design keeps returning to:
+**the client is a view, never a source of truth**, and **if the server can
+work a value out for itself, it must never take that value from the client**.
+Between them they close the classic mistakes: acting on someone else's record
+by guessing its id, editing a value in transit, and smuggling extra fields
+into a write.
 
 ---
 
-## 1. Model projection
+## 1. Every run is about a record
+
+**The rule, in full:**
+
+> Everything the runtime does is an activity. Every activity sits in a
+> workflow. Every workflow belongs to a record type. So every run is about
+> exactly one record — there is no path through the system that touches
+> nothing.
+
+UI and non-UI workflows differ only in whether a person drives them. The
+record, the history and the pipeline are identical. This is the one-pipeline
+idea taken all the way down.
+
+### Three shapes of record, one mechanism
+
+| Shape | What it is | Created by |
+|---|---|---|
+| **Entity record** | a Job, an Asset, an Invoice | a person, running a create activity |
+| **App record** | one instance of an app — "the dispatch board" | a create activity, run deliberately or on first page open (below) |
+| **Run record** | one execution of a non-UI workflow — the nightly geocode run | the trigger, as a create |
+
+**An app record is an ordinary record.** The record type is the app ("dispatch
+board"); each instance is a row of it, exactly like two Jobs. Two groups in one
+operation each running their own board are simply two records, and "which
+instance did this relate to" is answered the same way it is for any record.
+Nothing in the record type marks it as an app — see §7, where the only special
+thing (how you arrive at the record) lives on the page instead.
+
+**A run record is the act itself.** "Geocode all jobs" leaves a record of the
+run, and that record's history is the run's story. An act that leaves no trace
+would contradict the platform.
+
+### The id comes out of a create, not into it
+
+For a create, the record does not exist when the request is made, so the id is
+produced by the run, not supplied to it. The rule is *every run is about
+exactly one record*, not *every run is handed a record id*. This matters
+directly to §3: the client can never be asked for an id on a create, and
+today's hard error for supplying one stays.
+
+### Two records in play at once is normal
+
+On an app page there is the record the page is about, and whatever record an
+individual activity acts on. Both are real. Which applies to a given run is
+decided by the activity, exactly as it is today — an activity's workflow tells
+you its record type. "Dispatch this work order" anchors on the work order;
+"publish the board" anchors on the board.
+
+So history lands in two places, and that is correct: the work order's history
+says it was dispatched, the board's history says it was published. Neither is a
+copy of the other. Where you want the two connected — which board a dispatch
+came from — the dispatch activity captures the board id as an attribute, which
+makes it a real field: validated, queryable, and present in reporting.
+
+This closes the old "multiple record contexts on one page" question. There is
+always exactly one record the *page* is about, and any number of records acted
+on inside it.
+
+### The way in is always an activity
+
+> No client, no page, no API call may touch a record except by running an
+> activity. What a hook does once inside — already authorised, already inside a
+> transaction — is the workflow author's business.
+
+So an after hook may update and create records of **other** record types,
+directly and in bulk, with no registered activity on the target. This is not a
+new exception; it is already how the code works
+([validator.ts:696-706](../packages/dsl/src/validator.ts#L696-L706) — before
+hooks, expressions and page callbacks all refuse mutations, after hooks allow
+them). CLAUDE.md's "records are never edited directly" was written about the
+outside surface only, and reads as broader than it is.
+
+Two reasons not to require an activity on the target, the second stronger:
+
+1. **Coupling.** The hook would have to name activity ids belonging to another
+   workflow. Renames break it, and the wiring is tedious enough to be a bug
+   source in its own right.
+2. **Cascade.** Those target activities have hooks of their own, which could
+   call further activities — a chain nobody declared and nothing bounds. Direct
+   writes have no such chain.
+
+The audit cost this creates is paid in §5.
+
+### Triggering a workflow from a workflow
+
+An after hook that wants to start a separate process — "invoice this customer"
+— creates a record in the other type. That create is an ordinary activity, so
+it goes through the pipeline like everything else and leaves history. A runner
+picks the record up afterwards (§6).
+
+Writing the intent as a record inside the first run's transaction, and doing
+the work later, gives both properties you want: the second run happens only if
+the first commits, and it can be retried without repeating the first.
+
+---
+
+## 2. What the client is given
 
 **Today.** `config.get` returns the entire `SolutionConfig`, unfiltered — no
 role filter, no trimming. Records *are* filtered, by `computeReadable`. That
@@ -41,27 +148,25 @@ endpoint that filters harder — it is two endpoints with different audiences.
 
 - **`config.get` `{ solutionId }` → `SolutionConfig`** — the design plane.
   Unchanged in shape, but **tightened to sol admin** (it is the authoring
-  door; `config.put` already requires sol admin, and read/write of a model are
-  the same privilege in a one-grade world). `FluxusClient.connectSolution`
+  door; `config.put` already requires sol admin, and read and write of a model
+  are the same privilege in a one-grade world). `FluxusClient.connectSolution`
   keeps using it.
 - **`config.getForOperation` `{ operationId }` → `ClientSolutionConfig`** —
-  the runtime plane. Keyed on the **operation**, not the solution, because the
-  projection is computed against the caller's roles *in that operation*.
+  the runtime plane. Keyed on the **operation**, not the solution, because what
+  survives the trim is decided by the caller's roles *in that operation*.
   `FluxusClient.connect` switches to it.
 
-Names endorsed 2026-08-08: **`ClientSolutionConfig`** (the narrow type) and
-**`config.getForOperation`** (the runtime door).
+### One pure function, and it names what goes in
 
-### One pure function, whitelist not blacklist
-
-The projection is **one pure server-side function** —
+The trim is **one pure server-side function** —
 `projectConfig(config, { roles, enforced }) → ClientSolutionConfig` — so there
 is a single place to audit and a single place to test.
 
-It **builds its output by naming each field that goes in.** A blacklist
-(`delete config.hooks`) leaks every field added to the model later, until
-somebody remembers. A whitelist makes new fields invisible until deliberately
-exposed. This is the rule the whole section rests on.
+It **builds its output by naming each field that goes in.** Removing fields
+instead (`delete config.hooks`) leaks every field added to the model later,
+until somebody remembers. Naming what goes in makes new fields invisible until
+somebody deliberately exposes them. This is the rule the whole section rests
+on.
 
 | | Ships to the client | Stripped |
 |---|---|---|
@@ -78,21 +183,36 @@ Hooks are the prize: business logic and every effect never leave the server.
 inline validation, they are not secret (the user discovers the rule by hitting
 it anyway), and the server revalidates regardless.
 
-**Function reachability** is the fiddly part. MVP: ship every function
-referenced by any shipped expression, with no transitive pruning. Tighten only
-if it turns out to matter.
+**Function reachability** is the fiddly part. First cut: ship every function
+referenced by any shipped expression, with no further pruning. Tighten only if
+it turns out to matter.
 
 ### Make the type system enforce it
 
 Define `ClientSolutionConfig` first, then have `SolutionConfig` **extend** it.
 Client-side code typed against the narrow one then *cannot compile* a
-reference to `before_hook` — the projection becomes structurally unreachable
-rather than merely filtered at runtime. Add one test asserting the projection
-output contains no hook keys anywhere, and the guarantee survives model growth.
+reference to `before_hook` — the trim becomes structurally unreachable rather
+than merely filtered at runtime. Add one test asserting the output contains no
+hook keys anywhere, and the guarantee survives model growth.
+
+### Two cuts, not one
+
+Trimming by **role** — this person's readable types and runnable activities —
+is the security win, and it is what `projectConfig` above does.
+
+Trimming by **page** is the payload win, and it is much the larger of the two.
+A page is about one record type, so it needs that type, its workflow, and what
+it reaches through relationships — not everything the user could touch anywhere
+in the operation. It also shrinks as the model grows, where the role cut grows
+with it.
+
+Both are the same function: `projectConfig(model, { roles, page })` rather than
+`{ roles }`. The page cut is blocked on §7 and is the only part of this
+document that is.
 
 ### What this costs the client
 
-`MemoryAdapter` is constructed from the config on every host. Under projection
+`MemoryAdapter` is constructed from the config on every host. Under the trim
 the runtime plane hands it a `ClientSolutionConfig`, so its parameter type
 widens to the narrow one. Hooks arrive absent, which is already a legal state
 (`before_hook: null`), and safe: **the client never executes hooks** — scripts
@@ -100,60 +220,59 @@ and persistence are server-side by ruling, and the client evaluates
 expressions only (`show_condition`, `validation`, datasources). The Console is
 unaffected: it still receives the full model through `config.get`.
 
-**Interlock with the storage split.** Once the model is rows, the projection
-selects the columns and rows it wants instead of trimming a blob, and
-"unrunnable activities" starts to look like a `WHERE` clause rather than a
-filter pass.
+**The storage split helps.** Now that the model is rows rather than one blob,
+the trim selects the columns and rows it wants, and "unreadable types" and
+"unrunnable activities" become `WHERE` clauses rather than a filter pass.
 
 ---
 
-## 2. What the client may say
+## 3. What the client may say
 
 Every input to `activities.run` falls into one of three classes, decided by a
 single question: **does this value vary per request?**
 
 | Class | Values | Treatment |
 |---|---|---|
-| **Bound** | org, solution, operation, user, roles | never accepted from the client |
-| **Selected** | `activityId`, `recordId`, `attributes`, `waived` | must be accepted; authorized on every use |
-| **Derived** | record type, `record_map`, CREATE-vs-anchored, field mapping | never accepted (already true) |
+| **Held by the server** | org, solution, operation, user, roles | never accepted from the client |
+| **Chosen by the user** | `activityId`, `recordId`, `attributes`, `waived` | must be accepted; authorised on every use |
+| **Worked out by the server** | record type, `record_map`, create-vs-anchored, field mapping | never accepted (already true) |
 
-**Bind what's constant, authorize what varies, derive everything else.**
+**Hold what's constant, authorise what varies, work out the rest.**
 
-A record id **cannot** be bound. The user picks it from a list at the moment of
-acting, so it varies per request by definition and there is nothing to bind it
-to. Its protection is authorization on every use — which already exists.
+A record id **cannot** be held server-side. The user picks it from a list at
+the moment of acting, so it varies per request by definition and there is
+nothing to hold it against. Its protection is authorisation on every use —
+which already exists.
 
 ### Already correct today (verified in code)
 
-- **Record type is derived from the activity**, never accepted:
-  `record_map` decides CREATE vs anchored; supplying a `recordId` to a CREATE
+- **Record type is worked out from the activity**, never accepted:
+  `record_map` decides create vs anchored; supplying a `recordId` to a create
   is a hard error, omitting it on an anchored activity likewise
-  ([router.ts:759-776](../packages/server/src/router.ts#L759-L776)).
+  ([router.ts:831-848](../packages/server/src/router.ts#L831-L848)).
 - **User and roles come from the JWT**, resolved per operation before the
   engine exists.
 - **`waived` is validated** against `can_waive` and applicability; forged
   waivers are rejected.
-- **Unknown attribute keys are dropped** by exact-key mapping — mass-assignment
-  defence, already in place.
+- **Unknown attribute keys are dropped** by exact-key mapping — the defence
+  against smuggling extra fields into a write, already in place.
 - **Anchor readability is checked before the gate**, and denied as *not-found*
   so a hidden record is indistinguishable from a missing one.
 
 ### Gap 1 — `callbackData: z.unknown()` (the sharpest)
 
 Arbitrary client JSON handed straight to hooks as the `callbackData` root
-([router.ts:744](../packages/server/src/router.ts#L744)) — an unvalidated
+([router.ts:816](../packages/server/src/router.ts#L816)) — an unvalidated
 channel into server-side script execution.
 
-**What it is for** (worth stating precisely, because the name is used twice):
-in a *page callback script* `callbackData` is the packed component payload
+**What it is for**, precisely, because the name is used twice: in a *page
+callback script* `callbackData` is the packed component payload
 `{ value, data }` and never leaves the browser; in a *hook* it is the one data
-object of an **app-triggered run**, arriving over the wire when a page callback
-calls `services.activities.run(activityId, record, data)`. It is therefore a
-real capability of app pages — the channel by which a component supplies a
-value that is not a captured attribute — not scaffolding, and not (as first
-described) a service-callback mechanism. The demo dispatch page is its only
-current user, but removing it would remove the capability, not just the demo.
+object of an app-triggered run, arriving over the wire when a page callback
+calls `services.activities.run(activityId, record, data)`. It is a real
+capability of app pages — the channel by which a component supplies a value
+that is not a captured attribute — not scaffolding. The demo dispatch page is
+its only current user, but removing it would remove the capability.
 
 **The hole is authority, not shape.** The demo passes `{ crew: 'Crew A' }`; the
 before hook checks the crew is *present*, and nothing checks it is a **real**
@@ -171,50 +290,57 @@ contract.
    nothing.
 2. **State the authority rule, and hold to it.** `callbackData` is client
    input exactly like `attributes`: it may inform a hook, and it may **never**
-   be the basis of an authorization decision. Anything authorization-bearing is
-   either derived server-side or captured as an attribute — where it also gains
-   type validation, waiver handling and a row in the reporting projection. The
-   demo's crew is the worked example: as a list attribute with a datasource it
-   becomes validated *and* queryable, which the blob never was.
+   be the basis of an authorisation decision. Anything authorisation-bearing is
+   either worked out server-side or captured as an attribute — where it also
+   gains type validation, waiver handling and a row in the reporting
+   projection. The demo's crew is the worked example: as a list attribute with
+   a datasource it becomes validated *and* queryable, which the blob never was.
 
 The declaration format is not specified here — it is an SDM change and belongs
-with the attribute-type work, not in this document.
+with the attribute-type work.
 
 ### Gap 2 — `operationId` on every call
 
 The client names its own scope on every request. It *is* checked
 (`resolveUser` → `requireOpUser`), so this is not a hole — it is the prime
-candidate for binding. **Direction: bind at connect, hand back a key, stop
-accepting it** (see the operation handle below). Same for `solutionId` on the
-design plane.
+candidate for being held server-side instead. **Direction: fix it at connect,
+hand back a key, stop accepting it** (§4). Same for `solutionId` on the design
+plane.
 
 ### Gap 3 — `acknowledgedWarnings: boolean`
 
-The client asserts that the user saw the warnings. **Resolution:** the
+The client asserts that the user saw the warnings
+([router.ts:815](../packages/server/src/router.ts#L815)). **Resolution:** the
 `needs-confirmation` result carries a **confirmation token** — the warnings the
 server actually issued, signed — and the re-run must return it. The
-acknowledgement then references warnings that exist, instead of asserting a
-state of mind. Name endorsed 2026-08-08: **confirmation token**.
+acknowledgement then refers to warnings that exist, instead of asserting a
+state of mind.
 
 ---
 
-## 3. Signed handles
+## 4. Signed handles
 
-One primitive, three uses. A **handle** is a small signed JSON blob the server
-issues and the client returns: HMAC-SHA256, a **key id** so signing keys rotate
-without invalidating everything, and a short **TTL**.
+**The choice, and why.** If the client is handed less, something has to
+remember on the server side. Two ways: keep it in a real session (server holds
+the facts, client holds a key — costs storage, and either sticky sessions or a
+shared store), or put the facts in a small signed blob and let the client carry
+it back. **We take the second.** Nothing is stored, nothing is sticky.
+
+A **handle** is that blob: a small piece of signed JSON the server issues and
+the client returns — HMAC-SHA256, a **key id** so signing keys rotate without
+invalidating everything, and a short expiry.
 
 **Signed, not encrypted.** Signing gives integrity; encryption gives
 confidentiality, and there is nothing here to conceal — everything in a handle
 is already visible in the user's own UI. The design rule that keeps it that
 way: **never put anything in a handle the user is not already entitled to
-see**, and the question never arises. (Historical support: ViewState was MAC'd
-by default and *not* encrypted by default, and the famous 2010 break was
+see**, and the question never arises. (Historical support: ViewState was
+signed by default and *not* encrypted by default, and the famous 2010 break was
 against the encryption path. Encryption done wrong is worse than signing done
 right.)
 
 **Integrity, never authority.** A handle can be replayed after the user's roles
-change, so **every run re-authorizes exactly as it does today**. Anything that
+change, so **every run re-authorises exactly as it does today**. Anything that
 skips a check because "the handle says so" is the bug this design exists to
 prevent.
 
@@ -222,69 +348,216 @@ prevent.
 
 Issued at `connect`, carrying `{ org, solution, operation, kid, exp }`.
 Subsequent calls present it instead of naming an `operationId`, and the server
-reads the operation off the handle. This is the ASP.NET **Session** idea taken
-correctly — keep the ids server-side, hand out a key — without Session's cost,
-since nothing is stored and no sticky sessions are required. The user and their
-roles still come from the JWT, not the handle.
+reads the operation off the handle. The user and their roles still come from
+the JWT, not the handle.
 
-### Record handle (coherence)
+### Page handle
 
-When the server serves one record for column-3-style work it returns, alongside
-the details and the available activities, a handle attesting
+When a page opens on a record, the server returns — alongside the record and
+the activities available on it — a handle attesting
 `{ operation, record, version, activities offered, kid, exp }`. The client
-returns it with the run. `version` is the record's `updated_at` — there is no
-version column on `records` today and this does not add one.
+returns it with every run fired from that page. `version` is the record's
+`updated_at`; there is no version column on `records` today and this does not
+add one.
 
-**The gain is not primarily security.** If a client swaps record X for Y
-between "show activities" and "run", the run re-authorizes Y anyway; the
+**The gain is mostly coherence, not security.** If a client swaps record X for
+Y between "show activities" and "run", the run re-authorises Y anyway; the
 attacker gains nothing they could not get by opening Y directly. The real win
-is **coherence**: the activity list was computed against the record as it stood
-at that moment, and between render and click the record may have moved. Nothing
-currently connects the offer to the execution — a correctness problem, not a
-tampering one. So the handle buys: *changed since you were shown it*, and
-*this is something the server actually advertised*.
+is that the activity list was worked out against the record as it stood at that
+moment, and between render and click the record may have moved. Nothing
+currently connects the offer to the execution. So the handle buys two things:
+*changed since you were shown it*, and *this is something the server actually
+advertised*.
 
-**Plural by construction.** One handle per open record, so tabs, related-record
+**Plural by construction.** One handle per open page, so tabs, related-record
 pivots and multi-record pages each carry their own. This is why a session-held
 "current record" is **rejected**: a browser is not one linear conversation, and
 a single slot collapses contexts that legitimately coexist.
 
 ### The issuing rule
 
-> **Handle when the user opens one record and works within it. No handle when
-> acting on a row from a collection — authorize per run.**
+> **Handle when a page is open on a record. No handle for a row acted on from
+> a collection — authorise per run.**
 
-Overhead is why the rule exists: ~200–250 bytes of JSON plus a 32-byte MAC ≈
-**350–450 bytes base64**, negligible beside a Postgres round trip — *unless*
-one is minted per grid row, where 500 rows × ~400 bytes ≈ 200KB reproduces
-precisely the ViewState mistake.
+Overhead is why the rule exists: ~200–250 bytes of JSON plus a 32-byte
+signature ≈ **350–450 bytes base64**, negligible beside a Postgres round trip —
+*unless* one is minted per grid row, where 500 rows × ~400 bytes ≈ 200KB
+reproduces precisely the ViewState mistake.
 
 Applied today: **workbench column 3 mints one**; `RecordsGrid` (column 2) mints
-nothing, and the runs it fires are CREATE with a null anchor anyway, so there
-is nothing to attest to. Where else handles are issued depends on the page
-taxonomy (record page / app page / pure view), which is thread 4 and **out of
-scope here** — this document specifies the primitive, not its full deployment.
+nothing, and the runs it fires are creates with no anchor anyway, so there is
+nothing to attest to.
 
-**Rejected:** an indirect object reference map (per-session opaque token → real
-record id). It stops *enumeration* only; it does not stop unauthorized access,
-which deny-as-not-found already handles. Real cost in every read path,
-marginal gain.
+**Rejected:** a per-session map of fake ids to real record ids. It hides
+*enumeration* only; it does not stop unauthorised access, which
+deny-as-not-found already handles. Real cost in every read path, marginal gain.
+
+### Expiry and refresh
+
+Short expiry is what makes a handle safe, but an app page — a dispatch board —
+may stay open all day and will fail on the next activity once its handle
+lapses. So a refresh path is part of the design, not an afterthought: an
+expired-but-valid handle can be exchanged for a fresh one, subject to the same
+authorisation as issuing it in the first place.
+
+---
+
+## 5. Audit: the stamp and the hook history
+
+Because a hook may write other records directly (§1), those records would
+otherwise change with nothing on them saying why. Two things fix that, and
+between them they stay small.
+
+### The stamp — the quick answer
+
+Every record written by a hook is stamped with **who, when, and which
+activity**. It rides the `UPDATE` that is already happening, so it costs no
+extra rows and no extra queries, and it shows on any record view without a
+join. It is destructive by nature — each write overwrites the last.
+
+Needs new columns on `records`; **column names to endorse.**
+
+### Hook history — the trail
+
+A separate append-only table, one row per record written by a hook, **holding
+pointers rather than values**:
+
+| Column | |
+|---|---|
+| affected record type | |
+| affected record id | |
+| initiating record id | which run — without this you know *an* activity touched the record, not *which execution* |
+| activity id | the activity whose hook did the write |
+| user | |
+| timestamp | |
+
+**Creates are included**, not just modifications. There is deliberately **no
+created-vs-modified flag**: a record whose earliest entry across both logs is a
+hook row was created by that hook, so the flag is derivable and derivable data
+is not stored.
+
+**One row per record per run** — a hook that writes the same record twice does
+not produce two rows.
+
+**Why a table and not the existing history.** Activity history is a jsonb array
+on the record itself, plus a row in `rpt_activities`. Folding hook writes into
+it would mean growing 500 arrays a night for one geocode workflow, without
+bound, on records that are also hot. A separate table with pointer-sized rows
+is roughly 200k rows a year for that workflow — an ordinary Postgres table.
+
+**Why now and not later.** The stamp is destructive, so a table added in six
+months starts empty and the intervening history is gone for good. Everything
+else in this design is append-only; a gap here would be permanent.
+
+**What it does not give you.** "This activity run touched this record then",
+not "this field went from A to B". If a hook writes different values to
+different records, the trail tells you which records, not what each one got.
+Where the full series matters on a target, use a real activity on that target.
+
+**Retention:** noted as a class that can carry its own policy later. Not built
+now.
+
+**Held in reserve:** the same table could carry a pointer for *every* activity
+that modifies a record, not just hook writes — one format for everything, and
+"what touched this record" becomes an indexed query instead of reading a jsonb
+array per record. Deferred deliberately: both logs are pointers, so filling it
+from existing activity history later is a straight copy.
+
+Table and column names **to endorse**; "hook history" names the mechanism
+rather than the thing (what distinguishes these entries is that the change was
+a side effect of an activity on a *different* record), so the name should be
+picked deliberately when the table is built.
+
+---
+
+## 6. The runner (later work)
+
+A runner wakes on a schedule and runs a workflow. That run gets its own record,
+like any other. The first activity is a query, and there are two shapes:
+
+1. **Upstream marks the work.** Earlier workflows leave records flagged ready;
+   the scheduled workflow queries for them and proceeds. Scales better —
+   "ready" is a field, and a field is indexable.
+2. **The workflow finds its own work.** No invoice records exist; the invoice
+   workflow scans jobs, decides which are ready, and creates the records as it
+   goes. Simpler to start with.
+
+Both are legitimate; the difference is only who decides readiness.
+
+**Nothing new in the model is required.** An earlier draft of this design
+claimed the runner would need the model to express "what happens next". With a
+schedule as the trigger and a query as the selector, it does not — there is no
+waiting state anywhere. That only returns if a workflow must stop half way and
+resume later, which is not this.
+
+Not built. Picked up after the sections above.
+
+---
+
+## 7. The one open question: how a page reaches its record
+
+Everything else here is settled. This is not, and the per-page trim (§2) waits
+on it.
+
+**Today** pages are a path plus a jsonb blob
+([schema.ts:419-426](../packages/server/src/db/schema.ts#L419-L426)) —
+nothing says what record type a page is about, and the record is passed per
+component, call by call.
+
+**Direction.** The declaration goes on the **page**, not the record type: a
+page names the record type it is about, and whether that type has one instance
+or many.
+
+- **One instance** (a board that is simply "the board" for an operation) —
+  find-or-create when the page opens. Creating it at page open rather than at
+  the first activity is deliberate: the page's handle and its trimmed slice of
+  the model are keyed on the record, so if the record only appeared at the
+  first activity, the page would render with nothing to sign and the first run
+  would be the one case that could not ride the normal path. The create still
+  runs as a create activity on the user's behalf, so the record's history
+  starts with "created" like every other record.
+- **Many instances** (two groups, two boards) — the id arrives in the URL and
+  nothing is created.
+
+**Record types stay ordinary.** No marker says "this is an app". The only
+special thing is how you arrive at the record, and that lives on the page.
+
+**Rejected:** copying the app id and the page id onto the record as fields. The
+record's type already *is* the app, and a record can be shown by more than one
+page, so a single page id on the record would be wrong as soon as there is a
+second view of it.
+
+**Still to decide:** the **URL shape** for reaching a record page, since it has
+to carry the record id. New route structure; needs endorsement.
+
+Workbench column 3 is the built-in instance of the same concept — the record UI
+every SDM gets free; an authored record page is the customisable version. One
+concept, two implementations.
 
 ---
 
 ## Sequencing
 
-1. **Projection** — biggest security win per unit of work, and independent of
+1. **Trim by role** — biggest security win per unit of work, and independent of
    everything else once `ClientSolutionConfig` exists.
 2. **Gap 1, `callbackData`** — independent of all of it, and the sharpest live
    gap; it can go first if judged urgent.
-3. **The signing seam** — then the operation handle (gap 2) and the confirmation
-   token (gap 3), which are mechanical once one signer exists.
-4. **Record handles** — last, since their issuing rule is entangled with the
-   page taxonomy still under discussion.
+3. **The signing seam** — then the operation handle (gap 2) and the
+   confirmation token (gap 3), which are mechanical once one signer exists.
+4. **The stamp and hook history** — independent of the client work; do it
+   before much data accumulates.
+5. **Page handles, the page declaration and the per-page trim** — together,
+   after §7 is settled.
+6. **The runner** — last.
 
-## Names (endorsed 2026-08-08, none in code yet)
+## Names
 
-`ClientSolutionConfig` · `config.getForOperation` · **projection** ·
-**handle** · **operation handle** · **record handle** · **confirmation
-token**. All carry GLOSSARY entries.
+**Endorsed 2026-08-08:** `ClientSolutionConfig` · `config.getForOperation` ·
+**projection** · **handle** · **operation handle** · **record handle** (now
+*page handle*, since it is issued per open page) · **confirmation token**.
+
+**Used in this document, not yet endorsed:** *app record* · *run record* ·
+*hook history* (and its table and column names) · the stamp columns on
+`records` · *runner* · the record-page URL shape.
+
+GLOSSARY carries the endorsed set; the rest go in when they are settled.
