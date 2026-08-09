@@ -14,6 +14,11 @@
 
 The rest of this document is design, not code.
 
+**§3 gap 1 is superseded** by
+[DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md) (2026-08-09), which
+also carries the read path — GET activities — and the guarding rule that
+replaces it. Everything else here stands.
+
 This is the single doc for the whole design. It replaces the narrower
 client-trust version of 2026-08-08 and folds in the live parts of
 [docs/ideas/client-hardening-and-model-storage.md](ideas/client-hardening-and-model-storage.md),
@@ -304,6 +309,14 @@ which already exists.
   so a hidden record is indistinguishable from a missing one.
 
 ### Gap 1 — `callbackData: z.unknown()` (the sharpest)
+
+> **SUPERSEDED 2026-08-09 by [DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md).**
+> The resolution below is **withdrawn**: `callbackData`'s `data` half is
+> **removed**, not declared. A declaration strong enough to authorise turned
+> out to be the attribute-and-producer mechanism under another name, so there
+> was no third thing to design. Part 2's authority rule survives intact and is
+> restated there. The analysis below is kept as the record of how the gap was
+> found.
 
 Arbitrary client JSON handed straight to hooks as the `callbackData` root
 ([router.ts:816](../packages/server/src/router.ts#L816)) — an unvalidated
