@@ -1,0 +1,25 @@
+-- Drop `sdm_configs` — the last copy of the model that was not the model.
+--
+-- Migration 0019 moved the SDM into six tables and left this row behind as a
+-- DERIVED snapshot, refreshed on every write so `config.get` stayed a single
+-- fetch. That justification was wrong by one day's thought: assembling the model
+-- from the six tables is also a single fetch — `jsonb_agg` subqueries in one
+-- SELECT, ordered by identity (see `getSolutionConfig`). The snapshot bought
+-- nothing, and it was duplication of the worst shape: hosts read the snapshot,
+-- so any drift between it and the tables would have run every host on a model
+-- the truth disagreed with, invisibly.
+--
+-- The row had a second job — the `SELECT … FOR UPDATE` that serialises
+-- validation per solution while keeping writes per entity. That moves to the
+-- solution's own row in `solutions`: a lock needs one row both writers reach
+-- for, not a row of its own, and "lock the solution to change its model" is what
+-- was meant all along.
+--
+-- `sdm_config_versions` is deliberately untouched. A published version is a
+-- whole immutable config, but that is history — an artifact for install, share
+-- and rollback — not a second copy of live truth.
+--
+-- Nothing is lost: 0019 already backfilled every row of this table into the six.
+-- The column being dropped is reconstructible from them at any time, which was
+-- the point of calling it derived.
+DROP TABLE "sdm_configs";

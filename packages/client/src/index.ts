@@ -527,10 +527,11 @@ export class FluxusClient {
     const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
     const { solutionId, operationId } = options;
     // pages.list is the reachability probe (it never throws for an existing
-    // solution); config.get throws SolutionNotFoundError for a solution that
-    // has no config row yet — a freshly created solution the user is opening to
-    // author. Fall back to an empty model skeleton so the SDM editor starts
-    // blank and the first save (config.put) creates the row.
+    // solution). The catch is now belt-and-braces: since the model moved into
+    // tables (2026-08-09) a solution with nothing authored yet simply assembles
+    // to the empty model, and `config.get` throws only for a solution that does
+    // not exist — which this call has no way to recover from anyway. Kept so an
+    // older server still opens the editor blank rather than failing boot.
     const [pageRows, config, partition] = await Promise.all([
       trpc.pages.list.query({ solutionId, published: false }),
       (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch(

@@ -9,7 +9,7 @@
 // the *consistency* unit stays the whole graph.
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
 import { sdmAttributes, sdmMenus, sdmRecordTypes, sdmRoles } from '../src/db/schema';
 import {
@@ -112,7 +112,7 @@ describe('put', () => {
       .rejects.toThrow(/carries no 'key'/);
   });
 
-  it('creates the config row for a solution that has none', async () => {
+  it('authors into a solution that has no model yet', async () => {
     await ensureSolution(db, 'test/blank', 'Blank');
     await stub().config.putWorkflow({
       solutionId: 'test/blank',
@@ -276,6 +276,21 @@ describe('the tables are truth', () => {
     await stub().config.put({ solutionId: SOL, config });
     const rows = await db.select().from(sdmAttributes).where(eq(sdmAttributes.solutionId, SOL));
     expect(rows.map((r) => r.key)).toEqual(['name']);
+  });
+
+  // Step 3 (2026-08-09): the derived snapshot is gone — the tables are the only
+  // copy, and the model is assembled on read.
+  it('there is no second copy of the model', async () => {
+    const res = await db.execute(
+      sql`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name = 'sdm_configs'`,
+    );
+    const rows = (res as unknown as { rows: { n: number }[] }).rows;
+    expect(rows[0].n).toBe(0);
+  });
+
+  it('a solution with nothing authored yet reads as the empty model', async () => {
+    await ensureSolution(db, 'test/blank2', 'Blank');
+    expect(await getSolutionConfig(db, 'test/blank2')).toEqual({ attributes: [], recordTypes: [], workflows: [] });
   });
 
   it('a model cannot exist without its solution', async () => {

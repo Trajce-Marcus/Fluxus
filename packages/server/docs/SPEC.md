@@ -41,8 +41,8 @@ src/db/schema.ts       — Drizzle schema: orgs + solutions + operations (the ti
                          sol_admins (governance store, §2a),
                          sdm_attributes/_workflows/_record_types/_functions/
                          _roles/_menus (the model, one table per collection —
-                         truth since 2026-08-08), sdm_configs (its DERIVED
-                         snapshot) + pages (solution-keyed design artifacts),
+                         the ONLY copy since 0020 dropped the derived
+                         sdm_configs snapshot), pages (solution-keyed),
                          page_versions (append-only published snapshots, §3),
                          records (transactional, operation-keyed),
                          rpt_activities + rpt_attributes (reporting,
@@ -536,7 +536,7 @@ The node-postgres pool handles idle-client `'error'` events (logged, client
 discarded and replaced on next query) — Neon reaps idle connections
 server-side, and an unhandled error event would crash the process.
 
-## Model storage: the SDM config as tables (**BUILT 2026-08-08**, steps 1 and 2)
+## Model storage: the SDM config as tables (**BUILT 2026-08-08**, steps 1–2; the derived snapshot dropped 2026-08-09)
 
 Until 2026-08-08 one jsonb blob per solution (`sdm_configs.config`) held
 attributes, record types, workflows, functions and `access.roles`. The mismatch
@@ -615,11 +615,16 @@ per-collection either way.
 - **`sdm_config_versions`** — untouched. Publish still assembles the graph into
   one immutable jsonb snapshot; that is already the right artifact for
   install / share / version.
-- **`sdm_configs`** — the row survives unchanged in shape, with its `config`
-  column demoted from truth to a **derived draft snapshot**, refreshed on every
-  write so `config.get` stays a single fetch. After the split the table holds
-  **nothing but derivation** — `assembleConfig` rebuilds it from the six tables,
-  so it is droppable and rebuildable at any time.
+- ~~**`sdm_configs`**~~ — **DROPPED 2026-08-09, migration 0020.** It survived
+  the split for one day as a derived snapshot, on the premise that assembling
+  the model cost six round trips and `config.get` should stay one. It costs
+  **one**: `jsonb_agg` subqueries in a single SELECT, which `getSolutionConfig`
+  now issues `FROM solutions` so the same statement also answers "does this
+  solution exist". With the premise gone the snapshot was a second copy of the
+  truth buying nothing — and the copy every host actually read, so any drift
+  would have run hosts on a model the tables disagreed with, invisibly. The
+  lock moved to the `solutions` row (below). Reversibility was never at stake:
+  a derived table is rebuildable by definition.
 - **`config.get`** — unchanged, reads the snapshot.
 - **`config.put`** (whole config) — kept, as the **import** path: it explodes an
   incoming config into rows, replacing all five collections and the menu (rows
@@ -642,18 +647,23 @@ Eleven per-entity mutations sit beside `config.put`: `config.putAttribute` /
 `config.putDefaultMenu` (no delete — an empty array is the empty menu) — sol
 admin, like `config.put`. Each runs one transaction:
 
-1. `SELECT … FROM sdm_configs WHERE solution_id = $1 FOR UPDATE` (inserting the
-   row if absent) — this **serialises validation per solution** while leaving
-   writes per entity. Two admins editing different record types both keep their
-   work; they queue for the length of one validation, they do not overwrite.
+1. `SELECT … FROM solutions WHERE id = $1 FOR UPDATE` — this **serialises
+   validation per solution** while leaving writes per entity. Two admins editing
+   different record types both keep their work; they queue for the length of one
+   validation, they do not overwrite. A lock needs one row both writers reach
+   for, not a row of its own: this was the `sdm_configs` row until 2026-08-09,
+   and locking the solution to change its model says what was always meant.
+   Writers of *different* solutions take different rows and never wait. It
+   settles existence in the same statement, too — every entity row is FK'd to
+   `solutions`, so a model without its solution is an orphan either way.
 2. write the entity row (`created_by` on insert, `updated_by` on update).
-3. assemble the graph from the six tables.
+3. re-read the graph (`getSolutionConfig`, one round trip).
 4. run the **existing** validation unchanged — MemoryAdapter resolution,
    error-severity `validateConfig` findings, the stored-`typeRef` orphan check,
    and `default_menu` shape/reference validation. Global validation is not
    relaxed by the split; only the storage shape moves.
 5. any error → rollback, so the entity write disappears with it.
-6. success → refresh `sdm_configs.config` with the assembled graph, commit.
+6. success → commit. There is no snapshot to refresh.
 
 A delete that would dangle (an attribute an activity still uses, a workflow a
 record type still points at) fails at step 4 like any other invalid graph — the
@@ -669,9 +679,9 @@ Details settled in the build:
   spelling: `deleteAttribute({ key })`, the other four `({ id })`.
 - **A put replaces or appends**; a **delete is idempotent** — an id already gone
   is a delete that already happened, matching `deletePage`.
-- **The first entity write creates the `sdm_configs` row**, from the same empty
-  model the Console opens a fresh solution on. Authoring into a new solution
-  never needs a whole-config save first.
+- **Authoring into a solution with no model works from the first entity**, with
+  no whole-config save first: there is no row to create, and an unwritten model
+  simply assembles to the empty one.
 - **`default_menu` validation moved into the host** (`validateDefaultMenu`) so
   both doors run one implementation, and it runs on **every** entity write, not
   just menu writes — that is what makes deleting a role a menu item still names
@@ -686,7 +696,7 @@ Details settled in the build:
 
 One migration creates the six tables and backfills by exploding each existing
 `sdm_configs.config` with `jsonb_array_elements`, leaving `config` in place as
-the snapshot. `*_by` columns land null for backfilled rows — null means the row
+the snapshot (dropped a day later by 0020). `*_by` columns land null for backfilled rows — null means the row
 predates per-entity authorship, never a fake author. Like the backfills in 0003
 and 0016 it only SELECTs from rows that already exist, so on a fresh database it
 inserts nothing.
@@ -724,6 +734,17 @@ collection and the splice inside `editConfig` are the only throwaway parts** —
 step 2 replaces them with a table write plus assembly, and touches nothing else.
 Step 1 keeps authored array order (a put replaces in place); step 2 drops it, as
 *Ordering* above says.
+
+**Step 3 — drop the snapshot. BUILT 2026-08-09** (migration
+`0020_drop_sdm_configs`). Prompted by the user asking why a second copy of the
+model was being kept at all. It was: the read-cost premise behind it was wrong,
+assembly is one round trip. `getSolutionConfig` became a single `jsonb_agg`
+SELECT, the write lock moved to the `solutions` row, `publishConfig` snapshots
+the assembled model, and `ConfigCollection.write` died with the JS assembler
+that used it. "Nothing to publish" now means an **empty model** rather than a
+missing row — the same condition stated against the truth. A solution with
+nothing authored yet reads as the empty model instead of throwing, which removed
+a special case the client had been carrying.
 
 **Step 2 — the tables underneath. BUILT 2026-08-08** (migration
 `0019_model_entity_tables`). Each procedure's body swapped blob-splicing for

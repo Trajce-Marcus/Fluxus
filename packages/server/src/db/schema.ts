@@ -274,16 +274,15 @@ export const solAdmins = pgTable('sol_admins', {
   index('sol_admins_solution').on(t.solutionId),
 ]);
 
-// **Nothing in this row is truth** (model storage split, step 2, 2026-08-08):
-// the model lives in the six `sdm_*` entity tables below and `config` is a
-// derived draft snapshot, refreshed on every write so `config.get` stays a
-// single fetch. Being purely derived, it is droppable and rebuildable at any
-// time — which is the property the split was designed to buy.
-export const sdmConfigs = pgTable('sdm_configs', {
-  solutionId: text('solution_id').primaryKey(),
-  config: jsonb('config').$type<SolutionConfig>().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+// `sdm_configs` was dropped 2026-08-09 (migration 0020). It survived the split
+// for one day as a derived snapshot of the six tables below, on the assumption
+// that assembling the model cost six round trips. It costs one — `jsonb_agg`
+// subqueries in a single SELECT — so the snapshot was a second copy of the truth
+// buying nothing, and the copy hosts actually read: any drift would have run
+// every host on a model the tables disagreed with, silently. Its other job, the
+// per-solution write lock, moved to the `solutions` row (`getSolutionConfig` /
+// `editConfig` in host.ts). `sdm_config_versions` is unaffected — published
+// versions are immutable history, not a copy of live truth.
 
 // ── The model, one table per collection (split from the blob 2026-08-08) ──────
 // The consistency unit is the whole graph (a workflow references attributes, so
@@ -395,8 +394,8 @@ export const sdmMenus = pgTable('sdm_menus', {
 
 // Published SDM config versions — the model's change history, closing the gap
 // pages have had since M3 (ruled 2026-07-26). Same posture as page_versions:
-// append-only and immutable, publish snapshots the current draft `sdm_configs`
-// row at `max(version)+1` with release notes, rollback republishes an older
+// append-only and immutable, publish snapshots the current assembled draft at
+// `max(version)+1` with release notes, rollback republishes an older
 // config as a NEW version. This is what replaces git as the model's history:
 // the repo's config files install nothing (no seed path since 2026-08-05) —
 // they are test fixture and future sample-solution material only.

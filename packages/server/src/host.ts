@@ -26,7 +26,7 @@ import {
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmAttributes, sdmConfigVersions, sdmConfigs, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 
@@ -63,10 +63,40 @@ export class OrgNotFoundError extends Error {
   }
 }
 
+/**
+ * The solution's model, assembled from the six `sdm_*` tables — **one round
+ * trip**, which is what let the derived `sdm_configs` snapshot be dropped
+ * (2026-08-09) rather than kept as a second copy of the truth.
+ *
+ * Selecting `FROM solutions` makes the same query answer "does this solution
+ * exist": a solution with no model yet assembles to the empty model, while an
+ * unknown solution has no row at all and throws. Ordering is by identity —
+ * rows carry no authored order, by design.
+ */
 export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise<SolutionConfig> {
-  const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
-  if (rows.length === 0) throw new SolutionNotFoundError(solutionId);
-  return rows[0].config;
+  const [row] = await db
+    .select({
+      attributes: sql<AttributeDef[] | null>`(SELECT jsonb_agg(${sdmAttributes.def} ORDER BY ${sdmAttributes.key}) FROM ${sdmAttributes} WHERE ${eq(sdmAttributes.solutionId, solutionId)})`,
+      recordTypes: sql<RecordTypeDef[] | null>`(SELECT jsonb_agg(${sdmRecordTypes.def} ORDER BY ${sdmRecordTypes.id}) FROM ${sdmRecordTypes} WHERE ${eq(sdmRecordTypes.solutionId, solutionId)})`,
+      workflows: sql<WorkflowRawDef[] | null>`(SELECT jsonb_agg(${sdmWorkflows.def} ORDER BY ${sdmWorkflows.id}) FROM ${sdmWorkflows} WHERE ${eq(sdmWorkflows.solutionId, solutionId)})`,
+      functions: sql<FunctionDef[] | null>`(SELECT jsonb_agg(${sdmFunctions.def} ORDER BY ${sdmFunctions.id}) FROM ${sdmFunctions} WHERE ${eq(sdmFunctions.solutionId, solutionId)})`,
+      roles: sql<RoleDef[] | null>`(SELECT jsonb_agg(${sdmRoles.def} ORDER BY ${sdmRoles.id}) FROM ${sdmRoles} WHERE ${eq(sdmRoles.solutionId, solutionId)})`,
+      defaultMenu: sql<MenuItem[] | null>`(SELECT ${sdmMenus.def} FROM ${sdmMenus} WHERE ${eq(sdmMenus.solutionId, solutionId)})`,
+    })
+    .from(solutions)
+    .where(eq(solutions.id, solutionId));
+  if (!row) throw new SolutionNotFoundError(solutionId);
+  return {
+    attributes: row.attributes ?? [],
+    recordTypes: row.recordTypes ?? [],
+    workflows: row.workflows ?? [],
+    // Absent collections stay absent — `functions` and `access` are optional in
+    // the config, and no `access.roles` at all is what switches RBAC off, which
+    // an empty array would not say.
+    ...(row.functions ? { functions: row.functions } : {}),
+    ...(row.roles ? { access: { roles: row.roles } } : {}),
+    ...(row.defaultMenu ? { default_menu: row.defaultMenu } : {}),
+  } as SolutionConfig;
 }
 
 export interface OperationRow {
@@ -809,29 +839,24 @@ export async function putConfig(
 // logical conflict, yet one silently lost their work. Step 1 narrowed the write
 // API to one entity per call; this is the storage underneath it.
 //
-// **The tables are truth. The assembled config is derived.** Every write
-// assembles the graph from the six tables, validates that, and refreshes
-// `sdm_configs.config` so `config.get` stays a single fetch — that column now
-// holds nothing but derivation, and is droppable and rebuildable at will.
-
-/** The assembly base, and what a solution with no rows yet reads as — the same
- *  empty model the Console opens a fresh solution on. */
-const EMPTY_CONFIG: SolutionConfig = { attributes: [], recordTypes: [], workflows: [] };
+// **The tables are the only copy.** A write changes rows and then validates the
+// model those rows assemble to (`getSolutionConfig`, one round trip). The
+// derived `sdm_configs` snapshot that stood beside them for a day was dropped
+// 2026-08-09 — see migration 0020.
 
 /**
  * One collection of the model: the name errors use, the identity field the
  * entity itself carries (`key` for attributes, `id` for the rest — the config's
  * own spelling), where it sits within a config, and its rows.
  *
- * `def` is stored **verbatim, including its own key/id**, so `read`/`write` are
- * a plain lift in and out of the config — assembly has no reconstruction step to
- * get wrong.
+ * `def` is stored **verbatim, including its own key/id**, so `read` is a plain
+ * lift out of an incoming config — the import path's exploder needs nothing
+ * reconstructed, and assembly is `jsonb_agg` in the database.
  */
 export interface ConfigCollection<T> {
   name: string;
   idField: 'key' | 'id';
   read(config: SolutionConfig): T[];
-  write(config: SolutionConfig, next: T[]): SolutionConfig;
   /** Every def for a solution, ordered by identity — assembly is deterministic
    *  by key, since rows carry no authored order (lost at migration, by design). */
   list(tx: DbOrTx, solutionId: string): Promise<T[]>;
@@ -848,7 +873,6 @@ export const configCollections = {
     name: 'attributes',
     idField: 'key',
     read: (c) => c.attributes ?? [],
-    write: (c, next) => ({ ...c, attributes: next }),
     list: async (tx, solutionId) => (await tx
       .select({ def: sdmAttributes.def })
       .from(sdmAttributes)
@@ -880,7 +904,6 @@ export const configCollections = {
     name: 'workflows',
     idField: 'id',
     read: (c) => c.workflows ?? [],
-    write: (c, next) => ({ ...c, workflows: next }),
     list: async (tx, solutionId) => (await tx
       .select({ def: sdmWorkflows.def })
       .from(sdmWorkflows)
@@ -910,7 +933,6 @@ export const configCollections = {
     name: 'recordTypes',
     idField: 'id',
     read: (c) => c.recordTypes ?? [],
-    write: (c, next) => ({ ...c, recordTypes: next }),
     list: async (tx, solutionId) => (await tx
       .select({ def: sdmRecordTypes.def })
       .from(sdmRecordTypes)
@@ -943,7 +965,6 @@ export const configCollections = {
     name: 'functions',
     idField: 'id',
     read: (c) => c.functions ?? [],
-    write: (c, next) => ({ ...c, functions: next }),
     list: async (tx, solutionId) => (await tx
       .select({ def: sdmFunctions.def })
       .from(sdmFunctions)
@@ -973,7 +994,6 @@ export const configCollections = {
     name: 'access.roles',
     idField: 'id',
     read: (c) => c.access?.roles ?? [],
-    write: (c, next) => ({ ...c, access: { ...c.access, roles: next } }),
     list: async (tx, solutionId) => (await tx
       .select({ def: sdmRoles.def })
       .from(sdmRoles)
@@ -1028,37 +1048,21 @@ function identityOf<T>(collection: ConfigCollection<T>, entity: unknown): string
 }
 
 /**
- * The lock every model write takes: the solution's `sdm_configs` row,
- * `FOR UPDATE`. It **serialises validation per solution** while leaving the
- * writes per entity — two admins editing different entities both keep their
- * work, they queue for the length of one validation. The row is created if
- * absent, because a solution's first entity write is also its first snapshot.
- */
-async function lockConfig(tx: DbOrTx, solutionId: string): Promise<void> {
-  const locked = async () =>
-    (await tx.select({ solutionId: sdmConfigs.solutionId }).from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId)).for('update'))[0];
-  if (await locked()) return;
-  // A concurrent first writer may win this insert; it then holds the row lock,
-  // and the re-select blocks until it commits rather than clobbering it.
-  await tx.insert(sdmConfigs).values({ solutionId, config: EMPTY_CONFIG }).onConflictDoNothing();
-  await locked();
-}
-
-/** Assemble the graph from the six tables. This is the whole read model — no
- *  reconstruction, just each collection's defs folded into an empty config. */
-async function assembleConfig(tx: DbOrTx, solutionId: string): Promise<SolutionConfig> {
-  let config = EMPTY_CONFIG;
-  for (const collection of COLLECTIONS_IN_FK_ORDER) {
-    config = collection.write(config, await collection.list(tx, solutionId));
-  }
-  const [menu] = await tx.select({ def: sdmMenus.def }).from(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
-  return menu ? ({ ...config, default_menu: menu.def } as SolutionConfig) : config;
-}
-
-/**
- * One transaction: take the lock, write the rows, assemble, validate the whole
- * graph, refresh the derived snapshot. Any error rolls the row writes back with
- * it, so a rejected edit leaves the stored model exactly as it was.
+ * One transaction: take the lock, write the rows, re-read the graph, validate
+ * it. Any error rolls the row writes back with it, so a rejected edit leaves
+ * the stored model exactly as it was.
+ *
+ * **The lock is the solution's own row** (`solutions`, `FOR UPDATE`; it was the
+ * `sdm_configs` row until that table was dropped 2026-08-09). Its only job is to
+ * be one row both writers reach for, so validation **serialises per solution**
+ * while the writes stay per entity: two admins editing different entities both
+ * keep their work, queueing only for the length of one validation. Writers of
+ * *different* solutions take different rows and never wait on each other.
+ *
+ * Locking `solutions` also settles existence in the same statement: every entity
+ * row is FK'd to it, so a model for a solution that does not exist is an orphan
+ * the database would refuse anyway — asked here so it reads as "no such
+ * solution" rather than as a constraint violation.
  */
 async function editConfig(
   db: Db,
@@ -1067,17 +1071,16 @@ async function editConfig(
   writeRows: (tx: DbOrTx) => Promise<void>,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    // Every entity row is FK'd to `solutions`, so a model for a solution that
-    // does not exist is an orphan the database will refuse. Asked here so it
-    // reads as "no such solution" rather than as a constraint violation.
-    const [solution] = await tx.select({ id: solutions.id }).from(solutions).where(eq(solutions.id, solutionId));
+    const [solution] = await tx
+      .select({ id: solutions.id })
+      .from(solutions)
+      .where(eq(solutions.id, solutionId))
+      .for('update');
     if (!solution) throw new SolutionNotFoundError(solutionId);
-    await lockConfig(tx, solutionId);
     await writeRows(tx);
-    const next = await assembleConfig(tx, solutionId);
+    const next = await getSolutionConfig(tx, solutionId);
     await validateConfigGraph(tx, solutionId, next, sink);
     await validateDefaultMenu(tx, solutionId, next);
-    await tx.update(sdmConfigs).set({ config: next, updatedAt: new Date() }).where(eq(sdmConfigs.solutionId, solutionId));
   });
 }
 
@@ -1170,11 +1173,24 @@ async function appendConfigVersion(db: Db, solutionId: string, config: SolutionC
   return { version };
 }
 
-/** Snapshot the solution's current draft config into a new immutable version. */
+/**
+ * Snapshot the solution's current draft config into a new immutable version.
+ * A version is a whole config by design — an immutable artifact for install /
+ * share / rollback, which is history rather than a second copy of live truth.
+ *
+ * "Nothing to publish" used to mean "no `sdm_configs` row"; with the model in
+ * tables it means an **empty model**, which is the same condition stated
+ * against the truth instead of against a snapshot.
+ */
 export async function publishConfig(db: Db, solutionId: string, readme: string, publishedBy: string): Promise<{ version: number }> {
-  const rows = await db.select().from(sdmConfigs).where(eq(sdmConfigs.solutionId, solutionId));
-  if (rows.length === 0) throw new ConfigDraftNotFoundError(solutionId);
-  return appendConfigVersion(db, solutionId, rows[0].config, readme, publishedBy);
+  const config = await getSolutionConfig(db, solutionId);
+  const empty = config.attributes.length === 0
+    && config.recordTypes.length === 0
+    && config.workflows.length === 0
+    && (config.functions?.length ?? 0) === 0
+    && (config.access?.roles?.length ?? 0) === 0;
+  if (empty) throw new ConfigDraftNotFoundError(solutionId);
+  return appendConfigVersion(db, solutionId, config, readme, publishedBy);
 }
 
 /**
