@@ -57,12 +57,6 @@
     "type": "text"
   },
   {
-    "key": "work_group",
-    "label": "Work Group",
-    "description": "Responsible group.",
-    "type": "text"
-  },
-  {
     "key": "crew",
     "label": "Crew",
     "description": "Which crew the work order is dispatched to. A list attribute — the datasource is the declared producer, so validateSubmission checks the choice against it server-side.",
@@ -111,18 +105,6 @@
       "max_count": 6,
       "max_size_mb": 10
     }
-  },
-  {
-    "key": "type",
-    "label": "Type",
-    "description": "Category of resource (e.g. lab, plant, vehicle, employee).",
-    "type": "text"
-  },
-  {
-    "key": "key",
-    "label": "Key",
-    "description": "Unique identifier for this resource (e.g. rego, employee ID).",
-    "type": "text"
   },
   {
     "key": "expired_date",
@@ -188,57 +170,6 @@
     "type": "text"
   },
   {
-    "key": "wg_id",
-    "label": "Work Group",
-    "description": "The work group this plan belongs to.",
-    "type": "reference",
-    "type_config": {
-      "fk_record_type": "rt_workgroups"
-    }
-  },
-  {
-    "key": "shift_date",
-    "label": "Shift Date",
-    "description": "Date of the planned shift.",
-    "type": "text"
-  },
-  {
-    "key": "shift_start",
-    "label": "Shift Start",
-    "description": "Shift start time.",
-    "type": "text"
-  },
-  {
-    "key": "shift_end",
-    "label": "Shift End",
-    "description": "Shift end time.",
-    "type": "text"
-  },
-  {
-    "key": "added_by",
-    "label": "Added By",
-    "description": "Who created this plan.",
-    "type": "text"
-  },
-  {
-    "key": "wg_plan_id",
-    "label": "Workgroup Plan",
-    "description": "The workgroup plan this resource is assigned to.",
-    "type": "reference",
-    "type_config": {
-      "fk_record_type": "rt_wg_plans"
-    }
-  },
-  {
-    "key": "res_id",
-    "label": "Resource",
-    "description": "The resource assigned to this plan.",
-    "type": "reference",
-    "type_config": {
-      "fk_record_type": "rt_resources"
-    }
-  },
-  {
     "key": "job_id",
     "label": "Job",
     "description": "The job this work order belongs to.",
@@ -273,30 +204,6 @@
     "label": "Completed Date",
     "description": "Date the work order was completed.",
     "type": "date"
-  },
-  {
-    "key": "wo_id",
-    "label": "Work Order",
-    "description": "The work order this record belongs to.",
-    "type": "reference",
-    "type_config": {
-      "fk_record_type": "rt_work_orders"
-    }
-  },
-  {
-    "key": "asset_id",
-    "label": "Asset",
-    "description": "The asset linked to this record.",
-    "type": "reference",
-    "type_config": {
-      "fk_record_type": "rt_assets"
-    }
-  },
-  {
-    "key": "quantity",
-    "label": "Quantity",
-    "description": "Quantity of the resource assigned.",
-    "type": "text"
   },
   {
     "key": "state",
@@ -756,146 +663,6 @@
     "key": "site_cleanup",
     "label": "Scaffold/ladders removed, site cleaned up",
     "description": "",
-    "type": "composite",
-    "type_config": {
-      "attributes": [
-        {
-          "attribute_ref": "ok",
-          "required": true,
-          "can_waive": true
-        },
-        {
-          "attribute_ref": "ref"
-        },
-        {
-          "attribute_ref": "comment"
-        }
-      ]
-    }
-  },
-  {
-    "key": "demo_text",
-    "label": "Text",
-    "description": "A single-line text value.",
-    "type": "text"
-  },
-  {
-    "key": "demo_multiline",
-    "label": "Multiline Text",
-    "description": "A multi-line text value (type_config.multiline — one value, many lines; NOT the multi mechanism).",
-    "type": "text",
-    "type_config": {
-      "multiline": true
-    }
-  },
-  {
-    "key": "demo_int",
-    "label": "Integer",
-    "description": "A whole number.",
-    "type": "int"
-  },
-  {
-    "key": "demo_decimal",
-    "label": "Decimal",
-    "description": "A number with two decimal places (type_config.decimal_places controls step + display rounding).",
-    "type": "decimal",
-    "type_config": {
-      "decimal_places": 2
-    }
-  },
-  {
-    "key": "demo_date",
-    "label": "Date",
-    "description": "A calendar date.",
-    "type": "date"
-  },
-  {
-    "key": "demo_datetime",
-    "label": "Date & Time",
-    "description": "A date with a time-of-day.",
-    "type": "datetime"
-  },
-  {
-    "key": "demo_time",
-    "label": "Time",
-    "description": "A time-of-day.",
-    "type": "time"
-  },
-  {
-    "key": "demo_city_ref",
-    "label": "City (reference)",
-    "description": "A reference (FK) picker over Cities — stores the record id, displays a field.",
-    "type": "reference",
-    "type_config": {
-      "fk_record_type": "rt_cities"
-    }
-  },
-  {
-    "key": "demo_city_list",
-    "label": "City (list, records datasource)",
-    "description": "A list driven by a FluxScript records query.",
-    "type": "list",
-    "type_config": {
-      "datasource": "records.cities.orderBy(name).top(50)",
-      "key_field": "id",
-      "display_field": "name"
-    }
-  },
-  {
-    "key": "demo_priority",
-    "label": "Priority (list, literal datasource)",
-    "description": "A list driven by a FluxScript literal — self-contained choices.",
-    "type": "list",
-    "type_config": {
-      "datasource": "['Low', 'Medium', 'High', 'Urgent']"
-    }
-  },
-  {
-    "key": "demo_photo",
-    "label": "Photo (single)",
-    "description": "One photo — camera or gallery. By-value descriptor (dimensions, thumbnail, EXIF geo/time).",
-    "type": "photo",
-    "type_config": {
-      "max_size_mb": 10
-    }
-  },
-  {
-    "key": "demo_photos",
-    "label": "Photos (multi)",
-    "description": "Up to six photos (type_config.multi with max_count / max_size_mb).",
-    "type": "photo",
-    "type_config": {
-      "multi": true,
-      "max_count": 6,
-      "max_size_mb": 10
-    }
-  },
-  {
-    "key": "demo_file",
-    "label": "File (single)",
-    "description": "One file attachment (accept filters the file dialog).",
-    "type": "file",
-    "type_config": {
-      "accept": [".pdf", ".doc", ".docx"],
-      "max_size_mb": 25
-    }
-  },
-  {
-    "key": "demo_files",
-    "label": "Files (multi)",
-    "description": "Up to five file attachments (multi + accept + max_count + max_size_mb).",
-    "type": "file",
-    "type_config": {
-      "multi": true,
-      "accept": [".pdf", ".png", ".jpg", ".csv", ".xlsx"],
-      "max_count": 5,
-      "max_size_mb": 25
-    }
-  },
-  {
-    "key": "demo_check",
-    "label": "Checklist item (composite)",
-    "description": "A composite row — sub-attributes over the shared ok / ref / comment pool atoms. Cells live in history, addressed demo_check.ok etc.",
     "type": "composite",
     "type_config": {
       "attributes": [

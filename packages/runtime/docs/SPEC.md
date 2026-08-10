@@ -9,7 +9,9 @@ The package was `@fluxus/sdm` until the 2026-08-01 restructure. Two things left 
 
 ## Model
 
-Everything is driven by one logical config, stored split for hand-editing in `packages/runtime/config/` — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — and merged into one `SolutionConfig` by `src/config.ts` (typed by `@fluxus/engine`). The split is POC-era convenience; the endgame is the SDM in a database edited through UI. Collections:
+Everything is driven by one logical config. The app reads it from the server; `packages/runtime/config/` holds a small one **for the tests only** — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — merged into one `SolutionConfig` by `src/config.ts` (typed by `@fluxus/engine`).
+
+Those files were cut down on 2026-08-11 to exactly what `test/dsl-wiring.test.ts` and the server's `test/headless.test.ts` reach. Before that they were a fifteen-entity model that the pre-2026-08-05 seed script had installed into real databases, which then drifted from the files as each was edited on its own — one model with two copies and no authority. Nothing installs them now, and nothing left in them resembles a solution. Collections:
 
 - **`attributes`** — standalone, reusable capturable inputs; activities reference them by `attribute_ref`.
 - **`recordTypes`** — collections (`rt_<plural>`): custom fields (incl. `fk_ref` with `fk_record_type` / `fk_display_field`), optional constraints (`required`, `unique`, `immutable`, `indexed`), a `workflow_ref`.
@@ -91,8 +93,8 @@ Activity history is append-only and never edited, so **cancel can never mean del
 
 ```
 config/{attributes,functions}.json + config/entities/*.json
-  └── config.ts (merges to one typed SolutionConfig — test fixture only, installed
-        nowhere; the running app reads config from the server)
+  └── config.ts (merges to one typed SolutionConfig — the tests' model only,
+        installed nowhere; the running app reads config from the server)
 
 src/host.ts (backend stage 2): FluxusClient.connect() → scope config +
         partition snapshot in the engine's MemoryAdapter;

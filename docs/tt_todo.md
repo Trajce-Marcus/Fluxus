@@ -52,9 +52,12 @@ _(empty — add freely)_
 - [ ] **Sample solution (create-on-request)** — added 2026-08-05 alongside the
   prepopulation removal. An explicit action ("give me a worked example") that
   stands up a demo solution, and if it creates records does so by running
-  activities. Raw material is the SDM under `packages/runtime/config/` and the
-  demo page in git history. The rule that makes it acceptable: someone asks for
-  it, once, by name — it never installs itself.
+  activities. The rule that makes it acceptable: someone asks for it, once, by
+  name — it never installs itself. **Amended 2026-08-11**: it has no raw
+  material any more. `packages/runtime/config/` was cut down to what the tests
+  reach, on the user's ruling that a second model sitting in the repo is
+  duplication waiting to drift; a sample solution would have to be authored,
+  and the demo page is still only in git history.
 - [ ] **PII field flag → hashing** (much later; added 2026-07-14). In a record
   type def, flag a custom field as PII so its value is protected at rest.
   Feasibility: doable as a field flag, but "hashed" (one-way) only supports

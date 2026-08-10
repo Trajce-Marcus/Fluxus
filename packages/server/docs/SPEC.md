@@ -946,10 +946,12 @@ Two things deliberately stayed, because neither installs content:
   they insert nothing.
 
 **Sample content later is an explicit action.** A "create a sample solution"
-function may well be built — the repo's demo SDM under
-`packages/runtime/config/` is kept as its raw material (and as test fixture).
-The rule is that it runs because someone asked for it, once, by name; it never
-installs itself, and if it creates records it does so by running activities.
+function may well be built. The rule is that it runs because someone asked for
+it, once, by name; it never installs itself, and if it creates records it does
+so by running activities. It has no material waiting for it: the model under
+`packages/runtime/config/` was cut down on 2026-08-11 to what the tests reach,
+precisely so that nothing in the repo doubles as a solution — a sample would be
+authored, not lifted from there.
 
 ### Config distribution (interim)
 
