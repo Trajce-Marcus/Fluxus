@@ -554,10 +554,20 @@ Not built. Picked up after the sections above.
 
 ---
 
-## 7. The one open question: how a page reaches its record
+## 7. How a page reaches its record — **BUILT 2026-08-11**
 
-Everything else here is settled. This is not, and the per-page trim (§2) waits
-on it.
+The design below is built, as step 3 of
+[DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md): `PageDef.record`
+names the record type and whether it has one instance or many, a one-instance
+page finds or creates its record at open through the type's create activity,
+and a many-instance page takes the id from the URL. The URL shape — the piece
+this section left open — is `?page=<pageId>&record=<recordId>` beside the
+existing `?operation=`, chosen as query params because the Runtime host is a
+static deploy with no SPA rewrite and a page id already contains a slash; it is
+revisitable, since nothing stored depends on it.
+
+**What still waits on this is the per-page trim (§2) and the page handle**, both
+of which now have the record they needed.
 
 **Today** pages are a path plus a jsonb blob
 ([schema.ts:419-426](../packages/server/src/db/schema.ts#L419-L426)) —
@@ -587,8 +597,8 @@ record's type already *is* the app, and a record can be shown by more than one
 page, so a single page id on the record would be wrong as soon as there is a
 second view of it.
 
-**Still to decide:** the **URL shape** for reaching a record page, since it has
-to carry the record id. New route structure; needs endorsement.
+**Settled 2026-08-11:** the **URL shape** is query params —
+`?page=<pageId>&record=<recordId>` — on the Runtime app's existing flat URL.
 
 Workbench column 3 is the built-in instance of the same concept — the record UI
 every SDM gets free; an authored record page is the customisable version. One
@@ -607,8 +617,8 @@ concept, two implementations.
    confirmation token (gap 3), which are mechanical once one signer exists.
 4. **The stamp and hook history** — independent of the client work; do it
    before much data accumulates.
-5. **Page handles, the page declaration and the per-page trim** — together,
-   after §7 is settled.
+5. **Page handles and the per-page trim** — the page declaration half landed
+   2026-08-11 (§7), so both now have the record they key on.
 6. **The runner** — last.
 
 ## Names
@@ -617,9 +627,13 @@ concept, two implementations.
 **projection** · **handle** · **operation handle** · **record handle** (now
 *page handle*, since it is issued per open page) · **confirmation token**.
 
+**Endorsed 2026-08-11:** the page record declaration (`record: { type,
+instances }`) and the reserved read-entry keys `system_outcome` /
+`system_duration_ms`.
+
 **Used in this document, not yet endorsed:** *app record* · *run record* ·
 *hook history* (and its table and column names) · the stamp columns on
-`records` · *runner* · the record-page URL shape.
+`records` · *runner*.
 
 **Introduced by the build, awaiting endorsement:** the per-entity narrow types
 (`ClientAttributeDef`, `ClientAttributeTypeConfig`, `ClientCustomFieldDef`,

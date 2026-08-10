@@ -81,7 +81,8 @@ One engine per host per SDM — a platform singleton created at bootstrap
   DELETE/append) → history append → after hook (staged, atomic commit).
   `options`: `acknowledgedWarnings`, `waived`. Refuses a GET.
 - `engine.runQuery(activity, captured, anchorRecord)` — the read pipeline; see
-  "GET activities" below. Refuses anything that is not a GET.
+  "GET activities" below. Refuses anything that is not a GET. Records the run
+  on the anchor, logged light.
 - `engine.activityAvailability(activity, anchorRecord)` /
   `isActivityAvailable(...)` — the activity-level `show_condition` gate,
   fail-closed. UIs use it to hide; `runActivity` re-checks it as the
@@ -111,19 +112,42 @@ activity; the model holds the query.
 `runQuery` shares the front of the pipeline with `runActivity` — the same
 availability gate, then the same before hook as a gate — and then diverges:
 
-- **Nothing persists**, so there is no entry, no `record_map` mapping and no
-  write-back. Gate warnings come back **with the answer** rather than as a
-  soft stop, because "confirm and re-run" is meaningless for a call that
-  changed nothing. `fail()` in the gate still blocks.
+- **No record data changes**, so there is no `record_map` mapping and nothing
+  to write back but the entry below. Gate warnings come back **with the
+  answer** rather than as a soft stop, because "confirm and re-run" is
+  meaningless for a call that changed nothing. `fail()` in the gate still
+  blocks — and a rejected read leaves no trace, exactly as a rejected
+  submission does.
 - **`QueryActivityResult`** is `{ data, warnings }` — no `status`. `data` is
   plain JSON-safe data: records flatten to `{ id, ...fields }` and FK pointers
   to their ids (`toComponentValue`, moved to the bridge so the server and the
   page host shape results identically), because every caller is SDM-blind.
-- **The anchor is optional** for now. It is where the entry will land once
-  GETs are logged (step 3); until app records exist there is often no record
-  in play at read time.
-- **Not logged.** This is the one promise of "the pipeline is the log" the
-  read path does not yet keep — step 3.
+- **The anchor is where the entry lands**, not what the query is about
+  (DATA_THROUGH_ACTIVITIES §1). A page passes its own record; a caller with
+  none passes null and the read goes untraced, which is the honest state for a
+  read nothing owns.
+
+### Logged light (step 3, built 2026-08-11)
+
+A GET is an activity, so its run is recorded like every other: **one entry on
+the anchor record**, carrying the parameters (which are its attributes, so they
+land exactly as a write's captured values do), the caller, and two reserved
+keys of its own — `system_outcome` (`ok` / `error`) and `system_duration_ms` —
+beside the existing `system_log` and the gate warnings. **Never the returned
+data** (runtime SPEC, "the pipeline is the log"): the answer is not stored
+anywhere, and `watch` is the escalation valve for the day someone needs to see
+what a person actually saw.
+
+The entry is written whichever way the answer goes: a `returns` that throws
+records the attempt with `system_outcome: 'error'` and the message on the
+system log, then rethrows — the same posture as a failing after hook, which is
+recorded even though nothing was applied.
+
+**A GET reached through `invoke` from a hook is not logged separately.** It is
+part of the run that asked, so its logger lines join that run's system log and
+no second entry appears — the rule the runtime SPEC already states for read
+service calls, applied to the read that is an activity. It also keeps a read
+from persisting inside a write whose gate went on to reject it.
 
 **Purity is the validator's job, twice over.** `returns` is checked as an
 *expression*, and expression mode already rejects `create()`/`update()` and

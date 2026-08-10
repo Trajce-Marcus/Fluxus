@@ -35,6 +35,9 @@ export interface PageRuntime {
   readonly config: ClientSolutionConfig;
   /** Resolve an activity id to its resolved def + owning record type. */
   findActivity(activityId: string): FoundActivity | null;
+  /** Resolve a record type id to its def + workflow; null when the model has
+   *  no such type (a page may declare one that was since renamed). */
+  findRecordType(typeId: string): (RecordTypeDef & { workflow: WorkflowDef }) | null;
   /** Read a page definition from the client's page snapshot. */
   getPage(path: string): PageDef | null;
   listPagePaths(): string[];
@@ -62,12 +65,13 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
   const config = client.config;
 
   // The page's door to a GET activity (DATA_THROUGH_ACTIVITIES step 2): the
-  // page names the activity, the model answers. No anchor record is sent — a
-  // page has none of its own until app records land with GET logging (step 3).
-  // The gate's warnings have nowhere to go on a read, so they go to the
-  // console rather than being dropped silently.
-  const query: PageQueryFn = async (activityId, params) => {
-    const result = await client.query({ activityId, attributes: params });
+  // page names the activity, the model answers. Since step 3 the page's own
+  // record rides along as the anchor — where the server lands the read's light
+  // entry — so a page that is about something logs what it asked, and a pure
+  // view still reads, untraced. The gate's warnings have nowhere to go on a
+  // read, so they go to the console rather than being dropped silently.
+  const query: PageQueryFn = async (activityId, params, recordId) => {
+    const result = await client.query({ activityId, attributes: params, recordId });
     for (const warning of result.warnings) console.warn(`[invoke ${activityId}] ${warning}`);
     return result.data;
   };
@@ -81,11 +85,17 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
     return null;
   };
 
+  const findRecordType = (typeId: string): (RecordTypeDef & { workflow: WorkflowDef }) | null => {
+    if (!store.listRecordTypes().some((rt) => rt.id === typeId)) return null;
+    return store.getRecordTypeDef(typeId);
+  };
+
   const runtime: PageRuntime = {
     client,
     store,
     config,
     findActivity,
+    findRecordType,
     getPage: (path) => (client.pages.get(path) as PageDef | undefined) ?? null,
     listPagePaths: () => [...client.pages.keys()].sort(),
     evaluateExpression: (source, pageCtx) => evaluatePageExpression(store, config, source, pageCtx, query),

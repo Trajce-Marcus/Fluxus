@@ -4,6 +4,7 @@ import type {
   PageComponentEntry,
   ContextKeyDef,
   ContextKeyType,
+  PageRecordDef,
   SlotConfig,
 } from '@fluxus/page-runtime';
 import { sdmClient, pageRuntime } from '../../sdm-runtime/engine';
@@ -19,7 +20,7 @@ import { sdmClient, pageRuntime } from '../../sdm-runtime/engine';
 // extraction; this module keeps the Console-side write path (save/delete)
 // and re-exports the types for the editor's existing import paths.
 
-export type { PageDef, PageComponentEntry, ContextKeyDef, ContextKeyType, SlotConfig };
+export type { PageDef, PageComponentEntry, ContextKeyDef, ContextKeyType, PageRecordDef, SlotConfig };
 
 // ── Persistence functions ─────────────────────────────────────────────────────
 
@@ -90,6 +91,25 @@ export function savePageAccess(path: string, open: string[]): void {
   // Absent stays absent, as everywhere else in the model: an empty list and no
   // list mean the same thing to `pageOpenable`, so don't store an empty one.
   savePage(path, { ...existing, access: open.length > 0 ? { open } : undefined });
+}
+
+/**
+ * The record the page is about (DATA_THROUGH_ACTIVITIES step 3): which record
+ * type, and whether it has one instance per operation or many. Absent ⇒ a pure
+ * view. Stored absent rather than as a half-filled object, like page access.
+ */
+export function loadPageRecord(path: string): PageRecordDef | null {
+  return loadPage(path)?.record ?? null;
+}
+
+export function savePageRecord(path: string, record: PageRecordDef | null): void {
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, record: record ?? undefined });
+}
+
+/** The record types a page may be about — every type in the solution's model. */
+export function solutionRecordTypes(): { id: string; name: string }[] {
+  return (sdmClient.config as { recordTypes?: { id: string; name: string }[] }).recordTypes ?? [];
 }
 
 /** The solution's declared roles — the only ids page access may name. */

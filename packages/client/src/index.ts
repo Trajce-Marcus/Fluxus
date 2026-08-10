@@ -780,8 +780,13 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
   /**
    * Ask a GET activity its question (DSL_SPEC §5a). The counterpart to
    * `runActivity`: the app names an activity in the model and the server
-   * answers, instead of the app carrying its own query. Nothing changes, so
-   * there is no snapshot refresh afterwards.
+   * answers, instead of the app carrying its own query.
+   *
+   * `recordId` is the anchor the read is logged against (step 3) — a page
+   * passes its own record. No record data changes, and the light entry the
+   * server records is of no interest to the browser that caused it, so there
+   * is deliberately no snapshot refresh: it would double the round trips of
+   * every page that reads.
    */
   async query(input: QueryInput): Promise<QueryActivityResult> {
     return (await this.trpc.activities.query.query({

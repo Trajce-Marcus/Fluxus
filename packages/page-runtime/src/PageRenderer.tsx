@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { RecordInstance } from '@fluxus/engine';
 import type { Panel } from './layout';
 import type { SlotConfig, ContextKeyDef } from './pageDef';
 import type { PageRuntime } from './runtime';
 import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
 import type { PageContext } from './pageHost';
+import { resolvePageAnchor } from './pageAnchor';
 
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
@@ -93,15 +95,27 @@ interface Props {
   pagePath: string;
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
+  /**
+   * The record this page is about, when the page declares `many` instances —
+   * the host reads it off the URL. A `one`-instance page finds or creates its
+   * own and ignores this; a pure view has none.
+   */
+  recordId?: string;
   /** Show the collapsible context.page debug strip (the editor preview turns this on). */
   debug?: boolean;
 }
 
-export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, debug }: Props) {
+export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, recordId, debug }: Props) {
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<{ componentName: string; message: string }[]>([]);
+  // The page's own record, resolved before the first frame: a run's history
+  // entry has to land somewhere, so a page that acts must know what it is
+  // about before anything on it can act (CLIENT_TRUST_BOUNDARY §7).
+  const [anchor, setAnchor] = useState<{ status: 'resolving' } | { status: 'ready'; record: RecordInstance | null } | { status: 'failed'; message: string }>({ status: 'resolving' });
 
-  const layout = runtime.getPage(pagePath)?.layout ?? null;
+  const def = runtime.getPage(pagePath);
+  const layout = def?.layout ?? null;
+  const declaredRecord = def?.record;
 
   useEffect(() => {
     const pageDefaults: Record<string, unknown> = {};
@@ -111,7 +125,25 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, de
     setPageState(pageDefaults);
   }, [pagePath, contextSchema]);
 
-  const pageCtx = useMemo<PageContext>(() => ({ app: APP_CONTEXT, page: pageState }), [pageState]);
+  useEffect(() => {
+    let cancelled = false;
+    setAnchor({ status: 'resolving' });
+    void (async () => {
+      try {
+        const record = await resolvePageAnchor(runtime, { record: declaredRecord }, recordId);
+        if (!cancelled) setAnchor({ status: 'ready', record });
+      } catch (err) {
+        if (!cancelled) setAnchor({ status: 'failed', message: err instanceof Error ? err.message : String(err) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [runtime, pagePath, recordId, declaredRecord?.type, declaredRecord?.instances]);
+
+  const anchorRecord = anchor.status === 'ready' ? anchor.record : null;
+  const pageCtx = useMemo<PageContext>(
+    () => ({ app: APP_CONTEXT, page: pageState, record: anchorRecord }),
+    [pageState, anchorRecord],
+  );
 
   const handleContextChange = useCallback((key: string, value: unknown) => {
     setPageState((prev) => ({ ...prev, [key]: value }));
@@ -123,6 +155,16 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, de
 
   if (!layout) {
     return <div className="pr-empty">No layout defined for this page.</div>;
+  }
+
+  // Nothing renders until the page knows its record: a component that read
+  // before the anchor arrived would fire an untraceable GET and then have to
+  // re-fire it, which is worse than one wait.
+  if (anchor.status === 'resolving') {
+    return <div className="pr-empty">Opening…</div>;
+  }
+  if (anchor.status === 'failed') {
+    return <div className="pr-empty pr-anchor-failed">{anchor.message}</div>;
   }
 
   return (
@@ -200,6 +242,7 @@ export const css = `
   }
   .pr-debug summary { cursor: pointer; font-weight: 600; color: #6b7280; padding: 2px 0; }
   .pr-debug pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-all; }
+  .pr-anchor-failed { color: #991b1b; font-style: normal; padding: 0 16px; text-align: center; }
   .pr-empty {
     display: flex;
     align-items: center;

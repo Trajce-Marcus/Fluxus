@@ -63,7 +63,7 @@ describe('a dynamic prop naming a GET activity', () => {
     const value = await evaluate("invoke('act_get_work_orders', { status: 'Raised' })", query);
 
     expect(value).toEqual([{ id: 'WO-1', status: 'Raised' }]);
-    expect(query).toHaveBeenCalledExactlyOnceWith('act_get_work_orders', { status: 'Raised' });
+    expect(query).toHaveBeenCalledExactlyOnceWith('act_get_work_orders', { status: 'Raised' }, undefined);
   });
 
   it('computes its parameters from the page context — the page asks, the model answers', async () => {
@@ -71,7 +71,19 @@ describe('a dynamic prop naming a GET activity', () => {
 
     await evaluate('invoke(\'act_get_work_orders\', { status: context.page.status })', query);
 
-    expect(query).toHaveBeenCalledWith('act_get_work_orders', { status: 'Raised' });
+    expect(query).toHaveBeenCalledWith('act_get_work_orders', { status: 'Raised' }, undefined);
+  });
+
+  // Step 3: the page's own record goes with the ask, because that is where the
+  // server lands the read's light entry. It is the anchor, not the subject —
+  // the question is still whatever the parameters say.
+  it('sends the page record as the anchor the read is logged against', async () => {
+    const query = vi.fn<PageQueryFn>().mockResolvedValue([]);
+    const board = { id: 'BOARD-1', typeRef: 'rt_work_orders', customFields: {}, activityHistory: [] };
+
+    await evaluate("invoke('act_get_work_orders', { status: 'Raised' })", query, { ...PAGE_CTX, record: board });
+
+    expect(query).toHaveBeenCalledWith('act_get_work_orders', { status: 'Raised' }, 'BOARD-1');
   });
 
   it('lets the expression work on the answer', async () => {

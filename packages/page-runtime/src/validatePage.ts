@@ -20,6 +20,11 @@ export interface PageValidationHost {
   validateExpression(source: string): Diagnostic[];
   validateCallback(source: string): Diagnostic[];
   findActivity(activityId: string): { activity: { record_map?: string } } | null;
+  /** The record type a page declares itself about, with the workflow that
+   *  says how one is created. Null when the model has no such type. */
+  findRecordType(typeId: string): {
+    workflow: { activities: { record_map?: string; attributes: { key: string; required?: boolean }[] }[] };
+  } | null;
 }
 
 const note = (findings: PageFinding[], where: string, message: string, severity: Diagnostic['severity'] = 'error') => {
@@ -28,6 +33,8 @@ const note = (findings: PageFinding[], where: string, message: string, severity:
 
 export function validatePage(host: PageValidationHost, def: PageDef): PageFinding[] {
   const findings: PageFinding[] = [];
+
+  checkPageRecord(host, def, findings);
 
   for (const [slotId, config] of Object.entries(def.slotConfigs ?? {})) {
     if (!config) continue;
@@ -84,6 +91,58 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
   }
 
   return findings;
+}
+
+/**
+ * The page's record declaration (DATA_THROUGH_ACTIVITIES step 3), checked
+ * where it can still be fixed. A one-instance page creates its record on first
+ * open, so the two things that would strand it — no such type, no create
+ * activity — are errors here rather than a page that opens to a message.
+ *
+ * A page that reads but declares nothing is a warning, not an error: it is
+ * legal (a pure view), it just means those reads leave no trace, and that is
+ * worth saying to the person who wired the GET.
+ */
+function checkPageRecord(host: PageValidationHost, def: PageDef, findings: PageFinding[]): void {
+  const declared = def.record;
+  const where = 'page record';
+
+  if (!declared) {
+    const reads = Object.values(def.slotConfigs ?? {}).some(
+      (config) => config && Object.values(config.dynamicProps).some((source) => source.includes('invoke(')),
+    );
+    if (reads) {
+      note(findings, where, 'This page names a GET but is about no record, so its reads are not logged', 'warning');
+    }
+    return;
+  }
+
+  const typeDef = host.findRecordType(declared.type);
+  if (!typeDef) {
+    note(findings, where, `'${declared.type}' is not a record type in this model`);
+    return;
+  }
+  if (declared.instances !== 'one' && declared.instances !== 'many') {
+    note(findings, where, `'${String(declared.instances)}' is not a number of instances — use 'one' or 'many'`);
+    return;
+  }
+  if (declared.instances !== 'one') return;
+
+  const create = typeDef.workflow.activities.find((a) => a.record_map === 'CREATE');
+  if (!create) {
+    note(findings, where, `'${declared.type}' has no create activity, so this page cannot open its record`);
+    return;
+  }
+  // The page opens the record with no one there to fill a form in.
+  const required = create.attributes.filter((attr) => attr.required).map((attr) => attr.key);
+  if (required.length > 0) {
+    note(
+      findings,
+      where,
+      `the create activity requires ${required.join(', ')}, which nobody can supply when the page opens it`,
+      'warning',
+    );
+  }
 }
 
 /**

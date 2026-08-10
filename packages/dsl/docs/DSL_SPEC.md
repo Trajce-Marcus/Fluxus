@@ -125,8 +125,9 @@ the server's `activities.query`, the client's `query()`, and the `invoke`
 built-in below. **First caller 2026-08-10** (step 2): a page's dynamic prop
 names a GET with `invoke` instead of carrying its own query, which needed no
 language change — only the page host supplying `EvalHost.invoke`. Logging (the
-third bullet) is **not** built — that is step 3, so today a GET leaves no trace.
-Everything else in this section is live.
+third bullet) landed **2026-08-11** (step 3): a GET records one light entry on
+its anchor record, and a GET reached through `invoke` from a hook is subsumed
+by the run that asked rather than recorded twice. All of this section is live.
 
 The read path (settled July 2026). Alongside CREATE/UPDATE/DELETE, a **GET** activity answers a question: its attributes are its parameters (validated by the trio), and a `returns` expression produces the response:
 
@@ -144,7 +145,7 @@ The read path (settled July 2026). Alongside CREATE/UPDATE/DELETE, a **GET** act
 
 - **Everything is an activity** — user capture, commands, and data gets share one authoring concept, one pipeline, and one invoke surface (`invoke(name, params)`). Apps call GET activities instead of ad-hoc APIs.
 - **GET never mutates**: the validator enforces purity (no mutations, no `queue`). Responses are cacheable.
-- **GET is logged like every activity** — parameters, caller, duration, outcome — giving out-of-the-box observability and an AI-legible uniform stream. The log append is asynchronous (a read never waits on its paperwork); volume is managed by a per-activity logging level and the customer's retention/archiving module, which moves history but never edits it.
+- **GET is logged like every activity** — parameters, caller, duration, outcome — giving out-of-the-box observability and an AI-legible uniform stream. Built 2026-08-11 as one ordinary history entry on the anchor record (`system_outcome` / `system_duration_ms` beside the parameters), which means the append is **synchronous** in the current build, inside the same write-back a run uses; the asynchronous append, the per-activity logging level and the retention/archiving module are all still ahead. A read with no anchor record has nowhere to land and is not logged.
 - Null `record_map` remains "log only": the activity and its captured attributes are recorded; any behaviour comes from hooks.
 - Named functions (§8) are script-level helpers for reuse inside expressions and hooks — they are **not** an app-facing surface; GET activities are.
 
@@ -250,7 +251,7 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 1. **Phase 1 — expressions + queries.** ✅ Done. Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attributes.` dependencies (city → suburb is the acceptance test). Entirely client-side.
 2. **Phase 2 — scripts.** ✅ Done (July 2026). Statements, `fail`/`warn`, `records` mutations, transactional after hooks, `queue`, named functions — built and wired into the sdm hook slots (Complete Work Order is the acceptance case: before gate + after-hook status move). The `run activity` page-builder callback (payload as `event` root) was re-scoped out to the **Extraction** milestone (root ROADMAP): it is blocked on the page builder hosting the SDM store, not on any language work.
 3. **Phase 3 — services registry.** ✅ Done (July 2026). Module manifests (`params`/`description`/`kind`) behind the `services` root, read/effect purity enforced statically and at run time, registry-strict validation (existence, arity), async-shaped API with the sync-evaluator posture of §7a. Two live modules in the sdm workbench: `notify` (queued from Complete Work Order into the notification centre) and `geo` (service-backed suburb datasource). Async evaluator deliberately deferred to the backend phase.
-4. **Phase 4 — headless invocation.** ✅ Done (2026-07-12), with **zero language change**: activities as the API surface live in `@fluxus/server` (tRPC → engine `validateSubmission` → the one pipeline → Postgres). The deferred async evaluator turned out unnecessary — the backend snapshots the scope's lean partition into an in-memory Store per request and runs the sync evaluator against it; the §7a async-shaped API remains the seam if a remote-Store host ever appears. GET activities (§5a) were deliberately not in this cut (their logging posture awaited the unified-log design); they **landed 2026-08-09** with one language addition, the `invoke` built-in — still unlogged, which is the part that waits.
+4. **Phase 4 — headless invocation.** ✅ Done (2026-07-12), with **zero language change**: activities as the API surface live in `@fluxus/server` (tRPC → engine `validateSubmission` → the one pipeline → Postgres). The deferred async evaluator turned out unnecessary — the backend snapshots the scope's lean partition into an in-memory Store per request and runs the sync evaluator against it; the §7a async-shaped API remains the seam if a remote-Store host ever appears. GET activities (§5a) were deliberately not in this cut (their logging posture awaited the unified-log design); they **landed 2026-08-09** with one language addition, the `invoke` built-in, and were **logged from 2026-08-11**.
 
 ## 12. Open items
 

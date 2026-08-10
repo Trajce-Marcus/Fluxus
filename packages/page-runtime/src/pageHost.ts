@@ -21,7 +21,7 @@ import {
   type ServiceModuleDef,
 } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, functionSignatures, toComponentValue } from '@fluxus/engine';
-import type { ClientSolutionConfig, MemoryAdapter } from '@fluxus/engine';
+import type { ClientSolutionConfig, MemoryAdapter, RecordInstance } from '@fluxus/engine';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
 // Components emit one value — a selection value or anchor record id. The host
@@ -104,6 +104,12 @@ export const pageServicesStub = (): ServiceModuleDef[] =>
 export interface PageContext {
   app: { name: string };
   page: Record<string, unknown>;
+  /**
+   * The record this page is about (`PageDef.record`, resolved at page open) —
+   * `context.record` in every expression and callback the page runs, and the
+   * anchor every GET it fires is logged against. Null on a pure view.
+   */
+  record?: RecordInstance | null;
 }
 
 // ── Naming a GET (DATA_THROUGH_ACTIVITIES step 2) ─────────────────────────────
@@ -128,8 +134,16 @@ export interface PageContext {
 // walk of the expression alone can see, and because a GET whose parameters come
 // from another GET's answer converges instead of being a special case.
 
-/** How the page host reaches a GET activity — the client's `query`, bound by the runtime handle. */
-export type PageQueryFn = (activityId: string, params: Record<string, unknown>) => Promise<unknown>;
+/**
+ * How the page host reaches a GET activity — the client's `query`, bound by the
+ * runtime handle. `recordId` is the page's own record: where the server lands
+ * the read's light entry (step 3), not what the query is about.
+ */
+export type PageQueryFn = (
+  activityId: string,
+  params: Record<string, unknown>,
+  recordId?: string,
+) => Promise<unknown>;
 
 /**
  * Enough rounds for a GET fed by a GET fed by a GET, and few enough that a
@@ -199,6 +213,7 @@ export async function evaluatePageExpression(
 
     const host = buildEvalHost(store, config, {
       contextExtras: { app: pageCtx.app, page: pageCtx.page },
+      anchorRecord: pageCtx.record ?? null,
       readonlyRecords: true,
       invoke,
     });
@@ -231,7 +246,7 @@ export async function evaluatePageExpression(
 
     await Promise.all(
       [...pending].map(async ([key, req]) => {
-        answers.set(key, await query!(req.activityId, req.params));
+        answers.set(key, await query!(req.activityId, req.params, pageCtx.record?.id));
       }),
     );
   }
@@ -260,6 +275,7 @@ export function runPageCallback(
     config,
     {
       contextExtras: { app: pageCtx.app, page: pageCtx.page },
+      anchorRecord: pageCtx.record ?? null,
       readonlyRecords: true,
       extras: { callbackData },
     },

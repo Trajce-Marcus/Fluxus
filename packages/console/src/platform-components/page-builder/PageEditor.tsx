@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
-import { loadPageLayout, solutionRoles } from './persistence';
+import { loadPageLayout, solutionRoles, solutionRecordTypes } from './persistence';
 import type { Panel } from './layout-editor/types';
 import type { SlotConfig } from './persistence';
 import {
@@ -15,12 +15,14 @@ import {
   addContextKey,
   removeContextKey,
   togglePageAccess,
+  setPageRecord,
   setStaticConfig,
   setDynamicProp,
   setCallback,
   usePageEditorStore,
   type PageComponentEntry,
   type ContextKeyDef,
+  type PageRecordDef,
 } from './pageEditorStore';
 import { componentManifests, PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
 import { pageRuntime } from '../../sdm-runtime/engine';
@@ -231,6 +233,53 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
   );
 }
 
+// ── Page record ──────────────────────────────────────────────────────────────
+// What the page is about (DATA_THROUGH_ACTIVITIES step 3). Every run is about
+// exactly one record, so this is where a page gets one: an app record type,
+// held as one instance per operation (found or created when the page opens) or
+// as many (the id comes in the URL). Left as a pure view, the page still
+// renders — its reads simply land nowhere, which the hint says out loud.
+
+function PageRecordSection({ pageRecord, pagePath }: { pageRecord: PageRecordDef | null; pagePath: string }) {
+  const recordTypes = solutionRecordTypes();
+
+  return (
+    <div className="pe-config-section pe-config-divider">
+      <p className="pe-config-label">Page Record</p>
+      <div className="pe-ctx-form">
+        <select
+          className="pe-ctx-select"
+          value={pageRecord?.type ?? ''}
+          onChange={(e) =>
+            setPageRecord(pagePath, e.target.value
+              ? { type: e.target.value, instances: pageRecord?.instances ?? 'one' }
+              : null)}
+        >
+          <option value="">(pure view — no record)</option>
+          {recordTypes.map((rt) => <option key={rt.id} value={rt.id}>{rt.name}</option>)}
+        </select>
+        {pageRecord && (
+          <select
+            className="pe-ctx-select"
+            value={pageRecord.instances}
+            onChange={(e) => setPageRecord(pagePath, { ...pageRecord, instances: e.target.value as PageRecordDef['instances'] })}
+          >
+            <option value="one">one instance</option>
+            <option value="many">many — id in the URL</option>
+          </select>
+        )}
+      </div>
+      <p className="pe-config-hint">
+        {!pageRecord
+          ? 'No record — activities and GETs fired from this page have nothing to anchor on.'
+          : pageRecord.instances === 'one'
+            ? 'One per operation: found, or created through its create activity, when the page opens.'
+            : 'One of many: opened at ?record=<id>; nothing is created.'}
+      </p>
+    </div>
+  );
+}
+
 // ── Page access ──────────────────────────────────────────────────────────────
 // Who may open the page (CONSOLE_RUNTIME_SPEC §6). Deny by default once the
 // solution declares roles: a published page naming none is filtered out of the
@@ -387,10 +436,11 @@ interface Col3Props {
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
   accessOpen: string[];
+  pageRecord: PageRecordDef | null;
   pagePath: string;
 }
 
-function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, pagePath }: Col3Props) {
+function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, pageRecord, pagePath }: Col3Props) {
   const config = selectedSlotId ? (slotConfigs[selectedSlotId] ?? null) : null;
 
   return (
@@ -398,6 +448,7 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, 
       <div className="pe-col-header">Configuration</div>
       <div className="pe-col-scroll">
         <PageContextSection contextSchema={contextSchema} pagePath={pagePath} />
+        <PageRecordSection pageRecord={pageRecord} pagePath={pagePath} />
         <PageAccessSection accessOpen={accessOpen} pagePath={pagePath} />
 
         {selectedSlotId && config && (
@@ -466,7 +517,7 @@ function PageEditorComponent({ pagePath }: Props) {
 
   const layout = loadPageLayout(pagePath);
   const slots = layout ? collectLeafPanels(layout.root) : [];
-  const { mode, pageComponents, contextSchema, accessOpen, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
+  const { mode, pageComponents, contextSchema, accessOpen, pageRecord, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
 
   if (mode === 'layout') {
     return (
@@ -494,7 +545,7 @@ function PageEditorComponent({ pagePath }: Props) {
           <ComponentsColumn pageComponents={pageComponents} selectedComponentName={selectedComponentName} pagePath={pagePath} />
         )}
         <SlotsColumn slots={slots} selectedSlotId={selectedSlotId} selectedComponentName={selectedComponentName} slotConfigs={slotConfigs} pagePath={pagePath} />
-        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} accessOpen={accessOpen} pagePath={pagePath} />
+        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} accessOpen={accessOpen} pageRecord={pageRecord} pagePath={pagePath} />
         <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} />
       </div>
     </div>

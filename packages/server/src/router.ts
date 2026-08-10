@@ -888,7 +888,9 @@ export const appRouter = t.router({
      * this one. There is deliberately no second read filter over the answer —
      * a GET returns what its author declared it to return.
      *
-     * Not logged yet (step 3), so a read currently leaves no trace.
+     * It is a query that writes one thing: the light entry the engine records
+     * on the anchor (step 3). So it write-backs like a run does, including on
+     * the way out of a failure — the read happened either way.
      */
     query: t.procedure
       .input(
@@ -930,7 +932,16 @@ export const appRouter = t.router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
           }
 
-          return host.engine.runQuery(activity, input.attributes, anchorRecord);
+          try {
+            const result = host.engine.runQuery(activity, input.attributes, anchorRecord);
+            await writeBack(ctx.db, host);
+            return result;
+          } catch (err) {
+            // A `returns` that threw still recorded the attempt; a gate that
+            // rejected recorded nothing, and write-back is then a no-op.
+            await writeBack(ctx.db, host);
+            throw err;
+          }
         } catch (err) {
           rethrow(err);
         }

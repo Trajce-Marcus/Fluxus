@@ -304,15 +304,19 @@ takes `operationId?` (both default `demo/sdm`):
   `acknowledgedWarnings`. A GET is refused here — it has its own door.
 - **`activities.query`** `{ operationId?, activityId, recordId?, attributes }`
   → `QueryActivityResult` — the read path (DSL_SPEC §5a, built 2026-08-09). A
-  tRPC **query, not a mutation**, because it is one: nothing persists, so there
-  is no write-back and no confirmation round-trip. The app names a GET activity
+  tRPC **query, not a mutation**: no record data changes and there is no
+  confirmation round-trip. It does write one thing — the light entry the engine
+  records on the anchor (step 3, 2026-08-11) — so it write-backs like a run
+  does, including on the way out of a failure, because the read happened either
+  way. The app names a GET activity
   and the model answers; the query itself never reaches the browser (`returns`
   lives on the server grade of the model and `projectConfig` cannot copy it).
   The parameters are the activity's attributes and go through the same
   `validateSubmission`. `recordId` is optional and, when given, is read-gated
   like any anchor (unreadable ⇒ not-found). Authorisation is the activity's own
   `show_condition`, with no second filter over the answer — see the engine SPEC
-  for why. Not logged yet (DATA_THROUGH_ACTIVITIES step 3).
+  for why. **Logged light** on the anchor when one is given: parameters,
+  caller, outcome, duration, never the answer; anchorless reads leave no trace.
 - **`files.presignUpload`** `{ solutionId?, attributeKey, name, mime, size, hash?,
   photo metadata? }` → `{ storageKey, uploadUrl, thumbKey?, thumbUploadUrl? }`
   / **`files.presignGet`** `{ solutionId?, key }` → `{ url }` — the blob upload/read

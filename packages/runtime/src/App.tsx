@@ -15,9 +15,9 @@ const NAV_PREF_KEY = 'fluxus:sdm:nav-open';
 // operation whose solution has no published pages shows an empty app. That is
 // the design, not a gap: the escape hatch is gone deliberately.
 function ContentArea() {
-  const { selectedPage, pagePaths } = useRuntime();
+  const { selectedPage, selectedRecordId, pagePaths } = useRuntime();
 
-  if (selectedPage) return <PageView path={selectedPage} />;
+  if (selectedPage) return <PageView path={selectedPage} recordId={selectedRecordId ?? undefined} />;
 
   return (
     <div className="content-empty">

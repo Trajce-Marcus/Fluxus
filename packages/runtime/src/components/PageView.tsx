@@ -6,7 +6,7 @@
 import { PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
 import { pageRuntime } from '../host';
 
-export function PageView({ path }: { path: string }) {
+export function PageView({ path, recordId }: { path: string; recordId?: string }) {
   const def = pageRuntime.getPage(path);
 
   return (
@@ -18,6 +18,7 @@ export function PageView({ path }: { path: string }) {
           pagePath={path}
           slotConfigs={def.slotConfigs ?? {}}
           contextSchema={def.contextSchema ?? []}
+          recordId={recordId}
         />
       ) : (
         <div className="panel-body" style={{ color: '#64748b' }}>

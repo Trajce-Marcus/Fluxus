@@ -5,6 +5,7 @@
 // they name an activity and check the answer.
 
 import { beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
 import { ensureOperation, ensureSolution, putConfig } from '../src/host';
 import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
@@ -87,11 +88,120 @@ describe('GET activities', () => {
     ).rejects.toThrow(/GET activity/);
   });
 
-  it('writes nothing', async () => {
+  it('changes no record data, and leaves no trace with nowhere to land', async () => {
     const before = await caller().records.partition({});
     await caller().activities.query({ activityId: 'act_get_work_orders', attributes: { status: 'Raised' } });
     const after = await caller().records.partition({});
     expect(after).toEqual(before);
+  });
+});
+
+// Step 3: a GET is an activity, so its run is recorded like every other —
+// logged light on the anchor record. What it must never record is the answer.
+describe('a GET is logged light', () => {
+  const historyOf = async (recordId: string) =>
+    (await caller().records.get({ recordId })).activityHistory;
+
+  it('records the run on the anchor: parameters, caller, outcome, duration', async () => {
+    const before = (await historyOf('WO-Q1')).length;
+
+    await caller().activities.query({
+      activityId: 'act_get_work_orders',
+      recordId: 'WO-Q1',
+      attributes: { status: 'Raised' },
+    });
+
+    const history = await historyOf('WO-Q1');
+    expect(history.length).toBe(before + 1);
+    const entry = history[history.length - 1];
+    expect(entry.activityId).toBe('act_get_work_orders');
+    expect(entry.author).toBe('demo');
+    // The parameters are the entry's attributes, because they ARE attributes.
+    expect(entry.capturedAttributes.status).toBe('Raised');
+    expect(entry.capturedAttributes.system_outcome).toBe('ok');
+    expect(typeof entry.capturedAttributes.system_duration_ms).toBe('number');
+  });
+
+  it('never records what came back', async () => {
+    await caller().activities.query({
+      activityId: 'act_get_work_orders',
+      recordId: 'WO-Q1',
+      attributes: { status: 'Raised' },
+    });
+
+    const entry = (await historyOf('WO-Q1')).at(-1)!;
+    // The answer named both work orders; nothing in the entry may.
+    expect(JSON.stringify(entry.capturedAttributes)).not.toContain('WO-Q2');
+  });
+
+  it('leaves the record data untouched', async () => {
+    const before = (await caller().records.get({ recordId: 'WO-Q2' })).customFields;
+    await caller().activities.query({
+      activityId: 'act_get_work_orders',
+      recordId: 'WO-Q2',
+      attributes: { status: 'Raised' },
+    });
+    expect((await caller().records.get({ recordId: 'WO-Q2' })).customFields).toEqual(before);
+  });
+
+  it('reaches the reporting projection like any other run', async () => {
+    await caller().activities.query({
+      activityId: 'act_get_work_orders',
+      recordId: 'WO-Q1',
+      attributes: { status: 'Raised' },
+    });
+    const rows = await db.execute(
+      sql`SELECT activity_id FROM rpt_activities WHERE record_id = 'WO-Q1' AND activity_id = 'act_get_work_orders'`,
+    );
+    expect(rows.rows.length).toBeGreaterThan(0);
+  });
+
+  it('records a read that failed, and says so', async () => {
+    const SOL = 'demo/get-failing';
+    const OP = 'demo/get-failing-op';
+    const broken = structuredClone(config);
+    // A `returns` that is legal at save time and throws at run time: the
+    // activity id is computed, so validateConfig leaves it to runtime — and at
+    // runtime there is no such activity.
+    broken.workflows.find((w) => w.id === 'wf_work_orders')!.activities
+      .find((a) => a.id === 'act_get_work_orders')!.returns = "invoke('act_get_' + 'nothing', {})";
+    await ensureSolution(db, SOL, 'Failing');
+    await putConfig(db, SOL, broken, sink);
+    await ensureOperation(db, OP, SOL, 'Failing');
+    const c = () => appRouter.createCaller({ db, sink });
+    await c().activities.run({ operationId: OP, activityId: 'act_raise_inspection_jobs', attributes: { id: 'JOB-F', job_no: 'J-902', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' } });
+
+    await expect(
+      c().activities.query({ operationId: OP, activityId: 'act_get_work_orders', recordId: 'JOB-F', attributes: { status: 'Raised' } }),
+    ).rejects.toThrow();
+
+    const entry = (await c().records.get({ operationId: OP, recordId: 'JOB-F' })).activityHistory.at(-1)!;
+    expect(entry.activityId).toBe('act_get_work_orders');
+    expect(entry.capturedAttributes.system_outcome).toBe('error');
+    expect(String(entry.capturedAttributes.system_log)).toContain('returns failed');
+  });
+
+  it('does not log a GET a hook invoked — that read belongs to the run that asked', async () => {
+    const SOL = 'demo/get-nested';
+    const OP = 'demo/get-nested-op';
+    const withGuard = structuredClone(config);
+    withGuard.workflows.find((w) => w.id === 'wf_work_orders')!.activities
+      .find((a) => a.id === 'act_complete_work_orders')!.before_hook =
+        "if len(invoke('act_get_work_orders', { status: 'Nothing' })) > 0 { fail('x') }";
+    await ensureSolution(db, SOL, 'Nested');
+    await putConfig(db, SOL, withGuard, sink);
+    await ensureOperation(db, OP, SOL, 'Nested');
+    const c = () => appRouter.createCaller({ db, sink });
+    const run = (activityId: string, attributes: Record<string, unknown>, recordId?: string) =>
+      c().activities.run({ operationId: OP, activityId, recordId, attributes });
+
+    await run('act_raise_inspection_jobs', { id: 'JOB-N', job_no: 'J-903', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' });
+    await run('act_create_work_orders', { id: 'WO-N1', job_id: 'JOB-N', activity_code: 'AC-1', problem_code: '', location: 'Site D', due_date: '2026-09-04', workgroup_id: '' });
+    await run('act_dispatch_work_orders', { crew: 'Crew A' }, 'WO-N1');
+    await run('act_complete_work_orders', { completed_date: '2026-08-02' }, 'WO-N1');
+
+    const history = (await c().records.get({ operationId: OP, recordId: 'WO-N1' })).activityHistory;
+    expect(history.map((e) => e.activityId)).not.toContain('act_get_work_orders');
   });
 });
 

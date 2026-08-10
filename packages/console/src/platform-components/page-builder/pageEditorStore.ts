@@ -6,14 +6,17 @@ import {
   saveContextSchema,
   loadPageAccess,
   savePageAccess,
+  loadPageRecord,
+  savePageRecord,
   loadSlotConfigs,
   saveSlotConfigs,
   type PageComponentEntry,
   type ContextKeyDef,
+  type PageRecordDef,
   type SlotConfig,
 } from './persistence';
 
-export type { PageComponentEntry, ContextKeyDef, SlotConfig };
+export type { PageComponentEntry, ContextKeyDef, PageRecordDef, SlotConfig };
 
 export interface PageEditorState {
   mode: 'builder' | 'layout';
@@ -21,6 +24,8 @@ export interface PageEditorState {
   contextSchema: ContextKeyDef[];
   /** Role ids that may open the page (CONSOLE_RUNTIME_SPEC §6). */
   accessOpen: string[];
+  /** The record the page is about; null on a pure view (step 3). */
+  pageRecord: PageRecordDef | null;
   selectedComponentName: string | null;
   selectedSlotId: string | null;
   col1Collapsed: boolean;
@@ -36,6 +41,7 @@ function getStore(pagePath: string) {
       pageComponents: loadPageComponents(pagePath),
       contextSchema: loadContextSchema(pagePath),
       accessOpen: loadPageAccess(pagePath),
+      pageRecord: loadPageRecord(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
       col1Collapsed: false,
@@ -103,6 +109,21 @@ export function togglePageAccess(pagePath: string, roleId: string): void {
       : [...prev.accessOpen, roleId];
     savePageAccess(pagePath, accessOpen);
     return { ...prev, accessOpen };
+  });
+}
+
+// ── Page record ──────────────────────────────────────────────────────────────
+
+/**
+ * Declare what the page is about, or clear it back to a pure view. A page with
+ * no record has no anchor, so the reads it fires leave no trace — which is a
+ * legitimate choice for a page that only displays, and a mistake on one that
+ * acts.
+ */
+export function setPageRecord(pagePath: string, record: PageRecordDef | null): void {
+  getStore(pagePath).set((prev) => {
+    savePageRecord(pagePath, record);
+    return { ...prev, pageRecord: record };
   });
 }
 

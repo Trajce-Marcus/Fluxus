@@ -43,8 +43,29 @@ export interface SlotConfig {
   callbacks: Record<string, string>;
 }
 
+/**
+ * The record a page is about (CLIENT_TRUST_BOUNDARY §7, page-anchor model).
+ * Every run is about exactly one record, so a page that fires activities needs
+ * one of its own — an **app record**: an ordinary record type whose instances
+ * are boards, dashboards, consoles. Nothing marks the type as an app; the only
+ * special thing is how you arrive at the record, and that lives here.
+ *
+ * - `one` — the type has a single instance per operation ("the board"), found
+ *   or created when the page opens. The create runs as an ordinary create
+ *   activity, so the record's history starts with "created" like any other.
+ * - `many` — two groups, two boards: the id arrives in the URL (`?record=`)
+ *   and nothing is created.
+ *
+ * Absent ⇒ a pure view: no anchor, and the GETs it fires stay untraced.
+ */
+export interface PageRecordDef {
+  type: string;
+  instances: 'one' | 'many';
+}
+
 export interface PageDef {
   template?: string;
+  record?: PageRecordDef;
   layout?: LayoutDefinition;
   componentDependencies?: PageComponentEntry[];
   contextSchema?: ContextKeyDef[];

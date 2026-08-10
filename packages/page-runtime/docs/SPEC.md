@@ -20,6 +20,7 @@ A host creates it once at bootstrap (platform singleton, never React context —
 
 - `store` = `client.adapter` (the engine `MemoryAdapter` holding the fetched partition), `config` = `client.config`.
 - `findActivity(id)` — resolve an activity id to its def + owning record type.
+- `findRecordType(id)` — resolve a record type id to its def + workflow, or null (a page may name a type that was since renamed); how `validatePage` checks the page's record declaration.
 - `getPage(path)` / `listPagePaths()` — reads over the client's page snapshot.
 - `evaluateExpression` / `runCallback` — the expression host, below.
 - `validateExpression` / `validateCallback` / `validatePage` / `reportPageFindings` — the validators, below.
@@ -44,7 +45,25 @@ One language, one validator, every surface (PAGE_WIRING_DESIGN):
 
 **How a synchronous evaluator waits.** Evaluation runs in **rounds**: a round evaluates the expression with an `invoke` that records what it is asked for and returns a placeholder; the round's requests are fetched together; the next round evaluates again with the answers in hand. A round that asks for nothing new is the answer. Re-evaluating is free by construction — datasource posture means the expression has no effects to repeat. Rounds beat walking the AST for `invoke` calls because an expression may reach one through a named function, which no walk of the expression alone can see, and because a GET whose parameters come from another GET's answer converges instead of being a special case. The placeholder is a **symbol**, not null: the evaluator reads an unknown object's members as nulls, which would quietly send the next GET a question nobody meant, whereas reaching into a symbol throws and the round is simply abandoned. Four rounds, then a loud failure. Answers are memoised per `(activity, parameters)` within one evaluation, so a GET named twice is asked once; a fresh evaluation re-asks, because something changed.
 
-**`invoke` is not available in a callback** — a callback script is synchronous and returns nothing, so there is no round to wait in. `validatePage` says so at save time rather than leaving it to a runtime error. No anchor record is sent with a page's GET: a page has none of its own until app records arrive with GET logging (step 3), and the gate's warnings go to the console, since a read has no soft stop to offer them to.
+**`invoke` is not available in a callback** — a callback script is synchronous and returns nothing, so there is no round to wait in. `validatePage` says so at save time rather than leaving it to a runtime error. The gate's warnings go to the console, since a read has no soft stop to offer them to.
+
+**The page's record rides with every ask** (2026-08-11, step 3): `client.query` is called with the page's own record as `recordId`, which is where the server lands the read's light entry. It is the **anchor, not the subject** — the question is still whatever the parameters say (DATA_THROUGH_ACTIVITIES §1). A pure view sends none and its reads stay untraced, which `validatePage` warns about when such a page names a GET.
+
+## The record a page is about (2026-08-11)
+
+Every run is about exactly one record, so a page that acts — running an activity, or asking a GET, which is an activity — needs one of its own before its first frame ([CLIENT_TRUST_BOUNDARY §7](../../../docs/CLIENT_TRUST_BOUNDARY.md)). `PageDef.record` says which:
+
+```jsonc
+"record": { "type": "rt_dispatch_boards", "instances": "one" }
+```
+
+- **`one`** — a single instance per operation ("the board"): `resolvePageAnchor` finds it, or **creates it through the record type's create activity** the first time anyone opens the page. There is no second way a record comes into being, so the board's history starts with "created" exactly like a work order raised by hand. Where a type wrongly holds two, the lowest id wins — deterministic beats flipping between boards, and `validatePage` is where the mistake gets said out loud.
+- **`many`** — two groups, two boards: the id arrives from the host (the Runtime app reads `?record=` off the URL) and nothing is created.
+- **absent** — a pure view. It renders, it reads, and its reads land nowhere.
+
+The record type stays **ordinary**: nothing marks it as an app, and the same type can be a page's subject and a workbench record type at once. The only special thing is how you arrive at the record, and that is this declaration.
+
+`PageRenderer` resolves the anchor before rendering any component (a component that read first would fire an untraceable GET and then have to fire it again), shows `Opening…` while it does, and reports a failed resolution in place of the page. The resolved record becomes `PageContext.record` — so `context.record` is live in every expression and callback the page runs, the same root a workbench form sees — and the id it carries is the anchor sent with each GET.
 
 **Callbacks are scripts.** Components emit one `value`; the host packs it under the **`callbackData` root**, so scripts read `callbackData.value`. The free-form second argument was removed 2026-08-09 ([DATA_THROUGH_ACTIVITIES §4](../../../docs/DATA_THROUGH_ACTIVITIES.md)) — `value` stays because it is the anchor, and an anchor is authorised on every run; anything else an activity needs it declares as an attribute and captures itself. Scripts run in `'mutate'` mode (service effects execute) against a read-only records host — direct record writes throw: **mutations flow only through activities**. The validator's `'callback'` mode enforces the same statically.
 
@@ -59,11 +78,13 @@ One language, one validator, every surface (PAGE_WIRING_DESIGN):
 
 ## validatePage
 
-Save-time validation of a whole page file against the model, unchanged in substance from the page-builder original: component names against `componentManifests`, static keys and binding names against prop schemas (wrong kind = error; required dynamic prop unbound = warning), expressions/scripts via the shared validators, literal activity ids against real activities (AST walk). `reportPageFindings` consoles findings with `[page <path>]` prefixes. Callers hold a `PageRuntime`; the module itself takes the narrow `PageValidationHost` slice.
+Save-time validation of a whole page file against the model, unchanged in substance from the page-builder original: the record declaration (below), component names against `componentManifests`, static keys and binding names against prop schemas (wrong kind = error; required dynamic prop unbound = warning), expressions/scripts via the shared validators, literal activity ids against real activities (AST walk). `reportPageFindings` consoles findings with `[page <path>]` prefixes. Callers hold a `PageRuntime`; the module itself takes the narrow `PageValidationHost` slice.
+
+The **record declaration** is checked where it can still be fixed: an unknown record type is an error, and so is a one-instance page whose type has no create activity — both would otherwise strand the page at open. A create that requires attributes is a warning (nobody is there to fill a form in when a page opens its own record), and so is a page that names a GET while being about nothing, since that is legal but means the reads leave no trace.
 
 The reference check is the only part that knows **which surface** a source came from: `services.activities.run(id, …)` resolves in callbacks, and `invoke(id, …)` resolves in dynamic props — where the named activity must also *be* a GET, since nothing else can answer — while an `invoke` in a callback is an error outright. Non-literal ids are left to runtime, as before. The Console's expression dialog still validates language-only (the shared `validateExpression`), so a mistyped activity id surfaces at save, not as you type.
 
-**Package tests** (added with step 2): `test/pageHost.test.ts` covers the round machinery against a stub server — parameters computed from page context, memoisation, a GET fed by another GET never being asked with a placeholder, the round budget, and a host with no door to the model — and `test/validatePage.test.ts` covers the reference check above.
+**Package tests**: `test/pageHost.test.ts` covers the round machinery against a stub server — parameters computed from page context, memoisation, a GET fed by another GET never being asked with a placeholder, the round budget, a host with no door to the model, and the page record riding along as the anchor; `test/validatePage.test.ts` covers the reference check and the record declaration; `test/pageAnchor.test.ts` (step 3) covers find-or-create against a stub client — created through the create activity and not behind the pipeline's back, the second open reusing the first board, determinism when a type wrongly holds two, and the four ways a page can be stranded.
 
 ## Component library
 
@@ -72,4 +93,4 @@ The five demo components (`AppHeader`, `InventorList`, `InventorProfile`, `Map`,
 ## Hosts
 
 - **`@fluxus/console`**: editor preview (`PageEditor`) + `ExpressionDialog` validation; creates the handle in `sdm-runtime/engine.ts` at bootstrap.
-- **`@fluxus/runtime`** (2026-07-19 MVP slice, then the workbench's Pages section): the menu addresses published pages, and `PageView` swaps the content area to the rendered page; creates the handle in `host.ts`. First step of the workbench becoming the Runtime app.
+- **`@fluxus/runtime`** (2026-07-19 MVP slice, then the workbench's Pages section): the menu addresses published pages, and `PageView` swaps the content area to the rendered page; creates the handle in `host.ts`. First step of the workbench becoming the Runtime app. Since step 3 it also addresses **what is open** in the URL — `?page=<pageId>&record=<recordId>` beside the existing `?operation=` — and passes `recordId` to `PageRenderer`.

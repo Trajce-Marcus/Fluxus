@@ -56,7 +56,8 @@ export interface Engine {
   /**
    * The read path: run a GET activity's `returns` with the captured
    * attributes as its parameters (DSL_SPEC §5a). Same gate and same before
-   * hook as a write; nothing persists.
+   * hook as a write; no record changes — but the run is logged light on the
+   * anchor record, like every other activity (step 3).
    */
   runQuery(
     activity: ActivityDef,
@@ -78,6 +79,43 @@ export interface Engine {
 function stripNullCells(value: unknown): unknown {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== null));
+}
+
+// Reserved entry keys a run produces about itself, beside the existing
+// `system_log` / `system_warnings` (runtime SPEC, "entry shape rulings"). Both
+// are written on a logged read: a write says how it went by persisting, a read
+// has only what it can state.
+const SYSTEM_OUTCOME = 'system_outcome';
+const SYSTEM_DURATION = 'system_duration_ms';
+
+/**
+ * The entry's attribute bag as the caller supplied it — shared by both
+ * pipelines, because a GET's parameters are attributes and land on its entry
+ * exactly as a capture form's values land on a write's. Scalars stay raw as
+ * captured; composites are nested attr → sub with only non-empty, non-waived
+ * cells, so their flat dotted / nested raw forms never appear alongside.
+ */
+function capturedEntryAttributes(
+  activity: ActivityDef,
+  captured: Record<string, unknown>,
+  stringValues: Record<string, unknown>,
+  waived: Record<string, string>,
+): Record<string, unknown> {
+  const compositeKeys = new Set(
+    activity.attributes.filter((attr) => compositeSubs(attr)).map((attr) => attr.key),
+  );
+  const entryAttributes: Record<string, unknown> = Object.fromEntries(
+    Object.entries(captured).filter(
+      ([k]) => !compositeKeys.has(k) && !(k.includes('.') && compositeKeys.has(k.split('.')[0])),
+    ),
+  );
+  for (const attr of activity.attributes) {
+    const subs = compositeSubs(attr);
+    if (!subs) continue;
+    const nested = nestComposite(attr.key, subs, stringValues, waived);
+    if (Object.keys(nested).length > 0) entryAttributes[attr.key] = nested;
+  }
+  return entryAttributes;
 }
 
 export function createEngine({ store, config, services: hostServices = [], user }: EngineOptions): Engine {
@@ -157,8 +195,12 @@ export function createEngine({ store, config, services: hostServices = [], user 
     inFlight.add(activityId);
     try {
       // The invoking run's anchor carries through: a guard asks its question
-      // about the record it is guarding.
-      return runQuery(activity, params, anchorRecord).data;
+      // about the record it is guarding. It is not logged as a run of its own —
+      // a read reached from inside a hook is part of the run that triggered it
+      // (runtime SPEC: reads are subsumed by the activity that triggered them),
+      // and a separate entry would also mean a read persisting inside a write
+      // the gate went on to reject.
+      return executeQuery(activity, params, anchorRecord, { log: false }).data;
     } finally {
       inFlight.delete(activityId);
     }
@@ -194,21 +236,34 @@ export function createEngine({ store, config, services: hostServices = [], user 
   }
 
   /**
-   * The read path (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES step 1). Shares the
-   * front of the pipeline with `runActivity` — availability gate, then the
-   * before hook as a gate — and then answers with the `returns` expression
-   * instead of touching storage. Nothing persists, so there is no entry, no
+   * The read path (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES steps 1 and 3).
+   * Shares the front of the pipeline with `runActivity` — availability gate,
+   * then the before hook as a gate — and then answers with the `returns`
+   * expression instead of touching storage. No record changes, so there is no
    * record_map and no soft stop: gate warnings ride back with the answer
    * rather than asking for confirmation, because re-running a read that
    * changed nothing would only run it again.
    *
-   * Logging is step 3. Today a GET leaves no trace, which is the one promise
-   * of "the pipeline is the log" this does not yet keep.
+   * A GET is an activity, so its run is recorded like every other: one entry
+   * on the anchor record, **logged light** — the parameters (which are its
+   * attributes), the caller, how long it took and how it ended, and never the
+   * answer (runtime SPEC, "the pipeline is the log"). An anchorless read has
+   * nowhere to land and stays untraced; a page supplies its app record, which
+   * is the other half of step 3.
    */
   function runQuery(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
+  ): QueryActivityResult {
+    return executeQuery(activity, captured, anchorRecord, { log: true });
+  }
+
+  function executeQuery(
+    activity: ActivityDef,
+    captured: Record<string, unknown>,
+    anchorRecord: RecordInstance | null,
+    { log }: { log: boolean },
   ): QueryActivityResult {
     if (activity.record_map !== 'GET') {
       throw new Error(`'${activity.name}' is not a GET activity — run it through runActivity`);
@@ -217,7 +272,13 @@ export function createEngine({ store, config, services: hostServices = [], user 
       throw new Error(`GET activity '${activity.id}' has no 'returns' expression`);
     }
     enforceAvailability(activity, anchorRecord);
-    runLog = [];
+
+    // A nested read logs nothing of its own, so it must not disturb the run it
+    // belongs to: its logger lines join that run's system log rather than
+    // replacing it.
+    const outerLog = runLog;
+    if (log) runLog = [];
+    const startedAt = Date.now();
 
     // Parameters are attributes, so they arrive and coerce exactly as a
     // capture form's values do (DATA_THROUGH_ACTIVITIES §2).
@@ -234,14 +295,46 @@ export function createEngine({ store, config, services: hostServices = [], user 
       invoke: (id, params) => invoke(id, params, anchorRecord),
     };
 
+    // A gate rejection leaves no trace, exactly as a rejected submission does:
+    // the entry is the record of a run that happened.
     const warnings = runGate(activity, scriptContext);
-    const answer = evaluateExpression(
-      activity.returns,
-      buildEvalHost(store, config, scriptContext, services),
-    );
-    // Callers are SDM-blind (an app page, another host's fetch), so records
-    // flatten to plain data on the way out — the same shaping a component gets.
-    return { data: toComponentValue(answer), warnings };
+
+    // The light entry, written whichever way the answer goes. `outcome` is the
+    // one thing a read has to say about itself that a write says by persisting;
+    // an error's message rides the system log rather than earning a key.
+    const record = (outcome: string) => {
+      if (!log || !anchorRecord) return;
+      const entryAttributes = capturedEntryAttributes(activity, captured, stringValues, {});
+      entryAttributes[SYSTEM_OUTCOME] = outcome;
+      entryAttributes[SYSTEM_DURATION] = Date.now() - startedAt;
+      if (runLog.length > 0) entryAttributes['system_log'] = [...runLog];
+      store.appendActivity(anchorRecord.id, {
+        activityId: activity.id,
+        activityName: activity.name,
+        ...(user ? { author: user.id } : {}),
+        capturedAttributes: entryAttributes,
+        ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
+        timestamp: new Date().toISOString(),
+      });
+    };
+
+    try {
+      const answer = evaluateExpression(
+        activity.returns,
+        buildEvalHost(store, config, scriptContext, services),
+      );
+      record('ok');
+      // Callers are SDM-blind (an app page, another host's fetch), so records
+      // flatten to plain data on the way out — the same shaping a component gets.
+      return { data: toComponentValue(answer), warnings };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      runLog.push(`returns failed: ${message}`);
+      record('error');
+      throw err;
+    } finally {
+      if (log) runLog = outerLog;
+    }
   }
 
   function runActivity(
@@ -371,22 +464,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
         }
       }
     }
-    // Entry shape: scalar attributes raw as captured; composite attributes
-    // nested attr → sub with only non-empty, non-waived cells (their flat
-    // dotted / nested raw forms never appear alongside).
-    const compositeKeys = new Set(initialCompositeJson.keys());
-    const scalarCaptured = Object.fromEntries(
-      Object.entries(captured).filter(
-        ([k]) => !compositeKeys.has(k) && !(k.includes('.') && compositeKeys.has(k.split('.')[0]))
-      )
-    );
-    const entryAttributes: Record<string, unknown> = { ...scalarCaptured };
-    for (const attr of activity.attributes) {
-      const subs = compositeSubs(attr);
-      if (!subs) continue;
-      const nested = nestComposite(attr.key, subs, stringValues, waived);
-      if (Object.keys(nested).length > 0) entryAttributes[attr.key] = nested;
-    }
+    const entryAttributes = capturedEntryAttributes(activity, captured, stringValues, waived);
     Object.assign(entryAttributes, serializeFields(hookWritten));
     if (runLog.length > 0) entryAttributes['system_log'] = [...runLog];
 

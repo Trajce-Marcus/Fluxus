@@ -1,9 +1,10 @@
 # Data through activities — the read path, and guarding what comes back
 
-**Status: designed 2026-08-09; steps 0–2 built (0 and 1 on 2026-08-09, 2 on
-2026-08-10).** The build sequence is at the end — **the spine is complete**:
-§4's removal, GET-in-the-engine, and a page that names a GET are done. Steps
-3–5, which make it production-shaped, have not started.
+**Status: designed 2026-08-09; steps 0–3 built (0 and 1 on 2026-08-09, 2 on
+2026-08-10, 3 on 2026-08-11).** The build sequence is at the end — the spine
+(§4's removal, GET-in-the-engine, a page that names a GET) is complete, and
+step 3 has closed the log promise for reads and given a page a record to anchor
+on. Steps 4–5 remain.
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -23,9 +24,9 @@ activities, and the model answers.
 > DELETE. **GET activities out.** Every activity sits in a workflow, and every
 > workflow belongs to a record type, so every run anchors on a record.
 
-The write half is built and holds. The read half is specified
-([DSL_SPEC §5a](../packages/dsl/docs/DSL_SPEC.md)) and is not built — which is
-why the rule is currently true of writes only.
+Both halves are built: writes through `runActivity`, reads through `runQuery`
+and `invoke` ([DSL_SPEC §5a](../packages/dsl/docs/DSL_SPEC.md)), each recorded
+on the record it anchors on.
 
 **Where the code diverged.** A page's `dynamicProps` entry was a FluxScript
 expression stored on the page, evaluated in the browser against records the
@@ -54,7 +55,9 @@ attributes, and may reference any record ids in play through `ctx`.
 **The bootstrap case.** At connect the client holds nothing, so there is no
 record in play. This is not an exception: opening the app creates or opens the
 app's own record, which is an ordinary create — and on a create the id comes
-*out* of the run rather than into it. The bootstrap GET anchors there.
+*out* of the run rather than into it. The bootstrap GET anchors there. **Built
+at step 3**: a page declares the record it is about, and a one-instance page
+finds or creates it at open.
 
 ---
 
@@ -78,7 +81,7 @@ parameters; that is the same thing named at the other end.
 response. GET is **logged light** — parameters, caller, outcome, duration,
 never the returned data ([runtime SPEC](../packages/runtime/docs/SPEC.md), "the
 pipeline is the log"); `watch` escalates a particular read when you need to see
-what someone actually saw.
+what someone actually saw. Built at step 3, below.
 
 **Hooks may invoke a GET.** `invoke(name, params)` is read-only, so it does not
 carry the cascade risk that keeps hooks from starting other workflows
@@ -173,11 +176,72 @@ correctly said `Unknown activity`) while the server answered
 `Activity not found`, because the activity was only ever in the bootstrap
 fixture and never in anyone's database.
 
-Two things are deliberately *not* here. `invoke` is unavailable in a **callback**
+One thing is deliberately *not* here: `invoke` is unavailable in a **callback**
 — a callback script is synchronous and returns nothing, so there is no round to
-wait in; `validatePage` rejects it at save. And a page's GET carries **no anchor
-record**: a page has none of its own until step 3, so the run is anchorless, which
-is exactly the hole step 3 fills.
+wait in; `validatePage` rejects it at save. The other gap this step left — a
+page's GET carrying no anchor — is what step 3 filled.
+
+### Logged, and anchored — **BUILT 2026-08-11 (step 3)**
+
+The two halves interlocked as expected: an entry needs somewhere to land, and a
+page had nowhere to put one. Both are now in place, and neither needed a new
+mechanism.
+
+**A GET is recorded like every other activity.** `runQuery` appends one entry to
+the anchor record: the parameters (which are attributes, so they land exactly as
+a write's captured values do — the entry-building code is now literally shared
+between the two pipelines), the caller as `author`, gate warnings, and two
+reserved keys of its own, `system_outcome` and `system_duration_ms`. The answer
+appears nowhere. `activities.query` write-backs like a run does, so the entry
+reaches the record and the reporting projection through the path that already
+existed — a GET row in `rpt_activities` is a GET row like any other, which is
+what makes "what did this person read" an ordinary query rather than a feature.
+
+Three calls the build made, each following from a rule already written:
+
+- **A rejected read leaves no trace, a failed one does.** A gate `fail` records
+  nothing (rejected submissions leave no trace — the doctrine the write path
+  already follows), while a `returns` that throws records the attempt with
+  `system_outcome: 'error'` and the message on the system log, then rethrows.
+  That is the same shape as a failing after hook: recorded, nothing applied.
+- **A GET invoked from a hook is not a run of its own.** Its lines join the
+  triggering run's system log and no second entry appears — the runtime SPEC's
+  existing rule that reads are subsumed by the activity that triggered them,
+  applied to the read that happens to be an activity. It also stops a read from
+  persisting inside a write whose gate went on to reject it, which the shared
+  write-back would otherwise have done.
+- **The nested-read bug the build surfaced.** `runQuery` cleared the engine's
+  per-run log; a hook that logged, then invoked a GET, lost the lines it had
+  already written. The nested call now leaves the caller's log alone. It was
+  latent since step 1 and had no test — one exists now.
+
+**A page's record is a declaration on the page.** `PageDef.record` names the
+record type and whether it has one instance or many; `resolvePageAnchor` finds
+or creates it before the first frame renders. One instance ⇒ found, or created
+**through the type's create activity**, so a board's history starts with
+"created" like anything else; many ⇒ the id comes off the URL; absent ⇒ a pure
+view whose reads land nowhere. The record type stays ordinary — nothing marks it
+as an app.
+
+The resolved record becomes `context.record` for every expression and callback
+the page runs, and its id is the anchor sent with each GET. Rendering waits for
+it deliberately: a component that read first would fire an untraceable GET and
+then have to fire it again.
+
+**The URL now addresses what is open** — `?page=<pageId>&record=<recordId>`
+beside the existing `?operation=`. Query params over path segments because the
+Runtime host is a static deploy with no SPA rewrite and a page id already
+contains a slash; the shape is revisitable, since nothing stored depends on it.
+`?operation=` stays what it was, session establishment rather than addressing,
+and it is the operation handle ([CLIENT_TRUST_BOUNDARY §4](CLIENT_TRUST_BOUNDARY.md))
+that retires it, not this.
+
+**And the Console can author both**, which is the step-2 lesson applied in
+advance rather than after the fact: a Page Record section beside Page Access
+picks the record type and the number of instances, and `validatePage` catches
+the two ways a page can be stranded (no such type, no create activity) plus two
+warnings — a create that needs values nobody can supply at page open, and a page
+that names a GET while being about nothing.
 
 **On §6's question of whether the query language is expressive enough** — the
 only honest answer this step produced is that nothing was missing for the case
@@ -317,12 +381,12 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 | 0 | ✅ **BUILT 2026-08-09** — remove the `data` half of `callbackData`; rewrite the dispatch crew as a captured attribute | the rule that values arrive as attributes; independent of everything below |
 | 1 | ✅ **BUILT 2026-08-09** — GET in the engine: `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
 | 2 | ✅ **BUILT 2026-08-10** — a page names a GET for a dynamic prop instead of writing an inline expression: `invoke` supplied to the page host, evaluated in rounds, checked by `validatePage` | **the goal**: data requirements move out of the page and into the model |
-| 3 | Log GETs light; app record created or opened on first page open, as the anchor | observability, and the pipeline-is-the-log promise held for reads |
+| 3 | ✅ **BUILT 2026-08-11** — GETs logged light on the anchor; a page declares its record, found or created at page open | observability, and the pipeline-is-the-log promise held for reads |
 | 4 | An input names its producer; the engine re-invokes it at submission | the guarding payoff — tier 1 absorbs tier 2 |
 | 5 | Reconcile the connect-time snapshot: refresh-after-run by re-invoke, and whether connect stays one big GET or pages fetch their own | production shape; decide on evidence |
 
-Steps 0–2 are the spine, and it is **complete as of 2026-08-10**. 3–5 are what
-make it production-shaped.
+Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
+2026-08-11. 4–5 are what remain to make it production-shaped.
 
 ---
 
@@ -340,7 +404,11 @@ make it production-shaped.
   step above. Whether such a value is a prefill, locked, or skips the form is
   part of that question.
 - **Volume**: one bootstrap GET versus per-page GETs. A scaling decision, to be
-  made on evidence, not up front.
+  made on evidence, not up front. Step 3 sharpened it rather than answering it:
+  reads now leave rows, and a page's reads all anchor on one record, so an app
+  record's history is the first thing in the platform whose growth is driven by
+  browsing rather than by doing. Entry **class** and retention are declared in
+  the runtime SPEC and unbuilt, so nothing trims it yet.
 - **Whether the query language is expressive enough** for what components
   actually need. Step 2 is built but has been used on one GET over one record
   type, which proves little — still open, now for want of a real page rather
@@ -354,6 +422,20 @@ make it production-shaped.
 ---
 
 ## Decision log
+
+**2026-08-11** — A read is recorded the same way a write is: **one ordinary
+history entry on the anchor record**, projection included. No second treatment
+for reads, no read-only log store — the alternative (rows in the reporting
+tables only) was declined as a second source of truth.
+
+**2026-08-11** — **A GET reached from a hook is not logged separately.** It
+belongs to the run that asked, extending the existing rule for read service
+calls; the alternative also let a read persist inside a rejected write.
+
+**2026-08-11** — A page's record is declared **on the page**, and a
+one-instance page's record is **created through the create activity** at open.
+There is one way a record comes into being, and a page opening its board uses
+it.
 
 **2026-08-10** — A prop names its producer with **`invoke` inside the expression
 it already is**, not with a structured binding beside it. One stored shape, one

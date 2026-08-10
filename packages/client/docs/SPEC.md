@@ -55,12 +55,15 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    all server-side), then `refresh()`. Refresh runs even when the call throws,
    because a failing after hook persists the entry by doctrine.
 4. **`query(input)`** — the read counterpart (DSL_SPEC §5a): name a GET
-   activity, hand it its parameters, get `{ data, warnings }` back. No
-   `refresh()` afterwards, because nothing changed. The app carries the
-   activity id, never the query. Its caller since 2026-08-10 is the page
-   runtime, which binds it as the `invoke` a dynamic prop reaches the model
-   through (DATA_THROUGH_ACTIVITIES step 2); no anchor record is sent, because
-   a page has none of its own until step 3.
+   activity, hand it its parameters, get `{ data, warnings }` back. The app
+   carries the activity id, never the query. Its caller since 2026-08-10 is the
+   page runtime, which binds it as the `invoke` a dynamic prop reaches the model
+   through (DATA_THROUGH_ACTIVITIES step 2), and since step 3 it passes
+   `recordId` — the page's own record, the anchor the server logs the read
+   against, not the subject of the query. Still no `refresh()` afterwards: no
+   record data changed, and the light entry the read produces is of no interest
+   to the browser that caused it, so refreshing would double the round trips of
+   every page that reads.
 5. **`savePage(path, def)` / `deletePage(path)`** (backend stage 3) — mutate
    the local `pages` map first, then round-trip `pages.put`/`pages.delete`, so
    host reads of the page set stay synchronous. Defs are opaque `unknown`
