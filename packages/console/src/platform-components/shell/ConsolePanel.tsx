@@ -2,7 +2,14 @@ import { useRef } from 'react';
 import { shellStore } from './store';
 import { useShellState } from './useShellState';
 
-function ConsolePanelComponent() {
+interface ConsolePanelProps {
+  /** Rendered in the header beside the title — a count, a status word. */
+  summary?: React.ReactNode;
+  /** The panel's contents. Empty falls back to the idle prompt. */
+  children?: React.ReactNode;
+}
+
+function ConsolePanelComponent({ summary, children }: ConsolePanelProps) {
   const { consoleOpen, consoleHeight } = useShellState(['consoleOpen', 'consoleHeight']);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
@@ -36,6 +43,7 @@ function ConsolePanelComponent() {
       <div className="console-drag-handle" onMouseDown={onDragStart} />
       <div className="console-header">
         <span className="console-title">Console</span>
+        {summary ? <span className="console-summary">{summary}</span> : null}
         <button className="console-toggle" title={consoleOpen ? 'Collapse' : 'Expand'} onClick={toggleOpen}>
           <svg
             width="10"
@@ -50,8 +58,14 @@ function ConsolePanelComponent() {
       </div>
       {consoleOpen && (
         <div className="console-body">
-          <span className="console-prompt">{'>'}</span>
-          <span className="console-cursor">_</span>
+          {children ? (
+            <div className="console-content">{children}</div>
+          ) : (
+            <>
+              <span className="console-prompt">{'>'}</span>
+              <span className="console-cursor">_</span>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -118,6 +132,16 @@ export const css = `
     display: flex;
     align-items: flex-start;
     gap: 6px;
+  }
+  .console-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .console-summary {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-right: 10px;
   }
   .console-prompt {
     color: var(--color-accent);

@@ -243,6 +243,31 @@ the two ways a page can be stranded (no such type, no create activity) plus two
 warnings — a create that needs values nobody can supply at page open, and a page
 that names a GET while being about nothing.
 
+**What step 3 could not do for pages already stored — 2026-08-11.** `validatePage`
+gained the two record checks above, and they worked: a real page in a real
+database named a GET while declaring no record, and the warning fired exactly as
+written. It fired into the browser's devtools console, which is not where anyone
+authoring a page is looking, so the page sat that way — reading, answering, and
+logging nothing, which is the one thing this step exists to prevent.
+
+Nothing about the checking was missing; only its audience was. The findings now
+render in the Console's own bottom panel, over **every page in the open
+solution** rather than only the one being edited, so pages that drifted before a
+check existed surface without anyone opening them. Saving a broken page is still
+allowed — the panel is what makes it impossible to do so unknowingly.
+
+Worth recording because it was nearly built the other way: the first proposal
+was to validate pages **on the server**, at `pages.put`, the way the model is
+validated at `config.put`. That would have made the server import the page
+validator, and with it the component registry and React, to police an artifact
+it deliberately keeps opaque — coupling the server's idea of a valid page to a
+library of UI components. The reason it looked necessary was an assumption that
+nothing checked pages at save. Something did.
+
+**Publishing still checks nothing** — `pages.publish` snapshots the draft, errors
+and all. Saving a broken page and publishing one are different acts and only the
+first has a reason to be permissive. Open.
+
 **On §6's question of whether the query language is expressive enough** — the
 only honest answer this step produced is that nothing was missing for the case
 built. It is one GET over one record type, so it is weak evidence; the question
@@ -422,6 +447,13 @@ Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
 ---
 
 ## Decision log
+
+**2026-08-11** — **A page is validated where it is authored, not at the server
+door.** The Console already ran `validatePage` on every save; its findings went
+to a console nobody reads, so they were moved onto the screen. The rejected
+alternative — validating at `pages.put` — would have made the server depend on
+the page validator, the component registry and React, to check an artifact it
+stores as opaque data on purpose.
 
 **2026-08-11** — A read is recorded the same way a write is: **one ordinary
 history entry on the anchor record**, projection included. No second treatment

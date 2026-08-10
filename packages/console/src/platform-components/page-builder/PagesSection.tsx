@@ -14,6 +14,7 @@ import { PageEditor, css as pageEditorCss } from './PageEditor';
 import { PageExplorer, css as explorerCss } from './PageExplorer';
 import { ComponentsPanel, css as componentsCss } from './ComponentsPanel';
 import { SearchPanel, css as searchCss } from './SearchPanel';
+import { PageProblems, ProblemSummary, collectPageProblems, css as problemsCss } from './PageProblems';
 
 const PANELS = [
   { id: 'pages', label: 'Pages' },
@@ -25,7 +26,8 @@ type PanelId = (typeof PANELS)[number]['id'];
 
 function PagesSectionComponent() {
   const [panel, setPanel] = useState<PanelId>('pages');
-  const { activeTab } = useShellState(['activeTab']);
+  const { activeTab } = useShellState(['activeTab', 'pagesVersion']);
+  const problems = collectPageProblems();
 
   return (
     <div className="pages-section">
@@ -63,7 +65,9 @@ function PagesSectionComponent() {
             </div>
           )}
         </div>
-        <ConsolePanel />
+        <ConsolePanel summary={<ProblemSummary problems={problems} />}>
+          <PageProblems problems={problems} />
+        </ConsolePanel>
       </div>
     </div>
   );
@@ -76,6 +80,7 @@ export const css = `
   ${tabBarCss}
   ${consolePanelCss}
   ${pageEditorCss}
+  ${problemsCss}
 
   .pages-section {
     display: flex;

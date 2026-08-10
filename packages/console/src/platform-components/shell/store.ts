@@ -28,6 +28,11 @@ export interface ShellState {
   activeTab: string | null;
   consoleOpen: boolean;
   consoleHeight: number;
+  /** Bumped on every page save/delete, so anything derived from the whole page
+   *  set — the problem list in the console panel — recomputes. Pages are held
+   *  in the client's snapshot, which is mutated in place rather than replaced,
+   *  so there is nothing else for a subscriber to notice. */
+  pagesVersion: number;
 }
 
 export const shellStore = createContextStore<ShellState>({
@@ -42,6 +47,7 @@ export const shellStore = createContextStore<ShellState>({
   activeTab: null,
   consoleOpen: true,
   consoleHeight: 200,
+  pagesVersion: 0,
 });
 
 /** Enter a solution's design scope (call after engine.openSolution resolves —

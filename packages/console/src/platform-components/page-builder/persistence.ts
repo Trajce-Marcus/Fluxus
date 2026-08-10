@@ -8,6 +8,13 @@ import type {
   SlotConfig,
 } from '@fluxus/page-runtime';
 import { sdmClient, pageRuntime } from '../../sdm-runtime/engine';
+import { shellStore } from '../shell/store';
+
+/** The client's page snapshot is mutated in place, so a write is invisible to
+ *  React on its own. Every page write ends here. */
+function bumpPagesVersion(): void {
+  shellStore.set((prev) => ({ ...prev, pagesVersion: prev.pagesVersion + 1 }));
+}
 
 // Pages live on @fluxus/server (config pipeline; no localStorage, hard
 // cutover like stage 2). The client snapshots the scope's page set at
@@ -35,6 +42,7 @@ export function savePage(path: string, def: PageDef): void {
     console.error(`savePage('${path}') failed to persist to the server`, err);
   });
   pageRuntime.reportPageFindings(path, def);
+  bumpPagesVersion();
 }
 
 export function loadPage(path: string): PageDef | null {
@@ -125,6 +133,7 @@ export function deletePage(path: string): void {
   sdmClient.deletePage(path).catch((err) => {
     console.error(`deletePage('${path}') failed to persist to the server`, err);
   });
+  bumpPagesVersion();
 }
 
 export function pageExists(path: string): boolean {
