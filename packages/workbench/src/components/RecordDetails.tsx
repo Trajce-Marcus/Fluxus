@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
-import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
+import { FileChips, PhotoThumbs, isDescriptorValue } from '@fluxus/page-runtime';
 import { useWorkbench } from '../WorkbenchContext';
 import { fieldLabel } from '@fluxus/engine';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';

@@ -1,5 +1,5 @@
 import { useState, useEffect, createElement, useCallback, useMemo } from 'react';
-import type { ActivityDef, RecordInstance } from '@fluxus/engine';
+import type { ActivityDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { ComponentManifest } from './manifest';
 import type { SlotConfig } from './pageDef';
 import type { PageRuntime } from './runtime';
@@ -22,6 +22,9 @@ interface Props {
 interface PendingForm {
   activity: ActivityDef;
   anchorRecord: RecordInstance | null;
+  /** The activity's owning record type — the form resolves reference labels
+   *  against it. */
+  recordTypeId: string;
 }
 
 export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError }: Props) {
@@ -33,28 +36,38 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // activity outcomes flow back to the app (locked ROADMAP behaviour).
   const [refreshTick, setRefreshTick] = useState(0);
 
-  // Runs the pipeline server-side for an app-triggered activity (the client
-  // refreshes the snapshot after); the platform (not the component) owns the
-  // warn soft-stop confirmation.
-  const runNow = useCallback(async (
+  // Runs the pipeline server-side (the client refreshes the snapshot after).
+  // A run that lands bumps the refresh tick, which is how an activity's
+  // outcome reaches the page's dynamic props.
+  const runOnce = useCallback(async (
     activity: ActivityDef,
-    captured: Record<string, string>,
+    captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-  ): Promise<boolean> => {
-    const input = {
+    options?: { acknowledgedWarnings?: boolean; waived?: Record<string, string> },
+  ): Promise<RunActivityResult> => {
+    const result = await runtime.client.runActivity({
       activityId: activity.id,
       recordId: anchorRecord?.id,
       attributes: captured,
-    };
-    let result = await runtime.client.runActivity(input);
-    if (result.status === 'needs-confirmation') {
-      const ok = window.confirm(`${result.warnings.join('\n')}\n\nContinue anyway?`);
-      if (!ok) return false;
-      result = await runtime.client.runActivity({ ...input, acknowledgedWarnings: true });
-    }
-    setRefreshTick((t) => t + 1);
-    return true;
+      waived: options?.waived,
+      acknowledgedWarnings: options?.acknowledgedWarnings,
+    });
+    if (result.status === 'done') setRefreshTick((t) => t + 1);
+    return result;
   }, [runtime]);
+
+  // An attribute-less activity has no form to carry the soft stop, so the
+  // platform (not the component) asks here. A form activity's warnings go to
+  // the form's own Continue/Cancel instead.
+  const runWithConfirm = useCallback(async (
+    activity: ActivityDef,
+    anchorRecord: RecordInstance | null,
+  ): Promise<void> => {
+    const result = await runOnce(activity, {}, anchorRecord);
+    if (result.status !== 'needs-confirmation') return;
+    if (!window.confirm(`${result.warnings.join('\n')}\n\nContinue anyway?`)) return;
+    await runOnce(activity, {}, anchorRecord, { acknowledgedWarnings: true });
+  }, [runOnce]);
 
   // services.activities.run — the callback contract is the anchor record
   // alone: UI activity (has attributes) → standard capture form; attribute-less
@@ -67,15 +80,15 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
       ? null
       : runtime.store.getRecord(String(record));
     if (found.activity.attributes.length > 0) {
-      setPendingForm({ activity: found.activity, anchorRecord });
+      setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id });
     } else {
       // Async now (server round trip): the callback script has already
       // returned, so failures surface through the host error channel.
-      runNow(found.activity, {}, anchorRecord).catch((err: unknown) => {
+      runWithConfirm(found.activity, anchorRecord).catch((err: unknown) => {
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       });
     }
-  }, [runtime, runNow, onError, manifest.name]);
+  }, [runtime, runWithConfirm, onError, manifest.name]);
 
   // Handlers behind services.page (UI-local effects) and services.activities
   // (host-neutral activity runs) for this component instance.
@@ -157,7 +170,13 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
         <ActivityFormModal
           activity={pendingForm.activity}
           anchorRecord={pendingForm.anchorRecord}
-          onSubmit={(captured) => runNow(pendingForm.activity, captured, pendingForm.anchorRecord)}
+          recordTypeId={pendingForm.recordTypeId}
+          host={runtime.captureHost}
+          onSubmit={async (captured, options) => {
+            const result = await runOnce(pendingForm.activity, captured, pendingForm.anchorRecord, options);
+            if (result.status === 'done') setPendingForm(null);
+            return result;
+          }}
           onClose={() => setPendingForm(null)}
         />
       )}

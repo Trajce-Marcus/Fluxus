@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useWorkbench } from '../WorkbenchContext';
-import { RecordPickerDialog } from './RecordPickerDialog';
-import { coerceCaptured, coerceCapturedValue, compositeSubs, isBlank } from '@fluxus/engine';
+// The standard capture form — every attribute type, show conditions,
+// validation rules, waivers and the before-hook warning decision. It was the
+// workbench's until 2026-08-16; it lives here because both a record UI and a
+// page open the same form, and the only thing that differed was the host it
+// asked (see ./host.ts).
+
+import { useEffect, useState } from 'react';
+import { useCaptureHost, type CaptureScript } from './host';
+import { coerceCaptured, coerceCapturedValue, compositeSubs, evaluateWithGets, isBlank } from '@fluxus/engine';
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
 import { DateTimeInput, FileInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
@@ -73,7 +78,7 @@ function emptyValue(attr: AttributeDef): unknown {
 }
 
 export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
-  const { resolveDisplayLabel, resolveAttributeDisplayField, dslEvaluate, uploads } = useWorkbench();
+  const { evaluate, uploads, resolveDisplayLabel, resolveAttributeDisplayField, recordPicker } = useCaptureHost();
 
   // Form state is FLAT: composite attributes contribute one entry per cell
   // under the dotted path `attr.sub` — the engine nests them again. Section
@@ -147,10 +152,14 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   // Captured strings coerced to typed script values (dates, numbers) per attribute type
   const typedValues = coerceCaptured(activity.attributes, values);
 
+  // Conditions and validation rules re-run on every keystroke, so they are
+  // evaluated in place, against what the host already holds — no `invoke`, no
+  // waiting. A dropdown's datasource is the one capture expression allowed a
+  // round trip (ListField below).
   const isVisible = (attr: AttributeDef): boolean => {
     if (!attr.show_condition) return true;
     try {
-      return dslEvaluate(attr.show_condition, {
+      return evaluate(attr.show_condition, {
         attributes: typedValues,
         anchorRecord,
         activity: { id: activity.id, name: activity.name },
@@ -254,7 +263,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
     for (const unit of captureUnits) {
       if (!unit.validation || isBlank(values[unit.key])) continue; // empties are required's job
       try {
-        const ok = dslEvaluate(unit.validation, {
+        const ok = evaluate(unit.validation, {
           attributes: typedValues,
           anchorRecord,
           activity: { id: activity.id, name: activity.name },
@@ -344,6 +353,15 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
                   outline: 'none',
                   boxSizing: 'border-box',
                 }}
+              />
+            ) : attr.type === 'reference' && !recordPicker ? (
+              // No picker from this host: the id is typed, which is what a page
+              // has always offered here. Browsing records to choose one needs
+              // records, and a page holds none.
+              <TextInput
+                value={String(values[attr.key] ?? '')}
+                onChange={val => setValues(v => ({ ...v, [attr.key]: val }))}
+                placeholder={attr.description ?? 'Record id'}
               />
             ) : attr.type === 'reference' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -480,12 +498,13 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
         </div>
       </form>
 
-      {openPickerFor && (() => {
+      {openPickerFor && recordPicker && (() => {
         const attr = activity.attributes.find(a => a.key === openPickerFor)!;
         const fkRecordType = attr.type_config?.fk_record_type;
         if (!fkRecordType) return null;
+        const RecordPicker = recordPicker;
         return (
-          <RecordPickerDialog
+          <RecordPicker
             targetTypeId={fkRecordType}
             onSelect={(record) => {
               setValues(v => ({ ...v, [openPickerFor]: record.id }));
@@ -503,10 +522,17 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
 }
 
 // ── List attribute (DSL-driven) ────────────────────────────────────────────────
-// Options come from evaluating the attribute's FluxScript datasource against the
-// live store, with current form values injected as `attributes` — which is what makes
-// dependent attributes (city → suburb) work: this re-renders on every form value
-// change, so the datasource re-evaluates with the latest attribute values.
+// Options come from evaluating the attribute's FluxScript datasource with the
+// current form values injected as `attributes` — which is what makes dependent
+// attributes (city → suburb) work: this re-runs on every form value change, so
+// the datasource re-evaluates with the latest attribute values.
+//
+// Asynchronous since 2026-08-16: the datasource may name a GET
+// (`invoke('act_get_crews', { region: attributes.region })`), which is a round
+// trip, so it runs through `evaluateWithGets` — evaluate, fetch what the round
+// asked for, evaluate again. A datasource that names no GET resolves on the
+// first round without touching the network, so the loading state shows only
+// when something is genuinely being fetched.
 
 interface ListOption {
   value: string;
@@ -523,35 +549,70 @@ interface ListFieldProps {
 }
 
 function ListField({ attr, value, allValues, anchorRecord, activity, onChange }: ListFieldProps) {
-  const { dslEvaluate } = useWorkbench();
+  const { evaluate, query } = useCaptureHost();
   const datasource = attr.type_config?.datasource ?? '';
   const keyField = attr.type_config?.key_field ?? 'id';
   const displayField = attr.type_config?.display_field ?? 'name';
 
-  const { options, error } = useMemo((): { options: ListOption[]; error: string | null } => {
-    if (!datasource) return { options: [], error: `'${attr.key}' has no datasource` };
-    try {
-      const result = dslEvaluate(datasource, {
-        attributes: coerceCaptured(activity.attributes, allValues),
-        anchorRecord,
-        activity: { id: activity.id, name: activity.name },
-      });
-      if (!Array.isArray(result)) return { options: [], error: 'datasource did not return a list' };
-      return { options: result.map(item => toOption(item, keyField, displayField)), error: null };
-    } catch (err) {
-      return { options: [], error: err instanceof Error ? err.message : String(err) };
+  const [{ options, error, loading }, setState] = useState<{
+    options: ListOption[];
+    error: string | null;
+    loading: boolean;
+  }>({ options: [], error: null, loading: true });
+
+  const script: Omit<CaptureScript, 'invoke'> = {
+    attributes: coerceCaptured(activity.attributes, allValues),
+    anchorRecord,
+    activity: { id: activity.id, name: activity.name },
+  };
+
+  useEffect(() => {
+    if (!datasource) {
+      setState({ options: [], error: `'${attr.key}' has no datasource`, loading: false });
+      return;
     }
+    // A run that overtakes an in-flight one discards the stale answer rather
+    // than painting it — the same rule the page's dynamic props follow.
+    let cancelled = false;
+    setState(s => ({ ...s, loading: true }));
+    void (async () => {
+      try {
+        const result = await evaluateWithGets(
+          invoke => evaluate(datasource, { ...script, invoke }),
+          { query, anchorId: anchorRecord?.id, label: `Datasource for '${attr.key}'` },
+        );
+        if (cancelled) return;
+        if (!Array.isArray(result)) {
+          setState({ options: [], error: 'datasource did not return a list', loading: false });
+          return;
+        }
+        setState({ options: result.map(item => toOption(item, keyField, displayField)), error: null, loading: false });
+      } catch (err) {
+        if (cancelled) return;
+        setState({ options: [], error: err instanceof Error ? err.message : String(err), loading: false });
+      }
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasource, keyField, displayField, JSON.stringify(allValues), anchorRecord?.id]);
 
-  // A stale selection (e.g. suburb after the city changed) clears itself
+  // A stale selection (e.g. suburb after the city changed) clears itself —
+  // but not while the options are still on their way, or every dependent
+  // dropdown would blank itself on each fetch.
   useEffect(() => {
+    if (loading) return;
     if (value && !options.some(o => o.value === value)) onChange('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, options]);
+  }, [value, options, loading]);
 
   if (error) {
     return <div style={{ fontSize: 12, color: '#b91c1c' }}>Datasource error: {error}</div>;
+  }
+
+  if (loading) {
+    return (
+      <div style={{ ...plainInputStyle, color: '#94a3b8', background: '#f9fafb' }}>Loading…</div>
+    );
   }
 
   return (

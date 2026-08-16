@@ -322,7 +322,7 @@ them.
 `validateSubmission(engine, activity, captured, anchorRecord, waived)` — the
 attribute trio applied as one payload check for callers with no capture form,
 per DSL_SPEC §5 ("in headless mode the datasource doubles as validation").
-Semantics mirror the workbench's AttributesForm: attribute show_conditions
+Semantics mirror the standard capture form (`@fluxus/page-runtime`, the workbench's until 2026-08-16): attribute show_conditions
 fail OPEN (the activity-level gate inside runActivity is the fail-closed
 one); hidden attributes are exempt from `required`; waivers need can_waive +
 a reason; validation rules run on non-empty values with typed `value`

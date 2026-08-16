@@ -1,10 +1,12 @@
 # Data through activities — the read path, and guarding what comes back
 
-**Status: designed 2026-08-09; steps 0–3 built (0 and 1 on 2026-08-09, 2 on
-2026-08-10, 3 on 2026-08-11).** The build sequence is at the end — the spine
-(§4's removal, GET-in-the-engine, a page that names a GET) is complete, and
-step 3 has closed the log promise for reads and given a page a record to anchor
-on. Steps 4–5 remain.
+**Status: designed 2026-08-09; steps 0–4 built (0 and 1 on 2026-08-09, 2 on
+2026-08-10, 3 on 2026-08-11, 4 on 2026-08-16).** The build sequence is at the
+end — the spine (§4's removal, GET-in-the-engine, a page that names a GET) is
+complete, step 3 has closed the log promise for reads and given a page a record
+to anchor on, and step 4 has an input naming its producer, re-run at
+submission. Step 5 remains, and it is now the live question: the connect-time
+snapshot ships every record in the operation, which is going.
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -363,14 +365,25 @@ in the engine it belongs to — which is exactly what a browser must not do with
 a read, so only the server passes it into an expression. Nothing changed for
 hooks or `returns`; they were always given it.
 
-**The browser half is not built, and step 4 is not usable from a form until it
-is.** The workbench's capture form resolves a datasource synchronously to build
-its dropdown ([AttributesForm.tsx](../packages/workbench/src/components/AttributesForm.tsx)),
-and a GET is a round trip, so an author who writes the producer above gets a
-correct server-side check and a dropdown that reports a failure. The mechanism
-that closes it already exists — the page host's rounds — but it is written
-around a page's context rather than a form's, so sharing it is a refactor and
-the form gains a loading state. Pending.
+**The browser half is BUILT (2026-08-16).** A datasource is now evaluated
+through the engine's rounds
+([AttributesForm.tsx](../packages/page-runtime/src/capture/AttributesForm.tsx)),
+so the producer above fills the dropdown it guards: the round asks the GET, the
+answer becomes the options, and the same expression is what the server re-runs
+at submission. A datasource that names no GET resolves on the first round
+without touching the network, so the loading state appears only when something
+is genuinely being fetched. Show conditions and validation rules stay
+synchronous and local — they re-run on every keystroke, and they read what the
+host already holds.
+
+The form itself moved to do it. It was the workbench's, and pages had a 60-line
+imitation that drew every attribute as a text box; sharing the rounds meant
+sharing the form, so **one capture form now lives in `@fluxus/page-runtime` and
+both hosts supply what it asks for** (`CaptureHost`: evaluate an expression,
+reach a GET, upload a file, resolve a reference's label). The one thing that
+did not travel is the record picker — browsing records to choose one needs
+records, which a page does not hold, so a host may inject a picker and a page,
+having none, shows a reference as a typed id, exactly as its old form did.
 
 ---
 
@@ -441,7 +454,7 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 | 1 | ✅ **BUILT 2026-08-09** — GET in the engine: `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
 | 2 | ✅ **BUILT 2026-08-10** — a page names a GET for a dynamic prop instead of writing an inline expression: `invoke` supplied to the page host, evaluated in rounds, checked by `validatePage` | **the goal**: data requirements move out of the page and into the model |
 | 3 | ✅ **BUILT 2026-08-11** — GETs logged light on the anchor; a page declares its record, found or created at page open | observability, and the pipeline-is-the-log promise held for reads |
-| 4 | 🔨 **server half BUILT 2026-08-16** — a `datasource` may name a GET, and `validateSubmission` re-runs it at submission, failing closed. The browser half (a form whose dropdown needs the round trip) is not built | the guarding payoff — tier 1 absorbs tier 2 |
+| 4 | ✅ **BUILT 2026-08-16** — a `datasource` may name a GET: `validateSubmission` re-runs it at submission (server half), and the capture form fills its dropdown from it through the engine's rounds (browser half, which also made the form one shared form) | the guarding payoff — tier 1 absorbs tier 2 |
 | 5 | Reconcile the connect-time snapshot: refresh-after-run by re-invoke, and whether connect stays one big GET or pages fetch their own | production shape; decide on evidence |
 
 Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
@@ -481,6 +494,24 @@ Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
 ---
 
 ## Decision log
+
+**2026-08-16** — **One capture form, and the host supplies what it asks for.**
+A page opening the real form meant the form had to stop being the workbench's,
+so it moved to `@fluxus/page-runtime` behind a `CaptureHost` seam and the
+workbench imports it. The alternative — page-runtime importing the workbench —
+would have made the page runtime depend on the whole record UI to draw one
+dialog. Keeping two forms was rejected outright: it is why pages had no
+dropdowns for four weeks.
+
+**2026-08-16** — **The record picker is injected, not moved.** It is the only
+part of the form that needs a record snapshot, so a host that has one supplies
+it and a page falls back to the typed id its own form always showed. Moving it
+would have shipped a picker that opens empty.
+
+**2026-08-16** — **Only a datasource may round-trip.** Show conditions and
+validation rules re-run on every keystroke, so making them asynchronous would
+put the network between a person and their typing. They read `attributes` and
+the anchor record, which the browser already holds.
 
 **2026-08-11** — **A page is validated where it is authored, not at the server
 door.** The Console already ran `validatePage` on every save; its findings went

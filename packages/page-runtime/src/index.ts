@@ -7,6 +7,29 @@ export { createPageRuntime, type PageRuntime, type FoundActivity } from './runti
 export { PageRenderer, css as pageRendererCss } from './PageRenderer';
 export { ComponentContainer } from './ComponentContainer';
 export { ActivityFormModal } from './ActivityFormModal';
+
+// The standard capture form and its host seam. Shared since 2026-08-16: a page
+// and the workbench open the same form, and each supplies its own host.
+export { AttributesForm } from './capture/AttributesForm';
+export { CaptureHostProvider, useCaptureHost } from './capture/host';
+export type { CaptureHost, CaptureScript, RecordPickerProps } from './capture/host';
+// Capture + display widgets for the file/photo/scalar attribute types — pure
+// controlled components, used by the form here and by the workbench's grid and
+// record view.
+export {
+  DateTimeInput,
+  FileChips,
+  FileInput,
+  NumberInput,
+  PhotoCountCell,
+  PhotoInput,
+  PhotoThumbs,
+  TextAreaInput,
+  TimeInput,
+  isDescriptorValue,
+  toLocalInput,
+  toOffsetIso,
+} from './capture/attributeWidgets';
 export { componentManifests } from './componentManifests';
 export { AppHeader } from './components/AppHeader';
 export { InventorList } from './components/InventorList';

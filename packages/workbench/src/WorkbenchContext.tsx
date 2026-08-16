@@ -9,8 +9,8 @@ import type {
   ActivityDef,
   ReverseRefEntry,
   RunActivityResult,
-  ScriptContext,
 } from '@fluxus/engine';
+import type { CaptureHost } from '@fluxus/page-runtime';
 import type { FluxusClient, UploadService } from '@fluxus/client';
 import { NotificationLog } from './store/NotificationLog';
 import { buildNotifyModule } from './services/notify';
@@ -60,9 +60,13 @@ interface WorkbenchContextValue {
   resolveAttributeDisplayField: (typeId: string, attrKey: string) => string | undefined;
   getReverseRefs: (targetTypeId: string) => ReverseRefEntry[];
   getRecordsByField: (typeId: string, fieldKey: string, value: string) => RecordInstance[];
-  // Evaluate a FluxScript expression (datasource, show condition) against the
-  // live store, with the given script context injected as the four roots.
-  dslEvaluate: (source: string, script: ScriptContext) => unknown;
+  /**
+   * What the standard capture form (@fluxus/page-runtime) runs against here:
+   * this workbench's engine for expressions, this client for GET-backed
+   * dropdowns and uploads. The record picker is added above, in
+   * WorkbenchCaptureHost — this module stays free of component imports.
+   */
+  captureHost: CaptureHost;
 }
 
 const Ctx = createContext<WorkbenchContextValue | null>(null);
@@ -166,14 +170,27 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
     [adapter]
   );
 
-  const dslEvaluate = useCallback(
-    (source: string, script: ScriptContext) => engine.evaluate(source, script),
-    [engine]
-  );
-
   // client.uploads mints a fresh object per access; hold one stable instance so
   // widget effects keyed on it don't re-run every render.
   const uploads = useMemo(() => client.uploads, [client]);
+
+  // The capture form's host (see the interface member above). Expressions
+  // evaluate in this engine, so `context.user` and the services this workbench
+  // wired are the same ones a condition sees anywhere else here; a datasource
+  // that names a GET goes to the server like a page's would, and its gate
+  // warnings go where this host's warnings go — the console.
+  const captureHost = useMemo<CaptureHost>(() => ({
+    evaluate: (source, script) => engine.evaluate(source, script),
+    query: async (activityId, params, recordId) => {
+      const result = await client.query({ activityId, attributes: params, recordId });
+      for (const warning of result.warnings) console.warn(`[invoke ${activityId}] ${warning}`);
+      return result.data;
+    },
+    uploads,
+    resolveDisplayLabel: (fkRecordType, fkDisplayField, rawId) =>
+      adapter.resolveDisplayLabel(fkRecordType, fkDisplayField, rawId),
+    resolveAttributeDisplayField: (typeId, attrKey) => adapter.resolveAttributeDisplayField(typeId, attrKey),
+  }), [engine, client, uploads, adapter]);
 
   // Thin host wrapper over the server pipeline: the server runs the activity
   // (gate, hooks, persistence) and the client refreshes the snapshot; the
@@ -232,7 +249,7 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
       resolveAttributeDisplayField,
       getReverseRefs,
       getRecordsByField,
-      dslEvaluate,
+      captureHost,
       uploads,
     }}>
       {children}

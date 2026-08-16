@@ -4,7 +4,7 @@ Current design truth for the page runtime. Updated in the same commit as any beh
 
 ## Scope
 
-The **run-a-page cluster** (GLOSSARY "Page runtime", named 2026-07-19): `PageRenderer`, `ComponentContainer`, the component registry (`componentManifests` + the component library), the page expression host (`pageHost.ts`), save-time `validatePage`, and `ActivityFormModal` — everything a host embeds to turn a stored `PageDef` into working UI against live records. Page *editing* (layout editor, palette, Monaco, `persistence.ts`'s save path) stays in `@fluxus/console`.
+The **run-a-page cluster** (GLOSSARY "Page runtime", named 2026-07-19): `PageRenderer`, `ComponentContainer`, the component registry (`componentManifests` + the component library), the page expression host (`pageHost.ts`), save-time `validatePage`, `ActivityFormModal`, and — since 2026-08-16 — the **standard capture form** (`capture/`) that every host opens to run a UI activity. Page *editing* (layout editor, palette, Monaco, `persistence.ts`'s save path) stays in `@fluxus/console`.
 
 Extracted from the page builder 2026-07-19 as the first step of **workbench → Runtime app**: the same cluster renders the editor preview in the page builder and published pages in the SDM workbench.
 
@@ -22,6 +22,7 @@ A host creates it once at bootstrap (platform singleton, never React context —
 - `findActivity(id)` — resolve an activity id to its def + owning record type.
 - `findRecordType(id)` — resolve a record type id to its def + workflow, or null (a page may name a type that was since renamed); how `validatePage` checks the page's record declaration.
 - `getPage(path)` / `listPagePaths()` — reads over the client's page snapshot.
+- `captureHost` — what the capture form runs against when a page opens one (below): this client's GET query, upload service and label resolution. No record picker.
 - `evaluateExpression` / `runCallback` — the expression host, below.
 - `validateExpression` / `validateCallback` / `validatePage` / `reportPageFindings` — the validators, below.
 
@@ -31,7 +32,25 @@ Activity runs round-trip the server through `client.runActivity` exactly as befo
 
 `PageRenderer` takes `{ runtime, pagePath, slotConfigs, contextSchema, debug? }`: it reads the page's `layout` from `runtime.getPage(pagePath)`, renders the panel tree, and mounts a `ComponentContainer` per filled slot. `slotConfigs`/`contextSchema` stay props (not read from the stored page) so the editor can preview unsaved state. `debug` shows the collapsible `context.page` strip (was `import.meta.env.DEV`-gated pre-extraction; now the host decides — the editor preview passes its DEV flag, the workbench doesn't). Styles export as a `css` string (`pageRendererCss`): the page builder rides its shadow-DOM css channel, the workbench a plain `<style>` tag.
 
-`ComponentContainer` evaluates dynamic props (re-evaluating on any `context.page` change or completed activity run), wires named callbacks, renders the component with its manifest css, and owns the activity-run surface: UI activity (has attributes) → `ActivityFormModal` (the minimal standard capture form — text/date + `required`; deliberately a subset of the workbench's form, shared-form home undiscussed); non-UI → straight to the server pipeline; warn soft-stops get the platform `window.confirm`.
+`ComponentContainer` evaluates dynamic props (re-evaluating on any `context.page` change or completed activity run), wires named callbacks, renders the component with its manifest css, and owns the activity-run surface: UI activity (has attributes) → `ActivityFormModal`, which since 2026-08-16 is chrome around the **shared** capture form (below); non-UI → straight to the server pipeline. A warn soft-stop is the form's own Continue/Cancel where there is a form, and the platform `window.confirm` for an attribute-less activity, which has none.
+
+## The capture form (`capture/`, shared 2026-08-16)
+
+One form runs a UI activity everywhere: every attribute type, `show_condition`, `required`, `validation`, `can_waive` waivers, composites and section markers, and the before-hook warning decision. The semantics are specified in the [workbench SPEC](../../workbench/docs/SPEC.md) (where the form was built and where its rules are still described); what belongs here is the seam.
+
+It lives in this package because a page and a record UI open the same form and only the host behind it differs. **Dependency direction:** `@fluxus/workbench` imports it from here, not the other way round — the page runtime must not depend on the whole record UI to draw one dialog. Before this the page had a 60-line imitation that drew every attribute as a text box, so a page could not offer a dropdown at all.
+
+**`CaptureHost`** (`capture/host.ts`) is what a host supplies, through `CaptureHostProvider`:
+
+- `evaluate(source, script)` — a capture expression against the `attributes` / anchor-record / `activity` roots. Synchronous; the host decides the posture (the workbench evaluates in its own engine, so `context.user` and its service modules are the ones a condition sees anywhere else there; this package's `evaluateCapture` uses page posture: reads only).
+- `query` — how a datasource that names a GET reaches it. Absent ⇒ `invoke` fails loudly and the dropdown reports it.
+- `uploads` — the client's `UploadService`, for the file/photo widgets.
+- `resolveDisplayLabel` / `resolveAttributeDisplayField` — a stored reference id → something readable.
+- `recordPicker?` — **injected, not shared**. Browsing records to pick one needs the record snapshot a page does not have, so the workbench supplies its `RecordPickerDialog` and a page, supplying none, renders a reference as a typed id. It plugs in unchanged when a page can reach records through a GET.
+
+**Only a datasource may round-trip** ([DATA_THROUGH_ACTIVITIES step 4](../../../docs/DATA_THROUGH_ACTIVITIES.md)). A list attribute's `datasource` is evaluated through the engine's `evaluateWithGets`, so it may name a GET (`invoke('act_get_crews', { region: attributes.region })`) — the same expression the server re-runs at submission, which is what makes the dropdown and its guard one declaration. One that names no GET resolves on the first round without touching the network, so the loading state shows only when something is genuinely being fetched, and a stale selection self-clears only once the options have landed. Show conditions and validation rules stay synchronous: they re-run on every keystroke and read what the host already holds.
+
+`capture/attributeWidgets.tsx` moved here with the form — the pure, context-blind capture and display widgets for the file/photo/scalar types. The workbench imports the display ones (`PhotoThumbs`, `FileChips`, `PhotoCountCell`) for its grid, record view and history card. This is the `@fluxus/attribute-widgets` package the restructure sketched, landed as a directory in the package both consumers already import rather than as a fourth library.
 
 ## Page wiring — FluxScript everywhere (2026-07-12)
 

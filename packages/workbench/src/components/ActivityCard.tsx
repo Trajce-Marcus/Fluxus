@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { compositeSubs } from '@fluxus/engine';
 import type { ActivityDef, ActivityHistoryEntry } from '@fluxus/engine';
 import { useWorkbench } from '../WorkbenchContext';
-import { FileChips, PhotoThumbs, isDescriptorValue } from './attributeWidgets';
+import { FileChips, PhotoThumbs, isDescriptorValue } from '@fluxus/page-runtime';
 import type { UploadService } from '@fluxus/client';
 
 interface Props {

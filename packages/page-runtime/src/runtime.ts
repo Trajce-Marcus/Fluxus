@@ -11,6 +11,7 @@ import type { ActivityDef, ClientSolutionConfig, MemoryAdapter, RecordTypeDef, W
 import type { Diagnostic } from '@fluxus/dsl';
 import type { PageDef } from './pageDef';
 import {
+  evaluateCapture,
   evaluatePageExpression,
   runPageCallback,
   validatePageExpression,
@@ -20,6 +21,7 @@ import {
   type PageQueryFn,
   type PageServiceHandlers,
 } from './pageHost';
+import type { CaptureHost } from './capture/host';
 import { validatePage, reportPageFindings, type PageFinding } from './validatePage';
 
 export interface FoundActivity {
@@ -38,6 +40,12 @@ export interface PageRuntime {
   /** Resolve a record type id to its def + workflow; null when the model has
    *  no such type (a page may declare one that was since renamed). */
   findRecordType(typeId: string): (RecordTypeDef & { workflow: WorkflowDef }) | null;
+  /**
+   * What the capture form runs against when a page opens one. No record
+   * picker: choosing a reference by browsing needs records, which a page does
+   * not hold — a reference is typed as an id until a GET can answer that.
+   */
+  readonly captureHost: CaptureHost;
   /** Read a page definition from the client's page snapshot. */
   getPage(path: string): PageDef | null;
   listPagePaths(): string[];
@@ -90,10 +98,24 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
     return store.getRecordTypeDef(typeId);
   };
 
+  // The capture form's door to the same model: the page's GET query, the
+  // client's upload service, and label resolution off the snapshot (which on a
+  // page is empty, so a reference shows its raw id — honest, and what the
+  // page's own form showed before).
+  const captureHost: CaptureHost = {
+    evaluate: (source, script) => evaluateCapture(store, config, source, script),
+    query,
+    uploads: client.uploads,
+    resolveDisplayLabel: (fkRecordType, fkDisplayField, rawId) =>
+      store.resolveDisplayLabel(fkRecordType, fkDisplayField, rawId),
+    resolveAttributeDisplayField: (typeId, attrKey) => store.resolveAttributeDisplayField(typeId, attrKey),
+  };
+
   const runtime: PageRuntime = {
     client,
     store,
     config,
+    captureHost,
     findActivity,
     findRecordType,
     getPage: (path) => (client.pages.get(path) as PageDef | undefined) ?? null,

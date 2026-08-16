@@ -55,24 +55,27 @@ This package is UI over two contracts it does not own: the **SDM schema** ([`@fl
 
 The workbench executes FluxScript (see `packages/dsl`) for the attribute features below. Evaluation plumbing — `buildDslSchema` / `buildRecordsHost` / `buildEvalHost` / `coerceCaptured` / `joinScript` — lives in `@fluxus/engine`.
 
+**Where the form lives (2026-08-16).** `AttributesForm` — the composer these rules run in — **moved to `@fluxus/page-runtime`** (`capture/`), because a page opens the same form and had been making do with a text-box imitation. The rules below are unchanged and still described here, where they were built; what this package now owns is the *host* the form asks. `WorkbenchContext` builds a `CaptureHost` (this workbench's engine for expressions, so `context.user` and the notify/geo modules are in scope; `client.query` for a datasource that names a GET; `client.uploads`; label resolution off the adapter) and `components/WorkbenchCaptureHost.tsx` adds the one part that is the workbench's alone — `RecordPickerDialog`, which browses the record snapshot a page does not have. The picker is added *there* rather than in the context module so that a context importing components which import the context back never becomes a cycle. `dslEvaluate` is gone from `useWorkbench`: the form was its only caller, and it reaches the same engine through `captureHost.evaluate`.
+
 - **`show_condition`** on an activity's attribute usage (e.g. `"attributes.city is not null"`): evaluated live in AttributesForm; hidden attributes are excluded from submission. Evaluation errors leave the attribute visible (a broken condition must never make an input unreachable — the activity-level availability gate deliberately does the opposite and fails closed).
 - **`required`** on an activity's attribute usage: blocks submission until captured (inline banner + `*` on the label). Per-usage, not per-attribute — a shared attribute can be optional in one activity and mandatory in another. Hidden attributes are exempt by construction.
 - **`validation`** (+ optional `validation_message`) on a usage or attribute def (usage wins): a FluxScript rule that must evaluate `true` for the captured value, with the value injected as the extra root `value` — e.g. `"value <= now()"` on completed_date. Runs on submit for visible, non-empty attributes (empties are `required`'s job). Captured strings are **type-coerced** first (`date`/`int`/`bool` per the attribute's type; `coerceCaptured` in the engine's bridge), which also types `attributes.*` in show conditions and datasources. Date attributes render as native date inputs.
 - **`can_waive`** on an activity's attribute usage: the user may declare the value unavailable — a **"Can't provide"** toggle replaces the input with a mandatory reason box. No fake data is entered to satisfy `required`. The waiver is stored on the history entry as `waived: { <key>: <reason> }` (presence of the key is the flag; only waived attributes appear), kept out of `capturedAttributes`. Waived attributes never write to record fields: on CREATE the field seeds from its default, on UPDATE the existing value is untouched ("can't provide it now" must never blank last month's value). Scripts see the attribute as null. Show conditions and hooks handle *predictable* branching; waivers absorb the unpredictable physical realities of data entry — and being recorded data (not silence or garbage), they can later power a data-gaps worklist. Sample: `serial_no` on `act_create_assets`.
-- **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attributes` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear.
+- **`List` attributes** (`type: "list"`): `type_config.datasource` is a FluxScript expression yielding a list; `key_field`/`display_field` map items to options. Current form values are injected as `attributes` (empty strings read as null), so dependent pickers (city → suburb) re-evaluate as values change; stale selections self-clear. **Since 2026-08-16 the datasource may name a GET** (`invoke('act_get_crews', { region: attributes.region })`) — it is evaluated through the engine's rounds, briefly showing *Loading…*, and the server re-runs the same expression at submission ([DATA_THROUGH_ACTIVITIES step 4](../../../docs/DATA_THROUGH_ACTIVITIES.md)). It is the only capture expression allowed a round trip: conditions and validation rules re-run per keystroke and stay local.
 - **Composite attributes and sections** (2026-07-18): a composite renders as its question label with sub-attribute inputs stacked beneath (per-cell required/waive/show_condition); section markers render as headings with their description. Cell state is flat in the form (`attr.sub` keys); the engine owns nesting (see engine SPEC and SDM_Schema_Reference §1.5). **ActivityCard displays entry attributes in activity-definition order** — the stored entry is jsonb (key order not preserved), so the definition is the ordering truth; composite values display one row per cell under the dotted `attr.sub` key, unknown keys (system_log, hook extras) after.
 
 ## Attribute widgets: files, photos & scalars (2026-07-18)
 
-`components/attributeWidgets.tsx` holds the capture + display widgets for the
-file/photo/scalar types (ATTRIBUTE_TYPES_FILES_SCALARS §10). Every widget is a
-**pure controlled component**: value in, `onChange` out, config as props, the
-upload service injected — **zero imports from this package's stores/context**.
-That is deliberate: when the page builder becomes the second consumer they lift
-to `@fluxus/attribute-widgets` unchanged (restructure step 2 — not yet done;
-page-runtime currently carries a hand-cut subset copy). `AttributesForm` is the
-composer that pulls `uploads` from context and passes it down; the widgets stay
-context-blind.
+The capture + display widgets for the file/photo/scalar types
+(ATTRIBUTE_TYPES_FILES_SCALARS §10) **moved to `@fluxus/page-runtime`
+(`capture/attributeWidgets.tsx`) on 2026-08-16** with the form that composes
+them. Every widget is a **pure controlled component**: value in, `onChange`
+out, config as props, the upload service injected — zero imports from any
+host's stores or context, which is what made the move a re-export away. That
+second consumer the restructure anticipated turned out to be the page runtime
+itself, so they landed there rather than in a fourth library. This package
+imports the display ones (`PhotoThumbs`, `FileChips`, `PhotoCountCell`) for the
+grid, record view and history card.
 
 - **Capture**: `PhotoInput` (messenger-style thumb grid + add tile, per-thumb
   remove, single or multi), `FileInput` (paperclip rows + add), `TextAreaInput`

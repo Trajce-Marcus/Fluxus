@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
-import { AttributesForm } from './AttributesForm';
+import { AttributesForm } from '@fluxus/page-runtime';
 import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
 import { CsvImportModal } from './CsvImportModal';
 import { NoOperationNotice } from './OperationPicker';
-import { PhotoCountCell, isDescriptorValue } from './attributeWidgets';
+import { PhotoCountCell, isDescriptorValue } from '@fluxus/page-runtime';
 import { exportToCSV, exportToJSON } from '../export';
 import { fieldLabel } from '@fluxus/engine';
 import type { RecordInstance } from '@fluxus/engine';

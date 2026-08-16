@@ -4,7 +4,7 @@ Current design truth for the **Runtime app** — the runtime-plane app end users
 
 The package was `@fluxus/sdm` until the 2026-08-01 restructure. Two things left it and one thing stayed:
 
-- **Gone to [`@fluxus/workbench`](../../workbench/docs/SPEC.md)** — the `<Workbench>` component and everything record-shaped: the UI tree, the attribute capture forms and widgets, the FluxScript form wiring (show conditions, required, validation, waivers, list datasources), the operation picker, the Schema Navigator, and the workbench's service composition. This package no longer exports a library face at all: **apps never import apps.**
+- **Gone to [`@fluxus/workbench`](../../workbench/docs/SPEC.md)** — the `<Workbench>` component and everything record-shaped: the UI tree, the attribute capture form and widgets (both moved on again to `@fluxus/page-runtime` on 2026-08-16, so a page opens the same form; the workbench supplies its host), the FluxScript form wiring (show conditions, required, validation, waivers, list datasources), the operation picker, the Schema Navigator, and the workbench's service composition. This package no longer exports a library face at all: **apps never import apps.**
 - **Stayed here** — the Runtime app itself, plus the demo asset-maintenance config in [config/](../config/) (test fixture and reference only — nothing installs it) and the SDM/pipeline doctrine below, which is model-level truth rather than app behaviour.
 
 ## Model

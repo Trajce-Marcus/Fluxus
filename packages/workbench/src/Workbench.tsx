@@ -1,6 +1,7 @@
 import type { ContextUser } from '@fluxus/engine';
 import type { FluxusClient } from '@fluxus/client';
 import { WorkbenchProvider } from './WorkbenchContext';
+import { WorkbenchCaptureHost } from './components/WorkbenchCaptureHost';
 import { RecordTypeList } from './components/RecordTypeList';
 import { OperationPicker } from './components/OperationPicker';
 import { RecordsGrid } from './components/RecordsGrid';
@@ -51,22 +52,26 @@ export function Workbench({ client, user, operationId = null, operations = [], o
           exported too, for a host that would rather pipe it through its own
           injection channel. */}
       <style>{css}</style>
-      <div className="workbench">
-        <div className="workbench-types">
-          {/* The operation first, then the model it partitions: the side menu
-              reads top-down as "whose data, then what shapes". */}
-          <OperationPicker />
-          <RecordTypeList />
-        </div>
-        <div className="workbench-panes">
-          <div className="panel">
-            <RecordsGrid />
+      {/* Every capture form under here runs against this workbench's host —
+          its engine, its client, and its record picker. */}
+      <WorkbenchCaptureHost>
+        <div className="workbench">
+          <div className="workbench-types">
+            {/* The operation first, then the model it partitions: the side menu
+                reads top-down as "whose data, then what shapes". */}
+            <OperationPicker />
+            <RecordTypeList />
           </div>
-          <div className="panel">
-            <RecordView />
+          <div className="workbench-panes">
+            <div className="panel">
+              <RecordsGrid />
+            </div>
+            <div className="panel">
+              <RecordView />
+            </div>
           </div>
         </div>
-      </div>
+      </WorkbenchCaptureHost>
     </WorkbenchProvider>
   );
 }

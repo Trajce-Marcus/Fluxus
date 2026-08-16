@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
-import { AttributesForm } from './AttributesForm';
+import { AttributesForm } from '@fluxus/page-runtime';
 import { Modal } from './Modal';
 import type { ActivityDef, RecordInstance, WorkflowDef } from '@fluxus/engine';
 

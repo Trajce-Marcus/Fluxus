@@ -22,6 +22,7 @@ import {
 } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, evaluateWithGets, functionSignatures, toComponentValue } from '@fluxus/engine';
 import type { ClientSolutionConfig, GetQueryFn, MemoryAdapter, RecordInstance } from '@fluxus/engine';
+import type { CaptureScript } from './capture/host';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
 // Components emit one value — a selection value or anchor record id. The host
@@ -156,6 +157,32 @@ export async function evaluatePageExpression(
     })),
     { query, anchorId: pageCtx.record?.id, label: 'Dynamic prop' },
   );
+}
+
+/**
+ * Evaluate a capture-form expression — a show condition, a validation rule, or
+ * a dropdown's datasource (2026-08-16, when pages started opening the real
+ * form). Same posture as a dynamic prop (reads only), different roots: capture
+ * expressions speak `attributes`, which a page's own expressions may not.
+ *
+ * Synchronous, and the `invoke` is the caller's: the form owns the waiting,
+ * through the engine's rounds loop, because only it knows which of its
+ * expressions is allowed a round trip.
+ */
+export function evaluateCapture(
+  store: MemoryAdapter,
+  config: ClientSolutionConfig,
+  source: string,
+  script: CaptureScript,
+): unknown {
+  return evaluateExpression(source, buildEvalHost(store, config, {
+    attributes: script.attributes,
+    anchorRecord: script.anchorRecord,
+    activity: script.activity,
+    extras: script.extras,
+    invoke: script.invoke,
+    readonlyRecords: true,
+  }));
 }
 
 // Records flatten to plain data on their way to an SDM-blind component. The
