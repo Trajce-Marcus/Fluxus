@@ -38,7 +38,10 @@ src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storag
                      stage 3 — no live host after the hard cutover).
                      replaceRecords() swaps the whole snapshot in place
                      (identity stable, subscribers notified) — how client
-                     hosts refresh after a server-side run (backend stage 2)
+                     hosts refresh after a server-side run (backend stage 2);
+                     mergeRecords() adds or replaces some without touching the
+                     rest (2026-08-16) — how a host that was never handed the
+                     partition fills its snapshot as it goes
 src/attributeTypes.ts — the attribute type registry (files, photos, scalars):
                      per-type descriptor field schemas + accepted type_config
                      keys, read by the client uploader, validateSubmission, and

@@ -8,9 +8,10 @@ record.
 
 One class, `FluxusClient`, owning the movements every remote host makes:
 
-1. **`connect({url, operationId})`** — resolve the operation to its solution
-   (`operations.get`), then fetch `config.getForOperation` + `pages.list` and
-   `records.partition` in parallel and build a
+1. **`connect({url, operationId, records?})`** — resolve the operation to its
+   solution (`operations.get`), then fetch `config.getForOperation` +
+   `pages.list` and (unless `records: 'none'`) `records.partition` in parallel
+   and build a
    `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
    **effective menu** (§5 amended M10): `operation.config.menu ??
    config.default_menu ?? []` — the operation's whole-menu override when set,
@@ -48,8 +49,30 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    `publishConfig`/`configVersions`/`rollbackConfig` are the model's version
    history (the surface pages have had since M3). `operationsForSolution`
    (static) lists a solution's operations for the Console data picker.
-2. **`refresh()`** — re-fetch the partition into the *same* adapter via
-   `MemoryAdapter.replaceRecords` (identity stable, subscribers notified).
+1b. **`records: 'partition' | 'none'`** (2026-08-16) — how much data the
+   client holds. `partition` (the default, and what every host did before the
+   option existed) is every readable record in the operation *with its full
+   activity history*, in one round trip at sign-in. `none` is nothing: the host
+   fills the snapshot as it goes and asks the model for the rest through GET
+   activities. The Runtime app passes `none` — it renders pages, and a page
+   runs on what it asks for plus the one record it is about. The Console keeps
+   the partition, because the workbench evaluates the model locally against it
+   (DATA_THROUGH_ACTIVITIES step 5; the workbench's own on-demand loading is
+   the step after).
+1c. **`fetchRecord(recordId)` / `fetchRecords(typeId)`** (2026-08-16) — one
+   record, or one type, **merged** into the snapshot through the new
+   `MemoryAdapter.mergeRecords` rather than replacing it. `records.get` and
+   `records.list` already existed server-side and are RBAC-filtered, so a
+   record the caller may not read comes back as not-found — the fetch is the
+   authorisation check as well as the load. These are what a host with no
+   partition reaches for: a page's anchor record, the record a component's
+   callback named, and (later) the type a grid is showing.
+2. **`refresh()`** — with the partition, re-fetch the lot into the *same*
+   adapter via `MemoryAdapter.replaceRecords` (identity stable, subscribers
+   notified). With `records: 'none'` there is no partition to re-fetch, so it
+   re-reads exactly the records already in hand — typically the one the page is
+   about — and drops any that no longer read back (deleted, or no longer
+   readable).
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`
    on the server (availability gate, hooks, persistence, reporting projection
    all server-side), then `refresh()`. Refresh runs even when the call throws,

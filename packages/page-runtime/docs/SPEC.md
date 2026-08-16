@@ -18,7 +18,7 @@ const runtime = createPageRuntime({ client }); // client: a connected FluxusClie
 
 A host creates it once at bootstrap (platform singleton, never React context — the Extraction fork 2 ruling) and passes it to `PageRenderer` / the editor's validation calls. Everything else derives from the client's snapshot:
 
-- `store` = `client.adapter` (the engine `MemoryAdapter` holding the fetched partition), `config` = `client.config`.
+- `store` = `client.adapter` (the engine `MemoryAdapter`; it holds the fetched partition in a host that asked for one, and **nothing** in a pages-only host — since 2026-08-16 the Runtime app connects with `records: 'none'`), `config` = `client.config`.
 - `findActivity(id)` — resolve an activity id to its def + owning record type.
 - `findRecordType(id)` — resolve a record type id to its def + workflow, or null (a page may name a type that was since renamed); how `validatePage` checks the page's record declaration.
 - `getPage(path)` / `listPagePaths()` — reads over the client's page snapshot.
@@ -26,7 +26,7 @@ A host creates it once at bootstrap (platform singleton, never React context —
 - `evaluateExpression` / `runCallback` — the expression host, below.
 - `validateExpression` / `validateCallback` / `validatePage` / `reportPageFindings` — the validators, below.
 
-Activity runs round-trip the server through `client.runActivity` exactly as before the extraction; the client refreshes the partition snapshot after each run.
+Activity runs round-trip the server through `client.runActivity` exactly as before the extraction; the client refreshes afterwards — the whole partition where there is one, otherwise just the records the host already holds.
 
 ## Rendering (PageRenderer + ComponentContainer)
 
@@ -82,6 +82,8 @@ Every run is about exactly one record, so a page that acts — running an activi
 
 The record type stays **ordinary**: nothing marks it as an app, and the same type can be a page's subject and a workbench record type at once. The only special thing is how you arrive at the record, and that is this declaration.
 
+**The anchor is fetched, never read out of a snapshot** (2026-08-16). `resolvePageAnchor` goes through the client — `fetchRecord(id)` for `many`, `fetchRecords(type)` for `one` — because a pages-only host now connects with **no records at all** (`connect({ records: 'none' })`, DATA_THROUGH_ACTIVITIES step 5). Asking an empty snapshot whether the board exists yet would answer "no" every time and raise a second board on every page open. A host that does hold the partition pays one round trip and gets the same answer, so there is one path. The fetch is also the authorisation check: a record the caller may not read comes back as not-found.
+
 `PageRenderer` resolves the anchor before rendering any component (a component that read first would fire an untraceable GET and then have to fire it again), shows `Opening…` while it does, and reports a failed resolution in place of the page. The resolved record becomes `PageContext.record` — so `context.record` is live in every expression and callback the page runs, the same root a workbench form sees — and the id it carries is the anchor sent with each GET.
 
 **Callbacks are scripts.** Components emit one `value`; the host packs it under the **`callbackData` root**, so scripts read `callbackData.value`. The free-form second argument was removed 2026-08-09 ([DATA_THROUGH_ACTIVITIES §4](../../../docs/DATA_THROUGH_ACTIVITIES.md)) — `value` stays because it is the anchor, and an anchor is authorised on every run; anything else an activity needs it declares as an attribute and captures itself. Scripts run in `'mutate'` mode (service effects execute) against a read-only records host — direct record writes throw: **mutations flow only through activities**. The validator's `'callback'` mode enforces the same statically.
@@ -89,7 +91,7 @@ The record type stays **ordinary**: nothing marks it as an app, and the same typ
 **`services.page` + `services.activities`** — two modules, one handler set (`PageServiceHandlers`, supplied per component instance by `ComponentContainer`):
 
 - `services.page` — UI-local effects only this host injects: `setContext(key, value)`, `hideComponent()`.
-- `services.activities.run(activityId, record)` — the host-neutral activity surface (ruled 2026-07-12): identical manifest across hosts, each host supplies its implementation. The only mutation path from a page; the callback contract is the anchor record alone; outcomes flow back by re-evaluating dynamic props after the run.
+- `services.activities.run(activityId, record)` — the host-neutral activity surface (ruled 2026-07-12): identical manifest across hosts, each host supplies its implementation. The only mutation path from a page; the callback contract is the anchor record alone; outcomes flow back by re-evaluating dynamic props after the run. Since 2026-08-16 the host **fetches** that anchor by id before opening the form or running (`client.fetchRecord`) rather than looking it up locally: the id the component emitted came out of a GET's answer, not out of anything the browser holds. The callback script has already returned by then, so a failure — including a record the caller may not read — surfaces through the host's error channel.
 
 ## Page definition (pageDef.ts, layout.ts, manifest.ts)
 
@@ -103,7 +105,7 @@ The **record declaration** is checked where it can still be fixed: an unknown re
 
 The reference check is the only part that knows **which surface** a source came from: `services.activities.run(id, …)` resolves in callbacks, and `invoke(id, …)` resolves in dynamic props — where the named activity must also *be* a GET, since nothing else can answer — while an `invoke` in a callback is an error outright. Non-literal ids are left to runtime, as before. The Console's expression dialog still validates language-only (the shared `validateExpression`), so a mistyped activity id surfaces at save, not as you type.
 
-**Package tests**: `test/pageHost.test.ts` covers the round machinery against a stub server — parameters computed from page context, memoisation, a GET fed by another GET never being asked with a placeholder, the round budget, a host with no door to the model, and the page record riding along as the anchor; `test/validatePage.test.ts` covers the reference check and the record declaration; `test/pageAnchor.test.ts` (step 3) covers find-or-create against a stub client — created through the create activity and not behind the pipeline's back, the second open reusing the first board, determinism when a type wrongly holds two, and the four ways a page can be stranded.
+**Package tests**: `test/pageHost.test.ts` covers the round machinery against a stub server — parameters computed from page context, memoisation, a GET fed by another GET never being asked with a placeholder, the round budget, a host with no door to the model, and the page record riding along as the anchor; `test/validatePage.test.ts` covers the reference check and the record declaration; `test/pageAnchor.test.ts` (step 3) covers find-or-create against a stub client whose store stands in for the *server's* while the browser's own stays deliberately empty — created through the create activity and not behind the pipeline's back, the second open reusing the first board, the resolution asking the server rather than the snapshot, determinism when a type wrongly holds two, and the four ways a page can be stranded; `test/capture.test.ts` covers the capture form's evaluation seam.
 
 ## Component library
 

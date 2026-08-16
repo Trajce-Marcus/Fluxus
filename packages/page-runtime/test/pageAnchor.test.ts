@@ -3,8 +3,12 @@
 // way one comes into being is a create activity — a page opening its board for
 // the first time takes the same path as a person raising a work order.
 //
-// The client is a stub that does what the server does (run, then the snapshot
-// holds the new record), so these tests are about the resolution, not the wire.
+// The client is a stub over a store that stands in for the server's, so these
+// tests are about the resolution, not the wire. Note what the stub does NOT
+// do: put anything in a local snapshot. Since 2026-08-16 the resolution asks
+// the client for the record — a pages-only host connects with no records, and
+// asking an empty snapshot whether the board exists yet would open a second
+// board on every page open.
 
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryAdapter, type ClientSolutionConfig } from '@fluxus/engine';
@@ -55,15 +59,21 @@ const CONFIG: ClientSolutionConfig = {
 };
 
 function harness() {
-  const store = new MemoryAdapter(CONFIG);
+  // Stands in for the server's records, not for a browser snapshot.
+  const server = new MemoryAdapter(CONFIG);
   const runActivity = vi.fn(async ({ activityId }: { activityId: string }) => {
     // What the server does, seen from the browser: the record exists
-    // afterwards, and the snapshot has it.
-    const created = store.createRecord('rt_dispatch_boards', { title: `via ${activityId}` });
+    // afterwards, and can be fetched by the id the run answered with.
+    const created = server.createRecord('rt_dispatch_boards', { title: `via ${activityId}` });
     return { status: 'done' as const, warnings: [], recordId: created.id };
   });
-  const runtime = { store, client: { runActivity } } as unknown as PageRuntime;
-  return { store, runtime, runActivity };
+  const fetchRecord = vi.fn(async (recordId: string) => server.getRecord(recordId));
+  const fetchRecords = vi.fn(async (typeId: string) => server.getRecordTypeData(typeId));
+  const runtime = {
+    store: new MemoryAdapter(CONFIG), // the browser's own, deliberately empty
+    client: { runActivity, fetchRecord, fetchRecords },
+  } as unknown as PageRuntime;
+  return { server, runtime, runActivity, fetchRecord, fetchRecords };
 }
 
 const ONE = { type: 'rt_dispatch_boards', instances: 'one' } as const;
@@ -88,8 +98,8 @@ describe('resolvePageAnchor', () => {
   });
 
   it('opens the one that exists instead of creating a second', async () => {
-    const { store, runtime, runActivity } = harness();
-    const existing = store.createRecord('rt_dispatch_boards', { title: 'The board' });
+    const { server, runtime, runActivity } = harness();
+    const existing = server.createRecord('rt_dispatch_boards', { title: 'The board' });
 
     const record = await resolvePageAnchor(runtime, { record: ONE });
 
@@ -98,10 +108,10 @@ describe('resolvePageAnchor', () => {
   });
 
   it('picks the same one every time when a type wrongly holds two', async () => {
-    const { store, runtime } = harness();
-    store.createRecord('rt_dispatch_boards', { title: 'Second' });
-    store.createRecord('rt_dispatch_boards', { title: 'First' });
-    const ids = store.getRecordTypeData('rt_dispatch_boards').map((r) => r.id).sort();
+    const { server, runtime } = harness();
+    server.createRecord('rt_dispatch_boards', { title: 'Second' });
+    server.createRecord('rt_dispatch_boards', { title: 'First' });
+    const ids = server.getRecordTypeData('rt_dispatch_boards').map((r) => r.id).sort();
 
     const first = await resolvePageAnchor(runtime, { record: ONE });
     const again = await resolvePageAnchor(runtime, { record: ONE });
@@ -111,10 +121,22 @@ describe('resolvePageAnchor', () => {
   });
 
   it('opens the record named in the URL when the type has many', async () => {
-    const { store, runtime, runActivity } = harness();
-    const board = store.createRecord('rt_dispatch_boards', { title: 'North' });
+    const { server, runtime, runActivity } = harness();
+    const board = server.createRecord('rt_dispatch_boards', { title: 'North' });
 
     expect((await resolvePageAnchor(runtime, { record: MANY }, board.id))?.id).toBe(board.id);
+    expect(runActivity).not.toHaveBeenCalled();
+  });
+
+  it('asks the server, not the local snapshot — the host may hold no records', async () => {
+    const { server, runtime, runActivity, fetchRecords } = harness();
+    server.createRecord('rt_dispatch_boards', { title: 'The board' });
+
+    // The browser's own store is empty and stays empty: if the resolution
+    // consulted it, this would raise a second board.
+    await resolvePageAnchor(runtime, { record: ONE });
+
+    expect(fetchRecords).toHaveBeenCalledExactlyOnceWith('rt_dispatch_boards');
     expect(runActivity).not.toHaveBeenCalled();
   });
 

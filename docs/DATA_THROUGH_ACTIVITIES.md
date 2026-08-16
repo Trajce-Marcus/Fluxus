@@ -5,8 +5,10 @@
 end — the spine (§4's removal, GET-in-the-engine, a page that names a GET) is
 complete, step 3 has closed the log promise for reads and given a page a record
 to anchor on, and step 4 has an input naming its producer, re-run at
-submission. Step 5 remains, and it is now the live question: the connect-time
-snapshot ships every record in the operation, which is going.
+submission. Step 5 is half built: the connect-time snapshot shipped every
+record in the operation to every host, and the Runtime app now takes none. The
+Console still takes the partition, because the workbench evaluates the model
+locally against it.
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -455,10 +457,20 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 | 2 | ✅ **BUILT 2026-08-10** — a page names a GET for a dynamic prop instead of writing an inline expression: `invoke` supplied to the page host, evaluated in rounds, checked by `validatePage` | **the goal**: data requirements move out of the page and into the model |
 | 3 | ✅ **BUILT 2026-08-11** — GETs logged light on the anchor; a page declares its record, found or created at page open | observability, and the pipeline-is-the-log promise held for reads |
 | 4 | ✅ **BUILT 2026-08-16** — a `datasource` may name a GET: `validateSubmission` re-runs it at submission (server half), and the capture form fills its dropdown from it through the engine's rounds (browser half, which also made the form one shared form) | the guarding payoff — tier 1 absorbs tier 2 |
-| 5 | Reconcile the connect-time snapshot: refresh-after-run by re-invoke, and whether connect stays one big GET or pages fetch their own | production shape; decide on evidence |
+| 5 | 🔨 **half BUILT 2026-08-16** — `connect({ records: 'none' })`, and the **Runtime app takes it**: no partition at sign-in, the snapshot fills through `fetchRecord`/`fetchRecords`, refresh re-reads only what is held. The Console still takes the partition, because the workbench evaluates the model locally against it — that half is the next build | production shape; decide on evidence |
 
 Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
-2026-08-11. 4–5 are what remain to make it production-shaped.
+2026-08-11 and step 4 on 2026-08-16. Step 5 is what remains to make it
+production-shaped, and it is now split by host: the Runtime app takes no
+records at connect, the Console still does.
+
+**What step 5 has left, precisely.** The workbench evaluates the model in the
+browser against the snapshot — inline datasources, show conditions, FK display
+labels, reverse-FK lookups. "The browser holds no records" and "the browser
+evaluates the model locally" cannot both be true, so either those evaluations
+become round trips or some records stay local. That decision is the workbench's
+alone now, and it is not blocking anything else: the Runtime app is already
+free of the partition.
 
 ---
 
@@ -494,6 +506,19 @@ Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
 ---
 
 ## Decision log
+
+**2026-08-16** — **A pages-only host is handed no records, and fetches what it
+needs by id.** Signing in used to send every record in the operation with its
+full activity history. The Runtime app renders pages, so it runs on GET
+activities plus the one record each page is about. The alternative — trimming
+what the partition contains — keeps a mechanism whose size is the operation's,
+not the page's.
+
+**2026-08-16** — **A page's anchor is resolved through the client, in every
+host.** The one-instance lookup consulted the local snapshot, which in a host
+with no records answers "nothing exists" and raises a second board on every
+open. Fetching costs a host that *does* hold the partition one round trip; the
+alternative is two code paths that disagree exactly when it matters.
 
 **2026-08-16** — **One capture form, and the host supplies what it asks for.**
 A page opening the real form meant the form had to stop being the workbench's,

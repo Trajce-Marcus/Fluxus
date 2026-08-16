@@ -69,6 +69,21 @@ export interface ConnectOptions {
    */
   pages?: 'draft' | 'published';
   /**
+   * How much of the operation's data to hold locally (2026-08-16):
+   *
+   * - `partition` — every record the caller may read, with its full activity
+   *   history, in one round trip at connect. What the workbench needs, because
+   *   it evaluates the model locally against the snapshot.
+   * - `none` — nothing. The host fills the snapshot as it goes, through
+   *   `fetchRecord`/`fetchRecords`, and asks the model for the rest through GET
+   *   activities. What a pages-only host (the Runtime app) runs on.
+   *
+   * Default `partition`, which is what every host did before the option
+   * existed. Sending an entire operation to a browser at sign-in is what this
+   * exists to stop (DATA_THROUGH_ACTIVITIES step 5).
+   */
+  records?: 'partition' | 'none';
+  /**
    * Session-token supplier — typically HostAuth.getToken. Called per request
    * (tokens expire in minutes); omit when auth is unconfigured.
    */
@@ -528,6 +543,14 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
   ) {}
 
   /**
+   * How much data this client holds (`ConnectOptions.records`, 2026-08-16).
+   * Set by `connect` right after construction rather than threaded through a
+   * fifteenth positional parameter. It decides one thing: whether `refresh`
+   * re-fetches the whole partition or only the records already in hand.
+   */
+  private recordsMode: 'partition' | 'none' = 'partition';
+
+  /**
    * Design-plane connect (CONSOLE_RUNTIME_SPEC §3): bind to a solution to author
    * its model + draft pages. `operationId` names which of the solution's
    * operations supplies the records you build against — the model and pages are
@@ -679,9 +702,12 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     const op = await trpc.operations.get.query({ operationId });
     const solutionId = op.solutionId;
     const published = options.pages === 'published';
+    const recordsMode = options.records ?? 'partition';
     const [config, partition, pageRows, me] = await Promise.all([
       trpc.config.getForOperation.query({ operationId }) as Promise<ClientSolutionConfig>,
-      trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>,
+      recordsMode === 'none'
+        ? Promise.resolve([] as RecordInstance[])
+        : (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>),
       // operationId lets published mode filter pages to those openable to the
       // caller (page access control, §6).
       trpc.pages.list.query({ solutionId, operationId, published }),
@@ -701,7 +727,9 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       [];
     const solutionName = (op as { solutionName?: string }).solutionName ?? solutionId;
     const orgName = (op as { orgName?: string }).orgName ?? op.orgId;
-    return new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, op.orgId, me.roles, me.authConfigured);
+    const client = new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, op.orgId, me.roles, me.authConfigured);
+    client.recordsMode = recordsMode;
+    return client;
   }
 
   /**
@@ -750,10 +778,55 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     };
   }
 
-  /** Re-fetch the partition into the same adapter; subscribers re-render. */
+  /**
+   * One record into the snapshot, by id — how a host that was not handed the
+   * partition reaches the record it is about (a page's anchor, the record a
+   * component's callback named). Merges rather than replaces, so a host may
+   * hold several at once. A record the caller may not read comes back as
+   * not-found, deliberately indistinguishable from a missing one.
+   */
+  async fetchRecord(recordId: string): Promise<RecordInstance> {
+    const record = (await this.trpc.records.get.query({ operationId: this.operationId, recordId })) as RecordInstance;
+    this.adapter.mergeRecords([[record.id, record] as const]);
+    return record;
+  }
+
+  /**
+   * One record type into the snapshot. The seam a grid loads through, and how
+   * a one-instance page finds whether its record exists yet. Still every row of
+   * that type — narrowing further is a query, which is what a GET activity is
+   * for.
+   */
+  async fetchRecords(typeId: string): Promise<RecordInstance[]> {
+    const rows = (await this.trpc.records.list.query({ operationId: this.operationId, typeId })) as RecordInstance[];
+    this.adapter.mergeRecords(rows.map((r) => [r.id, r] as const));
+    return rows;
+  }
+
+  /**
+   * Bring the snapshot back in line with the server after a run; subscribers
+   * re-render.
+   *
+   * With the partition, that is one re-fetch of the lot. With `records: 'none'`
+   * there is no partition to re-fetch, so it refreshes exactly what the host
+   * has already been given — typically the one record the page is about — and
+   * drops any that no longer read back (deleted, or no longer readable).
+   */
   async refresh(): Promise<void> {
-    const partition = (await this.trpc.records.partition.query({ operationId: this.operationId })) as RecordInstance[];
-    this.adapter.replaceRecords(partition.map((r) => [r.id, r] as const));
+    if (this.recordsMode === 'partition') {
+      const partition = (await this.trpc.records.partition.query({ operationId: this.operationId })) as RecordInstance[];
+      this.adapter.replaceRecords(partition.map((r) => [r.id, r] as const));
+      return;
+    }
+    const held = this.adapter.allRecords().map((r) => r.id);
+    if (held.length === 0) return;
+    const rows = await Promise.all(
+      held.map((recordId) =>
+        (this.trpc.records.get.query({ operationId: this.operationId, recordId }) as Promise<RecordInstance>)
+          .catch(() => null),
+      ),
+    );
+    this.adapter.replaceRecords(rows.filter((r): r is RecordInstance => r !== null).map((r) => [r.id, r] as const));
   }
 
   /**

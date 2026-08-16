@@ -52,11 +52,18 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   // back to the client's localhost default.
   // Runtime renders PUBLISHED pages only (CONSOLE_RUNTIME_SPEC §4); drafts
   // never leave the Console. The Console's own preview keeps rendering drafts.
+  // **No records at connect** (2026-08-16, DATA_THROUGH_ACTIVITIES step 5):
+  // signing in used to send every record in the operation, with its full
+  // activity history, to a browser that renders pages. This app is pages-only
+  // — the workbench is the Console's — so it runs on what its pages ask the
+  // model for (GET activities) plus the one record each page is about, fetched
+  // by id. The snapshot fills as it goes; nothing arrives unasked.
   client = await FluxusClient.connect({
     url: import.meta.env.VITE_FLUXUS_API_URL,
     operationId,
     getToken: auth?.configured ? auth.getToken : undefined,
     pages: 'published',
+    records: 'none',
   });
   // The org may also be named in the path — `/o/<orgId>/?operation=<id>`
   // (ruled 2026-08-03), so a Runtime link reads the same as a Console one. It

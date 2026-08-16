@@ -76,18 +76,27 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   const launchActivity = useCallback((activityId: string, record: unknown) => {
     const found = runtime.findActivity(activityId);
     if (!found) throw new Error(`Unknown activity '${activityId}'`);
-    const anchorRecord = record === null || record === undefined || record === ''
-      ? null
-      : runtime.store.getRecord(String(record));
-    if (found.activity.attributes.length > 0) {
-      setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id });
-    } else {
-      // Async now (server round trip): the callback script has already
-      // returned, so failures surface through the host error channel.
-      runWithConfirm(found.activity, anchorRecord).catch((err: unknown) => {
+    const anchorId = record === null || record === undefined || record === '' ? null : String(record);
+    // The callback script has already returned by the time any of this
+    // resolves, so failures surface through the host error channel rather than
+    // as a throw nobody is left to catch.
+    void (async () => {
+      try {
+        // The anchor is fetched, not read out of the snapshot (2026-08-16): a
+        // pages-only host holds no records, and the id the component emitted
+        // came from a GET's answer rather than from anything local. The fetch
+        // is also the authorisation check — a record the caller may not read
+        // comes back as not-found.
+        const anchorRecord = anchorId ? await runtime.client.fetchRecord(anchorId) : null;
+        if (found.activity.attributes.length > 0) {
+          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id });
+        } else {
+          await runWithConfirm(found.activity, anchorRecord);
+        }
+      } catch (err: unknown) {
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
-      });
-    }
+      }
+    })();
   }, [runtime, runWithConfirm, onError, manifest.name]);
 
   // Handlers behind services.page (UI-local effects) and services.activities
