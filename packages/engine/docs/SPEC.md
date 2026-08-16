@@ -328,6 +328,22 @@ their datasource (fail closed on datasource errors), and dangling references
 are all rejected. The workbench form keeps its interactive per-field checks;
 folding it onto this function is an open cleanup.
 
+**A datasource may name a GET (DATA_THROUGH_ACTIVITIES step 4, 2026-08-16).**
+`invoke` is supplied in the script context here, so a producer written as
+`invoke('act_get_crews', { region: attributes.region })` resolves during the
+membership check — the same one declaration that filled the input decides what
+the input may hold, with the GET's own gate deciding what this caller is
+offered. Nothing about the check is new: the datasource was always re-run
+server-side and always failed closed, so a GET that rejects, errors, or does
+not exist rejects the submission rather than waving it through.
+
+`Engine.invoke(activityId, params, anchorRecord)` exists for this — the read
+door hooks already get injected, exposed so a caller can put it in a script
+context. It evaluates **in that engine, against that store**, so a host that
+must not answer reads locally must not hand it to an expression. Only the
+server does today; the browser reaches a GET through the client, over the
+wire.
+
 ### Composite attributes and section markers
 
 `type: "composite"` packs one question's row of sub-fields — a paper form's

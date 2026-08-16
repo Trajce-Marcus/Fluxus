@@ -84,6 +84,14 @@ export function validateSubmission(
     liveAttributes: typed,
     anchorRecord,
     activity: { id: activity.id, name: activity.name },
+    // A producer may name a GET rather than spell the query inline
+    // (DATA_THROUGH_ACTIVITIES step 4). The same one declaration that filled
+    // the input is re-run here, so nothing is written twice and the GET's own
+    // gate decides what this caller may be offered. `invoke` is read-only by
+    // construction, and a datasource is already evaluated in read posture, so
+    // this widens what a producer may *say*, not what it may *do*.
+    invoke: (activityId: string, params: Record<string, unknown>) =>
+      engine.invoke(activityId, params, anchorRecord),
   };
 
   const isVisible = (attr: AttributeDef): boolean => {

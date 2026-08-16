@@ -164,6 +164,14 @@ outside the evaluator: the page runtime re-evaluates the expression in rounds
 until nothing new is asked for (page-runtime SPEC). The language does not know
 the difference, which is the point of the built-in being host-supplied.
 
+Since 2026-08-16 a **list attribute's `datasource`** may name a GET the same
+way (DATA_THROUGH_ACTIVITIES step 4). `validateSubmission` supplies `invoke`,
+so the producer that filled the input is re-run when the submission arrives and
+the submitted value is checked against its answer — one declaration used twice,
+the second time on the server. In the browser the same expression needs the
+round trip, so a form whose host cannot reach a GET reports the failure rather
+than offering an unchecked list.
+
 ## 6. Hooks
 
 **Before hook = gate.** Runs on activity submission, before anything persists. May read anything (`context`, `attributes`, any `records` query, read-only service calls). May `fail('msg')` — the activity is rejected, nothing persists — or `warn('msg')`. **Validate only**: before hooks never modify `attributes` or records. Derived/prepped values are the after hook's job, which keeps activity history a truthful record of user input.

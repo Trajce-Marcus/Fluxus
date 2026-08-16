@@ -338,6 +338,40 @@ must be one whose value cannot widen the set beyond what that user may see.
 be. That is the argument for the tier-1 direction rather than a documentation
 note telling authors to be careful.
 
+### As built — the server half (step 4, 2026-08-16)
+
+There was less to build than the table above suggests, which is the sign the
+earlier steps were shaped right. A list attribute's `datasource` was already
+re-evaluated at submission and already failed closed; the only thing it could
+not do was name a GET, because `validateSubmission` built a script context
+without `invoke` in it. Supplying it is the whole change:
+
+```
+"type_config": { "datasource": "invoke('act_get_crews', { region: attributes.region })" }
+```
+
+Two things follow, neither of them new rules. The GET's **own gate** decides
+the set, so a caller the GET rejects cannot submit a value from it — the
+"failed closed" posture that was already there now reaches authorisation, not
+just evaluation errors. And the **parameters** are the submitting activity's
+own attributes, which is what §3 asked for: the server supplies them, so the
+re-run asks the same question the user was answering rather than a question the
+client chose.
+
+`Engine.invoke` is now on the engine's interface for this. It evaluates locally,
+in the engine it belongs to — which is exactly what a browser must not do with
+a read, so only the server passes it into an expression. Nothing changed for
+hooks or `returns`; they were always given it.
+
+**The browser half is not built, and step 4 is not usable from a form until it
+is.** The workbench's capture form resolves a datasource synchronously to build
+its dropdown ([AttributesForm.tsx](../packages/workbench/src/components/AttributesForm.tsx)),
+and a GET is a round trip, so an author who writes the producer above gets a
+correct server-side check and a dropdown that reports a failure. The mechanism
+that closes it already exists — the page host's rounds — but it is written
+around a page's context rather than a form's, so sharing it is a refactor and
+the form gains a loading state. Pending.
+
 ---
 
 ## 4. `callbackData` is removed — **BUILT 2026-08-09**
@@ -407,7 +441,7 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 | 1 | ✅ **BUILT 2026-08-09** — GET in the engine: `record_map: "GET"`, `returns` evaluated read-only with attributes as params, validator purity, a server endpoint, and `invoke(name, params)` for hooks. No logging yet | the prerequisite for everything else |
 | 2 | ✅ **BUILT 2026-08-10** — a page names a GET for a dynamic prop instead of writing an inline expression: `invoke` supplied to the page host, evaluated in rounds, checked by `validatePage` | **the goal**: data requirements move out of the page and into the model |
 | 3 | ✅ **BUILT 2026-08-11** — GETs logged light on the anchor; a page declares its record, found or created at page open | observability, and the pipeline-is-the-log promise held for reads |
-| 4 | An input names its producer; the engine re-invokes it at submission | the guarding payoff — tier 1 absorbs tier 2 |
+| 4 | 🔨 **server half BUILT 2026-08-16** — a `datasource` may name a GET, and `validateSubmission` re-runs it at submission, failing closed. The browser half (a form whose dropdown needs the round trip) is not built | the guarding payoff — tier 1 absorbs tier 2 |
 | 5 | Reconcile the connect-time snapshot: refresh-after-run by re-invoke, and whether connect stays one big GET or pages fetch their own | production shape; decide on evidence |
 
 Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on

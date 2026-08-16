@@ -65,6 +65,22 @@ export interface Engine {
     anchorRecord: RecordInstance | null,
   ): QueryActivityResult;
   /**
+   * The read door `invoke(activityId, params)` opens, exposed so a caller can
+   * put it in a `ScriptContext` and let an expression name a GET — which is
+   * what `validateSubmission` does to re-run a producer at submission
+   * (DATA_THROUGH_ACTIVITIES step 4). Hooks and `returns` get it injected
+   * already; nothing else has to.
+   *
+   * It evaluates **here**, in this engine, against this store — so a host that
+   * must not answer reads locally (a browser) must not hand this to an
+   * expression. Today only the server does.
+   */
+  invoke(
+    activityId: string,
+    params: Record<string, unknown>,
+    anchorRecord: RecordInstance | null,
+  ): unknown;
+  /**
    * Evaluate a FluxScript expression (datasource, show condition) against the
    * live store, with the given script context injected as the four roots.
    */
@@ -493,6 +509,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
     isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
     runActivity,
     runQuery,
+    invoke: (activityId, params, anchorRecord) => invoke(activityId, params, anchorRecord),
     evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
     validateConfig: () => validateConfig(config, services),
     reportConfigFindings: () => reportConfigFindings(config, services),
