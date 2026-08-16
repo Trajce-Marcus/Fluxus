@@ -13,6 +13,8 @@ export type { MemoryAdapterOptions } from './memoryAdapter';
 
 export { buildGeoModule } from './services/geo';
 
+export { evaluateWithGets } from './evaluateWithGets';
+export type { GetQueryFn, RoundInvoke, EvaluateWithGetsOptions } from './evaluateWithGets';
 export { validateSubmission } from './validateSubmission';
 export type { SubmissionIssue } from './validateSubmission';
 

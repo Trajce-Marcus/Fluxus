@@ -45,6 +45,10 @@ src/attributeTypes.ts — the attribute type registry (files, photos, scalars):
                      validateConfig
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
+src/evaluateWithGets.ts — the waiting loop for a host whose GET answers are a
+                     round trip away: evaluate, fetch what the round asked for,
+                     evaluate again. Written in the page host, moved here
+                     2026-08-16 when form dropdowns needed the same thing.
 src/validateSubmission.ts — headless payload validation (DSL Phase 4): the
                      attribute trio + datasource membership as one check
 src/services/geo.ts — shared geo module (Store-backed, host-agnostic)
