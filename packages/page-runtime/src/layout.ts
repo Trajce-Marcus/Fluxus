@@ -18,6 +18,16 @@ export interface Panel {
   maxSize?: number;
   gap?: number;
   padding?: { top: number; right: number; bottom: number; left: number };
+  /**
+   * What happens to content that does not fit. Specified in
+   * LAYOUT_EDITOR_SPEC.md from the start; honoured by the renderer since
+   * 2026-08-20. Left unset, a panel holding **other panels** clips (a split
+   * layout must not grow when one side fills) and a panel holding a
+   * **component** scrolls (clipping a leaf makes content unreachable with
+   * nothing to say so). `'scroll'` renders as `auto` — scrollbars when there
+   * is something to scroll, not before.
+   */
+  overflow?: 'hidden' | 'scroll';
   background?: string;
   border?: {
     top?: BorderSide;

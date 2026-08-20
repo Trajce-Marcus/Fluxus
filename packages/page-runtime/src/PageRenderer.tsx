@@ -19,9 +19,18 @@ const APP_CONTEXT = { name: 'Fluxus' };
 
 // ── Panel layout rendering ───────────────────────────────────────────────────
 
+// `panel.overflow` decides, and the default depends on what the panel holds
+// (2026-08-20). A panel holding other panels **clips** — that is what keeps a
+// split layout from growing when one side is full. A panel holding a component
+// **scrolls**: clipping a leaf makes whatever does not fit unreachable, with no
+// scrollbar to say so — a work order list wider than its slot simply lost its
+// action buttons off the right-hand edge. Same rule the workbench's panel-body
+// follows. The property was in LAYOUT_EDITOR_SPEC from the start and had never
+// been read; `'scroll'` renders as `auto`, so scrollbars appear when there is
+// something to scroll and not before.
 function panelStyle(panel: Panel): React.CSSProperties {
   const style: React.CSSProperties = {
-    overflow: 'hidden',
+    overflow: panel.overflow ? (panel.overflow === 'scroll' ? 'auto' : 'hidden') : (panel.children.length > 0 ? 'hidden' : 'auto'),
     display: 'flex',
     flexDirection: panel.direction === 'vertical' ? 'column' : 'row',
   };

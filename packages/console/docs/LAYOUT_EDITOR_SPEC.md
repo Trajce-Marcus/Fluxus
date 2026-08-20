@@ -165,7 +165,9 @@ interface Panel {
   maxSize?: number;
   gap?: number;
   padding?: { top: number; right: number; bottom: number; left: number };
-  overflow?: 'hidden' | 'scroll';
+  overflow?: 'hidden' | 'scroll'; // honoured by the renderer since 2026-08-20;
+                                  // unset ⇒ a panel with children clips, a panel
+                                  // holding a component scrolls
   background?: string;
   border?: {
     top?: BorderSide;
