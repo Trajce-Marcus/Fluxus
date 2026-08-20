@@ -9,7 +9,7 @@ import type { SolutionConfig } from '@fluxus/engine';
 import type { MenuItem } from '@fluxus/client';
 import { readConfig, refreshSolutionViews, saveDefaultMenu, useDirty } from './useSolutionConfig';
 import { consoleClient, sdmClient } from '../../sdm-runtime/engine';
-import { MenuItemsEditor } from '../admin/MenuItemsEditor';
+import { MenuItemsEditor, menuProblems } from '../admin/MenuItemsEditor';
 
 type ConfigWithMenu = SolutionConfig & { default_menu?: MenuItem[] };
 
@@ -26,6 +26,8 @@ export function MenuEditor() {
 
   const menu = draft.default_menu ?? [];
   const roles = (draft.access?.roles ?? []).map((r) => ({ id: r.id, name: r.name }));
+  // Said here rather than by the server after a round trip.
+  const problems = menuProblems(menu);
 
   function setMenu(next: MenuItem[]) {
     setDraft((d) => ({ ...d, default_menu: next }));
@@ -69,8 +71,15 @@ export function MenuEditor() {
       {menu.length === 0 && <p className="admin-muted">No default menu yet — operations fall back to the plain workbench nav.</p>}
       <MenuItemsEditor menu={menu} onChange={setMenu} roles={roles} paths={paths} />
 
+      {problems.length > 0 && (
+        <div className="admin-error">
+          {problems.map((p) => p.label).join(', ')} — {problems.length === 1 ? 'this item opens' : 'these items open'} nothing.
+          Give each a page, or make it a group and put items under it.
+        </div>
+      )}
+
       <div className="admin-actions">
-        <button className="admin-btn" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save menu'}</button>
+        <button className="admin-btn" onClick={save} disabled={busy || !dirty || problems.length > 0}>{busy ? 'Saving…' : 'Save menu'}</button>
       </div>
     </div>
   );

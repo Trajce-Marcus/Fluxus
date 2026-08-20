@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import type { MenuItem } from '@fluxus/client';
 import { consoleClient } from '../../sdm-runtime/engine';
-import { MenuItemsEditor, MenuPreview, css as itemsCss } from './MenuItemsEditor';
+import { MenuItemsEditor, menuProblems, MenuPreview, css as itemsCss } from './MenuItemsEditor';
 
 export function OperationMenuSection({ operationId, solutionId }: { operationId: string; solutionId: string }) {
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
@@ -62,6 +62,8 @@ export function OperationMenuSection({ operationId, solutionId }: { operationId:
   }
 
   const inheriting = menu === null;
+  // Said here rather than by the server after a round trip.
+  const problems = menuProblems(menu ?? []);
 
   return (
     <div className="admin-section">
@@ -86,8 +88,14 @@ export function OperationMenuSection({ operationId, solutionId }: { operationId:
       ) : (
         <>
           <MenuItemsEditor menu={menu} onChange={setMenu} roles={roles} paths={paths} />
+          {problems.length > 0 && (
+            <div className="admin-error">
+              {problems.map((p) => p.label).join(', ')} — {problems.length === 1 ? 'this item opens' : 'these items open'} nothing.
+              Give each a page, or make it a group and put items under it.
+            </div>
+          )}
           <div className="menu-actions">
-            <button className="admin-btn" disabled={busy} onClick={() => void persist(menu)}>{busy ? 'Saving…' : 'Save override'}</button>
+            <button className="admin-btn" disabled={busy || problems.length > 0} onClick={() => void persist(menu)}>{busy ? 'Saving…' : 'Save override'}</button>
             <button className="admin-link" disabled={busy} onClick={() => void persist(null)}>Revert to solution default</button>
           </div>
         </>

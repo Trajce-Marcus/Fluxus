@@ -43,6 +43,25 @@ function ensureIds(items: MenuItem[]): MenuItem[] {
 
 const isGroup = (it: MenuItem) => it.items !== undefined;
 
+/**
+ * Items that open nothing — a label with no page and no `items` (2026-08-20).
+ * The server refuses these (`validateOperationMenu`), and it used to say so
+ * only after a round trip, which is a poor way to learn that the item you just
+ * added needs a page. An empty group is fine: that is a group waiting to be
+ * filled, and it stays invisible at runtime until it has a child.
+ */
+export function menuProblems(menu: MenuItem[]): { id?: string; label: string }[] {
+  const out: { id?: string; label: string }[] = [];
+  const walk = (items: MenuItem[]) => {
+    for (const it of items) {
+      if (!it.page && it.items === undefined) out.push({ id: it.id, label: it.label || '(no label)' });
+      if (it.items) walk(it.items);
+    }
+  };
+  walk(menu);
+  return out;
+}
+
 /** The item with this id, and the group holding it (null when top level). */
 function locate(items: MenuItem[], id: string): { item: MenuItem; parent: MenuItem | null } | null {
   for (const it of items) {
@@ -199,8 +218,11 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
         <span className="menu-row-label">{it.label || '(no label)'}</span>
         {isGroup(it) ? (
           <span className="menu-row-tag">group</span>
+        ) : it.page ? (
+          <span className="menu-row-page">{it.page}</span>
         ) : (
-          <span className="menu-row-page">{it.page ?? 'no page'}</span>
+          // Not a warning about style — the save will be refused.
+          <span className="menu-row-page problem" title="Pick a page, or make this a group">opens nothing</span>
         )}
         <span className={`menu-row-roles${(it.roles ?? []).length === 0 ? ' none' : ''}`}>
           {(it.roles ?? []).length === 0 ? 'hidden' : `${(it.roles ?? []).length} role${(it.roles ?? []).length === 1 ? '' : 's'}`}
@@ -419,6 +441,7 @@ export const css = `
     white-space: nowrap;
   }
   .menu-row-page { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .menu-row-page.problem { color: #fca5a5; font-family: inherit; }
   .menu-row-roles.none { color: #e0a0a0; }
   /* Drop indicators: a line where the row will land, a box for "into a group". */
   .menu-row.drop-before { box-shadow: inset 0 2px 0 var(--color-accent); }
