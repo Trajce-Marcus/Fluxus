@@ -216,7 +216,10 @@ describe('the default menu', () => {
   });
 
   it('holds the menu to the model — deleting a role it names fails', async () => {
-    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'Crew', roles: ['role_crew'] }] });
+    // A menu item must open something (2026-08-20), so the page exists first.
+    await stub().pages.put({ solutionId: SOL, path: 'pages/crew', def: {} });
+    await stub().pages.publish({ solutionId: SOL, path: 'pages/crew', readme: 'seed' });
+    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'Crew', page: 'pages/crew', roles: ['role_crew'] }] });
     await expect(stub().config.deleteRole({ solutionId: SOL, id: 'role_crew' })).rejects.toThrow(/unknown role/);
     expect((await getSolutionConfig(db, SOL)).access?.roles).toHaveLength(1);
   });
@@ -259,9 +262,12 @@ describe('the tables are truth', () => {
   });
 
   it('the menu is a row keyed by solution alone', async () => {
-    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'Crew', roles: ['role_crew'] }] });
+    await stub().pages.put({ solutionId: SOL, path: 'pages/crew', def: {} });
+    await stub().pages.publish({ solutionId: SOL, path: 'pages/crew', readme: 'seed' });
+    const item = { label: 'Crew', page: 'pages/crew', roles: ['role_crew'] };
+    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [item] });
     const [menu] = await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL));
-    expect(menu.def).toEqual([{ label: 'Crew', roles: ['role_crew'] }]);
+    expect(menu.def).toEqual([item]);
     await stub().config.putDefaultMenu({ solutionId: SOL, menu: [] });
     expect(await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL))).toEqual([]);
   });

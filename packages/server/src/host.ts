@@ -706,6 +706,14 @@ export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu
         seenIds.add(it.id);
       }
       if (it.page && !published.has(it.page)) errors.push(`"${it.label}" → no published page "${it.page}"`);
+      // A leaf that opens nothing is a dead entry: it renders, it highlights
+      // nothing, and clicking it does nothing — while its presence hides the
+      // Pages list the Runtime app falls back to when an operation has no
+      // menu. Caught here since 2026-08-20, after three such items in the demo
+      // operation made its published pages unreachable.
+      if (!it.page && !(it.items && it.items.length > 0)) {
+        errors.push(`"${it.label}" → opens no page (a menu item must open a page or hold items)`);
+      }
       for (const r of it.roles ?? []) if (!roleIds.has(r)) errors.push(`"${it.label}" → unknown role "${r}"`);
       if (it.items && it.items.length > 0) {
         if (depth >= 1) errors.push(`"${it.label}" nests too deep (one level max)`);

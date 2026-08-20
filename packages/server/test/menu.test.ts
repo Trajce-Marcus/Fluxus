@@ -76,6 +76,18 @@ describe('operation menu validation at save (§5)', () => {
       .rejects.toThrow(/no published page/i);
   });
 
+  it('rejects a leaf that opens nothing — a dead entry hides the Pages list', async () => {
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'Crews' }] } }))
+      .rejects.toThrow(/opens no page/i);
+  });
+
+  it('rejects a dead leaf nested in a group', async () => {
+    await expect(open().operations.putConfig({
+      operationId: OP,
+      config: { menu: [{ label: 'Admin', items: [{ label: 'Users' }] }] },
+    })).rejects.toThrow(/opens no page/i);
+  });
+
   it('rejects an unknown role', async () => {
     await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'X', page: 'pages/p1', roles: ['role_zzz'] }] } }))
       .rejects.toThrow(/unknown role/i);

@@ -357,7 +357,12 @@ takes `operationId?` (both default `demo/sdm`):
   runtime navigation, inherited by operations unless overridden): the engine
   stays menu-blind, so `put` validates it here — §5 shape, published-page +
   declared-role references (roles read from the **incoming** config via
-  `validateOperationMenu`'s `rolesFrom` param), one nesting level.
+  `validateOperationMenu`'s `rolesFrom` param), one nesting level — and, since
+  2026-08-20, **every item must open a page or hold items**. A leaf with
+  neither is a dead entry: it renders, clicking it does nothing, and its mere
+  presence hides the Pages list the Runtime app falls back to when an operation
+  has no menu — which is how three such items in the demo operation made its
+  published pages unreachable.
   Since 2026-08-08 `put` is the **import** path, not the editing path: the
   Console saves one entity at a time through the eleven per-entity mutations
   (`config.putAttribute` … `config.putDefaultMenu`), which run this same
