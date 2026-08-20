@@ -499,7 +499,21 @@ free of the partition.
   than for want of a caller.
 - **Whether a prop may keep carrying its own query.** Step 2 added naming a GET
   without removing the inline alternative, so both are legal and only the named
-  one is authorised at read time. Deliberate for now; it belongs with step 5.
+  one is authorised at read time. **Still open, and deliberately parked
+  2026-08-20** — it is the same decision as the workbench's snapshot, arriving
+  twice: an inline read only works where the browser holds records, so if the
+  workbench stops holding a partition, inline stops working everywhere and
+  there is nothing left to rule on. Ruling now would commit on a premise that
+  is parked. What was done instead: `validatePage` **warns** on a prop that
+  reads records directly, so the mistake is visible where it is made, and the
+  one page in the live database that had one was repointed at the GET the model
+  already declared (measured, not assumed: two pages exist, one inline, now
+  zero). Authoring new pages with GETs caps what a later removal costs.
+  A third option was raised and not taken: send the page's *stored* expression
+  to the server to run. It would authorise the read, but an inline query has no
+  activity to anchor a history entry to, so it is either unlogged — reopening
+  what step 3 closed — or a new kind of entry; and `context.page` would cross
+  the wire as the undeclared bag step 0 removed.
 - **Read service calls are not logged individually** (datasource-evaluation
   volume) — proposed 2026-07-10, still never confirmed.
 

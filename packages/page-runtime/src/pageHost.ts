@@ -231,6 +231,20 @@ export function validatePageExpression(config: ClientSolutionConfig, source: str
   });
 }
 
+/**
+ * The same validation with `records` banned as well — how `validatePage` spots
+ * a prop that reads records directly instead of naming a GET (2026-08-16).
+ * The real parser answers the question, so a `records` inside a string literal
+ * or behind a named function is judged correctly, which a text search over the
+ * expression would not manage.
+ */
+export function validatePageExpressionWithoutRecords(config: ClientSolutionConfig, source: string): Diagnostic[] {
+  return validateExpression(source, pageSchema(config), {
+    bannedRoots: ['attributes', 'records'],
+    functions: pageFunctions(config),
+  }).filter((d) => d.message.toLowerCase().includes('records'));
+}
+
 /** Validate a callback script: effects allowed, record mutations rejected. */
 export function validatePageCallback(config: ClientSolutionConfig, source: string): Diagnostic[] {
   return validateScript(source, pageSchema(config), {

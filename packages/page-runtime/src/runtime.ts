@@ -15,6 +15,7 @@ import {
   evaluatePageExpression,
   runPageCallback,
   validatePageExpression,
+  validatePageExpressionWithoutRecords,
   validatePageCallback,
   type CallbackPayload,
   type PageContext,
@@ -62,6 +63,9 @@ export interface PageRuntime {
     handlers: PageServiceHandlers,
   ): void;
   validateExpression(source: string): Diagnostic[];
+  /** validateExpression with `records` banned too — what flags a prop that
+   *  reads records directly rather than naming a GET. */
+  validateExpressionWithoutRecords(source: string): Diagnostic[];
   validateCallback(source: string): Diagnostic[];
   validatePage(def: PageDef): PageFinding[];
   /** validatePage + console reporting, the save-time voice. */
@@ -124,6 +128,7 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
     runCallback: (source, callbackData, pageCtx, handlers) =>
       runPageCallback(store, config, source, callbackData, pageCtx, handlers),
     validateExpression: (source) => validatePageExpression(config, source),
+    validateExpressionWithoutRecords: (source) => validatePageExpressionWithoutRecords(config, source),
     validateCallback: (source) => validatePageCallback(config, source),
     validatePage: (def) => validatePage(runtime, def),
     reportPageFindings: (pagePath, def) => reportPageFindings(runtime, pagePath, def),

@@ -37,6 +37,12 @@ const RECORD_TYPES: Record<string, StubType> = {
 
 const HOST: PageValidationHost = {
   validateExpression: () => [],
+  // Stands in for the real records-banned pass: the parser answers this in
+  // production, so the stub answers the same question the cheap way.
+  validateExpressionWithoutRecords: (source) =>
+    /(^|[^\w.])records\./.test(source)
+      ? [{ severity: 'error' as const, message: "'records' is not available here", line: 1, col: 1 }]
+      : [],
   validateCallback: () => [],
   findActivity: (id) => (ACTIVITIES[id] ? { activity: ACTIVITIES[id] } : null),
   findRecordType: (id) => RECORD_TYPES[id] ?? null,
@@ -66,6 +72,16 @@ describe('validatePage — a prop naming its producer', () => {
   it('rejects an activity that is not a GET — only a GET can answer', () => {
     expect(messages(page({ workOrders: "invoke('act_dispatch_work_orders')" })))
       .toEqual(["'act_dispatch_work_orders' is not a GET activity — only a GET can answer invoke()"]);
+  });
+
+  it('warns when a prop reads records directly — the Runtime app holds none', () => {
+    expect(messages(page({ workOrders: 'records.work_orders' })))
+      .toEqual(['This reads records directly, so it shows nothing in the Runtime app — name a GET activity instead']);
+  });
+
+  it('says nothing about a prop that names a GET, however it filters', () => {
+    expect(messages(page({ workOrders: "invoke('act_get_work_orders', { status: context.page.status })" })))
+      .toEqual([]);
   });
 
   it('finds an invoke nested inside a larger expression', () => {

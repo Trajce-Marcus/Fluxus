@@ -18,6 +18,13 @@ export interface PageFinding {
  *  module doesn't import the runtime factory (no cycle). */
 export interface PageValidationHost {
   validateExpression(source: string): Diagnostic[];
+  /**
+   * The same validation with `records` banned, so a direct record read is
+   * reported rather than accepted (2026-08-16). Its findings become warnings
+   * here — reading records inline is still legal, it just answers nothing in a
+   * host that holds none.
+   */
+  validateExpressionWithoutRecords(source: string): Diagnostic[];
   validateCallback(source: string): Diagnostic[];
   findActivity(activityId: string): { activity: { record_map?: string } } | null;
   /** The record type a page declares itself about, with the workflow that
@@ -65,6 +72,19 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
       }
       for (const diagnostic of checkRefs(host, source, 'expression')) {
         findings.push({ where: w, diagnostic });
+      }
+      // A prop that reads records directly answers with whatever the browser
+      // happens to hold — everything in the Console, which keeps the
+      // partition, and nothing in the Runtime app, which since 2026-08-16
+      // holds no records at all. The author is the only one who can fix that,
+      // and this is where they are (DATA_THROUGH_ACTIVITIES step 5).
+      if (host.validateExpressionWithoutRecords(source).length > 0) {
+        note(
+          findings,
+          w,
+          'This reads records directly, so it shows nothing in the Runtime app — name a GET activity instead',
+          'warning',
+        );
       }
     }
 
