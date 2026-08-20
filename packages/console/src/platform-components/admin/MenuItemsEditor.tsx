@@ -50,15 +50,24 @@ const isGroup = (it: MenuItem) => it.items !== undefined;
  * added needs a page. An empty group is fine: that is a group waiting to be
  * filled, and it stays invisible at runtime until it has a child.
  */
-export function menuProblems(menu: MenuItem[]): { id?: string; label: string }[] {
-  const out: { id?: string; label: string }[] = [];
-  const walk = (items: MenuItem[]) => {
+export function menuProblems(menu: MenuItem[]): { id?: string; label: string; fix: string }[] {
+  const out: { id?: string; label: string; fix: string }[] = [];
+  const walk = (items: MenuItem[], nested: boolean) => {
     for (const it of items) {
-      if (!it.page && it.items === undefined) out.push({ id: it.id, label: it.label || '(no label)' });
-      if (it.items) walk(it.items);
+      if (!it.page && it.items === undefined) {
+        out.push({
+          id: it.id,
+          label: it.label || '(no label)',
+          // Nesting is one level deep, and only a top-level item can become a
+          // group — so telling someone to group a child item is advice they
+          // cannot take.
+          fix: nested ? 'give it a page, or remove it' : 'give it a page, or make it a group',
+        });
+      }
+      if (it.items) walk(it.items, true);
     }
   };
-  walk(menu);
+  walk(menu, false);
   return out;
 }
 

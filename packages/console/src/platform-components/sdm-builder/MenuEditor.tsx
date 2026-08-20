@@ -73,8 +73,8 @@ export function MenuEditor() {
 
       {problems.length > 0 && (
         <div className="admin-error">
-          {problems.map((p) => p.label).join(', ')} — {problems.length === 1 ? 'this item opens' : 'these items open'} nothing.
-          Give each a page, or make it a group and put items under it.
+          {problems.length === 1 ? 'This item opens nothing:' : 'These items open nothing:'}
+          {' '}{problems.map((p) => `${p.label} (${p.fix})`).join(', ')}.
         </div>
       )}
 
