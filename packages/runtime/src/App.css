@@ -148,6 +148,23 @@ body {
   overflow: hidden;
 }
 
+/* The open page's box. `min-width`/`min-height: 0` matter: without them a flex
+   item refuses to shrink below its content, so a wide table pushes the page
+   out of the window instead of its own slot scrolling. */
+.page-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-view-message {
+  padding: 16px 20px;
+  color: #64748b;
+}
+
 /* Nothing open, or nothing published (§4, M15) — with the workbench gone to
    the Console there is no record grid to fall back to, so this is what an app
    with no published pages looks like. */

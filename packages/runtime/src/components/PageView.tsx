@@ -9,8 +9,13 @@ import { pageRuntime } from '../host';
 export function PageView({ path, recordId }: { path: string; recordId?: string }) {
   const def = pageRuntime.getPage(path);
 
+  // `.page-view`, not `.panel` — that class came from the workbench and is
+  // scoped under `.workbench`, which this app has not mounted since M15. The
+  // page area was therefore an unstyled block: no flex, no height, so a page
+  // sized itself to its content and its panels were squeezed (found 2026-08-20
+  // through a work order list whose action buttons had nowhere to be).
   return (
-    <div className="panel" style={{ position: 'relative' }}>
+    <div className="page-view">
       <style>{pageRendererCss}</style>
       {def ? (
         <PageRenderer
@@ -21,7 +26,7 @@ export function PageView({ path, recordId }: { path: string; recordId?: string }
           recordId={recordId}
         />
       ) : (
-        <div className="panel-body" style={{ color: '#64748b' }}>
+        <div className="page-view-message">
           Page '{path}' is not in the snapshot.
         </div>
       )}
