@@ -711,8 +711,14 @@ export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu
       // Pages list the Runtime app falls back to when an operation has no
       // menu. Caught here since 2026-08-20, after three such items in the demo
       // operation made its published pages unreachable.
-      if (!it.page && !(it.items && it.items.length > 0)) {
-        errors.push(`"${it.label}" → opens no page (a menu item must open a page or hold items)`);
+      //
+      // A **group** is any item carrying an `items` key, empty included: the
+      // editor makes a group first and fills it by dragging items in, and an
+      // empty one is invisible at runtime anyway (`visibleMenu` drops a group
+      // with no visible child). What is rejected is an item that is neither —
+      // a label with nothing behind it.
+      if (!it.page && it.items === undefined) {
+        errors.push(`"${it.label}" → give it a page, or make it a group and put items under it`);
       }
       for (const r of it.roles ?? []) if (!roleIds.has(r)) errors.push(`"${it.label}" → unknown role "${r}"`);
       if (it.items && it.items.length > 0) {

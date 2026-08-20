@@ -36,10 +36,14 @@ export function MenuEditor() {
     setBusy(true);
     setError(null);
     try {
-      // Prune: empty items[] would read as a group. An empty menu saves as `[]`
-      // and the server drops the key — "no default" is the absent key, not `[]`.
-      const clean = menu.map((it) => (it.items && it.items.length === 0 ? { ...it, items: undefined } : it));
-      await saveDefaultMenu(clean);
+      // An empty menu saves as `[]` and the server drops the key — "no
+      // default" is the absent key, not `[]`. Empty `items[]` used to be
+      // pruned here so a childless group read as a leaf; that stopped on
+      // 2026-08-20, when a leaf became required to open a page: pruning turned
+      // a group you were still filling into an item the server rightly
+      // refuses. An empty group saves, and stays invisible until it has a
+      // child.
+      await saveDefaultMenu(menu);
       setDirty(false);
       await refreshSolutionViews();
     } catch (err) {

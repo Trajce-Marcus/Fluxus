@@ -46,11 +46,11 @@ export function OperationMenuSection({ operationId, solutionId }: { operationId:
       const op = await consoleClient.getOperation(operationId);
       // Whole-config write; drop the menu key entirely when reverting to
       // inherit — absent means "the solution default", [] means "explicitly
-      // empty". Prune empty items[] so a leaf isn't mistaken for a group.
+      // empty". Empty `items[]` is NOT pruned (2026-08-20): a childless group
+      // is a group being built, and flattening it to a leaf makes an item the
+      // server refuses now that a leaf must open a page.
       const { menu: _drop, ...rest } = op.config;
-      const config = next === null
-        ? rest
-        : { ...rest, menu: next.map((it) => (it.items && it.items.length === 0 ? { ...it, items: undefined } : it)) };
+      const config = next === null ? rest : { ...rest, menu: next };
       await consoleClient.putOperationConfig(operationId, config);
       setMenu(next);
       setStatus(next === null ? 'Reverted to the solution default.' : 'Menu saved.');
