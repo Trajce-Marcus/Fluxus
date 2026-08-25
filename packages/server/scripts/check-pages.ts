@@ -43,4 +43,4 @@ for (const row of rows) {
 }
 
 console.log(`\n${rows.length} pages across ${solutions.size} solutions — ${inline} inline record reads, ${named} named GETs.`);
-await closeDb();
+await closeDb(db);
