@@ -161,7 +161,19 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   for (const prop of manifest.schema) {
     if (prop.kind !== 'callback') continue;
     const source = config.callbacks[prop.name];
-    if (!source) continue;
+    // Every declared callback gets a function, wired or not (ruled
+    // 2026-08-26). A control that disappears because nobody wired it is
+    // indistinguishable from one hidden by access control or a show
+    // condition — and only those two are answers to "may I do this?".
+    // Whether a control is visible is the model's business; whether it is
+    // wired is the author's, and an unwired one is a gap that should say so
+    // when used rather than hide.
+    if (!source) {
+      resolvedProps[prop.name] = () => {
+        onError(new Error(`'${prop.name}' is not wired on this page`), manifest.name);
+      };
+      continue;
+    }
     resolvedProps[prop.name] = (value: unknown) => {
       try {
         runtime.runCallback(source, packCallbackData(value), pageCtx, serviceHandlers);

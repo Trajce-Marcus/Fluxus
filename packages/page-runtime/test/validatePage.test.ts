@@ -50,7 +50,15 @@ const HOST: PageValidationHost = {
 
 const BOARD: PageDef['record'] = { type: 'rt_dispatch_boards', instances: 'one' };
 
-const page = (dynamicProps: Record<string, string>, callbacks: Record<string, string> = {}): PageDef => ({
+// Both of WorkOrderList's callbacks are wired unless a test says otherwise:
+// an unwired one is a finding of its own now (its control shows and reports an
+// error when used), and every test below is about something else.
+const WIRED = {
+  onDispatch: "services.activities.run('act_dispatch_work_orders', callbackData.value)",
+  onReschedule: "services.activities.run('act_dispatch_work_orders', callbackData.value)",
+};
+
+const page = (dynamicProps: Record<string, string>, callbacks: Record<string, string> = WIRED): PageDef => ({
   record: BOARD,
   slotConfigs: {
     main: { componentName: 'WorkOrderList', staticConfig: {}, dynamicProps, callbacks },
@@ -72,6 +80,15 @@ describe('validatePage — a prop naming its producer', () => {
   it('rejects an activity that is not a GET — only a GET can answer', () => {
     expect(messages(page({ workOrders: "invoke('act_dispatch_work_orders')" })))
       .toEqual(["'act_dispatch_work_orders' is not a GET activity — only a GET can answer invoke()"]);
+  });
+
+  it('warns about a callback nobody wired — its control is shown either way', () => {
+    const def = page({ workOrders: "invoke('act_get_work_orders', { status: 'Raised' })" }, {
+      onDispatch: "services.activities.run('act_dispatch_work_orders', callbackData.value)",
+    });
+    expect(messages(def)).toEqual([
+      "'onReschedule' is not wired — its control is shown and reports an error when used",
+    ]);
   });
 
   it('warns when a prop reads records directly — the Runtime app holds none', () => {

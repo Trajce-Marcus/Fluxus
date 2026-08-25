@@ -521,6 +521,14 @@ free of the partition.
 
 ## Decision log
 
+**2026-08-26** — **A page's control is shown whether or not it is wired**, and
+an unwired one says so when used. Hiding it conflates two different things: "you
+may not do this" (access control, show conditions — the model's answer) and
+"nobody wired this" (an authoring gap). Only the first is an answer a user can
+act on, and the second should be loud, not invisible. Rejected: keeping the
+`onX &&` guard, which made a page's own incompleteness indistinguishable from a
+permission decision.
+
 **2026-08-16** — **A pages-only host is handed no records, and fetches what it
 needs by id.** Signing in used to send every record in the operation with its
 full activity history. The Runtime app renders pages, so it runs on GET

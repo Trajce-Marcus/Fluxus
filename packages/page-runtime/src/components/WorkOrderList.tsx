@@ -37,17 +37,17 @@ function WorkOrderListComponent({ workOrders = [], onDispatch, onReschedule }: W
               <td><span className={`wol-status wol-status--${wo.status.toLowerCase()}`}>{wo.status}</span></td>
               <td>{wo.crew || '—'}</td>
               <td>{wo.due_date}</td>
+              {/* Shown whether or not the page wired them: visibility answers
+                  "may I do this?", which is access control's question and the
+                  activity's show condition's, not the wiring's. An unwired
+                  callback says so when clicked (ComponentContainer). */}
               <td className="wol-actions">
-                {onDispatch && (
-                  <button className="wol-btn" onClick={() => onDispatch(wo.id)}>
-                    Dispatch
-                  </button>
-                )}
-                {onReschedule && (
-                  <button className="wol-btn wol-btn--ghost" onClick={() => onReschedule(wo.id)}>
-                    Reschedule
-                  </button>
-                )}
+                <button className="wol-btn" onClick={() => onDispatch?.(wo.id)}>
+                  Dispatch
+                </button>
+                <button className="wol-btn wol-btn--ghost" onClick={() => onReschedule?.(wo.id)}>
+                  Reschedule
+                </button>
               </td>
             </tr>
           ))}

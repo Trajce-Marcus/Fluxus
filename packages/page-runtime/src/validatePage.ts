@@ -93,6 +93,19 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
       if (prop.kind === 'dynamic-data' && prop.required && !(prop.name in config.dynamicProps)) {
         note(findings, where(`prop '${prop.name}'`), `required prop '${prop.name}' has no expression`, 'warning');
       }
+      // A declared callback nobody wired (2026-08-26). The control it drives is
+      // shown regardless — visibility answers "may I do this?", which belongs
+      // to access control and show conditions, not to whether an author got
+      // round to the wiring — so an unwired one is a control that reports an
+      // error when used. Said here, where it can still be wired.
+      if (prop.kind === 'callback' && !(prop.name in config.callbacks)) {
+        note(
+          findings,
+          where(`callback '${prop.name}'`),
+          `'${prop.name}' is not wired — its control is shown and reports an error when used`,
+          'warning',
+        );
+      }
     }
 
     // Callbacks: declared, script validates ('callback' mode), activity ids real.
