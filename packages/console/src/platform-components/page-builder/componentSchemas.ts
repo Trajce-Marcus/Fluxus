@@ -7,6 +7,8 @@ import {
   InventorList,
   InventorProfile,
   Map,
+  RecordList,
+  RecordTree,
   WorkOrderList,
   type PropSchema,
 } from '@fluxus/page-runtime';
@@ -16,5 +18,7 @@ export const componentSchemas: Record<string, PropSchema[]> = {
   InventorList: InventorList.schema ?? [],
   InventorProfile: InventorProfile.schema ?? [],
   Map: Map.schema ?? [],
+  RecordList: RecordList.schema ?? [],
+  RecordTree: RecordTree.schema ?? [],
   WorkOrderList: WorkOrderList.schema ?? [],
 };

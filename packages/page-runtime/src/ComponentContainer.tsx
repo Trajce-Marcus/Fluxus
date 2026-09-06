@@ -99,13 +99,25 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     })();
   }, [runtime, runWithConfirm, onError, manifest.name]);
 
+  // services.page.open — the host decides what navigating means, so an absent
+  // seam is an error the author should see, not a click that does nothing.
+  const openPage = useCallback((page: string, record: unknown) => {
+    if (!runtime.openPage) {
+      onError(new Error(`This host cannot open pages — '${page}' was not opened`), manifest.name);
+      return;
+    }
+    const recordId = record === null || record === undefined || record === '' ? null : String(record);
+    runtime.openPage(page, recordId);
+  }, [runtime, onError, manifest.name]);
+
   // Handlers behind services.page (UI-local effects) and services.activities
   // (host-neutral activity runs) for this component instance.
   const serviceHandlers = useMemo<PageServiceHandlers>(() => ({
     setContext: onContextChange,
     hideComponent: () => setHidden(true),
     runActivity: launchActivity,
-  }), [onContextChange, launchActivity]);
+    openPage,
+  }), [onContextChange, launchActivity, openPage]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is

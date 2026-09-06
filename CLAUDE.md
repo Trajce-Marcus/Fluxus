@@ -8,6 +8,10 @@ A model-first platform monorepo in three tiers (restructured 2026-08-01):
 - **Libraries** — `@fluxus/workbench` (the out-of-the-box record UI every SDM gets for free; the Console mounts it) and `@fluxus/page-runtime` (the run-a-page cluster both apps embed).
 - **Core** — `@fluxus/engine` (the shared activity engine every host drives), `@fluxus/dsl` (the scripting language), `@fluxus/server` (activities as the API surface; Postgres), `@fluxus/client` (the apps' snapshot/run door to the server).
 
+`solutions/` is **not** part of the platform — it holds design notes for
+solutions built *on* Fluxus (their models are authored in the Console and live
+in the database, never in this repo). Provisional home; may move.
+
 Read [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the platform at a glance (built vs direction), [docs/VISION.md](docs/VISION.md) for why, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the parts connect, [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical terminology, [docs/ROADMAP.md](docs/ROADMAP.md) for phase interlocks.
 
 UI packages export css **as a string** — no stylesheet imports, because the Console mounts its shell in a shadow root a document-level stylesheet never reaches.

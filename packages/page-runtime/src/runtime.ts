@@ -47,6 +47,15 @@ export interface PageRuntime {
    * not hold — a reference is typed as an id until a GET can answer that.
    */
   readonly captureHost: CaptureHost;
+  /**
+   * Open a page, optionally about a record — what `services.page.open` reaches
+   * (2026-08-27). The seam is here rather than in the container because
+   * navigation is the *host's* idea: the Runtime app pushes `?page=&record=`,
+   * the Console swaps the previewed page, and neither meaning belongs to a
+   * component. Absent when the host has no notion of navigating; the container
+   * then fails loudly rather than swallowing the call.
+   */
+  readonly openPage?: (page: string, recordId: string | null) => void;
   /** Read a page definition from the client's page snapshot. */
   getPage(path: string): PageDef | null;
   listPagePaths(): string[];
@@ -72,7 +81,9 @@ export interface PageRuntime {
   reportPageFindings(pagePath: string, def: PageDef): PageFinding[];
 }
 
-export function createPageRuntime({ client }: { client: FluxusClient }): PageRuntime {
+export function createPageRuntime(
+  { client, openPage }: { client: FluxusClient; openPage?: (page: string, recordId: string | null) => void },
+): PageRuntime {
   const store = client.adapter;
   const config = client.config;
 
@@ -120,6 +131,7 @@ export function createPageRuntime({ client }: { client: FluxusClient }): PageRun
     store,
     config,
     captureHost,
+    openPage,
     findActivity,
     findRecordType,
     getPage: (path) => (client.pages.get(path) as PageDef | undefined) ?? null,

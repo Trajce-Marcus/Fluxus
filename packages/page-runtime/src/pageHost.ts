@@ -58,6 +58,17 @@ export interface PageServiceHandlers {
    * run's outcome (gate fail, soft-stop) surfaces through the host.
    */
   runActivity(activityId: string, record: unknown): void;
+  /**
+   * Open another page, optionally about a record (2026-08-27). Navigating *is*
+   * setting the two values the page-anchor model already ruled — `?page=` and
+   * `?record=` — so this invents no concept, it writes the pair.
+   *
+   * The host owns what that means: the Runtime app pushes a URL, the Console
+   * swaps the previewed page. A host that supplies none fails loudly, the same
+   * posture as `invoke` without a query — a page that cannot navigate should
+   * say so, not quietly do nothing.
+   */
+  openPage(page: string, record: unknown): void;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -78,6 +89,12 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
           kind: 'effect',
           fn: () => handlers.hideComponent(),
         },
+        open: {
+          params: ['page', 'record'],
+          description: 'Open a page, optionally about a record (id, or null for a pure view)',
+          kind: 'effect',
+          fn: (page, record) => handlers.openPage(String(page), record),
+        },
       },
     },
     {
@@ -97,7 +114,7 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
 
 /** Manifest-only modules for validation — same schema, no live handlers. */
 export const pageServicesStub = (): ServiceModuleDef[] =>
-  buildPageServices({ setContext: () => {}, hideComponent: () => {}, runActivity: () => {} });
+  buildPageServices({ setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {} });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────
 

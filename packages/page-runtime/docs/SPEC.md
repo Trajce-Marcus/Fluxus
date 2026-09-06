@@ -103,6 +103,8 @@ The reasoning, which reversed the earlier behaviour: a control that vanishes bec
 
 ## Page definition (pageDef.ts, layout.ts, manifest.ts)
 
+A `static-config` property of type `array` may also carry **`items`** (added 2026-08-28): the fields of one item, each described by a `PropSchema` of its own — the same type one level down, so there is no second way of describing a property. It exists for the page builder, which draws a row-per-item editor (a modal, opened from a summary line) from it and so can edit `RecordList.columns` or any other list without a line of component-specific code. A component that declares an array **without** `items` leaves that property read-only in the builder: nothing may guess what one item holds, and the single-line text box that stood there before replaced whole arrays with `[object Object],…` the moment anyone typed in it.
+
 `PageDef` (`template?`, `layout?`, `componentDependencies?`, `contextSchema?`, `slotConfigs?`, `access?`), the layout types (`Panel`, `LayoutDefinition` — full property set in the page builder's LAYOUT_EDITOR_SPEC.md), and the component contract (`PropSchema` with kinds `static-config` / `dynamic-data` / `callback`; `ComponentManifest`) all live here — the renderer and the editor share one definition of a page. `access.open` (role ids that may open the page, **default deny** once the solution declares roles) was added to the type on 2026-08-10 so the Console could author it; the server has enforced the same shallow convention off the opaque def since M4 (`pageOpenable`), which meant a published page nothing could open — filtered out of the snapshot, and reported by the Runtime as missing. Pages persist on `@fluxus/server` (opaque jsonb); the Console-side write path (`savePage` + background round-trip) stays in the page builder's `persistence.ts`.
 
 ## validatePage
@@ -117,7 +119,33 @@ The reference check is the only part that knows **which surface** a source came 
 
 ## Component library
 
-The five demo components (`AppHeader`, `InventorList`, `InventorProfile`, `Map`, `WorkOrderList`) and `componentManifests` moved here with the cluster. The page builder keeps its palette registries (`SESSION_COMPONENTS`, `componentSchemas`) as separate lists importing from this package — deriving the three registries from the manifest is a floated cleanup, not agreed. Per-solution component libraries are a future concern; the registry is module-level for now.
+The five demo components (`AppHeader`, `InventorList`, `InventorProfile`, `Map`, `WorkOrderList`) and `componentManifests` moved here with the cluster.
+
+**Model-blind building blocks (2026-08-27).** `RecordList` and `RecordTree` are the first components meant for real solutions rather than the demo, and they are named for what they do, not for whoever uses them first — the demo components' names (`WorkOrderList`, `InventorProfile`) are the drift to avoid, since a platform must not grow one solution's vocabulary.
+
+- **`RecordList`** — rows in, declared columns, `onOpen(record)` / `onNew(null)` out. Deliberately not the workbench grid: that one is the generic face of a *whole model* (every record type, every activity, import/export, schema navigation) and belongs inside the workbench, where the audience is an implementer. A page wants one list, the columns its author chose, and the two or three acts the page is about.
+- **`RecordTree`** — any record type with a self-reference. Rows arrive flat, because that is what a GET answers with; the nesting is presentation, rebuilt in the component. A row whose parent is absent from the answer renders as a root, so a filtered answer still shows; cycles are broken rather than hanging. The page names the parent field, so nothing here knows what a cost breakdown is.
+
+`RecordList` distinguishes **selecting** from **acting**: a row click selects and does nothing else, and each act is a button at the end of the row (`onEdit`, `onOpen`), labelled by the page. A click that silently starts an edit is a click nobody asked for.
+
+One limit remains, unworked-around: **`services.activities.run(activityId, record)` carries an anchor and nothing else.** So "add a child *here*" cannot pre-fill the parent — the capture form has to ask for it. Fine for a CREATE with a handful of fields, awkward for tree editing, and the natural place a prefill argument would go if one is ever agreed.
+
+## Navigation — `services.page.open` (2026-08-27)
+
+```
+services.page.open('pages/cbs', callbackData.value)
+```
+
+A page to open, and the record it is about (null for a pure view) — deliberately the same shape as `services.activities.run`. It invents no concept: the page-anchor model already ruled that `?page=` and `?record=` address what is open, so navigating *is* writing that pair.
+
+The seam is `PageRuntime.openPage`, supplied by the **host**, because what navigating means is the host's idea and belongs to neither the component nor `ComponentContainer`:
+
+- **Runtime app** — sets the shell's page state and the address bar, so a page opened from another page is the same link a menu item would have produced. The page runtime is a module singleton built before React exists, so `host.ts` holds the seam and `RuntimeProvider` fills it.
+- **Console** — *not supplied*. Navigating in the page builder means opening a different page in the editor, which is Console work of its own. Until then the container reports "this host cannot open pages" rather than swallowing the click — the same posture as `invoke` without a query.
+
+Being a manifest-carrying service function, unknown-function and arity errors fire at config-save time like any other.
+
+**Deliberately not built:** save-time validation that the named page path exists. The menu editor already makes exactly this check, so the rule is established and this is a follow-up rather than an open question. The page builder keeps its palette registries (`SESSION_COMPONENTS`, `componentSchemas`) as separate lists importing from this package — deriving the three registries from the manifest is a floated cleanup, not agreed. Per-solution component libraries are a future concern; the registry is module-level for now.
 
 ## Hosts
 

@@ -35,6 +35,8 @@ export { AppHeader } from './components/AppHeader';
 export { InventorList } from './components/InventorList';
 export { InventorProfile } from './components/InventorProfile';
 export { Map } from './components/Map';
+export { RecordList } from './components/RecordList';
+export { RecordTree } from './components/RecordTree';
 export { WorkOrderList } from './components/WorkOrderList';
 export {
   packCallbackData,

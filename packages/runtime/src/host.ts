@@ -33,6 +33,21 @@ export let hostAuth: HostAuth | undefined;
 // published pages in the workbench — the first step of workbench → Runtime app.
 export let pageRuntime: PageRuntime;
 
+// `services.page.open` has to reach the shell's page state, but the page
+// runtime is built here at boot — before React exists — so the seam lives at
+// module level and RuntimeProvider fills it. Unfilled, a navigation attempt
+// throws rather than doing nothing: a page that cannot navigate should say so.
+let pageNavigator: ((page: string, recordId: string | null) => void) | null = null;
+
+export function setPageNavigator(fn: ((page: string, recordId: string | null) => void) | null): void {
+  pageNavigator = fn;
+}
+
+function navigate(page: string, recordId: string | null): void {
+  if (!pageNavigator) throw new Error(`Cannot open '${page}' — the shell is not mounted yet`);
+  pageNavigator(page, recordId);
+}
+
 export async function initHost(auth?: HostAuth): Promise<void> {
   // The signed-in identity: bearer token on every tRPC call, and the local
   // engine's context.user for UI-side expression parity (roles stubbed []
@@ -76,7 +91,7 @@ export async function initHost(auth?: HostAuth): Promise<void> {
       `This link says organisation '${urlOrg}', but operation '${client.operationId}' belongs to '${client.orgId}'.`,
     );
   }
-  pageRuntime = createPageRuntime({ client });
+  pageRuntime = createPageRuntime({ client, openPage: navigate });
   // The stored config was validated at config.put; re-reporting here is a
   // free safety net against server/client engine version drift.
   createEngine({

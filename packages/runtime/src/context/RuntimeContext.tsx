@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
-import { client, currentSession, hostAuth, pageRuntime } from '../host';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { client, currentSession, hostAuth, pageRuntime, setPageNavigator } from '../host';
 import type { AuthSession, HostAuth } from '@fluxus/client';
 
 // The Runtime app's shell state (CONSOLE_RUNTIME_SPEC §4, M15): who is signed
@@ -33,13 +33,15 @@ interface RuntimeContextValue {
 // id, which is its path.
 const params = () => new URLSearchParams(window.location.search);
 
-function addressBar(path: string | null): void {
+function addressBar(path: string | null, recordId: string | null = null): void {
   const next = params();
   if (path) next.set('page', path);
   else next.delete('page');
   // The record belongs to the page it was opened on; picking another page
-  // leaves it behind rather than carrying a stale id across.
-  next.delete('record');
+  // leaves it behind rather than carrying a stale id across. A page opened
+  // *about* a record says so here, which is what makes it a sendable link.
+  if (recordId) next.set('record', recordId);
+  else next.delete('record');
   window.history.replaceState(null, '', `${window.location.pathname}?${next}`);
 }
 
@@ -59,6 +61,23 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
     setSelectedRecordId(null);
     addressBar(path);
   }, []);
+
+  // What `services.page.open` reaches in this host (2026-08-27). Navigating is
+  // setting the pair the URL already addresses, so a page opened from another
+  // page is the same link a menu item would have produced.
+  const openPage = useCallback((path: string, recordId: string | null) => {
+    setSelectedPage(path);
+    setSelectedRecordId(recordId);
+    addressBar(path, recordId);
+  }, []);
+
+  // The page runtime is a module singleton created before React exists, so the
+  // host holds the seam and the provider fills it (Fork 2 ruling: singleton,
+  // not context).
+  useEffect(() => {
+    setPageNavigator(openPage);
+    return () => setPageNavigator(null);
+  }, [openPage]);
 
   return (
     <Ctx.Provider value={{

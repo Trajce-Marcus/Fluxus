@@ -13,6 +13,13 @@ export interface PropSchema {
   type: PropType;
   required: boolean;
   description?: string;
+  /**
+   * For `type: 'array'` — the fields of one item, described the same way any
+   * property is. A component that declares this gets an editor for the array
+   * in the page builder; one that doesn't leaves the value read-only there,
+   * because nothing may guess what an undeclared item holds.
+   */
+  items?: PropSchema[];
 }
 
 export interface ComponentManifest {

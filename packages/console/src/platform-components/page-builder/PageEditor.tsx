@@ -24,11 +24,12 @@ import {
   type ContextKeyDef,
   type PageRecordDef,
 } from './pageEditorStore';
-import { componentManifests, PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
+import { componentManifests, PageRenderer, pageRendererCss, type PropSchema } from '@fluxus/page-runtime';
 import { pageRuntime } from '../../sdm-runtime/engine';
 import { useShellState } from '../shell/useShellState';
 import { LayoutEditor, css as layoutEditorCss } from './layout-editor/LayoutEditor';
 import { ExpressionDialog, css as expressionDialogCss } from './ExpressionDialog';
+import { ArrayPropertyEditor, summariseItems, css as arrayPropertyEditorCss } from './ArrayPropertyEditor';
 import { PublishControl, css as publishControlCss } from './PublishControl';
 
 function collectLeafPanels(panel: Panel): Panel[] {
@@ -197,6 +198,9 @@ function PageContextSection({ contextSchema, pagePath }: { contextSchema: Contex
 // ── Static config inspector ──────────────────────────────────────────────────
 
 function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; config: SlotConfig; pagePath: string }) {
+  // The list editor is a modal, like the expression dialog: one property at a
+  // time, opened from its summary row.
+  const [editingList, setEditingList] = useState<PropSchema | null>(null);
   const manifest = componentManifests[config.componentName];
   if (!manifest) return null;
   const staticProps = manifest.schema.filter((p) => p.kind === 'static-config');
@@ -218,6 +222,19 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
               {prop.type === 'boolean' ? (
                 <input type="checkbox" checked={!!value}
                   onChange={(e) => setStaticConfig(pagePath, slotId, prop.name, e.target.checked)} />
+              ) : prop.type === 'array' ? (
+                // A list the component described opens in the list dialog; one
+                // it didn't stays read-only, because a text box here would
+                // replace the whole list with the browser's rendering of it.
+                prop.items ? (
+                  <ArrayPropertyButton prop={prop} value={config.staticConfig[prop.name]}
+                    onEdit={() => setEditingList(prop)} />
+                ) : (
+                  <p className="pe-config-hint">
+                    {Array.isArray(value) ? `${value.length} item(s)` : 'Empty'} — this property has no editor
+                    because {config.componentName} doesn't describe what one item holds.
+                  </p>
+                )
               ) : (
                 <input className="pe-binding-input"
                   type={prop.type === 'number' ? 'number' : 'text'}
@@ -229,7 +246,26 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
           );
         })}
       </ul>
+      {editingList && (
+        <ArrayPropertyEditor
+          title={`${config.componentName}.${editingList.name}`}
+          prop={editingList}
+          value={config.staticConfig[editingList.name]}
+          onSave={(next) => { setStaticConfig(pagePath, slotId, editingList.name, next); setEditingList(null); }}
+          onClose={() => setEditingList(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/** The panel's stand-in for a list: what's in it, and a way in. Mirrors the binding preview. */
+function ArrayPropertyButton({ prop, value, onEdit }: { prop: PropSchema; value: unknown; onEdit: () => void }) {
+  const summary = summariseItems(prop, value);
+  return (
+    <button className={`pe-expr${summary ? '' : ' pe-expr--empty'}`} title={summary || 'Empty'} onClick={onEdit}>
+      {summary || `— no ${prop.name} —`}
+    </button>
   );
 }
 
@@ -557,6 +593,7 @@ export const css = `
   ${pageRendererCss}
   ${expressionDialogCss}
   ${publishControlCss}
+  ${arrayPropertyEditorCss}
 
   .pe-editor { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--color-bg); }
   .pe-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 8px; height: 32px; flex-shrink: 0; background: var(--color-sidebar); border-bottom: 1px solid var(--color-border); }
