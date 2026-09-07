@@ -117,6 +117,11 @@ step below adds properties rather than reshaping the ones before it.
 
 1. **Columns** — `width`, `type`, `format`; `numeric` disappears into `type`.
    No conditions yet. The table becomes properly usable on its own.
+   **BUILT 2026-09-07** — types are the model's own (`text`, `int`, `decimal`,
+   `datetime`, `time`, `photo`, `file`) plus `boolean`; `currency` is one
+   property carrying both shapes (`AUD`, or `row.<field>`). A `photo` draws the
+   file's **name**, not a thumbnail: a component has no door to the upload
+   service, and that seam is not built here. See the page-runtime SPEC.
    **A column must work with nothing but a `key`** — type, format and width all
    optional, with defaults that read sensibly, so a plain list of records needs
    no more than the field names. This is a rule for every step, not a hope: the

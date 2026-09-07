@@ -9,14 +9,26 @@
 
 import { useState } from 'react';
 import type { PropSchema } from '../manifest';
+import { columnWidth, drawCell, isRightAligned, resolveCurrency } from './columnFormat';
 
 export interface RecordListColumn {
-  /** Key into the row object. */
+  /** Key into the row object. The only thing a column needs. */
   key: string;
   /** Column heading. Falls back to the key. */
   label?: string;
-  /** Right-align and format as a number. */
-  numeric?: boolean;
+  /** Width hint in pixels. Blank means auto. */
+  width?: number;
+  /**
+   * How the value is drawn — one of the model's own attribute types
+   * (`text`, `int`, `decimal`, `datetime`, `time`, `photo`, `file`) plus
+   * `boolean`. Blank or unknown draws as text. Alignment follows from this;
+   * there is no separate property, and the old `numeric` flag is gone.
+   */
+  type?: string;
+  /** Format string for the type — `N2`, `C2`, `dd/MM/yyyy`. Blank is the type's default. */
+  format?: string;
+  /** Currency code for a `C` format: `AUD`, or `row.<field>` for one per row. */
+  currency?: string;
 }
 
 export interface RecordListRow {
@@ -45,15 +57,8 @@ interface RecordListProps {
   onNew?: (record: null) => void;
 }
 
-const cell = (row: RecordListRow, col: RecordListColumn): string => {
-  const raw = row[col.key];
-  if (raw === null || raw === undefined || raw === '') return '—';
-  if (col.numeric) {
-    const n = Number(raw);
-    return Number.isNaN(n) ? String(raw) : n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  }
-  return String(raw);
-};
+const cell = (row: RecordListRow, col: RecordListColumn): string =>
+  drawCell(row[col.key], col.type, col.format, resolveCurrency(col.currency, row));
 
 function RecordListComponent({
   title,
@@ -89,7 +94,13 @@ function RecordListComponent({
           <thead>
             <tr>
               {columns.map((col) => (
-                <th key={col.key} className={col.numeric ? 'rl-num' : undefined}>{col.label ?? col.key}</th>
+                <th
+                  key={col.key}
+                  className={isRightAligned(col.type) ? 'rl-num' : undefined}
+                  style={{ width: columnWidth(col.width) }}
+                >
+                  {col.label ?? col.key}
+                </th>
               ))}
               <th />
             </tr>
@@ -102,7 +113,7 @@ function RecordListComponent({
                 onClick={() => select(row.id)}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={col.numeric ? 'rl-num' : undefined}>{cell(row, col)}</td>
+                  <td key={col.key} className={isRightAligned(col.type) ? 'rl-num' : undefined}>{cell(row, col)}</td>
                 ))}
                 {/* Shown whether or not the page wired them — whether a control
                     is visible is the model's business, not the wiring's. */}
@@ -126,7 +137,7 @@ const css = `
   .rl-new { padding: 4px 12px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.75rem; }
   .rl-empty { color: #94a3b8; font-size: 0.8rem; }
   .rl-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
-  .rl-table th { text-align: left; color: #64748b; font-weight: 600; padding: 4px 10px 4px 0; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  .rl-table th { box-sizing: border-box; text-align: left; color: #64748b; font-weight: 600; padding: 4px 10px 4px 0; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
   .rl-table td { padding: 6px 10px 6px 0; border-bottom: 1px solid #f1f5f9; }
   .rl-row { cursor: pointer; }
   .rl-row:hover td { background: #f8fafc; }
@@ -139,10 +150,15 @@ const css = `
 
 // One column, described the way any property is, so the page builder can edit
 // the list without knowing what a column is. Mirrors RecordListColumn above.
+// Only `key` is required: a column must work with nothing but the field it
+// names, so a plain list of records needs no more than the field names.
 const columnItems: PropSchema[] = [
-  { name: 'key',     kind: 'static-config', type: 'string',  required: true,  description: 'Field in the row' },
-  { name: 'label',   kind: 'static-config', type: 'string',  required: false, description: 'Heading — the key if left empty' },
-  { name: 'numeric', kind: 'static-config', type: 'boolean', required: false, description: 'Right-align and format as a number' },
+  { name: 'key',      kind: 'static-config', type: 'string', required: true,  description: 'Field in the row' },
+  { name: 'label',    kind: 'static-config', type: 'string', required: false, description: 'Heading — the key if left empty' },
+  { name: 'width',    kind: 'static-config', type: 'number', required: false, description: 'Width hint in pixels — blank for auto' },
+  { name: 'type',     kind: 'static-config', type: 'string', required: false, description: 'text (default), int, decimal, datetime, time, boolean, photo, file' },
+  { name: 'format',   kind: 'static-config', type: 'string', required: false, description: 'N2, F2, C2, P1, dd/MM/yyyy, HH:mm — blank for the type default' },
+  { name: 'currency', kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
 ];
 
 const schema: PropSchema[] = [
