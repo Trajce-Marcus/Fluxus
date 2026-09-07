@@ -128,6 +128,16 @@ step below adds properties rather than reshaping the ones before it.
    measure of the table is what an implementer has to fill in before it works.
 2. **Actions** — `actions` and `rowActions` as declared lists, the overflow rule,
    and the fixed `>` at the row end. Replaces the hard-coded five.
+   **BUILT 2026-09-08, in a different shape.** A list of callbacks is the one
+   thing the platform cannot express — callbacks are declared one by one in a
+   component's schema — so honouring `[{ label, callback }]` would have needed a
+   new prop kind. Built instead: **a row action is a column**. An unbound column
+   (no `key`) names an action component and a target; RecordList draws it once
+   per row with that row's record. `RunActivity` and `OpenPage` are ordinary
+   registered components, so the same button works on a page on its own. This
+   **supersedes 1.4** — the `>` is not a fixed control, it is one more action
+   column — and it is 2.5 arriving early, for actions only. The toolbar half of
+   1.2 is **not** built. See the page-runtime SPEC.
 3. **Selection** — single and multiple, with checkboxes and select-all.
 4. **Sort and search** — per-column `sortable`, one search box.
 5. **Display conditions** — the rule list. Deliberately after 1, so a rule is a

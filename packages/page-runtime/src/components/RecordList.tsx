@@ -1,19 +1,28 @@
-// A model-blind listing: rows in, columns declared, a row click and a new-item
-// click out. Nothing here knows what a project or a work order is — the page
-// names the GET that fills `rows` and wires the callbacks to activities.
+// A model-blind listing: rows in, columns declared, a row click out. Nothing
+// here knows what a project or a work order is — the page names the GET that
+// fills `rows`, and says what its columns hold.
+//
+// Row actions are columns (step 2). An **unbound** column reads nothing from
+// the row; it names a small action component instead, and RecordList draws it
+// once per row with that row's record. So the table has no action machinery of
+// its own — no per-row buttons in its schema, no callback per act — and the
+// same buttons work anywhere else a component can be placed. The `>` at the row
+// end is not a special control either: it is one more action column.
 //
 // Deliberately not the workbench grid. That one is the generic face of a whole
 // model (every record type, every activity, import/export, schema navigation)
 // and belongs inside the workbench. A page wants one list, the columns its
 // author chose, and the two or three acts that page is about.
 
-import { useState } from 'react';
+import { createElement, useState } from 'react';
 import type { PropSchema } from '../manifest';
+import type { PageServiceHandlers } from '../pageHost';
+import { actionComponents } from './actionComponents';
 import { columnWidth, drawCell, isRightAligned, resolveCurrency } from './columnFormat';
 
 export interface RecordListColumn {
-  /** Key into the row object. The only thing a column needs. */
-  key: string;
+  /** Key into the row object. Absent on an action column, which reads nothing. */
+  key?: string;
   /** Column heading. Falls back to the key. */
   label?: string;
   /** Width hint in pixels. Blank means auto. */
@@ -29,6 +38,15 @@ export interface RecordListColumn {
   format?: string;
   /** Currency code for a `C` format: `AUD`, or `row.<field>` for one per row. */
   currency?: string;
+  /**
+   * Names an action component — `RunActivity` or `OpenPage` — making this an
+   * **unbound** column: it reads nothing from the row and draws a button once
+   * per row instead of a value. `label` is then the button's text and the
+   * heading is blank, since a column of buttons has nothing to head.
+   */
+  component?: string;
+  /** What the action component acts on: an activity id, or a page path. */
+  target?: string;
 }
 
 export interface RecordListRow {
@@ -42,36 +60,43 @@ interface RecordListProps {
   columns: RecordListColumn[];
   /** Label for the create control. */
   newLabel?: string;
-  /** Label on the per-row edit control. */
-  editLabel?: string;
-  /** Label on the per-row open control — the page it opens is the page's business. */
-  openLabel?: string;
   emptyMessage?: string;
   /** Named callback: selection changed. Emits (record). */
   onSelect?: (record: string) => void;
-  /** Named callback: edit this row. Emits (record). */
-  onEdit?: (record: string) => void;
-  /** Named callback: open this row elsewhere. Emits (record). */
-  onOpen?: (record: string) => void;
   /** Named callback: create. Emits (null) — a CREATE has no anchor. */
   onNew?: (record: null) => void;
+  /** Supplied by the host: the verbs an action column's button calls. */
+  services?: PageServiceHandlers;
 }
 
 const cell = (row: RecordListRow, col: RecordListColumn): string =>
-  drawCell(row[col.key], col.type, col.format, resolveCurrency(col.currency, row));
+  drawCell(col.key ? row[col.key] : undefined, col.type, col.format, resolveCurrency(col.currency, row));
+
+/** A column that draws a button rather than a value (§1.3 / §2.5). */
+const isAction = (col: RecordListColumn): boolean => !!col.component;
+
+// Columns are keyed by position: an action column has no key to key on, and two
+// of them on one row is the ordinary case.
+const columnKey = (col: RecordListColumn, index: number): string => `${index}:${col.key ?? col.component ?? ''}`;
+
+// The named component draws the button; the row supplies the record it acts on.
+// An unknown name says so in place of the button rather than drawing nothing —
+// a blank cell would look like a column that simply had no action for this row.
+function renderAction(col: RecordListColumn, row: RecordListRow, services: PageServiceHandlers | undefined) {
+  const component = col.component ? actionComponents[col.component] : undefined;
+  if (!component) return <span className="rl-unknown">?{col.component}</span>;
+  return createElement(component, { label: col.label, target: col.target, record: row.id, services });
+}
 
 function RecordListComponent({
   title,
   rows = [],
   columns = [],
   newLabel = 'New',
-  editLabel = 'Edit',
-  openLabel = 'Open',
   emptyMessage = 'Nothing here yet.',
   onSelect,
-  onEdit,
-  onOpen,
   onNew,
+  services,
 }: RecordListProps) {
   // Clicking a row selects it and nothing more. Acts are the buttons at the end
   // — a click that silently starts an edit is a click nobody asked for.
@@ -93,16 +118,16 @@ function RecordListComponent({
         <table className="rl-table">
           <thead>
             <tr>
-              {columns.map((col) => (
+              {columns.map((col, i) => (
                 <th
-                  key={col.key}
+                  key={columnKey(col, i)}
                   className={isRightAligned(col.type) ? 'rl-num' : undefined}
                   style={{ width: columnWidth(col.width) }}
                 >
-                  {col.label ?? col.key}
+                  {/* An action column's label belongs on its button, not here. */}
+                  {isAction(col) ? '' : col.label ?? col.key}
                 </th>
               ))}
-              <th />
             </tr>
           </thead>
           <tbody>
@@ -112,15 +137,14 @@ function RecordListComponent({
                 className={row.id === selected ? 'rl-row rl-row--selected' : 'rl-row'}
                 onClick={() => select(row.id)}
               >
-                {columns.map((col) => (
-                  <td key={col.key} className={isRightAligned(col.type) ? 'rl-num' : undefined}>{cell(row, col)}</td>
-                ))}
-                {/* Shown whether or not the page wired them — whether a control
-                    is visible is the model's business, not the wiring's. */}
-                <td className="rl-actions" onClick={(e) => e.stopPropagation()}>
-                  <button className="rl-btn" onClick={() => onEdit?.(row.id)}>{editLabel}</button>
-                  <button className="rl-btn" onClick={() => onOpen?.(row.id)}>{openLabel}</button>
-                </td>
+                {columns.map((col, i) => (isAction(col) ? (
+                  // The click acts; it does not also select the row underneath.
+                  <td key={columnKey(col, i)} className="rl-action" onClick={(e) => e.stopPropagation()}>
+                    {renderAction(col, row, services)}
+                  </td>
+                ) : (
+                  <td key={columnKey(col, i)} className={isRightAligned(col.type) ? 'rl-num' : undefined}>{cell(row, col)}</td>
+                )))}
               </tr>
             ))}
           </tbody>
@@ -143,9 +167,8 @@ const css = `
   .rl-row:hover td { background: #f8fafc; }
   .rl-row--selected td { background: #eff6ff; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
-  .rl-actions { white-space: nowrap; text-align: right; }
-  .rl-btn { padding: 2px 10px; margin-left: 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #334155; cursor: pointer; font-size: 0.7rem; }
-  .rl-btn:hover { background: #f1f5f9; }
+  .rl-action { white-space: nowrap; text-align: right; width: 1%; }
+  .rl-unknown { color: #b45309; font-size: 0.7rem; }
 `;
 
 // One column, described the way any property is, so the page builder can edit
@@ -158,7 +181,9 @@ const columnItems: PropSchema[] = [
   { name: 'width',    kind: 'static-config', type: 'number', required: false, description: 'Width hint in pixels — blank for auto' },
   { name: 'type',     kind: 'static-config', type: 'string', required: false, description: 'text (default), int, decimal, datetime, time, boolean, photo, file' },
   { name: 'format',   kind: 'static-config', type: 'string', required: false, description: 'N2, F2, C2, P1, dd/MM/yyyy, HH:mm — blank for the type default' },
-  { name: 'currency', kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
+  { name: 'currency',  kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
+  { name: 'component', kind: 'static-config', type: 'string', required: false, description: 'Action column: RunActivity or OpenPage — leave blank for a data column' },
+  { name: 'target',    kind: 'static-config', type: 'string', required: false, description: 'What the action acts on: an activity id, or a page path' },
 ];
 
 const schema: PropSchema[] = [
@@ -166,12 +191,8 @@ const schema: PropSchema[] = [
   { name: 'rows',         kind: 'dynamic-data',  type: 'array',    required: true,  description: 'Rows to list — each needs an id, plus whatever the columns name' },
   { name: 'columns',      kind: 'static-config', type: 'array',    required: true,  description: 'Columns, in display order', items: columnItems },
   { name: 'newLabel',     kind: 'static-config', type: 'string',   required: false, description: 'Label on the create control' },
-  { name: 'editLabel',    kind: 'static-config', type: 'string',   required: false, description: 'Label on the per-row edit control' },
-  { name: 'openLabel',    kind: 'static-config', type: 'string',   required: false, description: 'Label on the per-row open control' },
   { name: 'emptyMessage', kind: 'static-config', type: 'string',   required: false, description: 'Shown when there are no rows' },
   { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — emits (record)' },
-  { name: 'onEdit',       kind: 'callback',      type: 'function', required: false, description: 'Edit a row — emits (record)' },
-  { name: 'onOpen',       kind: 'callback',      type: 'function', required: false, description: 'Open a row elsewhere — emits (record)' },
   { name: 'onNew',        kind: 'callback',      type: 'function', required: false, description: 'Create — emits (null), since a CREATE has no anchor' },
 ];
 

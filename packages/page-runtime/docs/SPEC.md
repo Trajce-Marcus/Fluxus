@@ -140,7 +140,24 @@ A column is `{ key, label?, width?, type?, format?, currency? }`. **`key` is the
 
 **Not done, and not worked around: a `photo` column draws the file's name, not a thumbnail.** The image needs a presigned URL, which means `UploadService.resolveUrl`, and a component has no door to it — every host service reaches a component as a declared prop, and `uploads` reaches only the capture form, through `CaptureHost`. The column shape is the final one and the descriptor is read the same way the capture widgets read it, so the cell becomes a thumbnail the day that seam exists without a page changing a line. `file` is drawn alongside `photo` for the same cost: both are descriptor bags, and leaving `file` out of the type list would have rendered `[object Object]`.
 
-Steps 2–6 of the design (actions, selection, sort/search, display conditions, totals) are unbuilt; each adds properties rather than reshaping these.
+### Row actions are columns (2026-09-08, design step 2)
+
+The design's `actions: [{ label, callback }]` was **not built as written**, and the reason is worth keeping: a callback reaches a component only through a *statically declared* prop — the builder lists wireable callbacks by filtering `manifest.schema`, `validatePage` errors on an entry in `config.callbacks` that no schema declares, and `ComponentContainer` wires by walking the schema. So an array can carry a label but never behaviour, and honouring that shape would have meant a new prop kind for "a set of callbacks named at runtime".
+
+The shape built instead (**ruled 2026-09-08**) starts from what a row action can actually *do*: open a page, or run an activity. Nothing else. So it needs no script — only a target, and the row already is the record.
+
+- **An unbound column.** A column with no `key` reads nothing from the row. It names a `component` and a `target`, and RecordList draws that component once per row with `record: row.id`. `label` is then the button's text and the heading is blank, since a column of buttons has nothing to head. Everything from step 1 still applies — `width` in particular.
+- **`RunActivity` and `OpenPage`** (`components/actionComponents.tsx`) are the platform's two verbs with a button in front. They are **ordinary registered components**, so the same button drops onto a page on its own — a page's "Approve" button *is* a `RunActivity`. RecordList imports them directly rather than through `componentManifests`, which would be a cycle.
+- **`target` does double duty** — an activity id for one, a page path for the other. Deliberate: one flat field stays editable in the builder's array dialog, which draws only flat text boxes. The alternative is the column carrying the named component's own properties, which needs that dialog to nest.
+- **The `>` at the row end is not a special control.** Design §1.4 made it fixed in position and appearance; that is **superseded** — it is one more action column, an `OpenPage` the author placed. A button saying "Open" for now; an icon later.
+
+**One host-supplied prop.** `ComponentContainer` now assigns `resolvedProps.services` — the same `PageServiceHandlers` it already hands to callback scripts. It adds **no capability**: a script could always call all four verbs, and the server authorises every run off its own model and the caller's roles regardless of what the browser asked ([router.ts](../../server/src/router.ts) `activities.run`). What it adds is placement — a component can *be* an act instead of needing a script wired behind it. Assigned last so nothing declared can shadow it. This is also the channel a photo cell would use to reach `UploadService.resolveUrl`, so it pays for two things.
+
+**What this retired:** `editLabel`, `openLabel`, `onEdit`, `onOpen` are gone from `RecordList` — an action column replaces all four. `onSelect` survives. **The toolbar half of design §1.2 is untouched**: `newLabel`/`onNew` still stand as they were, because a toolbar action has no row to anchor on and that question was not worked through.
+
+**Two costs, accepted:** `key` is no longer a required field, so the array editor's "every column needs a key" guard is gone and a column with neither `key` nor `component` is inert rather than refused at save. And `validatePage` does not look *inside* array items, so an unknown `component` or a `target` naming no real activity is not caught at save — it shows as `?Name` in the cell, or fails at the click. Both are the same gap: nothing validates the contents of a declared list.
+
+Steps 3–6 of the design (selection, sort/search, display conditions, totals) are unbuilt; each adds properties rather than reshaping these. Checkboxes and bulk actions are step 3's job — a bulk act has no row, so it is a different question from this one.
 
 One limit remains, unworked-around: **`services.activities.run(activityId, record)` carries an anchor and nothing else.** So "add a child *here*" cannot pre-fill the parent — the capture form has to ask for it. Fine for a CREATE with a handful of fields, awkward for tree editing, and the natural place a prefill argument would go if one is ever agreed.
 

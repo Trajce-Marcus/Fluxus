@@ -31,6 +31,7 @@ export {
   toOffsetIso,
 } from './capture/attributeWidgets';
 export { componentManifests } from './componentManifests';
+export { OpenPage, RunActivity } from './components/actionComponents';
 export { AppHeader } from './components/AppHeader';
 export { InventorList } from './components/InventorList';
 export { InventorProfile } from './components/InventorProfile';

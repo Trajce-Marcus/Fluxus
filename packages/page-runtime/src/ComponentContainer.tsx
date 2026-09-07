@@ -163,6 +163,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // Build the full props object to pass to the component
   const resolvedProps: Record<string, unknown> = { ...config.staticConfig };
 
+
   // Merge dynamic data
   for (const [propName, value] of Object.entries(dynamicData)) {
     resolvedProps[propName] = value;
@@ -194,6 +195,14 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
       }
     };
   }
+
+  // The one prop the host supplies rather than the author (step 2): the same
+  // four verbs already handed to callback scripts. It adds no capability — a
+  // script could always call all four, and the server authorises every run
+  // whatever the browser asked for — but it lets a component *be* an act
+  // (RunActivity, OpenPage) instead of needing a script wired behind it.
+  // Assigned last so nothing declared can shadow it.
+  resolvedProps.services = serviceHandlers;
 
   return (
     <>

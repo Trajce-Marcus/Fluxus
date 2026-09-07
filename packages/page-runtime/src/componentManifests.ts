@@ -7,6 +7,7 @@
 // (SESSION_COMPONENTS, componentSchemas) as separate lists — deriving them
 // from this manifest is a floated cleanup, not agreed.
 
+import { OpenPage, RunActivity } from './components/actionComponents';
 import { AppHeader } from './components/AppHeader';
 import { InventorList } from './components/InventorList';
 import { InventorProfile } from './components/InventorProfile';
@@ -23,7 +24,9 @@ export const componentManifests: Record<string, ComponentManifest> = {
   InventorList:    { name: 'InventorList',    version: '1.0.0', component: InventorList    as unknown as AnyComponent, schema: InventorList.schema,    css: InventorList.css },
   InventorProfile: { name: 'InventorProfile', version: '1.0.0', component: InventorProfile as unknown as AnyComponent, schema: InventorProfile.schema, css: InventorProfile.css },
   Map:             { name: 'Map',             version: '1.0.0', component: Map             as unknown as AnyComponent, schema: Map.schema ?? [],        css: Map.css },
+  OpenPage:        { name: 'OpenPage',        version: '1.0.0', component: OpenPage        as unknown as AnyComponent, schema: OpenPage.schema,        css: OpenPage.css },
   RecordList:      { name: 'RecordList',      version: '1.0.0', component: RecordList      as unknown as AnyComponent, schema: RecordList.schema,     css: RecordList.css },
   RecordTree:      { name: 'RecordTree',      version: '1.0.0', component: RecordTree      as unknown as AnyComponent, schema: RecordTree.schema,     css: RecordTree.css },
+  RunActivity:     { name: 'RunActivity',     version: '1.0.0', component: RunActivity     as unknown as AnyComponent, schema: RunActivity.schema,     css: RunActivity.css },
   WorkOrderList:   { name: 'WorkOrderList',   version: '1.0.0', component: WorkOrderList   as unknown as AnyComponent, schema: WorkOrderList.schema,   css: WorkOrderList.css },
 };
