@@ -192,6 +192,8 @@ interface AttributeSeed { attribute: string; records: string[] }
 
 **One fix that came with it:** an action button drawn inside a RecordList — a row action, now a bulk action — was **unstyled**, because a component's css reaches the page only when that component is the one mounted (`ComponentContainer` injects `manifest.css`). `actionComponents` now exports `actionCss` and RecordList appends it to its own, so the buttons look the same wherever they are drawn.
 
+**A blank label means no control** (2026-09-12). `RecordList.newLabel` left empty draws no create button, and it no longer defaults to "New". This does not soften the 2026-08-26 ruling above, it sits beside it: that ruling is about a control disappearing because nobody *wired* it, which is an omission and indistinguishable from access control. Clearing a label is the opposite — the author stating that this table has no create act. A button that *is* named stays shown whether or not `onNew` is wired, exactly as before.
+
 ### Sorting and searching (2026-09-12, design step 4)
 
 Both work on **the rows already delivered**. There is no paging (design §4.4), so every row is present and neither costs a round trip — and the day paging exists, both become questions for the read path rather than changes to this component. The pure part is `components/searchSort.ts` (`test/searchSort.test.ts`).

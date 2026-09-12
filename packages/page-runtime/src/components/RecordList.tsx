@@ -109,7 +109,10 @@ interface RecordListProps {
   title?: string;
   rows: RecordListRow[];
   columns: RecordListColumn[];
-  /** Label for the create control. */
+  /**
+   * What the create control says — and whether there is one. Blank means the
+   * table has no create act, so no button is drawn.
+   */
   newLabel?: string;
   emptyMessage?: string;
   /**
@@ -184,7 +187,7 @@ function RecordListComponent({
   title,
   rows = [],
   columns = [],
-  newLabel = 'New',
+  newLabel,
   emptyMessage = 'Nothing here yet.',
   selection,
   bulkActions = [],
@@ -272,9 +275,13 @@ function RecordListComponent({
             onChange={(e) => setTerm(e.target.value)}
           />
         )}
-        {/* Shown whether or not the page wired it — whether a control is
-            visible is the model's business, not the wiring's. */}
-        <button className="rl-new" onClick={() => onNew?.(null)}>{newLabel}</button>
+        {/* A blank label is the author saying this table has no create act —
+            a statement, not an omission. Distinct from the 2026-08-26 ruling,
+            which is about a control that would vanish because nobody *wired*
+            it: a named button is still shown whether or not `onNew` is. */}
+        {newLabel?.trim() && (
+          <button className="rl-new" onClick={() => onNew?.(null)}>{newLabel}</button>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -408,7 +415,7 @@ const schema: PropSchema[] = [
   { name: 'title',        kind: 'static-config', type: 'string',   required: false, description: 'Heading above the list' },
   { name: 'rows',         kind: 'dynamic-data',  type: 'array',    required: true,  description: 'Rows to list — each needs an id, plus whatever the columns name' },
   { name: 'columns',      kind: 'static-config', type: 'array',    required: true,  description: 'Columns, in display order', items: columnItems },
-  { name: 'newLabel',     kind: 'static-config', type: 'string',   required: false, description: 'Label on the create control' },
+  { name: 'newLabel',     kind: 'static-config', type: 'string',   required: false, description: 'Label on the create control — blank for no create button' },
   { name: 'emptyMessage', kind: 'static-config', type: 'string',   required: false, description: 'Shown when there are no rows' },
   { name: 'selection',    kind: 'static-config', type: 'string',   required: false, description: 'one (default), many for checkboxes and select-all, or none' },
   { name: 'bulkActions',  kind: 'static-config', type: 'array',    required: false, description: 'Acts on the checked records — one run, ids in the named attribute. Shown once something is checked; needs selection: many', items: bulkActionItems },
