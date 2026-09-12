@@ -376,10 +376,15 @@ ${actionCss}`;
 
 // One column, described the way any property is, so the page builder can edit
 // the list without knowing what a column is. Mirrors RecordListColumn above.
-// Only `key` is required: a column must work with nothing but the field it
-// names, so a plain list of records needs no more than the field names.
+//
+// **Nothing is required**, and that is not laziness: a data column needs only
+// the field it names, while an action column names no field at all — it has a
+// `component` instead. One of the two must be filled for the column to do
+// anything, and "either this or that" is a rule `PropSchema` cannot state, so
+// the array editor asks for neither rather than blocking a legitimate action
+// column. A column with neither is inert (see the SPEC's accepted costs).
 const columnItems: PropSchema[] = [
-  { name: 'key',      kind: 'static-config', type: 'string', required: true,  description: 'Field in the row' },
+  { name: 'key',      kind: 'static-config', type: 'string', required: false, description: 'Field in the row — leave blank on an action column' },
   { name: 'label',    kind: 'static-config', type: 'string', required: false, description: 'Heading — the key if left empty' },
   { name: 'width',    kind: 'static-config', type: 'number', required: false, description: 'Width hint in pixels — blank for auto' },
   { name: 'type',     kind: 'static-config', type: 'string', required: false, description: 'text (default), int, decimal, datetime, time, boolean, photo, file' },
