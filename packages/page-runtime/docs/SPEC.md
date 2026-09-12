@@ -90,7 +90,9 @@ The record type stays **ordinary**: nothing marks it as an app, and the same typ
 
 `PageRenderer` resolves the anchor before rendering any component (a component that read first would fire an untraceable GET and then have to fire it again), shows `Opening…` while it does, and reports a failed resolution in place of the page. The resolved record becomes `PageContext.record` — so `context.record` is live in every expression and callback the page runs, the same root a workbench form sees — and the id it carries is the anchor sent with each GET.
 
-**A control is shown whether or not it is wired** (ruled 2026-08-26, the user's call). `ComponentContainer` supplies a function for **every** callback the manifest declares; an unwired one reports *"'onDispatch' is not wired on this page"* through the host error channel when it is used. Components therefore render their controls unconditionally rather than gating on `onX &&`.
+**A control is shown whether or not it is wired** (ruled 2026-08-26, the user's call). `ComponentContainer` supplies a function for **every** callback the manifest declares; an unwired one says *"'onDispatch' is not wired on this page"* when it is used. Components therefore render their controls unconditionally rather than gating on `onX &&`.
+
+**It says it to the console, not to the page** (2026-09-12, the user's call). It went to the host error channel until then, which put a red banner in front of an end user for an authoring gap: nothing was attempted and nothing went wrong. The author hears it in the two places it can be acted on — `validatePage` at save, and the console at the click.
 
 The reasoning, which reversed the earlier behaviour: a control that vanishes because nobody wired it looks exactly like one hidden by access control or an activity's show condition — and only those two are answers to *"may I do this?"*. Visibility is the model's business; wiring is the author's, and a missing wire is a gap, so it should be loud rather than invisible. `validatePage` says the same thing where it can still be fixed: an unwired declared callback is a **warning**.
 

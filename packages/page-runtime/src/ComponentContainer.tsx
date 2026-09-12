@@ -207,8 +207,14 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     // wired is the author's, and an unwired one is a gap that should say so
     // when used rather than hide.
     if (!source) {
+      // Said to the console, not to the page (2026-09-12). An unwired callback
+      // is an authoring gap, not a failure of the run: nothing was attempted
+      // and nothing went wrong, so a red banner in front of an end user
+      // reports someone else's unfinished work as if it were their problem.
+      // The author hears it where it can be fixed — `validatePage` warns at
+      // save — and here, where the click happens, in the console.
       resolvedProps[prop.name] = () => {
-        onError(new Error(`'${prop.name}' is not wired on this page`), manifest.name);
+        console.warn(`[page] ${manifest.name}: '${prop.name}' is not wired on this page`);
       };
       continue;
     }
