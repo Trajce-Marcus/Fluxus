@@ -5,7 +5,7 @@
 // diagnostics land on the console.
 
 import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Call, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
-import type { ClientSolutionConfig } from './types';
+import type { ClientActivityRawDef, ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
@@ -33,6 +33,23 @@ function walkCalls(node: unknown, visit: (call: Call) => void): void {
 // Either grade of config: the design plane validates the full model at save,
 // while a browser host re-reports its trimmed copy as a version-drift net. The
 // hook pass below simply finds nothing to check on the trimmed one.
+//
+// One rule cannot be written that way, though, and 2026-09-12 is when it bit:
+// a GET's `returns` is *required* on the server grade and *absent by design*
+// on the client's — the query never reaches the browser (CLIENT_TRUST_BOUNDARY
+// / DATA_THROUGH_ACTIVITIES). Demanding it of a trimmed config reported every
+// GET in the model as an error at boot. So a rule about something the trim
+// removes has to know which grade it is looking at, and the grade is legible:
+// hooks are **absent, not null**, from the client's copy.
+/**
+ * Which grade of config this activity came from. The client's copy omits the
+ * server-only keys rather than nulling them, so their **presence** is the
+ * signal — a hook that is explicitly `null` still says "this is the full
+ * model, and there is no hook".
+ */
+const serverGrade = (activity: ClientActivityRawDef): boolean =>
+  'before_hook' in activity || 'after_hook' in activity;
+
 export function validateConfig(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): Finding[] {
   // services.logger is engine-owned and part of every host's registry
   // (createEngine appends it, name reserved) — validation must see the same
@@ -219,9 +236,9 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
       // service effects, so a read cannot write.
       const returns = joinScript((activity as { returns?: string | string[] }).returns);
       if (activity.record_map === 'GET') {
-        if (!returns) {
+        if (!returns && serverGrade(activity)) {
           note(activity.id, "a GET activity needs a 'returns' expression — that is what it answers with");
-        } else {
+        } else if (returns) {
           collect(`${activity.id} returns`, returns, anchorType);
           checkInvokes(`${activity.id} returns`, returns);
         }

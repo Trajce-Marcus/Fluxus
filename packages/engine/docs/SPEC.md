@@ -166,6 +166,17 @@ anything that slipped past config-save throws rather than writing.
 **not** have an after hook (nothing persisted, so there is nothing to react
 to), and `returns` on a non-GET is rejected.
 
+**"Needs a `returns`" is a server-grade rule** (fixed 2026-09-12). `returns` is
+deliberately absent from the client's copy of the config — the query never
+reaches the browser — so demanding it of a trimmed config reported every GET in
+the model as an error at boot, in a console the author is meant to trust.
+`validateConfig` runs on either grade, and any rule about something the trim
+*removes* has to know which one it is looking at. The grade is legible without
+a new parameter: the trim **omits** the server-only keys rather than nulling
+them, so a `before_hook` that is explicitly `null` still says "this is the full
+model, and there is no hook". Every other rule here is safe as written, because
+it checks what a value *says* rather than that it is there at all.
+
 ### `invoke(activityId, params?)`
 
 The hook-facing read door: run a GET and take its answer. Read-only by
