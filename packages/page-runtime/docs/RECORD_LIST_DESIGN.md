@@ -21,7 +21,7 @@ the platform doesn't have, this says so rather than proposing a way round it.
 | # | Behaviour | Fixed / declared | Decision |
 |---|---|---|---|
 | 1.1 | Toolbar above the table: title left, actions right | **fixed** | The layout is what makes every screen look the same. Not arrangeable. |
-| 1.2 | Toolbar actions | **declared** — `actions: [{ label, callback }]` | Replaces today's hard-coded `newLabel`/`onNew`. A page declaring none gets a bare title; three gets three. First action drawn as the prominent one. |
+| 1.2 | Toolbar actions | **declared** — `actions: [{ label, callback }]`; the bulk half **BUILT 2026-09-08** as `bulkActions` | Replaces today's hard-coded `newLabel`/`onNew`. A page declaring none gets a bare title; three gets three. First action drawn as the prominent one. **Split by what an act is about**: a toolbar action over *no* record (a second `New`) is still unbuilt; one over *the checked records* is `bulkActions`, built with step 3 and shown only once something is checked. |
 | 1.3 | Row actions, at the end of the row | **declared** — `rowActions: [{ label, callback }]` | Replaces `editLabel`/`openLabel`/`onEdit`/`onOpen`. Multiple per row was always the intent. Beyond about three, the rest collapse into an overflow menu — **fixed**, so rows never grow a wall of buttons. |
 | 1.4 | The open control — `>` at the very end of the row | **fixed** position and appearance, **declared** callback (`onOpen`) | Kept separate from row actions on purpose: "go to this record" means the same thing on every screen, so it always looks the same and always sits last. This is also what master-detail hangs off (§5). |
 | 1.5 | Columns | **declared** — `{ key, label?, width?, type?, format? }` | `key` and `label` built 2026-08-28. `width` is a hint; blank means auto. `type` and `format` are §2. |
@@ -75,8 +75,8 @@ A list of rules, each applying to a row or to named cells within it:
 | 4.2 | Quick search box in the toolbar | **declared** on/off | Filters the delivered rows in the browser across all columns. No round trip. |
 | 4.3 | Real filters (change what is fetched) | **not this component** | A filter bar is its own component: it writes the chosen values into page context, the table's `rows` expression reads them, the read re-runs. Listed here so it isn't built into the table by mistake. |
 | 4.4 | Paging | **none — ruled 2026-08-28** | The read path has no limit or offset, so the table fetches and shows every row: a screen listing 5,000 records delivers 5,000. **Said plainly rather than hidden behind page buttons over the browser's own copy, which would leave the cost exactly where it is.** Real paging is a change to the read path, deferred until it is built properly. |
-| 4.5 | Selection | **declared** — `selection: 'none' \| 'one' \| 'many'` | Both built: selecting rows is fundamental, not polish. `'one'` is today's behaviour. `'many'` adds a checkbox column and a select-all in the header. |
-| 4.6 | What a multi-selection can be used for | **works today** | The table emits the selected records when the selection changes; that callback's script stores them with `services.page.setContext`; a toolbar action's script walks the list with `for each` and runs the activity once per record. Each run still carries one record as its anchor, so authorisation is untouched and the one-value callback contract holds. No platform change needed. **Unproven**: an activity that asks for confirmation goes through `runWithConfirm`, so fifty rows may raise fifty prompts. Prove it on one screen before this is a documented pattern. |
+| 4.5 | Selection | **declared** — `selection: 'none' \| 'one' \| 'many'` | **BUILT 2026-09-08.** Both, because selecting rows is fundamental, not polish. `'one'` is the default and what the table always did. `'many'` adds a checkbox column and a select-all in the header, and the row click toggles. |
+| 4.6 | What a multi-selection can be used for | **BUILT 2026-09-08 as `bulkActions`** | The table emits the selected records when the selection changes; that callback's script stores them with `services.page.setContext`; a toolbar action's script walks the list with `for each` and runs the activity once per record. Each run still carries one record as its anchor, so authorisation is untouched and the one-value callback contract holds. **Superseded 2026-09-08**: the run-once-per-record pattern is not what was built. `bulkActions` runs the activity **once**, with the ticked ids in a nominated attribute and the hook doing the work — so there is one form, one confirmation, one pipeline entry, and the fifty-prompts doubt never arises. The script and the page-context round trip are gone with it. |
 | 4.7 | Totals row | **declared**, optional | Three parts: which columns and what function (sum, average, count); which rows count — **the rows currently shown**, so searching changes the total, which is what people expect (a condition to include only some rows can come later); and what the row says on the left. |
 | 4.8 | Grouping rows under headings | — | Deferred. It changes the table's shape considerably. |
 | 4.9 | Editing a value in the table | **never** | Records change through activities. A row action opens the capture form. The one behaviour the platform forbids outright. |
@@ -139,6 +139,25 @@ step below adds properties rather than reshaping the ones before it.
    column — and it is 2.5 arriving early, for actions only. The toolbar half of
    1.2 is **not** built. See the page-runtime SPEC.
 3. **Selection** — single and multiple, with checkboxes and select-all.
+   **BUILT 2026-09-08**, with bulk actions alongside. One property,
+   `selection: 'none' | 'one' | 'many'`, defaulting to `one` so no page
+   changed; `many` draws a checkbox per row and a part-fillable select-all in
+   the heading, and the row click toggles rather than replaces. **`onSelect`
+   always emits a list** — one id or twenty — so no script is written against a
+   mode. The arithmetic is pure, in `components/selection.ts`.
+   **`bulkActions: [{ label?, target, attribute }]`** are the table's own
+   controls over its own selection (so a property, not a component like a row
+   action): drawn above the table, shown only once something is checked. The
+   activity runs **exactly once**, with the ticked ids landing in the attribute
+   the action names — so the crew is asked for once and the hook does the
+   forty. Values reach an activity only as declared attributes, so a component
+   may now fill one: `runActivity(activityId, record, seed?)`, with the seed
+   always a list and the attribute's cardinality deciding what it becomes.
+   `services.activities.run` stays two-parameter — a **script** still cannot
+   pass values in. `RunActivity` took the same `attribute`, which closes "add
+   a child here". The run is **about the page's own record** (the app record),
+   never about a row: the ticked rows are what it carries. See the
+   page-runtime SPEC.
 4. **Sort and search** — per-column `sortable`, one search box.
 5. **Display conditions** — the rule list. Deliberately after 1, so a rule is a
    condition on top of a base display that already works.

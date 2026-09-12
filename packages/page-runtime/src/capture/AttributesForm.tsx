@@ -10,6 +10,8 @@ import { coerceCaptured, coerceCapturedValue, compositeSubs, evaluateWithGets, i
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
 import { DateTimeInput, FileInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
+import { seedValue } from './seed';
+import type { AttributeSeed } from '../pageHost';
 
 /** The capture widget for a non-reference/non-list attribute or composite cell. */
 function ScalarInput({ attr, value, onChange, uploads }: {
@@ -57,6 +59,8 @@ interface Props {
   activity: ActivityDef;
   anchorRecord: RecordInstance | null;
   recordTypeId: string;
+  /** Records a control is about, filling one named attribute (see ./seed.ts). */
+  seed?: AttributeSeed;
   /**
    * Runs the activity. 'needs-confirmation' means the before hook warn()ed and
    * nothing persisted — the form shows Continue/Cancel and re-submits with
@@ -77,7 +81,7 @@ function emptyValue(attr: AttributeDef): unknown {
   return '';
 }
 
-export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit, onClose }: Props) {
+export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onSubmit, onClose }: Props) {
   const { evaluate, uploads, resolveDisplayLabel, resolveAttributeDisplayField, recordPicker } = useCaptureHost();
 
   // Form state is FLAT: composite attributes contribute one entry per cell
@@ -93,9 +97,16 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
         for (const sub of subs) out[`${a.key}.${sub.key}`] = emptyValue(sub);
         continue;
       }
-      out[a.key] = activity.record_map === 'UPDATE' && anchorRecord && a.key in anchorRecord.customFields
-        ? anchorRecord.customFields[a.key]
-        : emptyValue(a);
+      // A control may fill one named attribute with the records it is about —
+      // the ticked rows of a bulk action, a row action's own row. It wins over
+      // the UPDATE prefill, since it is the more specific statement of what
+      // this run is about, and the author still edits it in the form.
+      const seeded = seed && seed.attribute === a.key ? seedValue(a, seed.records) : undefined;
+      out[a.key] = seeded?.value !== undefined
+        ? seeded.value
+        : activity.record_map === 'UPDATE' && anchorRecord && a.key in anchorRecord.customFields
+          ? anchorRecord.customFields[a.key]
+          : emptyValue(a);
     }
     return out;
   });
@@ -118,7 +129,14 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, onSubmit,
   });
 
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  // A seed the attribute cannot hold — forty records into a single-valued
+  // attribute — is an authoring mistake, and it shows in the same banner a
+  // failed run does rather than being dropped on the way in.
+  const [submitError, setSubmitError] = useState<string | null>(() => {
+    if (!seed) return null;
+    const attr = activity.attributes.find((a) => a.key === seed.attribute);
+    return attr ? seedValue(attr, seed.records).error ?? null : null;
+  });
   // Attributes declared unavailable ("can't provide"): key → the user's reason.
   // Presence of a key means the toggle is on; the value input is replaced by
   // the reason box and the captured value is cleared.

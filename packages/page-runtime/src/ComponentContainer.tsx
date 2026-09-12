@@ -6,6 +6,7 @@ import type { PageRuntime } from './runtime';
 import { ActivityFormModal } from './ActivityFormModal';
 import {
   packCallbackData,
+  type AttributeSeed,
   type PageContext,
   type PageServiceHandlers,
 } from './pageHost';
@@ -25,6 +26,8 @@ interface PendingForm {
   /** The activity's owning record type — the form resolves reference labels
    *  against it. */
   recordTypeId: string;
+  /** Records the control was about, filling one named attribute. */
+  seed?: AttributeSeed;
 }
 
 export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError }: Props) {
@@ -73,10 +76,32 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // alone: UI activity (has attributes) → standard capture form; attribute-less
   // → straight to the hooks. Values reach the hooks only as declared
   // attributes (DATA_THROUGH_ACTIVITIES §4).
-  const launchActivity = useCallback((activityId: string, record: unknown) => {
+  const launchActivity = useCallback((activityId: string, record: unknown, seed?: AttributeSeed) => {
     const found = runtime.findActivity(activityId);
     if (!found) throw new Error(`Unknown activity '${activityId}'`);
-    const anchorId = record === null || record === undefined || record === '' ? null : String(record);
+    // A named attribute that the activity does not declare is an authoring
+    // mistake, and a silent one would look like the ticks never happened —
+    // the attribute mapping drops what it cannot match by design, so the
+    // complaint has to be made here, before the run.
+    if (seed && !found.activity.attributes.some((a) => a.key === seed.attribute)) {
+      onError(new Error(`'${activityId}' has no attribute '${seed.attribute}'`), manifest.name);
+      return;
+    }
+    // What the run is *about* — which is not the same as what it carries.
+    //
+    // A row action is about its row, so it names one. A bulk action names
+    // none: the ticked rows are the data it carries, and what it is about is
+    // the **page's own record** — the app record `resolvePageAnchor` resolved
+    // at page open, which every GET the page fires is already logged against.
+    // A page that fires activities has one of its own precisely so the entry
+    // lands somewhere.
+    //
+    // A CREATE is the exception in the other direction: it is about the record
+    // it is bringing into being, so the server refuses an anchor outright, and
+    // the record a control was about reaches it as the seeded attribute
+    // instead. That is what lets a row action open "add a child here".
+    const named = record === null || record === undefined || record === '' ? null : String(record);
+    const anchorId = found.activity.record_map === 'CREATE' ? null : named ?? pageCtx.record?.id ?? null;
     // The callback script has already returned by the time any of this
     // resolves, so failures surface through the host error channel rather than
     // as a throw nobody is left to catch.
@@ -89,7 +114,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
         // comes back as not-found.
         const anchorRecord = anchorId ? await runtime.client.fetchRecord(anchorId) : null;
         if (found.activity.attributes.length > 0) {
-          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id });
+          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id, seed });
         } else {
           await runWithConfirm(found.activity, anchorRecord);
         }
@@ -97,7 +122,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       }
     })();
-  }, [runtime, runWithConfirm, onError, manifest.name]);
+  }, [runtime, runWithConfirm, onError, manifest.name, pageCtx.record?.id]);
 
   // services.page.open — the host decides what navigating means, so an absent
   // seam is an error the author should see, not a click that does nothing.
@@ -213,6 +238,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
           activity={pendingForm.activity}
           anchorRecord={pendingForm.anchorRecord}
           recordTypeId={pendingForm.recordTypeId}
+          seed={pendingForm.seed}
           host={runtime.captureHost}
           onSubmit={async (captured, options) => {
             const result = await runOnce(pendingForm.activity, captured, pendingForm.anchorRecord, options);

@@ -123,10 +123,10 @@ The five demo components (`AppHeader`, `InventorList`, `InventorProfile`, `Map`,
 
 **Model-blind building blocks (2026-08-27).** `RecordList` and `RecordTree` are the first components meant for real solutions rather than the demo, and they are named for what they do, not for whoever uses them first — the demo components' names (`WorkOrderList`, `InventorProfile`) are the drift to avoid, since a platform must not grow one solution's vocabulary.
 
-- **`RecordList`** — rows in, declared columns, `onOpen(record)` / `onNew(null)` out. Deliberately not the workbench grid: that one is the generic face of a *whole model* (every record type, every activity, import/export, schema navigation) and belongs inside the workbench, where the audience is an implementer. A page wants one list, the columns its author chose, and the two or three acts the page is about.
+- **`RecordList`** — rows in, declared columns, `onSelect(record)` / `onNew(null)` out. Deliberately not the workbench grid: that one is the generic face of a *whole model* (every record type, every activity, import/export, schema navigation) and belongs inside the workbench, where the audience is an implementer. A page wants one list, the columns its author chose, and the two or three acts the page is about.
 - **`RecordTree`** — any record type with a self-reference. Rows arrive flat, because that is what a GET answers with; the nesting is presentation, rebuilt in the component. A row whose parent is absent from the answer renders as a root, so a filtered answer still shows; cycles are broken rather than hanging. The page names the parent field, so nothing here knows what a cost breakdown is.
 
-`RecordList` distinguishes **selecting** from **acting**: a row click selects and does nothing else, and each act is a button at the end of the row (`onEdit`, `onOpen`), labelled by the page. A click that silently starts an edit is a click nobody asked for.
+`RecordList` distinguishes **selecting** from **acting**: a row click selects and does nothing else, and each act is a button at the end of the row (an action column, below), labelled by the page. A click that silently starts an edit is a click nobody asked for.
 
 ### RecordList columns (2026-09-07, [RECORD_LIST_DESIGN](RECORD_LIST_DESIGN.md) step 1)
 
@@ -157,9 +157,40 @@ The shape built instead (**ruled 2026-09-08**) starts from what a row action can
 
 **Two costs, accepted:** `key` is no longer a required field, so the array editor's "every column needs a key" guard is gone and a column with neither `key` nor `component` is inert rather than refused at save. And `validatePage` does not look *inside* array items, so an unknown `component` or a `target` naming no real activity is not caught at save — it shows as `?Name` in the cell, or fails at the click. Both are the same gap: nothing validates the contents of a declared list.
 
-Steps 3–6 of the design (selection, sort/search, display conditions, totals) are unbuilt; each adds properties rather than reshaping these. Checkboxes and bulk actions are step 3's job — a bulk act has no row, so it is a different question from this one.
+Steps 4–6 of the design (sort/search, display conditions, totals) are unbuilt; each adds properties rather than reshaping these.
 
-One limit remains, unworked-around: **`services.activities.run(activityId, record)` carries an anchor and nothing else.** So "add a child *here*" cannot pre-fill the parent — the capture form has to ask for it. Fine for a CREATE with a handful of fields, awkward for tree editing, and the natural place a prefill argument would go if one is ever agreed.
+### Selection and bulk actions (2026-09-08, design step 3)
+
+One property, `selection`, with three values — and the default is what the table already did, so no page changed: **`one`** selects the clicked row (blank or unknown reads as this), **`many`** adds a checkbox per row and a select-all in the heading, **`none`** makes rows inert — no highlight, no pointer, no callback. The arithmetic lives in `components/selection.ts`, pure and tested without a DOM (`test/selection.test.ts`), for the same two reasons `columnFormat` does: the table's guts have to be usable without its frame (design §6, the Gantt seam), and a later step must be able to reason about the selection without reaching into the table.
+
+- **In `many` the row click toggles** rather than replaces, so the row is its own checkbox and the boxes are the visible half of one behaviour, not a second way to do it. The box itself stops the click reaching the row underneath, or the toggle would happen twice.
+- **The select-all box fills from empty or part-filled and empties from full**, and it is part-filled (`indeterminate`) whenever some but not all rows are chosen. With no rows it is empty, never full. It covers **the rows in hand** — which is every row, since there is no paging (design §4.4) and no search yet; when search arrives (step 4) "all" will mean what is shown, which is the same sentence.
+- **The selection is held in row order and pruned against the current rows.** A re-read that drops a record — deleted, or a narrower answer — drops it from the selection at the next click, and it stops being drawn as selected immediately. The alternative, re-emitting on every re-read, risks a loop: a callback that writes page context re-evaluates the props that produced the rows.
+- **`onSelect` always emits a list** (**ruled 2026-09-08**) — one id or twenty, in every mode, **and on every component**: `RecordTree.onSelect` emits `[id]` too, though a tree can only ever select one. A callback carries one value, and letting that value change shape would make every script specific to the mode or the component it was written against: one written for `one` would break the day its page was switched to `many`. A list of one costs a script `callbackData.value[0]`, or nothing at all when it already walks the selection with `for each`. No page had wired `onSelect` on either component, so nothing needed converting.
+- **`selection` is a plain string property**, not a list of the three the builder could offer, because `PropSchema` has no enum kind — the same reason `type` on a column is free text. An unreadable value falls back rather than erroring.
+
+**A bulk action is not a row action, and the difference is what it acts on** (ruled 2026-09-08). A **row action** is a column: one row, one record, and it is a *component*, so the same button drops onto a page anywhere. A **bulk action** is the table's own control over its own selection, so it is a property rather than a component — there is no selection anywhere else to place it against.
+
+- **`bulkActions: [{ label?, target, attribute }]`** — the activity runs **exactly once**, whatever the number of ticks, and the ticked ids land in the attribute the action names. So "dispatch these forty" asks for the crew once, and the hook does the forty. That is the platform's own shape rather than a new one: an activity guards the way in, and a hook writes in bulk once inside.
+- **Shown only once something is checked**, above the table, as buttons beside the "N selected" count. This does not reopen the 2026-08-26 ruling that a control is shown whether or not it is wired: that ruling is about **wiring** — a bulk action with no `target` is still drawn — while this is "act on what?". With nothing checked there is no record for it to be about, exactly as a row action has no button without a row.
+- **Needs `selection: 'many'`.** Without checkboxes there is nothing to reveal them, and declaring them is not taken as a request to turn checkboxes on: one switch, said once, in the property named for it.
+- **A bulk run is about the page's own record, not about any row.** The ticked rows are what the run *carries*; the **app record** — the one `resolvePageAnchor` resolves at page open, that `context.record` names and that every GET the page fires is already logged against — is what it is *about*. A dispatch app lists work orders; it is not one. So `ComponentContainer` anchors any run whose caller names no record on the page's record, and nothing about bulk needs a server change: **the activity is an ordinary one on the app's record type**, with the ticked ids arriving as a declared attribute. (An earlier draft of this section claimed a bulk run had no anchor and therefore had to be a `CREATE`. That was wrong — it reached for a row id when the anchor was the page's record all along.)
+
+### A control may fill one named attribute (2026-09-08)
+
+The ids have to reach the activity, and the only way values may reach an activity is as **declared attributes** (DATA_THROUGH_ACTIVITIES §4). So a control names one:
+
+```ts
+interface AttributeSeed { attribute: string; records: string[] }
+```
+
+- **`PageServiceHandlers.runActivity(activityId, record, seed?)`** takes it, and `ComponentContainer` passes it to the capture form as that attribute's starting value. **`services.activities.run` stays a two-parameter function**: a *script* still cannot pass values into an activity — only a component an author placed can, naming an attribute the model already declares. This is deliberately not the free-form `data` bag removed on 2026-08-09; that was anything off the wire, landing wherever, while this is one named attribute carrying record ids the host itself holds.
+- **The seed is always a list** — one record from a row action, forty from a bulk one — and the attribute's cardinality decides what it becomes: a `multi` attribute takes the list, a single-valued one takes the only record there is, and forty into a single-valued attribute is refused in the form's error banner rather than silently truncated. The rule is pure, in `capture/seed.ts` (`test/seed.test.ts`).
+- **It wins over the UPDATE prefill** when both would fill the same attribute — it is the more specific statement of what this run is about — and the author still edits the value in the form before submitting.
+- **An attribute the activity does not declare is refused before the run**, through the host error channel. Silently dropping it is what the attribute mapping does by design (exact-key only), and here that would look exactly like the ticks never happened.
+- **`RunActivity` gained the same `attribute`**, so a row action can be about its row without being anchored on it. This is what closes **"add a child here"**: the activity is a CREATE, the parent arrives in a declared attribute, and `ComponentContainer` now drops the anchor for a CREATE rather than sending a `recordId` the server refuses. A row action naming a CREATE with no `attribute` still creates an unparented record — the row has nowhere to go.
+
+**One fix that came with it:** an action button drawn inside a RecordList — a row action, now a bulk action — was **unstyled**, because a component's css reaches the page only when that component is the one mounted (`ComponentContainer` injects `manifest.css`). `actionComponents` now exports `actionCss` and RecordList appends it to its own, so the buttons look the same wherever they are drawn.
 
 ## Navigation — `services.page.open` (2026-08-27)
 

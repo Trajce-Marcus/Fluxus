@@ -9,6 +9,25 @@
 // same buttons work anywhere else a component can be placed. The `>` at the row
 // end is not a special control either: it is one more action column.
 //
+// Selection is `one` unless the page says otherwise (step 3). `many` draws a
+// checkbox per row and a select-all in the heading, and `onSelect` emits the
+// selection as a **list** in every mode — one id or twenty — so no script has
+// to know which mode the page was built in. The arithmetic of it lives in
+// `selection.ts`, pure, for the same reasons the drawing of a cell does.
+//
+// Acts come in two kinds, and the split is what they act on. A **row action**
+// is a column: one row, one record, and it is a component so the same button
+// works anywhere. A **bulk action** is the table's own control over its own
+// selection: it appears above the table once something is checked. It cannot be
+// a component placed elsewhere, because there is no selection anywhere else.
+//
+// A bulk action runs its activity **exactly once**, with the ticked ids landing
+// in an attribute it nominates — the crew is asked for once, not forty times,
+// and the hook does the forty pieces of work. That is the platform's own shape:
+// an activity guards the way in, a hook writes in bulk once inside. The run is
+// about the page's own record, not about any row: a dispatch app lists work
+// orders, it is not one.
+//
 // Deliberately not the workbench grid. That one is the generic face of a whole
 // model (every record type, every activity, import/export, schema navigation)
 // and belongs inside the workbench. A page wants one list, the columns its
@@ -17,8 +36,17 @@
 import { createElement, useState } from 'react';
 import type { PropSchema } from '../manifest';
 import type { PageServiceHandlers } from '../pageHost';
-import { actionComponents } from './actionComponents';
+import { actionComponents, actionCss } from './actionComponents';
 import { columnWidth, drawCell, isRightAligned, resolveCurrency } from './columnFormat';
+import {
+  emitted,
+  headerState,
+  inRowOrder,
+  nextSelection,
+  selectAll,
+  selectionMode,
+  type SelectionMode,
+} from './selection';
 
 export interface RecordListColumn {
   /** Key into the row object. Absent on an action column, which reads nothing. */
@@ -47,6 +75,25 @@ export interface RecordListColumn {
   component?: string;
   /** What the action component acts on: an activity id, or a page path. */
   target?: string;
+  /**
+   * `RunActivity` only: the activity attribute this row's record fills, rather
+   * than anchoring the run. What lets a row action open a CREATE — "add a
+   * child here" — carrying the row as the parent.
+   */
+  attribute?: string;
+}
+
+/** A bulk action: one activity, run once, over the records that are ticked. */
+export interface RecordListAction {
+  /** What the button says. */
+  label?: string;
+  /** The activity to run — once, whatever the number of ticks. */
+  target?: string;
+  /**
+   * The activity attribute the ticked ids fill. Without it the run would carry
+   * no record at all, so it is what makes a bulk action a bulk action.
+   */
+  attribute?: string;
 }
 
 export interface RecordListRow {
@@ -61,8 +108,24 @@ interface RecordListProps {
   /** Label for the create control. */
   newLabel?: string;
   emptyMessage?: string;
-  /** Named callback: selection changed. Emits (record). */
-  onSelect?: (record: string) => void;
+  /**
+   * How many rows may be selected: `none`, `one` (the default, and what the
+   * table always did) or `many`, which adds a checkbox per row and a
+   * select-all in the heading.
+   */
+  selection?: string;
+  /**
+   * Acts on the checked records, drawn above the table. Shown only once
+   * something is checked, since a bulk act with nothing selected has nothing
+   * to act on. Needs `selection: 'many'` — without checkboxes there is nothing
+   * to reveal them.
+   */
+  bulkActions?: RecordListAction[];
+  /**
+   * Named callback: selection changed. Always emits the selection as a list —
+   * one id or twenty — so a script never has to know the mode.
+   */
+  onSelect?: (records: string[]) => void;
   /** Named callback: create. Emits (null) — a CREATE has no anchor. */
   onNew?: (record: null) => void;
   /** Supplied by the host: the verbs an action column's button calls. */
@@ -75,6 +138,11 @@ const cell = (row: RecordListRow, col: RecordListColumn): string =>
 /** A column that draws a button rather than a value (§1.3 / §2.5). */
 const isAction = (col: RecordListColumn): boolean => !!col.component;
 
+// A row is only clickable where a click means something: with selection off it
+// is inert, so it neither highlights nor offers a pointer.
+const rowClass = (mode: SelectionMode, isSelected: boolean): string =>
+  [mode === 'none' ? 'rl-row rl-row--inert' : 'rl-row', isSelected ? 'rl-row--selected' : ''].join(' ').trim();
+
 // Columns are keyed by position: an action column has no key to key on, and two
 // of them on one row is the ordinary case.
 const columnKey = (col: RecordListColumn, index: number): string => `${index}:${col.key ?? col.component ?? ''}`;
@@ -85,7 +153,20 @@ const columnKey = (col: RecordListColumn, index: number): string => `${index}:${
 function renderAction(col: RecordListColumn, row: RecordListRow, services: PageServiceHandlers | undefined) {
   const component = col.component ? actionComponents[col.component] : undefined;
   if (!component) return <span className="rl-unknown">?{col.component}</span>;
-  return createElement(component, { label: col.label, target: col.target, record: row.id, services });
+  return createElement(component, { label: col.label, target: col.target, attribute: col.attribute, record: row.id, services });
+}
+
+/** The heading's select-all box. `indeterminate` is a property, not an attribute. */
+function SelectAllBox({ state, onToggle }: { state: 'none' | 'some' | 'all'; onToggle: () => void }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label="Select all"
+      checked={state === 'all'}
+      ref={(el) => { if (el) el.indeterminate = state === 'some'; }}
+      onChange={onToggle}
+    />
+  );
 }
 
 function RecordListComponent({
@@ -94,19 +175,69 @@ function RecordListComponent({
   columns = [],
   newLabel = 'New',
   emptyMessage = 'Nothing here yet.',
+  selection,
+  bulkActions = [],
   onSelect,
   onNew,
   services,
 }: RecordListProps) {
   // Clicking a row selects it and nothing more. Acts are the buttons at the end
-  // — a click that silently starts an edit is a click nobody asked for.
-  const [selected, setSelected] = useState<string | null>(null);
-  const select = (id: string) => { setSelected(id); onSelect?.(id); };
+  // — a click that silently starts an edit is a click nobody asked for. In
+  // `many` the click toggles rather than replaces, so the row works as its own
+  // checkbox and the boxes are the visible half of the same thing.
+  const mode: SelectionMode = selectionMode(selection);
+  const [selected, setSelected] = useState<string[]>([]);
+
+  const rowIds = rows.map((row) => row.id);
+  // Read off the rows in hand, so a row that has gone since the last click
+  // stops being drawn as selected.
+  const shown = inRowOrder(rowIds, selected);
+  const boxes = mode === 'many';
+
+  const apply = (next: string[]) => {
+    setSelected(next);
+    onSelect?.(emitted(next));
+  };
+
+  // Exactly one run, with the ticked ids in the attribute the action names
+  // (ruled 2026-09-08). The form is therefore asked once — "dispatch these
+  // forty to which crew?" — and the hook does the forty.
+  //
+  // It names no record, and that is the point: the ticked rows are what the
+  // run *carries*, while what it is *about* is the page's own record — the app
+  // record, which the host fills in. A dispatch app lists work orders; it is
+  // not one.
+  const runBulk = (action: RecordListAction) => {
+    if (!action.target) return;
+    const seed = action.attribute ? { attribute: action.attribute, records: shown } : undefined;
+    services?.runActivity(action.target, null, seed);
+  };
+  const clickRow = (id: string) => {
+    if (mode !== 'none') apply(nextSelection(mode, rowIds, selected, id));
+  };
 
   return (
     <div className="rl-root">
       <div className="rl-head">
         {title && <h2 className="rl-title">{title}</h2>}
+        {boxes && shown.length > 0 && (
+          <>
+            <span className="rl-count">{shown.length} selected</span>
+            {/* Hidden with nothing checked — not a wiring question (a bulk act
+                is shown whether or not its target is set), but an "act on
+                what?" one: there is nothing for it to act on. */}
+            {bulkActions.map((action, i) => (
+              <button
+                key={`${i}:${action.target ?? ''}`}
+                className="fx-action-btn"
+                title={action.target}
+                onClick={() => runBulk(action)}
+              >
+                {action.label ?? 'Run'}
+              </button>
+            ))}
+          </>
+        )}
         {/* Shown whether or not the page wired it — whether a control is
             visible is the model's business, not the wiring's. */}
         <button className="rl-new" onClick={() => onNew?.(null)}>{newLabel}</button>
@@ -118,6 +249,14 @@ function RecordListComponent({
         <table className="rl-table">
           <thead>
             <tr>
+              {boxes && (
+                <th className="rl-check">
+                  <SelectAllBox
+                    state={headerState(rowIds, selected)}
+                    onToggle={() => apply(selectAll(rowIds, selected))}
+                  />
+                </th>
+              )}
               {columns.map((col, i) => (
                 <th
                   key={columnKey(col, i)}
@@ -134,9 +273,21 @@ function RecordListComponent({
             {rows.map((row) => (
               <tr
                 key={row.id}
-                className={row.id === selected ? 'rl-row rl-row--selected' : 'rl-row'}
-                onClick={() => select(row.id)}
+                className={rowClass(mode, shown.includes(row.id))}
+                onClick={() => clickRow(row.id)}
               >
+                {boxes && (
+                  // The box does the toggling; the row underneath must not do
+                  // it a second time on the way up.
+                  <td className="rl-check" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${row.id}`}
+                      checked={shown.includes(row.id)}
+                      onChange={() => clickRow(row.id)}
+                    />
+                  </td>
+                )}
                 {columns.map((col, i) => (isAction(col) ? (
                   // The click acts; it does not also select the row underneath.
                   <td key={columnKey(col, i)} className="rl-action" onClick={(e) => e.stopPropagation()}>
@@ -156,20 +307,25 @@ function RecordListComponent({
 
 const css = `
   .rl-root { font-family: system-ui, sans-serif; padding: 1rem; height: 100%; box-sizing: border-box; overflow: auto; }
-  .rl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; gap: 1rem; }
+  .rl-head { display: flex; align-items: center; margin-bottom: 0.75rem; gap: 1rem; }
   .rl-title { font-size: 1rem; margin: 0; }
-  .rl-new { padding: 4px 12px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.75rem; }
+  .rl-count { font-size: 0.75rem; color: #64748b; }
+  .rl-new { margin-left: auto; padding: 4px 12px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.75rem; }
   .rl-empty { color: #94a3b8; font-size: 0.8rem; }
   .rl-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
   .rl-table th { box-sizing: border-box; text-align: left; color: #64748b; font-weight: 600; padding: 4px 10px 4px 0; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
   .rl-table td { padding: 6px 10px 6px 0; border-bottom: 1px solid #f1f5f9; }
   .rl-row { cursor: pointer; }
+  .rl-row--inert { cursor: default; }
   .rl-row:hover td { background: #f8fafc; }
+  .rl-row--inert:hover td { background: transparent; }
+  .rl-check { width: 1%; white-space: nowrap; padding-right: 10px; }
+  .rl-check input { cursor: pointer; margin: 0; }
   .rl-row--selected td { background: #eff6ff; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
   .rl-action { white-space: nowrap; text-align: right; width: 1%; }
   .rl-unknown { color: #b45309; font-size: 0.7rem; }
-`;
+${actionCss}`;
 
 // One column, described the way any property is, so the page builder can edit
 // the list without knowing what a column is. Mirrors RecordListColumn above.
@@ -184,6 +340,15 @@ const columnItems: PropSchema[] = [
   { name: 'currency',  kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
   { name: 'component', kind: 'static-config', type: 'string', required: false, description: 'Action column: RunActivity or OpenPage — leave blank for a data column' },
   { name: 'target',    kind: 'static-config', type: 'string', required: false, description: 'What the action acts on: an activity id, or a page path' },
+  { name: 'attribute', kind: 'static-config', type: 'string', required: false, description: 'RunActivity only: activity attribute this row fills instead of anchoring the run' },
+];
+
+// A bulk action, described the way any property is, so the builder's array
+// editor draws it with no knowledge of what an action is.
+const bulkActionItems: PropSchema[] = [
+  { name: 'label',     kind: 'static-config', type: 'string', required: false, description: 'What the button says' },
+  { name: 'target',    kind: 'static-config', type: 'string', required: true,  description: 'Activity to run — once, whatever the number of ticks' },
+  { name: 'attribute', kind: 'static-config', type: 'string', required: true,  description: 'Activity attribute the ticked ids fill' },
 ];
 
 const schema: PropSchema[] = [
@@ -192,7 +357,9 @@ const schema: PropSchema[] = [
   { name: 'columns',      kind: 'static-config', type: 'array',    required: true,  description: 'Columns, in display order', items: columnItems },
   { name: 'newLabel',     kind: 'static-config', type: 'string',   required: false, description: 'Label on the create control' },
   { name: 'emptyMessage', kind: 'static-config', type: 'string',   required: false, description: 'Shown when there are no rows' },
-  { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — emits (record)' },
+  { name: 'selection',    kind: 'static-config', type: 'string',   required: false, description: 'one (default), many for checkboxes and select-all, or none' },
+  { name: 'bulkActions',  kind: 'static-config', type: 'array',    required: false, description: 'Acts on the checked records — one run, ids in the named attribute. Shown once something is checked; needs selection: many', items: bulkActionItems },
+  { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — always emits the list of selected records' },
   { name: 'onNew',        kind: 'callback',      type: 'function', required: false, description: 'Create — emits (null), since a CREATE has no anchor' },
 ];
 

@@ -46,6 +46,25 @@ export const packCallbackData = (value: unknown): CallbackPayload => ({ value })
 // 4) will take attributes directly. Scripts that only run activities are
 // therefore host-portable.
 
+/**
+ * Records a control is about, on their way into one **named, declared**
+ * attribute of the activity being run (2026-09-08). A bulk action fills it
+ * with what is ticked; a row action with its own row.
+ *
+ * Deliberately not the `data` bag removed on 2026-08-09. That was free-form
+ * and undeclared — anything off the wire, landing wherever. This names one
+ * attribute the model already declares, and the only value it can carry is
+ * record ids the host itself holds. It is also why `services.activities.run`
+ * stays a two-parameter function below: a **script** still cannot pass values
+ * into an activity, only a component placed by an author can.
+ */
+export interface AttributeSeed {
+  /** The activity attribute the records fill. */
+  attribute: string;
+  /** Always a list — one record or forty (the selection ruling). */
+  records: string[];
+}
+
 /** What the rendering host (ComponentContainer) supplies per component instance. */
 export interface PageServiceHandlers {
   /** Write a page-context key; the page layer of the ctx root. */
@@ -57,7 +76,7 @@ export interface PageServiceHandlers {
    * owns presentation: UI activities open the standard capture form; the
    * run's outcome (gate fail, soft-stop) surfaces through the host.
    */
-  runActivity(activityId: string, record: unknown): void;
+  runActivity(activityId: string, record: unknown, seed?: AttributeSeed): void;
   /**
    * Open another page, optionally about a record (2026-08-27). Navigating *is*
    * setting the two values the page-anchor model already ruled — `?page=` and
@@ -105,6 +124,8 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
           params: ['activityId', 'record'],
           description: 'Run an activity on an anchor record (id, or null for a CREATE)',
           kind: 'effect',
+          // Two arguments, and no third: a script may name the activity and its
+          // anchor, never the values it runs with (DATA_THROUGH_ACTIVITIES §4).
           fn: (activityId, record) => handlers.runActivity(String(activityId), record),
         },
       },

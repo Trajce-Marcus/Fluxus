@@ -25,6 +25,13 @@ export interface ActionProps {
   target?: string;
   /** The record the act is about. Null for a CREATE, which has no anchor. */
   record?: string | null;
+  /**
+   * `RunActivity` only: an attribute of the activity that the record fills, so
+   * an act can be *about* a record without being anchored on it — which is how
+   * a CREATE ("add a child here") carries its parent. Blank leaves the record
+   * as the anchor alone, exactly as before.
+   */
+  attribute?: string;
   /** Supplied by the host, not by the author (see ComponentContainer). */
   services?: PageServiceHandlers;
 }
@@ -32,7 +39,11 @@ export interface ActionProps {
 const anchor = (record: string | null | undefined): string | null =>
   record === null || record === undefined || record === '' ? null : String(record);
 
-const css = `
+// Exported because a component's css reaches the page only when that component
+// is the one mounted (ComponentContainer injects `manifest.css`). A button
+// drawn *inside* another component — a RecordList row, its toolbar — is
+// therefore unstyled unless the host component carries these rules too.
+export const actionCss = `
   .fx-action-btn { padding: 2px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #334155; cursor: pointer; font-size: 0.7rem; font-family: inherit; white-space: nowrap; }
   .fx-action-btn:hover { background: #f1f5f9; }
 `;
@@ -40,18 +51,30 @@ const css = `
 // Shown whether or not it has a target (ruled 2026-08-26): a control that
 // disappears because nobody finished configuring it is indistinguishable from
 // one hidden by access control, and only that is an answer to "may I do this?".
+const css = actionCss;
+
 const schema = (what: string): PropSchema[] => [
   { name: 'label',  kind: 'static-config', type: 'string', required: false, description: 'What the button says' },
   { name: 'target', kind: 'static-config', type: 'string', required: true,  description: what },
   { name: 'record', kind: 'dynamic-data',  type: 'string', required: false, description: 'The record this is about — a row supplies its own' },
 ];
 
-function RunActivityComponent({ label = 'Run', target, record, services }: ActionProps) {
+const runSchema: PropSchema[] = [
+  ...schema('Activity id to run — the record anchors it, or fills the attribute below'),
+  { name: 'attribute', kind: 'static-config', type: 'string', required: false, description: 'Activity attribute the record fills — needed when the activity is a CREATE, which takes no anchor' },
+];
+
+function RunActivityComponent({ label = 'Run', target, record, attribute, services }: ActionProps) {
+  const run = () => {
+    if (!target) return;
+    const id = anchor(record);
+    // The seed is always a list — one record here, forty from a bulk action —
+    // and the attribute's own cardinality decides what it becomes.
+    const seed = attribute && id ? { attribute, records: [id] } : undefined;
+    services?.runActivity(target, id, seed);
+  };
   return (
-    <button className="fx-action-btn" title={target}
-      onClick={() => { if (target) services?.runActivity(target, anchor(record)); }}>
-      {label}
-    </button>
+    <button className="fx-action-btn" title={target} onClick={run}>{label}</button>
   );
 }
 
@@ -64,10 +87,7 @@ function OpenPageComponent({ label = 'Open', target, record, services }: ActionP
   );
 }
 
-export const RunActivity = Object.assign(RunActivityComponent, {
-  css,
-  schema: schema('Activity id to run — the record anchors it'),
-});
+export const RunActivity = Object.assign(RunActivityComponent, { css, schema: runSchema });
 
 export const OpenPage = Object.assign(OpenPageComponent, {
   css,

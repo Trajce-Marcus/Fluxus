@@ -8,6 +8,7 @@
 import type { ActivityDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import { AttributesForm } from './capture/AttributesForm';
 import { CaptureHostProvider, type CaptureHost } from './capture/host';
+import type { AttributeSeed } from './pageHost';
 
 interface Props {
   activity: ActivityDef;
@@ -16,6 +17,8 @@ interface Props {
   recordTypeId: string;
   /** What the form runs against; the PageRuntime's `captureHost`. */
   host: CaptureHost;
+  /** Records the control was about, filling one named attribute. */
+  seed?: AttributeSeed;
   /**
    * Runs the activity. The form owns the outcome: 'needs-confirmation' becomes
    * its Continue/Cancel decision, a failure its error banner — so the page
@@ -28,7 +31,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function ActivityFormModal({ activity, anchorRecord, recordTypeId, host, onSubmit, onClose }: Props) {
+export function ActivityFormModal({ activity, anchorRecord, recordTypeId, host, seed, onSubmit, onClose }: Props) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div style={{ background: '#fff', borderRadius: 8, padding: 20, minWidth: 340, maxWidth: 480, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.2)' }}>
@@ -42,6 +45,7 @@ export function ActivityFormModal({ activity, anchorRecord, recordTypeId, host, 
             activity={activity}
             anchorRecord={anchorRecord}
             recordTypeId={recordTypeId}
+            seed={seed}
             onSubmit={onSubmit}
             onClose={onClose}
           />

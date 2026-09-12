@@ -42,7 +42,9 @@ interface RecordTreeProps {
   /** Named callback: delete a node. Emits (record). */
   onDelete?: (record: string) => void;
   /** Named callback: selection changed. Emits (record). */
-  onSelect?: (record: string) => void;
+  /** Emits a list, always — one node here, but `onSelect` means the same thing
+   *  on every component (ruled 2026-09-08). */
+  onSelect?: (records: string[]) => void;
 }
 
 interface TreeNode {
@@ -118,7 +120,7 @@ function RecordTreeComponent({
     return next;
   });
 
-  const select = (id: string) => { setSelected(id); onSelect?.(id); };
+  const select = (id: string) => { setSelected(id); onSelect?.([id]); };
 
   return (
     <div className="rt-root">
@@ -226,7 +228,7 @@ const schema: PropSchema[] = [
   { name: 'onModify',     kind: 'callback',      type: 'function', required: false, description: 'Modify a node — emits (record)' },
   { name: 'onMove',       kind: 'callback',      type: 'function', required: false, description: 'Re-parent a node — emits (record)' },
   { name: 'onDelete',     kind: 'callback',      type: 'function', required: false, description: 'Delete a node — emits (record)' },
-  { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — emits (record)' },
+  { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — always emits the list of selected records' },
 ];
 
 export const RecordTree = Object.assign(RecordTreeComponent, { css, schema });
