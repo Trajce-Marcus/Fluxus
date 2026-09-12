@@ -157,7 +157,7 @@ The shape built instead (**ruled 2026-09-08**) starts from what a row action can
 
 **Two costs, accepted:** `key` is no longer a required field, so the array editor's "every column needs a key" guard is gone and a column with neither `key` nor `component` is inert rather than refused at save. And `validatePage` does not look *inside* array items, so an unknown `component` or a `target` naming no real activity is not caught at save — it shows as `?Name` in the cell, or fails at the click. Both are the same gap: nothing validates the contents of a declared list.
 
-Steps 4–6 of the design (sort/search, display conditions, totals) are unbuilt; each adds properties rather than reshaping these.
+Steps 5–6 of the design (display conditions, totals) are unbuilt; each adds properties rather than reshaping these.
 
 ### Selection and bulk actions (2026-09-08, design step 3)
 
@@ -191,6 +191,19 @@ interface AttributeSeed { attribute: string; records: string[] }
 - **`RunActivity` gained the same `attribute`**, so a row action can be about its row without being anchored on it. This is what closes **"add a child here"**: the activity is a CREATE, the parent arrives in a declared attribute, and `ComponentContainer` now drops the anchor for a CREATE rather than sending a `recordId` the server refuses. A row action naming a CREATE with no `attribute` still creates an unparented record — the row has nowhere to go.
 
 **One fix that came with it:** an action button drawn inside a RecordList — a row action, now a bulk action — was **unstyled**, because a component's css reaches the page only when that component is the one mounted (`ComponentContainer` injects `manifest.css`). `actionComponents` now exports `actionCss` and RecordList appends it to its own, so the buttons look the same wherever they are drawn.
+
+### Sorting and searching (2026-09-12, design step 4)
+
+Both work on **the rows already delivered**. There is no paging (design §4.4), so every row is present and neither costs a round trip — and the day paging exists, both become questions for the read path rather than changes to this component. The pure part is `components/searchSort.ts` (`test/searchSort.test.ts`).
+
+**The two halves deliberately look at different things.** Search matches **what you can see** — the drawn cell, so `12/03/2026` finds the date on the screen rather than the ISO string behind it, and `1,000.00` finds the money. Sort orders **what the value means** — the underlying value, so `N2` grouping and a currency symbol cannot decide that 1,000 comes before 9. Same value, two questions, each answering the one the reader is asking.
+
+- **`sortable` on a column**, default on; an action column never sorts, since it draws a button and holds no value. Clicking a heading goes **ascending, descending, then back to the order the rows arrived in**. The third state earns its place: a GET's own order can be the meaningful one (a ranking, a tree walk), and without it one click would throw that away for good.
+- **Ordering is by the column's type** — numbers numerically, dates chronologically, booleans false-then-true, everything else `localeCompare` case-blind so `apple` comes before `Banana`. A value that will not read as its declared type falls back to text rather than sorting as `NaN`, which compares false against everything and scrambles the rows. **Blanks sort last in both directions**: a missing value is not a small one. The sort is stable, so equal rows keep the order they came in.
+- **`search`** puts one box in the heading, matching across every column at once. There is no per-column filter and no filter bar — a filter that changes *what is fetched* is a separate component writing into page context (design §4.3), and building it into the table would be the wrong place.
+- **An empty result says which kind of empty it is.** "Nothing here yet" (the declared `emptyMessage`) and "No rows match X" are different facts, and only one of them is undone by clearing the box.
+
+**What searching does to a selection, ruled here:** the box narrows what is *shown*, never what is *ticked*. Select-all covers the rows on screen and **adds them to** or **removes them from** the selection rather than replacing it, the header box reads `all` when everything shown is ticked whatever is hidden, and the count says `3 selected (2 not shown)` so a selection never looks like it shrank. That is what lets someone tick a few, search again, tick a few more, and act on all of them. Pruning a stale id stays against **every delivered row**, so typing in the box unticks nothing.
 
 ## Navigation — `services.page.open` (2026-08-27)
 

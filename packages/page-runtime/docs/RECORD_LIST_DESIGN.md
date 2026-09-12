@@ -71,8 +71,8 @@ A list of rules, each applying to a row or to named cells within it:
 
 | # | Behaviour | Fixed / declared | Decision |
 |---|---|---|---|
-| 4.1 | Sorting by clicking a heading | **fixed** behaviour, **declared** per column (`sortable?`, default on) | Sorts the rows already delivered, in the browser. Correct as long as every row is present — see 4.4. |
-| 4.2 | Quick search box in the toolbar | **declared** on/off | Filters the delivered rows in the browser across all columns. No round trip. |
+| 4.1 | Sorting by clicking a heading | **fixed** behaviour, **declared** per column (`sortable?`, default on) | **BUILT 2026-09-12.** Sorts the rows already delivered, in the browser, by the **underlying** value and the column's type. Correct as long as every row is present — see 4.4. A third click restores the order the rows arrived in. |
+| 4.2 | Quick search box in the toolbar | **declared** on/off (`search`) | **BUILT 2026-09-12.** Filters the delivered rows in the browser across all columns, matching the **drawn** cell so a date is searched as it is written. No round trip. It narrows what is shown, never what is ticked. |
 | 4.3 | Real filters (change what is fetched) | **not this component** | A filter bar is its own component: it writes the chosen values into page context, the table's `rows` expression reads them, the read re-runs. Listed here so it isn't built into the table by mistake. |
 | 4.4 | Paging | **none — ruled 2026-08-28** | The read path has no limit or offset, so the table fetches and shows every row: a screen listing 5,000 records delivers 5,000. **Said plainly rather than hidden behind page buttons over the browser's own copy, which would leave the cost exactly where it is.** Real paging is a change to the read path, deferred until it is built properly. |
 | 4.5 | Selection | **declared** — `selection: 'none' \| 'one' \| 'many'` | **BUILT 2026-09-08.** Both, because selecting rows is fundamental, not polish. `'one'` is the default and what the table always did. `'many'` adds a checkbox column and a select-all in the header, and the row click toggles. |
@@ -159,6 +159,15 @@ step below adds properties rather than reshaping the ones before it.
    never about a row: the ticked rows are what it carries. See the
    page-runtime SPEC.
 4. **Sort and search** — per-column `sortable`, one search box.
+   **BUILT 2026-09-12, as written.** Both over the rows already delivered.
+   Search matches the **drawn** cell (so `12/03/2026` finds the date on screen),
+   sort orders the **underlying** value (so `N2` grouping cannot decide 1,000
+   comes before 9). A heading cycles ascending → descending → the order the
+   rows arrived in, because a GET's own order can be the meaningful one.
+   Blanks sort last both ways. Ruled here: a search narrows what is *shown*,
+   never what is *ticked* — select-all adds or removes the shown rows rather
+   than replacing the selection, and the count says how many are off screen.
+   Pure in `components/searchSort.ts`. See the page-runtime SPEC.
 5. **Display conditions** — the rule list. Deliberately after 1, so a rule is a
    condition on top of a base display that already works.
 6. **Totals row** — optional, per 4.7.

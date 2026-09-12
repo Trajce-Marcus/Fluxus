@@ -20,10 +20,19 @@ export type HeaderState = 'none' | 'some' | 'all';
 /**
  * The selection, in the order the screen reads. Also what prunes it: an id no
  * longer among the rows — the record was deleted, or a re-read narrowed the
- * answer — drops out rather than being carried on invisibly.
+ * answer — drops out rather than being carried on invisibly. Pruning is always
+ * against **every delivered row**, never the searched-down ones: typing in the
+ * search box must not untick anything (step 4).
  */
 export const inRowOrder = (rowIds: readonly string[], selected: readonly string[]): string[] =>
   rowIds.filter((id) => selected.includes(id));
+
+/**
+ * Which rows are ticked but not on screen — a search hides them, and the count
+ * has to say so or the selection looks like it shrank.
+ */
+export const hiddenCount = (visibleIds: readonly string[], selected: readonly string[]): number =>
+  selected.length - inRowOrder(visibleIds, selected).length;
 
 export const headerState = (rowIds: readonly string[], selected: readonly string[]): HeaderState => {
   const chosen = inRowOrder(rowIds, selected).length;
@@ -48,9 +57,24 @@ export const nextSelection = (
   return inRowOrder(rowIds, toggled);
 };
 
-/** The header box: all the shown rows, or none of them. */
-export const selectAll = (rowIds: readonly string[], selected: readonly string[]): string[] =>
-  headerState(rowIds, selected) === 'all' ? [] : [...rowIds];
+/**
+ * The header box, over **the rows shown** — which a search narrows (step 4).
+ * It adds them to the selection or takes them out of it; it does not replace
+ * it, because a row ticked before the search was typed is still ticked. That
+ * is what lets someone tick a few, search again, tick a few more, and act on
+ * all of them.
+ */
+export const selectAll = (
+  visibleIds: readonly string[],
+  allIds: readonly string[],
+  selected: readonly string[],
+): string[] => {
+  if (headerState(visibleIds, selected) === 'all') {
+    const dropped = new Set(visibleIds);
+    return selected.filter((id) => !dropped.has(id));
+  }
+  return inRowOrder(allIds, [...selected, ...visibleIds]);
+};
 
 /**
  * What `onSelect` emits: **always a list**, one id or twenty (ruled

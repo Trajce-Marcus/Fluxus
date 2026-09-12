@@ -41,12 +41,14 @@ import { columnWidth, drawCell, isRightAligned, resolveCurrency } from './column
 import {
   emitted,
   headerState,
+  hiddenCount,
   inRowOrder,
   nextSelection,
   selectAll,
   selectionMode,
   type SelectionMode,
 } from './selection';
+import { isSortable, nextSort, searchRows, sortRows, type Sort } from './searchSort';
 
 export interface RecordListColumn {
   /** Key into the row object. Absent on an action column, which reads nothing. */
@@ -64,6 +66,8 @@ export interface RecordListColumn {
   type?: string;
   /** Format string for the type — `N2`, `C2`, `dd/MM/yyyy`. Blank is the type's default. */
   format?: string;
+  /** Sorting by this heading. On unless said otherwise; an action column never sorts. */
+  sortable?: boolean;
   /** Currency code for a `C` format: `AUD`, or `row.<field>` for one per row. */
   currency?: string;
   /**
@@ -121,6 +125,8 @@ interface RecordListProps {
    * to reveal them.
    */
   bulkActions?: RecordListAction[];
+  /** A search box in the heading, filtering the delivered rows across every column. */
+  search?: boolean;
   /**
    * Named callback: selection changed. Always emits the selection as a list —
    * one id or twenty — so a script never has to know the mode.
@@ -137,6 +143,11 @@ const cell = (row: RecordListRow, col: RecordListColumn): string =>
 
 /** A column that draws a button rather than a value (§1.3 / §2.5). */
 const isAction = (col: RecordListColumn): boolean => !!col.component;
+
+// A heading says what its column holds and, where the column can be sorted,
+// that clicking it does something.
+const headingClass = (col: RecordListColumn): string | undefined =>
+  [isRightAligned(col.type) ? 'rl-num' : '', isSortable(col) ? 'rl-sortable' : ''].join(' ').trim() || undefined;
 
 // A row is only clickable where a click means something: with selection off it
 // is inert, so it neither highlights nor offers a pointer.
@@ -177,6 +188,7 @@ function RecordListComponent({
   emptyMessage = 'Nothing here yet.',
   selection,
   bulkActions = [],
+  search = false,
   onSelect,
   onNew,
   services,
@@ -187,11 +199,21 @@ function RecordListComponent({
   // checkbox and the boxes are the visible half of the same thing.
   const mode: SelectionMode = selectionMode(selection);
   const [selected, setSelected] = useState<string[]>([]);
+  const [sort, setSort] = useState<Sort | null>(null);
+  const [term, setTerm] = useState('');
 
-  const rowIds = rows.map((row) => row.id);
-  // Read off the rows in hand, so a row that has gone since the last click
-  // stops being drawn as selected.
-  const shown = inRowOrder(rowIds, selected);
+  // Searched, then sorted, then drawn — in that order, because sorting what
+  // the search kept is cheaper than searching what the sort ordered, and the
+  // answer is the same.
+  const visible = sortRows(searchRows(rows, columns, term), columns, sort);
+
+  const allIds = rows.map((row) => row.id);
+  const visibleIds = visible.map((row) => row.id);
+  // Read off every delivered row, not the visible ones: a row a search hid is
+  // still ticked, and a row that has gone since the last click stops being
+  // drawn as selected.
+  const shown = inRowOrder(allIds, selected);
+  const offscreen = hiddenCount(visibleIds, selected);
   const boxes = mode === 'many';
 
   const apply = (next: string[]) => {
@@ -213,7 +235,7 @@ function RecordListComponent({
     services?.runActivity(action.target, null, seed);
   };
   const clickRow = (id: string) => {
-    if (mode !== 'none') apply(nextSelection(mode, rowIds, selected, id));
+    if (mode !== 'none') apply(nextSelection(mode, allIds, selected, id));
   };
 
   return (
@@ -222,7 +244,9 @@ function RecordListComponent({
         {title && <h2 className="rl-title">{title}</h2>}
         {boxes && shown.length > 0 && (
           <>
-            <span className="rl-count">{shown.length} selected</span>
+            <span className="rl-count">
+              {shown.length} selected{offscreen > 0 ? ` (${offscreen} not shown)` : ''}
+            </span>
             {/* Hidden with nothing checked — not a wiring question (a bulk act
                 is shown whether or not its target is set), but an "act on
                 what?" one: there is nothing for it to act on. */}
@@ -238,6 +262,16 @@ function RecordListComponent({
             ))}
           </>
         )}
+        {search && (
+          <input
+            className="rl-search"
+            type="search"
+            value={term}
+            placeholder="Search"
+            aria-label="Search"
+            onChange={(e) => setTerm(e.target.value)}
+          />
+        )}
         {/* Shown whether or not the page wired it — whether a control is
             visible is the model's business, not the wiring's. */}
         <button className="rl-new" onClick={() => onNew?.(null)}>{newLabel}</button>
@@ -245,6 +279,11 @@ function RecordListComponent({
 
       {rows.length === 0 ? (
         <p className="rl-empty">{emptyMessage}</p>
+      ) : visible.length === 0 ? (
+        // Told apart from an empty list on purpose: "nothing here" and "nothing
+        // matches what you typed" are different facts, and only one of them is
+        // undone by clearing the box.
+        <p className="rl-empty">No rows match “{term.trim()}”.</p>
       ) : (
         <table className="rl-table">
           <thead>
@@ -252,25 +291,27 @@ function RecordListComponent({
               {boxes && (
                 <th className="rl-check">
                   <SelectAllBox
-                    state={headerState(rowIds, selected)}
-                    onToggle={() => apply(selectAll(rowIds, selected))}
+                    state={headerState(visibleIds, selected)}
+                    onToggle={() => apply(selectAll(visibleIds, allIds, selected))}
                   />
                 </th>
               )}
               {columns.map((col, i) => (
                 <th
                   key={columnKey(col, i)}
-                  className={isRightAligned(col.type) ? 'rl-num' : undefined}
+                  className={headingClass(col)}
                   style={{ width: columnWidth(col.width) }}
+                  onClick={isSortable(col) ? () => setSort(nextSort(sort, col.key as string)) : undefined}
                 >
                   {/* An action column's label belongs on its button, not here. */}
                   {isAction(col) ? '' : col.label ?? col.key}
+                  {sort && sort.key === col.key && <span className="rl-sort">{sort.direction === 'asc' ? '▲' : '▼'}</span>}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {visible.map((row) => (
               <tr
                 key={row.id}
                 className={rowClass(mode, shown.includes(row.id))}
@@ -310,10 +351,16 @@ const css = `
   .rl-head { display: flex; align-items: center; margin-bottom: 0.75rem; gap: 1rem; }
   .rl-title { font-size: 1rem; margin: 0; }
   .rl-count { font-size: 0.75rem; color: #64748b; }
+  .rl-search { margin-left: auto; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.75rem; font-family: inherit; min-width: 0; width: 12rem; }
+  .rl-search:focus { outline: 2px solid #bfdbfe; outline-offset: -1px; }
+  .rl-search ~ .rl-new { margin-left: 0; }
   .rl-new { margin-left: auto; padding: 4px 12px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.75rem; }
   .rl-empty { color: #94a3b8; font-size: 0.8rem; }
   .rl-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
   .rl-table th { box-sizing: border-box; text-align: left; color: #64748b; font-weight: 600; padding: 4px 10px 4px 0; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  .rl-sortable { cursor: pointer; user-select: none; }
+  .rl-sortable:hover { color: #334155; }
+  .rl-sort { margin-left: 4px; font-size: 0.6rem; }
   .rl-table td { padding: 6px 10px 6px 0; border-bottom: 1px solid #f1f5f9; }
   .rl-row { cursor: pointer; }
   .rl-row--inert { cursor: default; }
@@ -337,6 +384,7 @@ const columnItems: PropSchema[] = [
   { name: 'width',    kind: 'static-config', type: 'number', required: false, description: 'Width hint in pixels — blank for auto' },
   { name: 'type',     kind: 'static-config', type: 'string', required: false, description: 'text (default), int, decimal, datetime, time, boolean, photo, file' },
   { name: 'format',   kind: 'static-config', type: 'string', required: false, description: 'N2, F2, C2, P1, dd/MM/yyyy, HH:mm — blank for the type default' },
+  { name: 'sortable', kind: 'static-config', type: 'boolean', required: false, description: 'Clicking the heading sorts by this column — on unless set false' },
   { name: 'currency',  kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
   { name: 'component', kind: 'static-config', type: 'string', required: false, description: 'Action column: RunActivity or OpenPage — leave blank for a data column' },
   { name: 'target',    kind: 'static-config', type: 'string', required: false, description: 'What the action acts on: an activity id, or a page path' },
@@ -359,6 +407,7 @@ const schema: PropSchema[] = [
   { name: 'emptyMessage', kind: 'static-config', type: 'string',   required: false, description: 'Shown when there are no rows' },
   { name: 'selection',    kind: 'static-config', type: 'string',   required: false, description: 'one (default), many for checkboxes and select-all, or none' },
   { name: 'bulkActions',  kind: 'static-config', type: 'array',    required: false, description: 'Acts on the checked records — one run, ids in the named attribute. Shown once something is checked; needs selection: many', items: bulkActionItems },
+  { name: 'search',       kind: 'static-config', type: 'boolean',  required: false, description: 'A search box in the heading, filtering the rows across every column' },
   { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — always emits the list of selected records' },
   { name: 'onNew',        kind: 'callback',      type: 'function', required: false, description: 'Create — emits (null), since a CREATE has no anchor' },
 ];

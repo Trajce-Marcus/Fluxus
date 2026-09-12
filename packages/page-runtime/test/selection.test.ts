@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   emitted,
   headerState,
+  hiddenCount,
   inRowOrder,
   nextSelection,
   selectAll,
@@ -76,9 +77,35 @@ describe('the select-all box', () => {
   });
 
   it('fills from empty or part-filled, and empties from full', () => {
-    expect(selectAll(rows, [])).toEqual(['a', 'b', 'c']);
-    expect(selectAll(rows, ['b'])).toEqual(['a', 'b', 'c']);
-    expect(selectAll(rows, ['a', 'b', 'c'])).toEqual([]);
+    expect(selectAll(rows, rows, [])).toEqual(['a', 'b', 'c']);
+    expect(selectAll(rows, rows, ['b'])).toEqual(['a', 'b', 'c']);
+    expect(selectAll(rows, rows, ['a', 'b', 'c'])).toEqual([]);
+  });
+});
+
+// A search narrows what is on screen (step 4). The box acts on what is shown;
+// what a previous search left ticked stays ticked.
+describe('the select-all box over a searched-down table', () => {
+  const shown = ['a', 'c'];
+
+  it('is full when everything shown is ticked, whatever is hidden', () => {
+    expect(headerState(shown, ['a', 'c'])).toBe('all');
+    expect(headerState(shown, ['a', 'b', 'c'])).toBe('all');
+  });
+
+  it('adds the shown rows without dropping a hidden tick', () => {
+    expect(selectAll(shown, rows, ['b'])).toEqual(['a', 'b', 'c']);
+  });
+
+  it('removes only the shown rows', () => {
+    expect(selectAll(shown, rows, ['a', 'b', 'c'])).toEqual(['b']);
+  });
+});
+
+describe('ticks that are off screen', () => {
+  it('counts what a search is hiding', () => {
+    expect(hiddenCount(['a'], ['a', 'b', 'c'])).toBe(2);
+    expect(hiddenCount(rows, ['a', 'b'])).toBe(0);
   });
 });
 
