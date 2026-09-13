@@ -10,6 +10,7 @@ import {
   OpenPage,
   RecordList,
   RecordTree,
+  Text,
   RunActivity,
   WorkOrderList,
   type PropSchema,
@@ -23,6 +24,7 @@ export const componentSchemas: Record<string, PropSchema[]> = {
   OpenPage: OpenPage.schema ?? [],
   RecordList: RecordList.schema ?? [],
   RecordTree: RecordTree.schema ?? [],
+  Text: Text.schema ?? [],
   RunActivity: RunActivity.schema ?? [],
   WorkOrderList: WorkOrderList.schema ?? [],
 };

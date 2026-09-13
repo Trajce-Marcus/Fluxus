@@ -235,12 +235,35 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
                     because {config.componentName} doesn't describe what one item holds.
                   </p>
                 )
-              ) : (
+              ) : prop.choices ? (
+                // A fixed set is **chosen**, not typed (2026-09-13): a spelling
+                // mistake in a free box fails silently — the component falls
+                // back to its default and nothing says why. Buttons up to four,
+                // the way a spreadsheet draws its alignment group; a longer set
+                // would be a list, and none exists yet.
+                <ChoiceGroup
+                  choices={prop.choices}
+                  value={String(value)}
+                  onChange={(next) => setStaticConfig(pagePath, slotId, prop.name, next)} />
+              ) : prop.type === 'number' ? (
                 <input className="pe-binding-input"
-                  type={prop.type === 'number' ? 'number' : 'text'}
+                  type="number"
                   value={String(value)}
                   placeholder={prop.description ?? `Enter ${prop.name}…`}
-                  onChange={(e) => setStaticConfig(pagePath, slotId, prop.name, prop.type === 'number' ? Number(e.target.value) : e.target.value)} />
+                  onChange={(e) => setStaticConfig(pagePath, slotId, prop.name, Number(e.target.value))} />
+              ) : (
+                // A box that grows, for **every** string property (2026-09-13).
+                // It was a one-line input, so a newline could not be typed at
+                // all and a paragraph was authored through a slot — and nothing
+                // in the schema says which strings are paragraphs. A textarea
+                // that starts one line high and grows with its content looks
+                // the same as an input for a label and works for a page of
+                // prose, so the distinction never has to be declared. Nothing
+                // here was bound to Enter, so the key is free to insert a line.
+                <GrowingInput
+                  value={String(value)}
+                  placeholder={prop.description ?? `Enter ${prop.name}…`}
+                  onChange={(next) => setStaticConfig(pagePath, slotId, prop.name, next)} />
               )}
             </li>
           );
@@ -260,6 +283,61 @@ function StaticConfigSection({ slotId, config, pagePath }: { slotId: string; con
 }
 
 /** The panel's stand-in for a list: what's in it, and a way in. Mirrors the binding preview. */
+/**
+ * The values a property accepts, as a row of buttons — one pressed. Clicking
+ * the pressed one clears the property back to the component's own default,
+ * which is the only way to say "I did not choose" once something is chosen.
+ */
+function ChoiceGroup({ choices, value, onChange }: {
+  choices: readonly string[];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="pe-choices">
+      {choices.map((choice) => (
+        <button
+          key={choice}
+          type="button"
+          className={choice === value ? 'pe-choice pe-choice--on' : 'pe-choice'}
+          aria-pressed={choice === value}
+          onClick={() => onChange(choice === value ? '' : choice)}
+        >
+          {choice}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A text box the height of its content. One line until the text needs two, so
+ * a label and a paragraph are the same control and neither has to be declared.
+ */
+function GrowingInput({ value, placeholder, onChange }: {
+  value: string;
+  placeholder: string;
+  onChange: (next: string) => void;
+}) {
+  // Measured, not counted: wrapping means the number of lines is not the number
+  // of newlines. Reset to auto first or the box can only ever grow.
+  const size = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  return (
+    <textarea
+      className="pe-binding-input pe-binding-input--grow"
+      rows={1}
+      ref={size}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => { size(e.currentTarget); onChange(e.target.value); }}
+    />
+  );
+}
+
 function ArrayPropertyButton({ prop, value, onEdit }: { prop: PropSchema; value: unknown; onEdit: () => void }) {
   const summary = summariseItems(prop, value);
   return (
@@ -688,6 +766,11 @@ export const css = `
   .pe-binding-required { font-size: 0.75rem; color: #f48771; }
   .pe-binding-input { width: 100%; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); font-size: 0.775rem; padding: 2px 6px; font-family: inherit; }
   .pe-binding-input:focus { border-color: var(--color-accent); outline: none; }
+  .pe-choices { display: flex; flex-wrap: wrap; gap: 2px; }
+  .pe-choice { padding: 2px 7px; border: 1px solid var(--color-border); border-radius: 3px; background: var(--color-bg); color: var(--color-text-muted); font-size: 0.72rem; font-family: inherit; cursor: pointer; }
+  .pe-choice:hover { color: var(--color-text); }
+  .pe-choice--on { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+  .pe-binding-input--grow { display: block; resize: vertical; overflow: hidden; min-height: 1.4rem; line-height: 1.35; }
   .pe-binding-input--sm { width: auto; flex: 1; }
 
   .pe-expr { width: 100%; text-align: left; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); cursor: pointer; font-family: ui-monospace, monospace; font-size: 0.72rem; padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
