@@ -4,6 +4,7 @@ import type { ComponentManifest } from './manifest';
 import type { SlotConfig } from './pageDef';
 import type { PageRuntime } from './runtime';
 import { ActivityFormModal } from './ActivityFormModal';
+import { fill, hasHoles, holes } from './interpolate';
 import {
   packCallbackData,
   type AttributeSeed,
@@ -32,6 +33,9 @@ interface PendingForm {
 
 export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError }: Props) {
   const [dynamicData, setDynamicData] = useState<Record<string, unknown>>({});
+  // Typed-in text with `{{ }}` holes in it, filled. Kept apart from the static
+  // config it came from so the author's own words are never overwritten.
+  const [filledText, setFilledText] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
   const [pendingForm, setPendingForm] = useState<PendingForm | null>(null);
@@ -162,8 +166,25 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
             async ([propName, source]) => [propName, await runtime.evaluateExpression(source, pageCtx)] as const,
           ),
         );
+        // Typed-in text may carry `{{ expression }}` holes (2026-09-13), and
+        // they are filled here, in the same pass as the dynamic props: the
+        // braces are a delimiter, so what is inside one is an ordinary
+        // expression read by the ordinary evaluator. **Any** static string may
+        // have them — a table's title as much as a text box — which is why
+        // this asks the config rather than the component what to fill.
+        const texts = await Promise.all(
+          Object.entries(config.staticConfig)
+            .filter(([, value]) => hasHoles(value))
+            .map(async ([propName, template]) => {
+              const answers = await Promise.all(
+                holes(template as string).map((hole) => runtime.evaluateExpression(hole.expression, pageCtx)),
+              );
+              return [propName, fill(template as string, answers)] as const;
+            }),
+        );
         if (cancelled) return;
         setDynamicData(Object.fromEntries(entries));
+        setFilledText(Object.fromEntries(texts));
       } catch (err) {
         if (cancelled) return;
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
@@ -186,7 +207,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   }
 
   // Build the full props object to pass to the component
-  const resolvedProps: Record<string, unknown> = { ...config.staticConfig };
+  const resolvedProps: Record<string, unknown> = { ...config.staticConfig, ...filledText };
 
 
   // Merge dynamic data

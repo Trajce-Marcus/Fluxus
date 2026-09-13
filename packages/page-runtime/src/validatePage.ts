@@ -8,6 +8,7 @@
 import { parseExpression, parseScript, type Call, type Diagnostic, type Stmt } from '@fluxus/dsl';
 import type { PageDef } from './pageDef';
 import { componentManifests } from './componentManifests';
+import { hasHoles, holes } from './interpolate';
 
 export interface PageFinding {
   where: string;
@@ -55,10 +56,26 @@ export function validatePage(host: PageValidationHost, def: PageDef): PageFindin
     const schemaByName = new Map(manifest.schema.map((p) => [p.name, p]));
 
     // Static config keys must be declared static-config props.
-    for (const key of Object.keys(config.staticConfig)) {
+    for (const [key, value] of Object.entries(config.staticConfig)) {
       const prop = schemaByName.get(key);
       if (!prop) note(findings, where(`prop '${key}'`), `'${manifest.name}' has no prop '${key}'`);
       else if (prop.kind !== 'static-config') note(findings, where(`prop '${key}'`), `'${key}' is ${prop.kind}, not static-config`);
+
+      // Typed-in text may carry `{{ expression }}` holes (2026-09-13), and an
+      // expression is an expression wherever it is written: the same check a
+      // dynamic prop gets, said at save, where it can still be fixed. Without
+      // this a typo inside a hole would first be heard about at render, as a
+      // red banner in front of whoever opened the page.
+      if (!hasHoles(value)) continue;
+      for (const hole of holes(value)) {
+        const w = where(`text '${key}'`);
+        for (const diagnostic of host.validateExpression(hole.expression)) {
+          findings.push({ where: w, diagnostic });
+        }
+        for (const diagnostic of checkRefs(host, hole.expression, 'expression')) {
+          findings.push({ where: w, diagnostic });
+        }
+      }
     }
 
     // Dynamic props: declared, and the expression validates (datasource posture).

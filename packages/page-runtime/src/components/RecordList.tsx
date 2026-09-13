@@ -789,7 +789,7 @@ const schema: PropSchema[] = [
   { name: 'columns',      kind: 'static-config', type: 'array',    required: true,  description: 'Columns, in display order', items: columnItems },
   { name: 'newLabel',     kind: 'static-config', type: 'string',   required: false, description: 'Label on the create control — blank for no create button' },
   { name: 'emptyMessage', kind: 'static-config', type: 'string',   required: false, description: 'Shown when there are no rows' },
-  { name: 'selection',    kind: 'static-config', type: 'string',   required: false, description: 'one (default), many for checkboxes and select-all, or none' },
+  { name: 'selection',    kind: 'static-config', type: 'string',   required: false, description: 'How many rows may be selected', choices: ['one', 'many', 'none'] },
   { name: 'bulkActions',  kind: 'static-config', type: 'array',    required: false, description: 'Acts on the checked records — one run, ids in the named attribute. Shown once something is checked; needs selection: many', items: bulkActionItems },
   { name: 'search',       kind: 'static-config', type: 'boolean',  required: false, description: 'A search box in the heading, filtering the rows across every column' },
   { name: 'sortable',     kind: 'static-config', type: 'boolean',  required: false, description: 'Clicking a heading sorts by it' },

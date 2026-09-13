@@ -123,7 +123,7 @@ The reference check is the only part that knows **which surface** a source came 
 
 The five demo components (`AppHeader`, `InventorList`, `InventorProfile`, `Map`, `WorkOrderList`) and `componentManifests` moved here with the cluster.
 
-**Model-blind building blocks (2026-08-27).** `RecordList` and `RecordTree` are the first components meant for real solutions rather than the demo, and they are named for what they do, not for whoever uses them first — the demo components' names (`WorkOrderList`, `InventorProfile`) are the drift to avoid, since a platform must not grow one solution's vocabulary.
+**`Text`** joins these 2026-09-13 — see below. **Model-blind building blocks (2026-08-27).** `RecordList` and `RecordTree` are the first components meant for real solutions rather than the demo, and they are named for what they do, not for whoever uses them first — the demo components' names (`WorkOrderList`, `InventorProfile`) are the drift to avoid, since a platform must not grow one solution's vocabulary.
 
 - **`RecordList`** — rows in, declared columns, `onSelect(record)` / `onNew(null)` out. Deliberately not the workbench grid: that one is the generic face of a *whole model* (every record type, every activity, import/export, schema navigation) and belongs inside the workbench, where the audience is an implementer. A page wants one list, the columns its author chose, and the two or three acts the page is about.
 - **`RecordTree`** — **superseded 2026-09-13 by `RecordList`'s `parentKey`** (design §4.11). The last page using it, `projects · pages/cbs`, moved to a nested `RecordList` the same day; it stays registered only because **published versions v1–v2 of that page still name it**, and the runtime renders the published version. It can be deleted once that page is republished. Any record type with a self-reference. Rows arrive flat, because that is what a GET answers with; the nesting is presentation, rebuilt in the component. A row whose parent is absent from the answer renders as a root, so a filtered answer still shows; cycles are broken rather than hanging. The page names the parent field, so nothing here knows what a cost breakdown is.
@@ -242,6 +242,24 @@ Both work on **the rows already delivered**. There is no paging (design §4.4), 
 - **Narrowing opens the way to a hit.** A row on the path to a match is expanded even if the reader had closed it; every other closed row stays closed. A search that finds a row and then leaves it hidden behind a twisty has failed.
 - **Ticking a parent does not tick its children.** A tick is one row, and a bulk action acts on exactly what is ticked — a checkbox that quietly selects forty descendants is not something a reader can undo. Collapsing narrows like a search does: it changes what is shown, never what is ticked, and select-all covers the rows on screen.
 - **What is under a closed row is hidden, not lost.** Those rows are marked placed as the walk passes them, so the rescue that catches rows in a cycle does not drag a closed subtree back to the top.
+
+### `Text` — words on a page (2026-09-13)
+
+One component for headings and prose, not several: a single cell of text that fills whatever panel the layout gives it, so it declares no size of its own.
+
+- **`text`** — what it says. Line breaks are kept as typed (`white-space: pre-wrap`), and it may carry `{{ }}` holes (below).
+- **`style`** — how loud it is: `title`, `heading`, `subheading`, `body` (the default), `caption`. The word is the one Word and Docs use for the same idea. `type` was rejected: it already means the **data** type on every column and attribute, and one word for two things is the drift this platform keeps out.
+- **`align`** and **`verticalAlign`** — across and down, the way a spreadsheet asks it: `left`/`center`/`right`, `top`/`middle`/`bottom`.
+- **No font, size or colour**, for the reason display conditions already ruled (§3.3): once an author writes their own red, screens stop matching each other and nothing survives a change of theme. A **`tone`** for meaning (warning / danger / good) was designed and **deliberately left out 2026-09-13** until a real screen needs it — a warning in practice is usually a boxed callout with an icon, which is a different component rather than a property of this one.
+
+### Typed-in text may carry `{{ }}` holes (2026-09-13)
+
+`Project {{ record.project_no }} — {{ record.name }}`. The pure part is `interpolate.ts` (`test/interpolate.test.ts`); the filling happens in `ComponentContainer`, in the same pass that evaluates dynamic props, because only the host holds the page context and the evaluator.
+
+- **The braces are a delimiter, not a language.** What sits inside one is an ordinary FluxScript expression, read by the same evaluator as a dynamic prop and checked at save by the same validator — `validatePage` now walks the holes in every static string. There is one expression language and this does not add a second.
+- **Two braces, not one.** A single `{` turns up in ordinary prose — a JSON snippet, a code sample — so `{ }` would force an escape rule for a literal brace: learned by everyone who writes text, removable by nobody. With `{{ }}` a lone brace is just a brace.
+- **Any typed-in string may have them**, not only `Text`'s — a table's title interpolates the same way. The host asks the config what to fill, never the component, so no component knows this exists.
+- **Nothing draws as nothing.** A hole whose value is null or absent leaves a gap rather than the word "undefined"; `false` and `0` are values and draw as themselves.
 
 ## Navigation — `services.page.open` (2026-08-27)
 

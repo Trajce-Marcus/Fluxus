@@ -20,6 +20,15 @@ export interface PropSchema {
    * because nothing may guess what an undeclared item holds.
    */
   items?: PropSchema[];
+  /**
+   * For `type: 'string'` — the values this property accepts. A property that
+   * declares them is **chosen** in the page builder rather than typed
+   * (2026-09-13): a fixed set typed into a free text box is a spelling test the
+   * author can fail silently, and the component then falls back to its default
+   * without saying why. The component still treats an unknown value as its
+   * default, because a page may have been written before the list existed.
+   */
+  choices?: readonly string[];
 }
 
 export interface ComponentManifest {
