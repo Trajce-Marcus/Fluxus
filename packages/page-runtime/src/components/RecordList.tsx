@@ -375,7 +375,8 @@ const css = `
   .rl-row--inert:hover td { background: transparent; }
   .rl-check { width: 1%; white-space: nowrap; padding-right: 10px; }
   .rl-check input { cursor: pointer; margin: 0; }
-  .rl-row--selected td { background: #eff6ff; }
+  .rl-row--selected td { background: #dbeafe; }
+  .rl-row--selected:hover td { background: #bfdbfe; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
   .rl-action { white-space: nowrap; text-align: right; width: 1%; }
   .rl-unknown { color: #b45309; font-size: 0.7rem; }
