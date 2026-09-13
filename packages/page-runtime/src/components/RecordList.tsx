@@ -48,7 +48,7 @@ import {
   selectionMode,
   type SelectionMode,
 } from './selection';
-import { isSortable, nextSort, searchRows, sortRows, type Sort } from './searchSort';
+import { hasSortableValue, nextSort, searchRows, sortRows, type Sort } from './searchSort';
 
 export interface RecordListColumn {
   /** Key into the row object. Absent on an action column, which reads nothing. */
@@ -66,8 +66,6 @@ export interface RecordListColumn {
   type?: string;
   /** Format string for the type — `N2`, `C2`, `dd/MM/yyyy`. Blank is the type's default. */
   format?: string;
-  /** Sorting by this heading. On unless said otherwise; an action column never sorts. */
-  sortable?: boolean;
   /** Currency code for a `C` format: `AUD`, or `row.<field>` for one per row. */
   currency?: string;
   /**
@@ -130,6 +128,8 @@ interface RecordListProps {
   bulkActions?: RecordListAction[];
   /** A search box in the heading, filtering the delivered rows across every column. */
   search?: boolean;
+  /** Clicking a heading sorts by it. One switch for the table, not per column. */
+  sortable?: boolean;
   /**
    * Named callback: selection changed. Always emits the selection as a list —
    * one id or twenty — so a script never has to know the mode.
@@ -149,8 +149,8 @@ const isAction = (col: RecordListColumn): boolean => !!col.component;
 
 // A heading says what its column holds and, where the column can be sorted,
 // that clicking it does something.
-const headingClass = (col: RecordListColumn): string | undefined =>
-  [isRightAligned(col.type) ? 'rl-num' : '', isSortable(col) ? 'rl-sortable' : ''].join(' ').trim() || undefined;
+const headingClass = (col: RecordListColumn, sorts: boolean): string | undefined =>
+  [isRightAligned(col.type) ? 'rl-num' : '', sorts ? 'rl-sortable' : ''].join(' ').trim() || undefined;
 
 // A row is only clickable where a click means something: with selection off it
 // is inert, so it neither highlights nor offers a pointer.
@@ -192,6 +192,7 @@ function RecordListComponent({
   selection,
   bulkActions = [],
   search = false,
+  sortable = false,
   onSelect,
   onNew,
   services,
@@ -306,9 +307,11 @@ function RecordListComponent({
               {columns.map((col, i) => (
                 <th
                   key={columnKey(col, i)}
-                  className={headingClass(col)}
+                  className={headingClass(col, sortable && hasSortableValue(col))}
                   style={{ width: columnWidth(col.width) }}
-                  onClick={isSortable(col) ? () => setSort(nextSort(sort, col.key as string)) : undefined}
+                  onClick={sortable && hasSortableValue(col)
+                    ? () => setSort(nextSort(sort, col.key as string))
+                    : undefined}
                 >
                   {/* An action column's label belongs on its button, not here. */}
                   {isAction(col) ? '' : col.label ?? col.key}
@@ -397,7 +400,6 @@ const columnItems: PropSchema[] = [
   { name: 'width',    kind: 'static-config', type: 'number', required: false, description: 'Width hint in pixels — blank for auto' },
   { name: 'type',     kind: 'static-config', type: 'string', required: false, description: 'text (default), int, decimal, datetime, time, boolean, photo, file' },
   { name: 'format',   kind: 'static-config', type: 'string', required: false, description: 'N2, F2, C2, P1, dd/MM/yyyy, HH:mm — blank for the type default' },
-  { name: 'sortable', kind: 'static-config', type: 'boolean', required: false, description: 'Clicking the heading sorts by this column — on unless set false' },
   { name: 'currency',  kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
   { name: 'component', kind: 'static-config', type: 'string', required: false, description: 'Action column: RunActivity or OpenPage — leave blank for a data column' },
   { name: 'target',    kind: 'static-config', type: 'string', required: false, description: 'What the action acts on: an activity id, or a page path' },
@@ -421,6 +423,7 @@ const schema: PropSchema[] = [
   { name: 'selection',    kind: 'static-config', type: 'string',   required: false, description: 'one (default), many for checkboxes and select-all, or none' },
   { name: 'bulkActions',  kind: 'static-config', type: 'array',    required: false, description: 'Acts on the checked records — one run, ids in the named attribute. Shown once something is checked; needs selection: many', items: bulkActionItems },
   { name: 'search',       kind: 'static-config', type: 'boolean',  required: false, description: 'A search box in the heading, filtering the rows across every column' },
+  { name: 'sortable',     kind: 'static-config', type: 'boolean',  required: false, description: 'Clicking a heading sorts by it' },
   { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — always emits the list of selected records' },
   { name: 'onNew',        kind: 'callback',      type: 'function', required: false, description: 'Create — emits (null), since a CREATE has no anchor' },
 ];

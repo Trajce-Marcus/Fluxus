@@ -29,9 +29,15 @@ export interface Sort {
   direction: SortDirection;
 }
 
-/** A column can be sorted unless it says otherwise, or has no value to sort. */
-export const isSortable = (col: RecordListColumn): boolean =>
-  !!col.key && col.sortable !== false;
+/**
+ * Whether this column has anything to sort by. Whether the **table** sorts at
+ * all is one property on the table (2026-09-13, the user's call): per-column
+ * control was finer than any screen needed, and a boolean on each item of the
+ * list also had nowhere honest to keep its default — the array editor seeds
+ * every boolean `false`, so a column added in the dialog arrived unsortable
+ * without anyone saying so.
+ */
+export const hasSortableValue = (col: RecordListColumn): boolean => !!col.key;
 
 /**
  * Clicking a heading: ascending, then descending, then back to the order the

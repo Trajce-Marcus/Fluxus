@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { RecordListColumn, RecordListRow } from '../src/components/RecordList';
 import {
   compareValues,
-  isSortable,
+  hasSortableValue,
   matchesSearch,
   nextSort,
   searchRows,
@@ -28,14 +28,15 @@ const rows: RecordListRow[] = [
 
 const ids = (rs: RecordListRow[]) => rs.map((r) => r.id);
 
-describe('which columns sort', () => {
-  it('sorts a column with a key unless it says otherwise', () => {
-    expect(isSortable({ key: 'name' })).toBe(true);
-    expect(isSortable({ key: 'name', sortable: false })).toBe(false);
+describe('which columns can sort', () => {
+  // Whether the table sorts at all is one property on the table; this only
+  // says whether a given column has a value to sort by.
+  it('is any column naming a field', () => {
+    expect(hasSortableValue({ key: 'name' })).toBe(true);
   });
 
-  it('never sorts an action column — it draws a button, not a value', () => {
-    expect(isSortable({ label: 'Open', component: 'OpenPage' })).toBe(false);
+  it('is never an action column — it draws a button, not a value', () => {
+    expect(hasSortableValue({ label: 'Open', component: 'OpenPage' })).toBe(false);
   });
 });
 

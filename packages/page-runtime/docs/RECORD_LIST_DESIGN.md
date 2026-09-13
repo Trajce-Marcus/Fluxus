@@ -71,7 +71,7 @@ A list of rules, each applying to a row or to named cells within it:
 
 | # | Behaviour | Fixed / declared | Decision |
 |---|---|---|---|
-| 4.1 | Sorting by clicking a heading | **fixed** behaviour, **declared** per column (`sortable?`, default on) | **BUILT 2026-09-12.** Sorts the rows already delivered, in the browser, by the **underlying** value and the column's type. Correct as long as every row is present — see 4.4. A third click restores the order the rows arrived in. |
+| 4.1 | Sorting by clicking a heading | **fixed** behaviour, **declared** once for the table (`sortable`, default **off**) | **BUILT 2026-09-12; per-column control retired 2026-09-13** — finer than any screen needed, and an array-item boolean has nowhere honest to keep a default-on, since the array editor seeds every one to `false`. Sorts the rows already delivered, in the browser, by the **underlying** value and the column's type. Correct as long as every row is present — see 4.4. A third click restores the order the rows arrived in. |
 | 4.2 | Quick search box in the toolbar | **declared** on/off (`search`) | **BUILT 2026-09-12.** Filters the delivered rows in the browser across all columns, matching the **drawn** cell so a date is searched as it is written. No round trip. It narrows what is shown, never what is ticked. Per-column filtering is 4.10, not this. |
 | 4.3 | Real filters (change what is fetched) | **not this component** | A filter bar is its own component: it writes the chosen values into page context, the table's `rows` expression reads them, the read re-runs. Listed here so it isn't built into the table by mistake. **Not to be confused with 4.10**, which narrows rows already in hand and fetches nothing. |
 | 4.4 | Paging | **none — ruled 2026-08-28** | The read path has no limit or offset, so the table fetches and shows every row: a screen listing 5,000 records delivers 5,000. **Said plainly rather than hidden behind page buttons over the browser's own copy, which would leave the cost exactly where it is.** Real paging is a change to the read path, deferred until it is built properly. |
@@ -178,8 +178,10 @@ step below adds properties rather than reshaping the ones before it.
      of mostly-unique text (a name) makes a useless list of forty entries, so a
      "contains" box beside the list is likely needed — decide it then, on a real
      screen, rather than guessing now.
-   - **Which columns get one.** `filterable` per column, default on, mirroring
-     `sortable`. An action column never does: it holds no value.
+   - **Which columns get one.** Every column naming a field, the way sorting
+     now works — `sortable` stopped being per-column on 2026-09-13 and there is
+     no reason for filtering to reintroduce that. An action column never does:
+     it holds no value.
    - **How they combine.** Every active filter and the search box narrow
      together (AND). Clearing the toggle clears nothing — turning the controls
      off must not silently change which rows are shown, or the toggle becomes a
