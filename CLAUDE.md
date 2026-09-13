@@ -16,6 +16,19 @@ Read [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the platform at a glance (built 
 
 UI packages export css **as a string** — no stylesheet imports, because the Console mounts its shell in a shadow root a document-level stylesheet never reaches.
 
+## Design discussions start at the blueprint (binding)
+
+Before any design discussion — a new mechanism, a direction, a ruling, anything
+beyond ordinary implementation — **read [docs/BLUEPRINT.md](docs/BLUEPRINT.md) first**.
+It is the authoritative statement of what the platform is and where it is going,
+and half of it is *Direction*: decisions already taken that a fresh session will
+otherwise re-litigate or silently contradict. Check the proposal against it,
+and say plainly when the two disagree.
+
+When a discussion settles something that changes the platform's direction, the
+blueprint is updated in the same session — including reversals, which are
+recorded as reversals (what was dropped, and why) rather than quietly deleted.
+
 ## Docs-with-code rule (binding)
 
 - Any change that alters a package's behaviour or design updates that package's `docs/SPEC.md` **in the same commit**. The SPEC is the living truth — a new session must be able to read it and know the current design.

@@ -91,20 +91,101 @@ columns exist today; the install path doesn't).
 - The known hard problem, deliberately open: a release that changes the model
   needs a data-migration story before a live operation can move to it.
 
-## Solutions working together — *Direction* (agreed 2026-07-27)
+## Data retention — *Direction* (agreed 2026-09-13)
+
+Retention is set **per operation, per record type** — not per solution. The
+solution defines what a record is and when it is *finished* (`complete_when` in
+the SDM — a business rule, the author's job). The operation decides **how long
+to keep it**, because retention obligations are legal and jurisdictional and
+belong to the business unit holding the data, not to whoever authored the
+model. Two operations running one solution will differ, legitimately.
+
+An operation admin sets it through an **admin tool in the workbench**: the
+operation's record types listed, a retention window against each, and what
+happens when it expires.
+
+Three things it must not break:
+
+- **History is never edited** (rule 4). Retention **archives**; it never
+  rewrites. Completed records leave the transactional store and the relational
+  copy remains — the archival design already in
+  [ARCHITECTURE.md](ARCHITECTURE.md).
+- **Direct class is never trimmed.** Business truth stays. What a policy may
+  age out is `system` class — apps, notifications, engine-authored entries.
+  Class is the guard rail on which record types may carry an aggressive policy
+  at all.
+- **Leanness of the transactional layer depends on it.** Retention is not only
+  a compliance feature: partition-fetch queries are viable only on small
+  partitions, so this is what keeps the runtime fast.
+
+Not built — no window, no policy storage, no admin tool.
+
+## Solutions working together — *Direction*
 
 Solutions are sealed from each other by construction — a script in one can
-never touch another's data. Two sanctioned ways across, one mechanism each:
+never touch another's data.
 
-- **Extension / composition** (one mechanism) — an org (or vendor) creates a
-  thin solution of its own that *depends on* one or more base solutions,
-  adding glue: extra record types, links into the bases' types, activities, a
-  combined menu. The bases are never copied or modified — that's what makes
-  provider upgrades possible at scale. Composition example: an org with a
-  water business and a roads business, each fitting a different vendor
-  solution, authors one thin org solution depending on both; **one operation
-  runs the composed solution**, so water and roads data share one pool and can
-  be linked and queried together.
+**Solutions are never combined with solutions** (ruled 2026-09-13, reversing
+the composition direction of 2026-07-27). An operation runs one solution and
+one model. There is no dependency between solutions, no assembled
+multi-solution SDM, and no shared base solution.
+
+Why it was dropped: composition only works if overlapping types *agree*. Two
+solutions that each define Assets mean the same real-world thing, so combining
+them requires one canonical Assets — a standards problem across independent
+publishers, not a technical one, and it does not get solved. Factoring the
+shared types down into a base solution only moves it: a hierarchy needs one
+publisher, and different orgs author different solutions. The machinery it
+would have cost is a package manager sitting in the middle of the data path —
+qualified ids inside `records.type_ref`, a dependency resolver, version ranges,
+cross-solution migration — built before any customer needs it. Meanwhile
+whole-solution reuse (a vendor publishes one solution, many orgs run it) is the
+actual business and needs none of it.
+
+### Modules — how reuse actually happens — *Direction* (agreed 2026-09-13)
+
+The real cost of that ruling is duplication between similar solutions: roads
+maintenance and water maintenance both need dispatch, subcontractor work
+orders, claims. That is answered by **modules**, not by combining solutions.
+
+A **module** is self-contained — its own model, workflow, activities and
+records — owned by its designer and installed into a solution.
+
+- **It owns its model, and the solution cannot see or change it.** This is a
+  design-plane ownership rule and the commercial protection for whoever built
+  it, *not* a security boundary: the records sit in the same operation, the
+  same pool, the same backup and the same audit history. Copy protection stays
+  runtime entitlement, not DRM.
+- **It never knows the host's types.** No foreign keys into the solution's
+  model, no required bindings. Where a module needs something outside itself —
+  asset details, which crew — it raises a **callback** and the solution's own
+  logic decides and answers. A module never dispatches; it asks. Which
+  references it stores internally is the module designer's choice (if one is
+  meant to stay joinable in reporting, it should be the host's real record id).
+- **It exposes callbacks the solution hooks into** (`wo_approved`,
+  `assetDetailsNeeded`). The named extension point is the contract: a module
+  activity declares it, the solution registers a script against it. That is
+  publish/subscribe over the existing hook and `queue` machinery — never
+  editing the module's internals.
+- **Why this works where composition did not:** a module never has to work with
+  another module, only with the host it was installed into. Modules need
+  *distinct* ids, not *agreed* meanings — uniqueness is easy, agreement is
+  impossible. N modules is N one-way contracts, not every pair.
+- **Upgrades follow the component rule** — no automatic updates; the solution
+  designer propagates deliberately. Because a module owns all of its own data
+  it can migrate itself by internal scripting; what it cannot fix, such as
+  changed or deprecated callback signatures, it publishes as a list for the
+  designer to address. Exact mechanics are deferred until a real module needs a
+  real upgrade.
+
+This splits two trades: people who build solutions, and people who build
+modules for them.
+
+None of it is built — there is no module mechanism, no install path, and no
+dependency of any kind between solutions.
+
+### Connection
+
 - **Connection** — a **solution connector**: a hook in one solution that calls
   an activity in another. The target activity's attribute list *is* the
   contract ("give me these fields"); the committed source activity is the
@@ -122,15 +203,15 @@ never touch another's data. Two sanctioned ways across, one mechanism each:
   operational solutions. Either way the Fluxus-side contract is always an
   activity, so every integration lands on the one audit spine.
 
-Choosing between them follows the data boundary: want the businesses' data in
-**one pool** → compose into one solution, run one operation. Want them
-**walled** → keep separate operations and connect only the flows that must
-cross; org-wide reporting doesn't force composition either way, because the
-reporting layer is org-scoped and looks across operations by design. Known
-hazard on record: two packages may define the same id (`rt_assets` twice) —
-future package-qualified ids; nothing may assume ids unique across solutions.
+Separate operations stay walled, and connect only the flows that must cross.
+Org-wide reporting never forces them together, because the reporting layer is
+org-scoped and looks across operations by design — which is what absorbs most
+of the demand that used to be answered with composition.
 
-The invariant behind both: **solutions exchange data only by calling each
+On record: **nothing may assume record type ids are unique across solutions**,
+and modules installed into one solution will need distinct ids within it.
+
+The invariant behind all of it: **solutions exchange data only by calling each
 other's activities, never by reading each other's records.**
 
 ## Components over their own backend — *Direction* (agreed 2026-08-04)
@@ -198,6 +279,7 @@ Canonical definitions live in [GLOSSARY.md](GLOSSARY.md); this is the working se
 | **Activity** | The unit of action and the only way data changes; headlessly, a callable function. |
 | **Workflow** | The ordered set of activities available on a record type. |
 | **Hook** | A FluxScript script on an activity: before = gate, after = effects. |
+| **Module** | A self-contained, reusable unit installed into a solution — its own model, workflow and records, hidden from the solution, reached only through callbacks. Direction. |
 | **Activity history** | The append-only record of who did what, with what inputs. The audit spine. |
 | **FluxScript** | The one scripting language (expressions → queries → scripts). |
 | **Page** | A stored, validated screen definition rendered by the page runtime. |
