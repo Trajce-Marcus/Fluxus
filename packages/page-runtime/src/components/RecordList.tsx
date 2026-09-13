@@ -371,7 +371,7 @@ const css = `
   .rl-table td { padding: 6px 10px 6px 0; border-bottom: 1px solid #f1f5f9; }
   .rl-row { cursor: pointer; }
   .rl-row--inert { cursor: default; }
-  .rl-row:hover td { background: #f8fafc; }
+  .rl-row:hover td { background: #eef2f6; }
   .rl-row--inert:hover td { background: transparent; }
   .rl-check { width: 1%; white-space: nowrap; padding-right: 10px; }
   .rl-check input { cursor: pointer; margin: 0; }
