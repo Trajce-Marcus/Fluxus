@@ -72,14 +72,15 @@ A list of rules, each applying to a row or to named cells within it:
 | # | Behaviour | Fixed / declared | Decision |
 |---|---|---|---|
 | 4.1 | Sorting by clicking a heading | **fixed** behaviour, **declared** per column (`sortable?`, default on) | **BUILT 2026-09-12.** Sorts the rows already delivered, in the browser, by the **underlying** value and the column's type. Correct as long as every row is present — see 4.4. A third click restores the order the rows arrived in. |
-| 4.2 | Quick search box in the toolbar | **declared** on/off (`search`) | **BUILT 2026-09-12.** Filters the delivered rows in the browser across all columns, matching the **drawn** cell so a date is searched as it is written. No round trip. It narrows what is shown, never what is ticked. |
-| 4.3 | Real filters (change what is fetched) | **not this component** | A filter bar is its own component: it writes the chosen values into page context, the table's `rows` expression reads them, the read re-runs. Listed here so it isn't built into the table by mistake. |
+| 4.2 | Quick search box in the toolbar | **declared** on/off (`search`) | **BUILT 2026-09-12.** Filters the delivered rows in the browser across all columns, matching the **drawn** cell so a date is searched as it is written. No round trip. It narrows what is shown, never what is ticked. Per-column filtering is 4.10, not this. |
+| 4.3 | Real filters (change what is fetched) | **not this component** | A filter bar is its own component: it writes the chosen values into page context, the table's `rows` expression reads them, the read re-runs. Listed here so it isn't built into the table by mistake. **Not to be confused with 4.10**, which narrows rows already in hand and fetches nothing. |
 | 4.4 | Paging | **none — ruled 2026-08-28** | The read path has no limit or offset, so the table fetches and shows every row: a screen listing 5,000 records delivers 5,000. **Said plainly rather than hidden behind page buttons over the browser's own copy, which would leave the cost exactly where it is.** Real paging is a change to the read path, deferred until it is built properly. |
 | 4.5 | Selection | **declared** — `selection: 'none' \| 'one' \| 'many'` | **BUILT 2026-09-08.** Both, because selecting rows is fundamental, not polish. `'one'` is the default and what the table always did. `'many'` adds a checkbox column and a select-all in the header, and the row click toggles. |
 | 4.6 | What a multi-selection can be used for | **BUILT 2026-09-08 as `bulkActions`** | The table emits the selected records when the selection changes; that callback's script stores them with `services.page.setContext`; a toolbar action's script walks the list with `for each` and runs the activity once per record. Each run still carries one record as its anchor, so authorisation is untouched and the one-value callback contract holds. **Superseded 2026-09-08**: the run-once-per-record pattern is not what was built. `bulkActions` runs the activity **once**, with the ticked ids in a nominated attribute and the hook doing the work — so there is one form, one confirmation, one pipeline entry, and the fifty-prompts doubt never arises. The script and the page-context round trip are gone with it. |
 | 4.7 | Totals row | **declared**, optional | Three parts: which columns and what function (sum, average, count); which rows count — **the rows currently shown**, so searching changes the total, which is what people expect (a condition to include only some rows can come later); and what the row says on the left. |
 | 4.8 | Grouping rows under headings | — | Deferred. It changes the table's shape considerably. |
 | 4.9 | Editing a value in the table | **never** | Records change through activities. A row action opens the capture form. The one behaviour the platform forbids outright. |
+| 4.10 | A filter per column, Excel-style | **declared** — `columnFilters` on/off, default **off** | Two switches, two audiences, and keeping them apart is the whole of it. **`columnFilters` is the author's**: whether this table offers the feature at all. **The toggle is the reader's**: a control in the toolbar, itself off until pressed, that reveals a filter per column heading. A table full of filter boxes nobody asked for is a worse table, so neither switch is on by default. Like the search box (4.2) it narrows **the rows already delivered** — it is not 4.3 and fetches nothing. |
 
 ## 5. States
 
@@ -168,9 +169,29 @@ step below adds properties rather than reshaping the ones before it.
    never what is *ticked* — select-all adds or removes the shown rows rather
    than replacing the selection, and the count says how many are off screen.
    Pure in `components/searchSort.ts`. See the page-runtime SPEC.
-5. **Display conditions** — the rule list. Deliberately after 1, so a rule is a
+5. **Column filters** — per 4.10, and after 4 on purpose: a filter is the same
+   narrowing the search box does, one column at a time, so it is built on top of
+   a table that already knows how to show a subset of its rows without losing
+   what is ticked. What it needs settling first:
+   - **What one filter is.** A list of the column's distinct **drawn** values to
+     tick, matching 4.2's rule that a reader filters what they can see. A column
+     of mostly-unique text (a name) makes a useless list of forty entries, so a
+     "contains" box beside the list is likely needed — decide it then, on a real
+     screen, rather than guessing now.
+   - **Which columns get one.** `filterable` per column, default on, mirroring
+     `sortable`. An action column never does: it holds no value.
+   - **How they combine.** Every active filter and the search box narrow
+     together (AND). Clearing the toggle clears nothing — turning the controls
+     off must not silently change which rows are shown, or the toggle becomes a
+     second, invisible filter.
+   - **What it does to a selection.** The rule step 3 and 4 already settled,
+     unchanged: narrowing changes what is **shown**, never what is **ticked**,
+     and select-all covers the rows on screen.
+   - **Cost.** No paging, so the distinct set for every filterable column is
+     computed over every delivered row.
+6. **Display conditions** — the rule list. Deliberately after 1, so a rule is a
    condition on top of a base display that already works.
-6. **Totals row** — optional, per 4.7.
+7. **Totals row** — optional, per 4.7.
 
 Paging stays out (4.4). Cell components (2.5) and grouping (4.8) are separate
 work, not steps here.

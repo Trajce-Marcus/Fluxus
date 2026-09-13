@@ -159,7 +159,7 @@ The shape built instead (**ruled 2026-09-08**) starts from what a row action can
 
 **Two costs, accepted:** `key` is no longer a required field, so the array editor's "every column needs a key" guard is gone and a column with neither `key` nor `component` is inert rather than refused at save. And `validatePage` does not look *inside* array items, so an unknown `component` or a `target` naming no real activity is not caught at save — it shows as `?Name` in the cell, or fails at the click. Both are the same gap: nothing validates the contents of a declared list.
 
-Steps 5–6 of the design (display conditions, totals) are unbuilt; each adds properties rather than reshaping these.
+Steps 5–7 of the design (column filters, display conditions, totals) are unbuilt; each adds properties rather than reshaping these.
 
 ### Selection and bulk actions (2026-09-08, design step 3)
 
