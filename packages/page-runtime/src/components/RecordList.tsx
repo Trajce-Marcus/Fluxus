@@ -28,12 +28,25 @@
 // about the page's own record, not about any row: a dispatch app lists work
 // orders, it is not one.
 //
+// `parentKey` makes the same table a **tree** (step 6): rows nest under their
+// parent, indented, with an expander on the first column that holds a value.
+// Hierarchy is row order and nothing more, which is why there is one table
+// component and not two — a tree needs the same columns, the same acts, the
+// same selection and the same narrowing, and `RecordTree` was all of that built
+// a second time. The order lives in `tree.ts`, pure, like the rest.
+//
+// A filter per column is two switches with two audiences (step 5): the author
+// says whether this table offers them at all, and the reader presses a toolbar
+// toggle to see them. Neither is on by default — a table full of filter boxes
+// nobody asked for is a worse table. Like the search box it narrows the rows
+// already delivered and fetches nothing; the arithmetic is in `columnFilters.ts`.
+//
 // Deliberately not the workbench grid. That one is the generic face of a whole
 // model (every record type, every activity, import/export, schema navigation)
 // and belongs inside the workbench. A page wants one list, the columns its
 // author chose, and the two or three acts that page is about.
 
-import { createElement, useState } from 'react';
+import { createElement, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { PropSchema } from '../manifest';
 import type { PageServiceHandlers } from '../pageHost';
 import { actionComponents, actionCss } from './actionComponents';
@@ -48,7 +61,23 @@ import {
   selectionMode,
   type SelectionMode,
 } from './selection';
-import { hasSortableValue, nextSort, searchRows, sortRows, type Sort } from './searchSort';
+import { hasSortableValue, nextSort, rowComparator, searchRows, sortRows, type Sort } from './searchSort';
+import { ancestorIds, flatRows, openedForHits, toggleCollapsed, treeRows, withAncestors, type TreeRow } from './tree';
+import {
+  choiceState,
+  choices,
+  clearAll,
+  keepMatching,
+  clearColumn,
+  filterCount,
+  isTicked,
+  filterRows,
+  hasFilterableValues,
+  narrowChoices,
+  toggleAll,
+  toggleChoice,
+  type ColumnFilters,
+} from './columnFilters';
 
 export interface RecordListColumn {
   /** Key into the row object. Absent on an action column, which reads nothing. */
@@ -131,6 +160,19 @@ interface RecordListProps {
   /** Clicking a heading sorts by it. One switch for the table, not per column. */
   sortable?: boolean;
   /**
+   * The field holding a row's parent, making the table a **tree**: rows nest
+   * under their parent, indented, with an expander on the first column that
+   * holds a value. Blank is the flat table, unchanged. Rows still arrive flat —
+   * that is what a GET answers with — and the nesting is rebuilt for display.
+   */
+  parentKey?: string;
+  /**
+   * Whether this table offers a filter per column at all — the **author's**
+   * switch. The reader's is the toolbar toggle it reveals, itself off until
+   * pressed: a table full of filter boxes nobody asked for is a worse table.
+   */
+  columnFilters?: boolean;
+  /**
    * Named callback: selection changed. Always emits the selection as a list —
    * one id or twenty — so a script never has to know the mode.
    */
@@ -170,6 +212,180 @@ function renderAction(col: RecordListColumn, row: RecordListRow, services: PageS
   return createElement(component, { label: col.label, target: col.target, attribute: col.attribute, record: row.id, services });
 }
 
+// Which kind of empty this is. "Nothing here yet" is the author's message and a
+// fact about the data; these are facts about what the reader asked for, and
+// each names the half that has to be undone to see rows again.
+function noMatchMessage(term: string, filtering: number): string {
+  const typed = term.trim();
+  const columnsWord = `${filtering} column${filtering === 1 ? '' : 's'}`;
+  if (typed && filtering) return `No rows match \u201c${typed}\u201d and the filters on ${columnsWord}.`;
+  if (typed) return `No rows match \u201c${typed}\u201d.`;
+  return `No rows match the filters on ${columnsWord}.`;
+}
+
+// What a column's filter button says. An unfiltered column says `All`; a column
+// with everything unticked says `None` rather than `0 selected`, because that
+// state is the reason the table is empty and it has to read as a statement.
+const filterLabel = (kept: readonly string[] | undefined): string => {
+  if (!kept) return 'All';
+  return kept.length === 0 ? 'None' : `${kept.length} selected`;
+};
+
+// Where the popup goes. It is **fixed to the viewport**, not placed inside the
+// heading (2026-09-13): the table scrolls inside the component's own box, so a
+// popup positioned within it is clipped by that box — and a short component
+// clips it to almost nothing, exactly when the reader has filtered every row
+// away and needs the list back. Fixed escapes the clip; the price is that the
+// position has to be worked out rather than declared.
+//
+// It opens below the button and flips above when there is no room, and its
+// height is what is left to the edge of the window, so the choice list scrolls
+// inside rather than the popup running off the screen.
+const POP_GAP = 2;
+const POP_EDGE = 8;
+const POP_MAX_WIDTH = 288;
+const POP_MIN_HEIGHT = 160;
+
+function usePopupPlacement(anchor: HTMLElement): { left: number; top?: number; bottom?: number; maxHeight: number } {
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    // Any scroll between the button and the viewport moves the button while
+    // the viewport holds the popup still, so it is measured again rather than
+    // left drifting. Capture, because a panel's scroll does not bubble.
+    window.addEventListener('scroll', redraw, true);
+    window.addEventListener('resize', redraw);
+    return () => {
+      window.removeEventListener('scroll', redraw, true);
+      window.removeEventListener('resize', redraw);
+    };
+  }, []);
+
+  const r = anchor.getBoundingClientRect();
+  const left = Math.max(POP_EDGE, Math.min(r.left, window.innerWidth - POP_MAX_WIDTH - POP_EDGE));
+  const below = window.innerHeight - r.bottom - POP_GAP - POP_EDGE;
+  const above = r.top - POP_GAP - POP_EDGE;
+  return below < POP_MIN_HEIGHT && above > below
+    ? { left, bottom: window.innerHeight - r.top + POP_GAP, maxHeight: above }
+    : { left, top: r.bottom + POP_GAP, maxHeight: below };
+}
+
+/**
+ * A click anywhere else closes the popup, and so does Escape from anywhere —
+ * the ordinary manners of a dropdown.
+ *
+ * Two details earn the hand-written listener. It reads `composedPath()`, not
+ * `event.target`, because the Console mounts its shell in a **shadow root**: a
+ * document-level listener is handed the host element and would think every
+ * click was outside. And it ignores clicks on the **button that opened it**,
+ * which closes the popup by toggling — without that, this would close it first
+ * and the button would immediately open it again.
+ */
+function useCloseWhenAway(popup: React.RefObject<HTMLElement | null>, anchor: HTMLElement, onClose: () => void) {
+  useEffect(() => {
+    const away = (e: Event) => {
+      const path = e.composedPath();
+      if (anchor && path.includes(anchor)) return;
+      if (popup.current && path.includes(popup.current)) return;
+      onClose();
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('pointerdown', away, true);
+    document.addEventListener('keydown', key, true);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      document.removeEventListener('keydown', key, true);
+    };
+  }, [popup, anchor, onClose]);
+}
+
+/**
+ * One column's filter: a contains box, the tri-state box over the list, and the
+ * column's distinct **drawn** values. Its own state, so opening another column
+ * starts with a clean contains box.
+ *
+ * An unfiltered column shows every box ticked, which is what a reader expects
+ * of a column that is showing everything — and why unticking one excludes that
+ * value rather than keeping only it. `columnFilters.ts` holds that arithmetic.
+ */
+function ColumnFilterPopup({
+  col,
+  rows,
+  filters,
+  anchor,
+  onChange,
+  onClose,
+}: {
+  col: RecordListColumn;
+  rows: RecordListRow[];
+  filters: ColumnFilters;
+  anchor: HTMLElement;
+  onChange: (next: ColumnFilters) => void;
+  onClose: () => void;
+}) {
+  const [find, setFind] = useState('');
+  const popup = useRef<HTMLDivElement>(null);
+  const place = usePopupPlacement(anchor);
+  useCloseWhenAway(popup, anchor, onClose);
+  const key = col.key as string;
+  const all = choices(rows, col);
+  const listed = narrowChoices(all, find);
+  const state = choiceState(filters, key, listed);
+
+  return (
+    <div ref={popup} className="rl-pop" style={place} onClick={(e) => e.stopPropagation()}>
+      {/* Typing filters the rows on the keystroke, not on a further click: the
+          term keeps the values it matches, so the contains filter is made out
+          of the one mechanism there is. It replaces what was ticked, since a
+          typed term is the stronger statement of the two. */}
+      <input
+        className="rl-pop-find"
+        type="search"
+        value={find}
+        autoFocus
+        placeholder="Contains"
+        aria-label={`Keep values containing, in ${col.label ?? key}`}
+        onChange={(e) => { setFind(e.target.value); onChange(keepMatching(filters, key, e.target.value, all)); }}
+      />
+      <label className="rl-pop-all">
+        <input
+          type="checkbox"
+          checked={state === 'all'}
+          ref={(el) => { if (el) el.indeterminate = state === 'some'; }}
+          onChange={() => onChange(toggleAll(filters, key, listed, all))}
+        />
+        Select all
+      </label>
+      <div className="rl-pop-list">
+        {listed.length === 0 ? (
+          <p className="rl-pop-none">No values match “{find.trim()}”.</p>
+        ) : (
+          listed.map((choice) => (
+            <label key={choice} className="rl-pop-choice">
+              <input
+                type="checkbox"
+                checked={isTicked(filters, key, choice)}
+                onChange={() => onChange(toggleChoice(filters, key, choice, all))}
+              />
+              <span className="rl-pop-text">{choice}</span>
+            </label>
+          ))
+        )}
+      </div>
+      <div className="rl-pop-foot">
+        {filters[key] && (
+          <button
+            className="rl-pop-clear"
+            onClick={() => { setFind(''); onChange(clearColumn(filters, key)); }}
+          >
+            Clear
+          </button>
+        )}
+        <button className="rl-pop-done" onClick={onClose}>Done</button>
+      </div>
+    </div>
+  );
+}
+
 /** The heading's select-all box. `indeterminate` is a property, not an attribute. */
 function SelectAllBox({ state, onToggle }: { state: 'none' | 'some' | 'all'; onToggle: () => void }) {
   return (
@@ -193,6 +409,8 @@ function RecordListComponent({
   bulkActions = [],
   search = false,
   sortable = false,
+  columnFilters = false,
+  parentKey,
   onSelect,
   onNew,
   services,
@@ -205,14 +423,52 @@ function RecordListComponent({
   const [selected, setSelected] = useState<string[]>([]);
   const [sort, setSort] = useState<Sort | null>(null);
   const [term, setTerm] = useState('');
+  // Two switches, two audiences (§4.10): `columnFilters` is the author saying
+  // this table offers filters; `showFilters` is the reader asking to see them.
+  // Turning the reader's switch off hides the controls and clears **nothing**,
+  // or the toggle would be a second, invisible filter — so the toolbar says
+  // how many columns are filtering whenever the row is hidden.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<ColumnFilters>({});
+  // The open column, and the button it hangs off — the popup is fixed to the
+  // viewport, so it needs the button's place on screen rather than a parent.
+  const [open, setOpen] = useState<{ key: string; anchor: HTMLElement } | null>(null);
+  const closeFilter = useCallback(() => setOpen(null), []);
 
-  // Searched, then sorted, then drawn — in that order, because sorting what
-  // the search kept is cheaper than searching what the sort ordered, and the
-  // answer is the same.
-  const visible = sortRows(searchRows(rows, columns, term), columns, sort);
+  // Filtered, then searched, then sorted, then drawn — narrowing before
+  // ordering, because ordering what was kept is cheaper than keeping what was
+  // ordered, and the answer is the same. The three narrow together (AND).
+  const filtering = columnFilters ? filterCount(filters) : 0;
+  const kept = columnFilters ? filterRows(rows, columns, filters) : rows;
+  const found = searchRows(kept, columns, term);
+
+  // Nesting is the last of the row-order steps, and it agrees with the others
+  // rather than overriding them: a narrowing keeps the ancestors that lead to
+  // what it kept, so the path to a hit is still on screen, and the sort orders
+  // **siblings under their parent** with the flat table's own comparison.
+  const nested = !!parentKey?.trim();
+  const shownRows: TreeRow[] = nested
+    ? treeRows(
+        withAncestors(found, rows, parentKey as string),
+        parentKey as string,
+        // A row on the path to a hit is opened: a search that finds a row and
+        // leaves it behind a closed twisty has failed. Everything else the
+        // reader closed stays closed.
+        found.length < rows.length
+          ? openedForHits(collapsed, ancestorIds(found, rows, parentKey as string))
+          : collapsed,
+        rowComparator(columns, sort),
+      )
+    : flatRows(sortRows(found, columns, sort));
+
+  // The first column holding a value: where the indent and the expander go.
+  const labelColumn = columns.findIndex((col) => !isAction(col));
 
   const allIds = rows.map((row) => row.id);
-  const visibleIds = visible.map((row) => row.id);
+  // What is on screen — and under a closed row, nothing is. Collapsing narrows
+  // like a search does: it changes what is shown, never what is ticked.
+  const visibleIds = shownRows.map(({ row }) => row.id);
   // Read off every delivered row, not the visible ones: a row a search hid is
   // still ticked, and a row that has gone since the last click stops being
   // drawn as selected.
@@ -266,6 +522,26 @@ function RecordListComponent({
             ))}
           </>
         )}
+        {columnFilters && (
+          // The reader's switch. It says how many columns are filtering, so
+          // turning the row off hides the controls without hiding the fact —
+          // the one thing a toggle over filters must never do.
+          <button
+            className={showFilters ? 'rl-filters rl-filters--on' : 'rl-filters'}
+            aria-pressed={showFilters}
+            onClick={() => { setShowFilters(!showFilters); setOpen(null); }}
+          >
+            Filters{filtering > 0 ? ` (${filtering})` : ''}
+          </button>
+        )}
+        {columnFilters && filtering > 0 && (
+          <button
+            className="rl-filters-clear"
+            onClick={() => { setFilters(clearAll()); setOpen(null); }}
+          >
+            Clear
+          </button>
+        )}
         {search && (
           <input
             className="rl-search"
@@ -287,11 +563,6 @@ function RecordListComponent({
 
       {rows.length === 0 ? (
         <p className="rl-empty">{emptyMessage}</p>
-      ) : visible.length === 0 ? (
-        // Told apart from an empty list on purpose: "nothing here" and "nothing
-        // matches what you typed" are different facts, and only one of them is
-        // undone by clearing the box.
-        <p className="rl-empty">No rows match “{term.trim()}”.</p>
       ) : (
         <table className="rl-table">
           <thead>
@@ -319,9 +590,59 @@ function RecordListComponent({
                 </th>
               ))}
             </tr>
+            {columnFilters && showFilters && (
+              // A second heading row rather than controls inside the headings:
+              // a heading is a sort control already, and two live things in one
+              // cell is a click nobody can predict.
+              <tr className="rl-filter-row">
+                {boxes && <th className="rl-check" />}
+                {columns.map((col, i) => (
+                  <th key={columnKey(col, i)}>
+                    {hasFilterableValues(col) && (
+                      <div className="rl-filter-cell">
+                        <button
+                          className={filters[col.key as string] ? 'rl-filter rl-filter--on' : 'rl-filter'}
+                          aria-label={`Filter ${col.label ?? col.key}`}
+                          aria-expanded={open?.key === col.key}
+                          onClick={(e) => setOpen(open?.key === col.key
+                            ? null
+                            : { key: col.key as string, anchor: e.currentTarget })}
+                        >
+                          {filterLabel(filters[col.key as string])} ▾
+                        </button>
+                        {open && open.key === col.key && (
+                          <ColumnFilterPopup
+                            col={col}
+                            rows={rows}
+                            filters={filters}
+                            anchor={open.anchor}
+                            onChange={setFilters}
+                            onClose={closeFilter}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            )}
           </thead>
           <tbody>
-            {visible.map((row) => (
+            {/* Told apart from an empty list on purpose: "nothing here" and
+                "nothing matches what you asked for" are different facts, and
+                only one of them is undone by clearing a control. It sits
+                **inside** the table (2026-09-13) rather than replacing it, so
+                the search box, the headings and the filter row stay on screen:
+                a filter that hides every row must not also hide the control
+                that would bring them back. */}
+            {shownRows.length === 0 && (
+              <tr>
+                <td className="rl-nomatch" colSpan={columns.length + (boxes ? 1 : 0)}>
+                  {noMatchMessage(term, filtering)}
+                </td>
+              </tr>
+            )}
+            {shownRows.map(({ row, depth, hasChildren, collapsed: shut }) => (
               <tr
                 key={row.id}
                 className={rowClass(mode, shown.includes(row.id))}
@@ -345,7 +666,29 @@ function RecordListComponent({
                     {renderAction(col, row, services)}
                   </td>
                 ) : (
-                  <td key={columnKey(col, i)} className={isRightAligned(col.type) ? 'rl-num' : undefined}>{cell(row, col)}</td>
+                  <td key={columnKey(col, i)} className={isRightAligned(col.type) ? 'rl-num' : undefined}>
+                    {/* The indent and the expander go on the first column that
+                        holds a value — an action column draws a button and has
+                        nothing to indent. A row with no children keeps the same
+                        indent and no control, so the values stay in line. */}
+                    {nested && i === labelColumn && (
+                      <span className="rl-twist" style={{ paddingLeft: depth * 14 }}>
+                        {hasChildren ? (
+                          <button
+                            className="rl-expander"
+                            aria-label={shut ? `Expand ${row.id}` : `Collapse ${row.id}`}
+                            aria-expanded={!shut}
+                            onClick={(e) => { e.stopPropagation(); setCollapsed(toggleCollapsed(collapsed, row.id)); }}
+                          >
+                            {shut ? '▸' : '▾'}
+                          </button>
+                        ) : (
+                          <span className="rl-expander rl-expander--none" />
+                        )}
+                      </span>
+                    )}
+                    {cell(row, col)}
+                  </td>
                 )))}
               </tr>
             ))}
@@ -361,6 +704,11 @@ const css = `
   .rl-head { display: flex; align-items: center; margin-bottom: 0.75rem; gap: 1rem; }
   .rl-title { font-size: 1rem; margin: 0; }
   .rl-count { font-size: 0.75rem; color: #64748b; }
+  .rl-filters { margin-left: auto; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #475569; cursor: pointer; font-size: 0.75rem; font-family: inherit; }
+  .rl-filters:hover { background: #f1f5f9; }
+  .rl-filters--on { background: #e0e7ff; border-color: #a5b4fc; color: #3730a3; }
+  .rl-filters-clear { padding: 4px 8px; border: none; background: none; color: #2563eb; cursor: pointer; font-size: 0.75rem; font-family: inherit; }
+  .rl-filters ~ .rl-search, .rl-filters ~ .rl-new { margin-left: 0; }
   .rl-search { margin-left: auto; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.75rem; font-family: inherit; min-width: 0; width: 12rem; }
   .rl-search:focus { outline: 2px solid #bfdbfe; outline-offset: -1px; }
   .rl-search ~ .rl-new { margin-left: 0; }
@@ -380,6 +728,27 @@ const css = `
   .rl-check input { cursor: pointer; margin: 0; }
   .rl-row--selected td { background: #dbeafe; }
   .rl-row--selected:hover td { background: #bfdbfe; }
+  .rl-filter-row th { padding: 4px 10px 6px 0; border-bottom: 1px solid #e2e8f0; font-weight: 400; }
+  .rl-filter-cell { min-width: 0; }
+  .rl-filter { width: 100%; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #64748b; cursor: pointer; font-size: 0.7rem; font-family: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rl-filter:hover { background: #f1f5f9; }
+  .rl-filter--on { background: #e0e7ff; border-color: #a5b4fc; color: #3730a3; }
+  /* Fixed, so the component's own overflow cannot clip it — see usePopupPlacement. */
+  .rl-pop { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 12rem; max-width: 18rem; padding: 8px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15); font-weight: 400; cursor: default; }
+  .rl-pop-find { flex: none; width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.7rem; font-family: inherit; }
+  .rl-pop-all, .rl-pop-choice { flex: none; display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 0.7rem; color: #334155; cursor: pointer; }
+  .rl-pop-all { margin: 6px 0 4px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; color: #64748b; }
+  .rl-pop-list { flex: 1; min-height: 2rem; overflow: auto; }
+  .rl-pop-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-pop-none { margin: 4px 0; font-size: 0.7rem; color: #94a3b8; }
+  .rl-pop-foot { flex: none; display: flex; justify-content: flex-end; gap: 4px; margin-top: 6px; }
+  .rl-pop-clear { padding: 2px 8px; border: none; background: none; color: #2563eb; cursor: pointer; font-size: 0.7rem; font-family: inherit; }
+  .rl-pop-done { padding: 2px 10px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.7rem; font-family: inherit; }
+  .rl-nomatch { color: #94a3b8; font-size: 0.8rem; padding: 10px 0; }
+  .rl-twist { display: inline-flex; align-items: center; }
+  .rl-expander { width: 1.1rem; padding: 0; border: none; background: none; color: #64748b; cursor: pointer; font-size: 0.65rem; line-height: 1; font-family: inherit; }
+  .rl-expander:hover { color: #1e293b; }
+  .rl-expander--none { display: inline-block; cursor: default; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
   .rl-action { white-space: nowrap; text-align: right; width: 1%; }
   .rl-unknown { color: #b45309; font-size: 0.7rem; }
@@ -424,6 +793,8 @@ const schema: PropSchema[] = [
   { name: 'bulkActions',  kind: 'static-config', type: 'array',    required: false, description: 'Acts on the checked records — one run, ids in the named attribute. Shown once something is checked; needs selection: many', items: bulkActionItems },
   { name: 'search',       kind: 'static-config', type: 'boolean',  required: false, description: 'A search box in the heading, filtering the rows across every column' },
   { name: 'sortable',     kind: 'static-config', type: 'boolean',  required: false, description: 'Clicking a heading sorts by it' },
+  { name: 'parentKey',    kind: 'static-config', type: 'string',   required: false, description: "Field holding a row's parent — set it to nest the rows; blank for a flat table" },
+  { name: 'columnFilters', kind: 'static-config', type: 'boolean', required: false, description: 'Offer a filter per column — a toolbar toggle reveals them, off until pressed' },
   { name: 'onSelect',     kind: 'callback',      type: 'function', required: false, description: 'Selection changed — always emits the list of selected records' },
   { name: 'onNew',        kind: 'callback',      type: 'function', required: false, description: 'Create — emits (null), since a CREATE has no anchor' },
 ];

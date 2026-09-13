@@ -78,9 +78,10 @@ A list of rules, each applying to a row or to named cells within it:
 | 4.5 | Selection | **declared** — `selection: 'none' \| 'one' \| 'many'` | **BUILT 2026-09-08.** Both, because selecting rows is fundamental, not polish. `'one'` is the default and what the table always did. `'many'` adds a checkbox column and a select-all in the header, and the row click toggles. |
 | 4.6 | What a multi-selection can be used for | **BUILT 2026-09-08 as `bulkActions`** | The table emits the selected records when the selection changes; that callback's script stores them with `services.page.setContext`; a toolbar action's script walks the list with `for each` and runs the activity once per record. Each run still carries one record as its anchor, so authorisation is untouched and the one-value callback contract holds. **Superseded 2026-09-08**: the run-once-per-record pattern is not what was built. `bulkActions` runs the activity **once**, with the ticked ids in a nominated attribute and the hook doing the work — so there is one form, one confirmation, one pipeline entry, and the fifty-prompts doubt never arises. The script and the page-context round trip are gone with it. |
 | 4.7 | Totals row | **declared**, optional | Three parts: which columns and what function (sum, average, count); which rows count — **the rows currently shown**, so searching changes the total, which is what people expect (a condition to include only some rows can come later); and what the row says on the left. |
-| 4.8 | Grouping rows under headings | — | Deferred. It changes the table's shape considerably. |
+| 4.8 | Grouping rows under headings | — | Deferred. It changes the table's shape considerably. **Not 4.11**: grouping invents a heading out of a *value* several rows share, while nesting shows records that genuinely point at one another. |
 | 4.9 | Editing a value in the table | **never** | Records change through activities. A row action opens the capture form. The one behaviour the platform forbids outright. |
-| 4.10 | A filter per column, Excel-style | **declared** — `columnFilters` on/off, default **off** | Two switches, two audiences, and keeping them apart is the whole of it. **`columnFilters` is the author's**: whether this table offers the feature at all. **The toggle is the reader's**: a control in the toolbar, itself off until pressed, that reveals a filter per column heading. A table full of filter boxes nobody asked for is a worse table, so neither switch is on by default. Like the search box (4.2) it narrows **the rows already delivered** — it is not 4.3 and fetches nothing. |
+| 4.10 | A filter per column, Excel-style | **declared** — `columnFilters` on/off, default **off** | **BUILT 2026-09-13.** Two switches, two audiences, and keeping them apart is the whole of it. **`columnFilters` is the author's**: whether this table offers the feature at all. **The toggle is the reader's**: a control in the toolbar, itself off until pressed, that reveals a filter per column heading. A table full of filter boxes nobody asked for is a worse table, so neither switch is on by default. Like the search box (4.2) it narrows **the rows already delivered** — it is not 4.3 and fetches nothing. One filter is the set of **drawn** values a column keeps; the contains box in the popup keeps what it matches as you type, so a contains filter is made of ticks in bulk rather than a second predicate. |
+| 4.11 | Nested rows — a record type that points at itself | **declared** — `parentKey` | **Ruled 2026-09-13: one component, not two.** A tree is this table with its rows in a different order — parents, then their children, indented, with an expander — and that is a pure function of the rows exactly as searching and sorting are. Everything else a hierarchy screen needs is already here: the column types, action columns (an "add a child here" is `RunActivity` with an `attribute`, built in step 2), selection, bulk actions, search, sort, filters. `RecordTree` was the same table built again with none of it, so it is superseded rather than extended. Blank `parentKey` is the flat table, unchanged. |
 
 ## 5. States
 
@@ -172,28 +173,59 @@ step below adds properties rather than reshaping the ones before it.
 5. **Column filters** — per 4.10, and after 4 on purpose: a filter is the same
    narrowing the search box does, one column at a time, so it is built on top of
    a table that already knows how to show a subset of its rows without losing
-   what is ticked. What it needs settling first:
-   - **What one filter is.** A list of the column's distinct **drawn** values to
-     tick, matching 4.2's rule that a reader filters what they can see. A column
-     of mostly-unique text (a name) makes a useless list of forty entries, so a
-     "contains" box beside the list is likely needed — decide it then, on a real
-     screen, rather than guessing now.
-   - **Which columns get one.** Every column naming a field, the way sorting
-     now works — `sortable` stopped being per-column on 2026-09-13 and there is
-     no reason for filtering to reintroduce that. An action column never does:
-     it holds no value.
-   - **How they combine.** Every active filter and the search box narrow
-     together (AND). Clearing the toggle clears nothing — turning the controls
-     off must not silently change which rows are shown, or the toggle becomes a
-     second, invisible filter.
-   - **What it does to a selection.** The rule step 3 and 4 already settled,
-     unchanged: narrowing changes what is **shown**, never what is **ticked**,
-     and select-all covers the rows on screen.
-   - **Cost.** No paging, so the distinct set for every filterable column is
-     computed over every delivered row.
-6. **Display conditions** — the rule list. Deliberately after 1, so a rule is a
+   what is ticked. **BUILT 2026-09-13**, with these settled in the building:
+   - **What one filter is.** The set of the column's **drawn** values it keeps,
+     ticked from a list — 4.2's rule again, that a reader filters what they can
+     see. The "contains" box the draft left open is there, and the draft was
+     right to want it decided on a real screen: it first narrowed only **the
+     choices**, leaving the rows to a further click, and that read as a bug
+     within minutes of use. It now filters on the keystroke — the column keeps
+     what the term matches — so a contains filter is still made out of ticking,
+     in bulk, rather than being a second kind of filter to combine.
+   - **Which columns get one.** Any column naming a field. The draft said
+     `filterable` per column, default on; 2026-09-13's ruling on `sortable`
+     retired exactly that shape hours earlier, for the reason that applies here
+     unchanged — an array-item boolean has nowhere honest to keep a default-on,
+     since the builder's array editor seeds every one to `false`. An action
+     column never gets one: it holds no value.
+   - **Unfiltered is not empty.** A column absent from the map keeps everything
+     and shows every box ticked; a column with an empty list is a reader who
+     unticked everything and meant it, and shows no rows. They look alike and
+     are opposites. Keeping them apart is what lets the first untick *exclude* a
+     value rather than keep only it, which is what a reader means by it.
+   - **How they combine.** Every filter and the search box narrow together
+     (AND). Turning the toggle off clears nothing, so the toolbar says how many
+     columns are filtering — hiding the controls must not hide the fact.
+   - **What it does to a selection.** The rule steps 3 and 4 settled, unchanged:
+     narrowing changes what is **shown**, never what is **ticked**.
+   - **Cost.** No paging, so the distinct set for a column is computed over
+     every delivered row — and deliberately over *every* row rather than the
+     ones the other filters left, or a choice would vanish into a dead end the
+     reader cannot undo from inside the popup.
+6. **Nested rows** — per 4.11, and it lands here because it is the *last* of the
+   row-order steps: nesting has to agree with sorting, searching and filtering,
+   which is cheap to state once those exist and impossible to guess before.
+   `parentKey` names the field holding a row's parent; blank leaves the flat
+   table exactly as it is. What it settles:
+   - **Hierarchy is row order, nothing more.** Flat rows in — that is what a GET
+     answers with — and the nesting is rebuilt for display, as it always was in
+     `RecordTree`. A row whose parent is absent from the answer is a root, so a
+     partial or filtered answer still draws; a cycle is broken rather than hung.
+   - **Sorting orders siblings under their parent**, never the whole table, or
+     the tree comes apart. The comparison is the same one a flat table uses.
+   - **A search or filter hit keeps its ancestors**, which are drawn as context
+     though they do not match. Without that the path to a hit disappears and a
+     deep row reads as a root. It follows step 4's rule rather than bending it:
+     narrowing changes what is **shown**, and an ancestor is part of showing it.
+   - **Ticking a parent does not tick its children.** A tick is one row, and a
+     bulk action acts on exactly what is ticked — a checkbox that quietly
+     selects forty descendants is the kind of thing nobody can undo. Collapsing
+     is narrowing, so it too changes what is shown, never what is ticked.
+   - **The expander lives in the first column that holds a value**, with the
+     indent, since an action column has nothing to indent.
+7. **Display conditions** — the rule list. Deliberately after 1, so a rule is a
    condition on top of a base display that already works.
-7. **Totals row** — optional, per 4.7.
+8. **Totals row** — optional, per 4.7.
 
 Paging stays out (4.4). Cell components (2.5) and grouping (4.8) are separate
 work, not steps here.

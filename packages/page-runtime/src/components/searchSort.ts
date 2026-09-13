@@ -90,30 +90,38 @@ export function compareValues(a: unknown, b: unknown, type: string | undefined):
   return String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true });
 }
 
+/**
+ * How two rows compare under the current sort, or `null` when the table is in
+ * the order the rows arrived in. Handed out rather than kept private because a
+ * nested table orders **siblings under their parent** (§4.11) and must do it
+ * with exactly this comparison, not a second one that drifts from it.
+ */
+export function rowComparator(
+  columns: readonly RecordListColumn[],
+  sort: Sort | null,
+): ((a: RecordListRow, b: RecordListRow) => number) | null {
+  if (!sort) return null;
+  const col = columns.find((c) => c.key === sort.key);
+  if (!col?.key) return null;
+  const key = col.key;
+  const sign = sort.direction === 'desc' ? -1 : 1;
+  return (a, b) => {
+    const by = compareValues(a[key], b[key], col.type);
+    if (by === 0) return 0;
+    // Blanks stay last whichever way the column is pointing, so the sign is
+    // applied to the comparison and not to them.
+    return !isBlank(a[key]) && !isBlank(b[key]) ? by * sign : by;
+  };
+}
+
 /** The rows in the asked-for order. Stable: equal rows keep the order given. */
 export function sortRows(
   rows: readonly RecordListRow[],
   columns: readonly RecordListColumn[],
   sort: Sort | null,
 ): RecordListRow[] {
-  if (!sort) return [...rows];
-  const col = columns.find((c) => c.key === sort.key);
-  if (!col?.key) return [...rows];
-  const key = col.key;
-  const sign = sort.direction === 'desc' ? -1 : 1;
-  return rows
-    .map((row, i) => ({ row, i }))
-    .sort((x, y) => {
-      const by = compareValues(x.row[key], y.row[key], col.type);
-      // Blanks stay last whichever way the column is pointing, so the sign is
-      // applied to the comparison and not to them.
-      if (by !== 0) {
-        const bothPresent = !isBlank(x.row[key]) && !isBlank(y.row[key]);
-        return bothPresent ? by * sign : by;
-      }
-      return x.i - y.i;
-    })
-    .map(({ row }) => row);
+  const compare = rowComparator(columns, sort);
+  return compare ? [...rows].sort(compare) : [...rows];
 }
 
 /** Does any drawn cell of this row contain the term? */
