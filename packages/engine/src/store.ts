@@ -26,6 +26,8 @@ export interface Store {
   // Returns the fk_display_field for an attribute by key-matching against the
   // record type's CustomFields (§SDM_Change §7 resolution rule).
   resolveAttributeDisplayField(typeId: string, attrKey: string): string | undefined;
+  /** What a record type's field points at, for a reference attribute that names it. */
+  resolveAttributeTarget(typeId: string, fieldKey: string): string | undefined;
   // Returns all (sourceTypeId, fieldKey) pairs whose fk_ref points at targetTypeId.
   // Derived from config at construction time — no data scan required.
   getReverseRefs(targetTypeId: string): ReverseRefEntry[];

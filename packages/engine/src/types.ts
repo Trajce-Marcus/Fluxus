@@ -38,6 +38,15 @@ export interface CustomFieldDef extends ClientCustomFieldDef {
 
 export interface ClientAttributeTypeConfig {
   fk_record_type?: string;
+  /**
+   * `reference` attributes: the field this attribute fills, fully qualified —
+   * `rt_wbs_nodes.parent_id` (2026-09-15). The attribute key is an identity
+   * for a captured value, not a pointer to a field; stating the field here
+   * lets many attributes land in a `parent_id` on different record types, each
+   * validated against that type's own declaration. The target comes from the
+   * named field, so it is never repeated and the two cannot disagree.
+   */
+  field?: string;
   values?: string[];
   expression?: unknown;
   /**
@@ -100,6 +109,24 @@ export interface ClientAttributeDef {
    * the adapter; absent on raw pool defs and non-composite types.
    */
   sub_attributes?: ClientAttributeDef[];
+  /**
+   * Where the value comes from, instead of being asked for (2026-09-15, the
+   * user's design). A FluxScript expression evaluated when the form opens:
+   * `context.page.record.id` fills a new WBS node's project from the project
+   * whose page the button was on. A sourced attribute is **not shown** — it is
+   * not a question, and offering a picker invites someone to change it into
+   * something the click did not mean.
+   *
+   * It exists because a CREATE has no anchor, so `context.record` is null and
+   * the record a new one is created *under* had no way of reaching it except a
+   * seed, which carries exactly one attribute.
+   *
+   * An expression that cannot resolve leaves the value blank and says so —
+   * `context.page.record` is null wherever there is no page, such as the
+   * workbench, and an activity whose source reads a field the page's record
+   * does not have is being used on a page it was not written for.
+   */
+  source?: string;
   /** FluxScript expression; carried over from the usage wrapper during resolution. */
   show_condition?: string;
   /** Must be captured before the activity can submit; carried over from the usage wrapper. */
@@ -139,6 +166,8 @@ export interface SectionMarkerDef {
 // Usage wrapper in a raw activity — resolved to AttributeDef at runtime by the adapter
 export interface AttributeUsageDef {
   attribute_ref: string;
+  /** Where the value comes from instead of being asked for — see AttributeDef.source. */
+  source?: string;
   /** FluxScript expression deciding whether this attribute is presented. */
   show_condition?: string;
   /** Must be captured before the activity can submit. Hidden attributes are exempt. */

@@ -5,6 +5,7 @@ import type { SlotConfig } from './pageDef';
 import type { PageRuntime } from './runtime';
 import { ActivityFormModal } from './ActivityFormModal';
 import { fill, hasHoles, holes } from './interpolate';
+import { availableActivities } from './availableActivities';
 import {
   packCallbackData,
   type AttributeSeed,
@@ -139,6 +140,24 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     runtime.openPage(page, recordId);
   }, [runtime, onError, manifest.name]);
 
+  // Which activities apply to a record — asked by a component that draws them,
+  // never by a script (pageHost, `listActivities`). The record is fetched the
+  // same way a run's anchor is: the browser may hold no records at all, and the
+  // fetch is also the authorisation check.
+  const listActivities = useCallback(async (record: unknown) => {
+    const id = record === null || record === undefined || record === '' ? null : String(record);
+    const anchor = id === (pageCtx.record?.id ?? null) && pageCtx.record
+      ? pageCtx.record
+      : id ? await runtime.client.fetchRecord(id) : null;
+    if (!anchor) return [];
+    const found = runtime.findRecordType(anchor.typeRef);
+    if (!found) return [];
+    return availableActivities(
+      found.workflow.activities,
+      (source) => runtime.evaluateExpression(source, { ...pageCtx, record: anchor }),
+    );
+  }, [runtime, pageCtx]);
+
   // Handlers behind services.page (UI-local effects) and services.activities
   // (host-neutral activity runs) for this component instance.
   const serviceHandlers = useMemo<PageServiceHandlers>(() => ({
@@ -146,7 +165,8 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     hideComponent: () => setHidden(true),
     runActivity: launchActivity,
     openPage,
-  }), [onContextChange, launchActivity, openPage]);
+    listActivities,
+  }), [onContextChange, launchActivity, openPage, listActivities]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is
@@ -265,6 +285,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
           activity={pendingForm.activity}
           anchorRecord={pendingForm.anchorRecord}
           recordTypeId={pendingForm.recordTypeId}
+          pageRecord={pageCtx.record ?? null}
           seed={pendingForm.seed}
           host={runtime.captureHost}
           onSubmit={async (captured, options) => {

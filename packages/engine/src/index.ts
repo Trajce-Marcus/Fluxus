@@ -49,7 +49,8 @@ export {
   descriptorShapeIssues,
   isDescriptorType,
 } from './attributeTypes';
-export type { AttributeTypeSpec, DescriptorField, DescriptorFieldType } from './attributeTypes';
+export { attributeFieldRef } from './attributeTypes';
+export type { AttributeFieldRef, AttributeTypeSpec, DescriptorField, DescriptorFieldType } from './attributeTypes';
 
 export { validateConfig, reportConfigFindings } from './validateConfig';
 export type { Finding } from './validateConfig';

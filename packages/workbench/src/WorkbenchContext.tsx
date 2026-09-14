@@ -190,6 +190,7 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
     resolveDisplayLabel: (fkRecordType, fkDisplayField, rawId) =>
       adapter.resolveDisplayLabel(fkRecordType, fkDisplayField, rawId),
     resolveAttributeDisplayField: (typeId, attrKey) => adapter.resolveAttributeDisplayField(typeId, attrKey),
+    resolveAttributeTarget: (typeId, attrKey) => adapter.resolveAttributeTarget(typeId, attrKey),
   }), [engine, client, uploads, adapter]);
 
   // Thin host wrapper over the server pipeline: the server runs the activity

@@ -19,6 +19,7 @@
 // runActivity remains the enforcement point for the availability gate and
 // hooks; this guards only the captured payload, before the pipeline runs.
 
+import { attributeFieldRef } from './attributeTypes';
 import type { Engine } from './engine';
 import type { ActivityDef, AttributeDef, RecordInstance } from './types';
 import { coerceCaptured, coerceCapturedValue, compositeSubs, flattenCaptured, fullId, isBlank, shortName } from './bridge';
@@ -185,9 +186,16 @@ export function validateSubmission(
     const isWaived = attr.key in waived;
 
     if (!isVisible(attr)) {
-      if (filled) issues.push({ attribute: attr.key, message: `'${attr.key}' is not applicable for this submission` });
+      // A **sourced** attribute is filled from context rather than asked for,
+      // so a value arriving for one is expected, not a caller overstepping —
+      // the form hides it and submits it just the same (2026-09-15). Everything
+      // else keeps the strict rule: a value for an attribute the model rules
+      // out means the caller misread the signature.
+      if (filled && attr.source === undefined) {
+        issues.push({ attribute: attr.key, message: `'${attr.key}' is not applicable for this submission` });
+      }
       if (isWaived) issues.push({ attribute: attr.key, message: `'${attr.key}' is not applicable and cannot be waived` });
-      continue;
+      if (attr.source === undefined) continue;
     }
 
     if (isWaived) {
@@ -268,7 +276,12 @@ export function validateSubmission(
 
     // Reference existence — the form's picker guarantees this by construction.
     if (attr.type === 'reference') {
-      const fkType = attr.type_config?.fk_record_type;
+      // Where the attribute says which field it fills, that field declares the
+      // target — one fact, in one place. An attribute naming no field keeps
+      // its own `fk_record_type`.
+      const ref = attributeFieldRef(attr.type_config as Record<string, unknown> | undefined);
+      const fkType = (ref ? engine.store.resolveAttributeTarget(ref.typeId, ref.fieldKey) : undefined)
+        ?? attr.type_config?.fk_record_type;
       if (fkType) {
         let found: RecordInstance | null = null;
         try {

@@ -124,6 +124,7 @@ export function createPageRuntime(
     resolveDisplayLabel: (fkRecordType, fkDisplayField, rawId) =>
       store.resolveDisplayLabel(fkRecordType, fkDisplayField, rawId),
     resolveAttributeDisplayField: (typeId, attrKey) => store.resolveAttributeDisplayField(typeId, attrKey),
+    resolveAttributeTarget: (typeId, attrKey) => store.resolveAttributeTarget(typeId, attrKey),
   };
 
   const runtime: PageRuntime = {

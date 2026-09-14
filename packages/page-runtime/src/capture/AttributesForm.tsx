@@ -10,6 +10,7 @@ import { coerceCaptured, coerceCapturedValue, compositeSubs, evaluateWithGets, i
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
 import { DateTimeInput, FileInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
+import { attributeFieldRef } from '@fluxus/engine';
 import { seedValue } from './seed';
 import type { AttributeSeed } from '../pageHost';
 
@@ -61,6 +62,8 @@ interface Props {
   recordTypeId: string;
   /** Records a control is about, filling one named attribute (see ./seed.ts). */
   seed?: AttributeSeed;
+  /** The record the page is about — `context.page.record`, and what a sourced attribute reads. */
+  pageRecord?: RecordInstance | null;
   /**
    * Runs the activity. 'needs-confirmation' means the before hook warn()ed and
    * nothing persisted — the form shows Continue/Cancel and re-submits with
@@ -81,8 +84,24 @@ function emptyValue(attr: AttributeDef): unknown {
   return '';
 }
 
-export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onSubmit, onClose }: Props) {
-  const { evaluate, uploads, resolveDisplayLabel, resolveAttributeDisplayField, recordPicker } = useCaptureHost();
+export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pageRecord, onSubmit, onClose }: Props) {
+  const { evaluate, uploads, resolveDisplayLabel, resolveAttributeDisplayField, resolveAttributeTarget, recordPicker } = useCaptureHost();
+
+  /** A `source` expression's answer, or undefined when it cannot be had. */
+  const sourceValue = (source: string): unknown => {
+    try {
+      const value = evaluate(source, {
+        attributes: {},
+        anchorRecord,
+        pageRecord,
+        activity: { id: activity.id, name: activity.name },
+      });
+      return value === null || value === undefined ? undefined : value;
+    } catch (err) {
+      console.warn(`source failed for '${source}':`, err);
+      return undefined;
+    }
+  };
 
   // Form state is FLAT: composite attributes contribute one entry per cell
   // under the dotted path `attr.sub` — the engine nests them again. Section
@@ -102,11 +121,21 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
       // the UPDATE prefill, since it is the more specific statement of what
       // this run is about, and the author still edits it in the form.
       const seeded = seed && seed.attribute === a.key ? seedValue(a, seed.records) : undefined;
+      // `source` — where the value comes from instead of being asked for. It is
+      // evaluated once, when the form opens: the record a new one is created
+      // under does not change while someone fills the rest in. An expression
+      // that cannot resolve leaves the value empty rather than failing the
+      // form, which is what happens wherever there is no page.
+      const sourced = a.source !== undefined && seeded?.value === undefined
+        ? sourceValue(a.source)
+        : undefined;
       out[a.key] = seeded?.value !== undefined
         ? seeded.value
-        : activity.record_map === 'UPDATE' && anchorRecord && a.key in anchorRecord.customFields
-          ? anchorRecord.customFields[a.key]
-          : emptyValue(a);
+        : sourced !== undefined
+          ? sourced
+          : activity.record_map === 'UPDATE' && anchorRecord && a.key in anchorRecord.customFields
+            ? anchorRecord.customFields[a.key]
+            : emptyValue(a);
     }
     return out;
   });
@@ -120,9 +149,13 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
         .map(a => {
           const rawId = String(anchorRecord.customFields[a.key] ?? '');
           if (!rawId) return [a.key, ''];
-          const fkRecordType = a.type_config?.fk_record_type;
+          const ref = attributeFieldRef(a.type_config as Record<string, unknown> | undefined);
+          const fkRecordType = (ref ? resolveAttributeTarget(ref.typeId, ref.fieldKey) : undefined)
+            ?? a.type_config?.fk_record_type;
           if (!fkRecordType) return [a.key, rawId];
-          const fkDisplayField = resolveAttributeDisplayField(recordTypeId, a.key);
+          const fkDisplayField = ref
+            ? resolveAttributeDisplayField(ref.typeId, ref.fieldKey)
+            : resolveAttributeDisplayField(recordTypeId, a.key);
           return [a.key, resolveDisplayLabel(fkRecordType, fkDisplayField, rawId)];
         })
     );
@@ -175,11 +208,23 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
   // waiting. A dropdown's datasource is the one capture expression allowed a
   // round trip (ListField below).
   const isVisible = (attr: AttributeDef): boolean => {
+    // An attribute that arrived filled from context is not a question (ruled
+    // 2026-09-15): the person already chose the WBS node they clicked on, and
+    // showing them a picker to choose it again invites them to change it into
+    // something the click did not mean. It is still in the payload — hidden
+    // from the form, not withheld from the run.
+    //
+    // Both ways in count: a seed the page supplied, and a `source` the
+    // activity declared. A source that resolved to nothing stays visible, so a
+    // page that cannot answer it leaves someone able to.
+    if (seed && seed.attribute === attr.key && !seedValue(attr, seed.records).error) return false;
+    if (attr.source !== undefined && !isBlank(values[attr.key])) return false;
     if (!attr.show_condition) return true;
     try {
       return evaluate(attr.show_condition, {
         attributes: typedValues,
         anchorRecord,
+        pageRecord,
         activity: { id: activity.id, name: activity.name },
       }) === true;
     } catch (err) {
@@ -233,10 +278,18 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
     });
   });
 
-  // The submission payload: hidden attributes are not part of it
+  // The submission payload: hidden attributes are not part of it — except one
+  // that was **filled from context** rather than hidden by the model. Hiding
+  // says two different things and only one of them means "not captured": an
+  // attribute the model rules out does not apply to this run, while a sourced
+  // one is already answered. Dropping the second would create a WBS node with
+  // no project (2026-09-15).
+  const sourcedKeys = new Set(
+    activity.attributes.filter(a => a.source !== undefined && !isBlank(values[a.key])).map(a => a.key)
+  );
   const capturedForSubmit = () => {
-    const visibleKeys = new Set(captureUnits.map(u => u.key));
-    return Object.fromEntries(Object.entries(values).filter(([k]) => visibleKeys.has(k)));
+    const keys = new Set([...captureUnits.map(u => u.key), ...sourcedKeys]);
+    return Object.fromEntries(Object.entries(values).filter(([k]) => keys.has(k)));
   };
 
   const submit = async (
@@ -284,6 +337,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
         const ok = evaluate(unit.validation, {
           attributes: typedValues,
           anchorRecord,
+          pageRecord,
           activity: { id: activity.id, name: activity.name },
           extras: { value: unit.typed() },
         });
@@ -327,6 +381,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
             values={values}
             waived={waived}
             anchorRecord={anchorRecord}
+            pageRecord={pageRecord}
             activity={activity}
             uploads={uploads}
             isSubVisible={isVisible}
@@ -431,6 +486,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
                 value={String(values[attr.key] ?? '')}
                 allValues={values}
                 anchorRecord={anchorRecord}
+                pageRecord={pageRecord}
                 activity={activity}
                 onChange={val => setValues(v => ({ ...v, [attr.key]: val }))}
               />
@@ -518,7 +574,12 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
 
       {openPickerFor && recordPicker && (() => {
         const attr = activity.attributes.find(a => a.key === openPickerFor)!;
-        const fkRecordType = attr.type_config?.fk_record_type;
+        // The attribute names the field it fills; that field names the type it
+        // points at. One `parent_id` field per record type, each with its own
+        // answer, and no shared attribute having to pick one for everybody.
+        const ref = attributeFieldRef(attr.type_config as Record<string, unknown> | undefined);
+        const fkRecordType = (ref ? resolveAttributeTarget(ref.typeId, ref.fieldKey) : undefined)
+          ?? attr.type_config?.fk_record_type;
         if (!fkRecordType) return null;
         const RecordPicker = recordPicker;
         return (
@@ -526,7 +587,9 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, onS
             targetTypeId={fkRecordType}
             onSelect={(record) => {
               setValues(v => ({ ...v, [openPickerFor]: record.id }));
-              const fkDisplayField = resolveAttributeDisplayField(recordTypeId, attr.key);
+              const fkDisplayField = ref
+                ? resolveAttributeDisplayField(ref.typeId, ref.fieldKey)
+                : resolveAttributeDisplayField(recordTypeId, attr.key);
               const label = resolveDisplayLabel(fkRecordType, fkDisplayField, record.id);
               setDisplayLabels(d => ({ ...d, [openPickerFor]: label }));
               setOpenPickerFor(null);
@@ -562,11 +625,12 @@ interface ListFieldProps {
   value: string;
   allValues: Record<string, unknown>;
   anchorRecord: RecordInstance | null;
+  pageRecord?: RecordInstance | null;
   activity: ActivityDef;
   onChange: (value: string) => void;
 }
 
-function ListField({ attr, value, allValues, anchorRecord, activity, onChange }: ListFieldProps) {
+function ListField({ attr, value, allValues, anchorRecord, pageRecord, activity, onChange }: ListFieldProps) {
   const { evaluate, query } = useCaptureHost();
   const datasource = attr.type_config?.datasource ?? '';
   const keyField = attr.type_config?.key_field ?? 'id';
@@ -581,6 +645,7 @@ function ListField({ attr, value, allValues, anchorRecord, activity, onChange }:
   const script: Omit<CaptureScript, 'invoke'> = {
     attributes: coerceCaptured(activity.attributes, allValues),
     anchorRecord,
+    pageRecord,
     activity: { id: activity.id, name: activity.name },
   };
 
@@ -669,6 +734,7 @@ interface CompositeFieldProps {
   values: Record<string, unknown>;
   waived: Record<string, string>;
   anchorRecord: RecordInstance | null;
+  pageRecord?: RecordInstance | null;
   activity: ActivityDef;
   uploads: UploadService;
   isSubVisible: (sub: AttributeDef) => boolean;
@@ -677,7 +743,7 @@ interface CompositeFieldProps {
   onWaiveReason: (key: string, reason: string) => void;
 }
 
-function CompositeField({ attr, values, waived, anchorRecord, activity, uploads, isSubVisible, onValue, onToggleWaive, onWaiveReason }: CompositeFieldProps) {
+function CompositeField({ attr, values, waived, anchorRecord, pageRecord, activity, uploads, isSubVisible, onValue, onToggleWaive, onWaiveReason }: CompositeFieldProps) {
   const subs = compositeSubs(attr);
   if (!subs) return null;
 
@@ -732,6 +798,7 @@ function CompositeField({ attr, values, waived, anchorRecord, activity, uploads,
                 value={String(values[key] ?? '')}
                 allValues={values}
                 anchorRecord={anchorRecord}
+                pageRecord={pageRecord}
                 activity={activity}
                 onChange={val => onValue(key, val)}
               />

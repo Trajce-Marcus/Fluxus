@@ -19,6 +19,13 @@ export interface CaptureScript {
   /** The form's values, typed per attribute — the `attributes` root. */
   attributes: Record<string, unknown>;
   anchorRecord: RecordInstance | null;
+  /**
+   * The record the page was showing when this run was launched — `context.page.record`
+   * (2026-09-15). It is what a CREATE has instead of an anchor: `context.record`
+   * is null there, so the record a new one is created *under* reaches the form
+   * this way. Null wherever there is no page, the workbench included.
+   */
+  pageRecord?: RecordInstance | null;
   activity: { id: string; name: string };
   /** Embedding-point extras, e.g. `{ value }` for a validation rule. */
   extras?: Record<string, unknown>;
@@ -50,6 +57,11 @@ export interface CaptureHost {
   /** A stored reference id → something a person can read. */
   resolveDisplayLabel(fkRecordType: string, fkDisplayField: string | undefined, rawId: string): string;
   resolveAttributeDisplayField(typeId: string, attrKey: string): string | undefined;
+  /**
+   * What a record type's field points at — called with the field a reference
+   * attribute names (`type_config.field`), so one target is stated once.
+   */
+  resolveAttributeTarget(typeId: string, fieldKey: string): string | undefined;
   /**
    * How a reference attribute is picked. Injected because browsing records to
    * choose one is the workbench's own dialog and needs the record snapshot a

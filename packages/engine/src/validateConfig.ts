@@ -4,6 +4,7 @@
 // with the SDM still hand-edited as files, "save time" is app start, and
 // diagnostics land on the console.
 
+import { attributeFieldRef } from './attributeTypes';
 import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Call, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
 import type { ClientActivityRawDef, ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
@@ -127,6 +128,21 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
         } else if (!spec.configKeys.includes(cfgKey)) {
           note(`attribute '${attr.key}'`, `unknown type_config key '${cfgKey}' for type '${attr.type}'`);
         }
+      }
+    }
+    // A declared landing field has to exist and has to be a reference, or the
+    // value goes nowhere and nothing checks it — the two things the
+    // declaration is for. Caught at save, where it can still be fixed.
+    const fieldRef = attributeFieldRef(attr.type_config as Record<string, unknown> | undefined);
+    if (fieldRef) {
+      const target = config.recordTypes.find((rt) => rt.id === fieldRef.typeId);
+      const field = target?.custom_fields.find((cf) => cf.key === fieldRef.fieldKey);
+      if (!target) {
+        note(`attribute '${attr.key}'`, `field '${fieldRef.typeId}.${fieldRef.fieldKey}' names no record type`);
+      } else if (!field) {
+        note(`attribute '${attr.key}'`, `'${fieldRef.typeId}' has no field '${fieldRef.fieldKey}'`);
+      } else if (field.type !== 'fk_ref' || !field.fk_record_type) {
+        note(`attribute '${attr.key}'`, `'${fieldRef.typeId}.${fieldRef.fieldKey}' is not a reference field`);
       }
     }
     if (attr.type_config?.datasource) {

@@ -471,3 +471,15 @@ surface, so record writes fail at runtime even in `mutate`-mode scripts — the
 page-callback posture (service effects allowed, direct writes never).
 `functionSignatures(config)` exposes the named-function signature map for
 hosts running their own `validate*` calls (validatePage in the page builder).
+
+## An attribute names the field it fills (2026-09-15)
+
+**The attribute key is an identity for a captured value, not a pointer to a field** (the user's ruling). A `reference` attribute may say which field it lands in, fully qualified — `type_config.field: 'rt_wbs_nodes.parent_id'` — and the **target type is then read off that field**, never repeated, so the two cannot disagree. `attributeFieldRef` parses it; `Store.resolveAttributeTarget(typeId, fieldKey)` is the lookup; `validateConfig` refuses a field that does not exist or is not a reference; the write path maps the captured key to the declared field (`landingFields` in engine.ts). An attribute naming no field keeps the old rule exactly — key is the field key, target from its own `fk_record_type` — so nothing written before this changed.
+
+Why: attributes are a shared pool, so with the key doing both jobs one `parent_id` had to serve every record type that has a parent and could name only one target between them. Adding a child to a WBS node was refused with *"Parent: no cbs_nodes record 'WBS 1'"*, because the attribute had been created for the CBS. A second attribute was no escape either — an unmatched key is dropped by design, so `wbs_parent_id` would simply not have been written. Tests: `test/referenceTarget.test.ts`.
+
+**A first cut that was rejected:** making the acting record type's field silently win over the pooled target. It fixed the symptom and left two sources for one fact with an unwritten precedence rule; the user's call was that the model should *say* it.
+
+## An attribute may be sourced rather than asked for (2026-09-15)
+
+`AttributeUsageDef.source` — a FluxScript expression evaluated when the capture form opens, filling the value instead of putting a question to someone. The case it exists for: a CREATE has no anchor, so `context.record` is null and the record a new one is created **under** could not reach it. `act_create_wbs_nodes` sources the project with `context.page.record.id` — see the page-runtime SPEC for that root, and for the rule that an attribute arriving filled (sourced or seeded) is not shown.

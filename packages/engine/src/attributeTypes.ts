@@ -71,11 +71,37 @@ export const ATTRIBUTE_TYPES: Record<string, AttributeTypeSpec> = {
   int: { configKeys: [], multi: true },
   decimal: { configKeys: ['decimal_places'], multi: true },
   // ── Pre-existing types (declared here so validateConfig knows their keys) ──
-  reference: { configKeys: ['fk_record_type'], multi: true },
+  // `field` names the field this attribute fills, fully qualified —
+  // `rt_wbs_nodes.parent_id` — and the target type is then read off that
+  // field's own declaration rather than repeated here (2026-09-15, the user's
+  // design). It exists because the attribute key is an identity for a captured
+  // value, not a pointer to a field: with the key doing both jobs, one
+  // `parent_id` had to serve every record type that has a parent and could
+  // name only one target between them, so a WBS parent was checked against
+  // cost codes. `fk_record_type` stays for attributes that name no field.
+  reference: { configKeys: ['fk_record_type', 'field'], multi: true },
   list: { configKeys: ['datasource', 'key_field', 'display_field', 'columns'], multi: true },
   // Repeating composites (multi) are deferred (§11) — multi is rejected here.
   composite: { configKeys: ['attributes'], multi: false },
 };
+
+/** A reference attribute's declared landing field, `rt_type.field_key`. */
+export interface AttributeFieldRef { typeId: string; fieldKey: string }
+
+/**
+ * Where a reference attribute lands, when it says so.
+ *
+ * Null for an attribute that names no field — which is every attribute written
+ * before this existed, and they keep the old rule: the key is the field key,
+ * and the target comes from the attribute's own `fk_record_type`.
+ */
+export function attributeFieldRef(typeConfig: Record<string, unknown> | undefined): AttributeFieldRef | null {
+  const raw = typeConfig?.field;
+  if (typeof raw !== 'string') return null;
+  const dot = raw.indexOf('.');
+  if (dot <= 0 || dot === raw.length - 1) return null;
+  return { typeId: raw.slice(0, dot), fieldKey: raw.slice(dot + 1) };
+}
 
 /** Registry entry for a type, or undefined for an unknown/custom type. */
 export function attributeTypeSpec(type: string | undefined): AttributeTypeSpec | undefined {

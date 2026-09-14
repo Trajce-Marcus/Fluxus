@@ -65,6 +65,8 @@ export interface AttributeSeed {
   records: string[];
 }
 
+import type { ActivityOption } from './availableActivities';
+
 /** What the rendering host (ComponentContainer) supplies per component instance. */
 export interface PageServiceHandlers {
   /** Write a page-context key; the page layer of the ctx root. */
@@ -88,6 +90,17 @@ export interface PageServiceHandlers {
    * say so, not quietly do nothing.
    */
   openPage(page: string, record: unknown): void;
+  /**
+   * Which activities apply to a record right now (2026-09-14) — the workflow's
+   * record-level acts, minus the ones their `show_condition` rules out.
+   *
+   * A **component** door, not a script one: it is deliberately absent from
+   * `buildPageServices` below, so no FluxScript can call it. A script asking
+   * the model what it may do is a read, and reads go through GET activities
+   * (DATA_THROUGH_ACTIVITIES). This is the host answering a component that
+   * draws buttons, from what the host already holds.
+   */
+  listActivities(record: unknown): Promise<ActivityOption[]>;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -135,7 +148,12 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
 
 /** Manifest-only modules for validation — same schema, no live handlers. */
 export const pageServicesStub = (): ServiceModuleDef[] =>
-  buildPageServices({ setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {} });
+  buildPageServices({
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {},
+    // Not in any module below, so nothing can name it in a script — it is here
+    // only because the handler set is one interface.
+    listActivities: async () => [],
+  });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────
 
@@ -217,6 +235,14 @@ export function evaluateCapture(
     attributes: script.attributes,
     anchorRecord: script.anchorRecord,
     activity: script.activity,
+    // `context.page.record` — the record the page was showing when this run
+    // was launched, flattened the way a component sees one so a field reads as
+    // `context.page.record.project_id`. It is what a CREATE has instead of an
+    // anchor. `record` is reserved here: a page context key of that name is
+    // shadowed by it.
+    contextExtras: script.pageRecord
+      ? { page: { record: { id: script.pageRecord.id, ...script.pageRecord.customFields } } }
+      : { page: { record: null } },
     extras: script.extras,
     invoke: script.invoke,
     readonlyRecords: true,

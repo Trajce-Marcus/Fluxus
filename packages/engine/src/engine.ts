@@ -11,6 +11,7 @@ import type { Store } from './store';
 import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
+import { attributeFieldRef } from './attributeTypes';
 
 export interface EngineOptions {
   store: Store;
@@ -40,6 +41,24 @@ export interface ActivityAvailability {
 export interface RunActivityOptions {
   acknowledgedWarnings?: boolean;
   waived?: Record<string, string>;
+}
+
+/**
+ * Which field each captured attribute lands in, where the attribute says so
+ * (`type_config.field`, `rt_type.field_key`). Attributes that name no field are
+ * absent from the map and keep the exact-key rule — the key is the field key.
+ *
+ * An attribute naming a field on **another** record type is absent too: it did
+ * not mean this record, so its value drops the way an unmatched attribute
+ * always has.
+ */
+function landingFields(activity: ActivityDef, typeId: string): Map<string, string> {
+  const landing = new Map<string, string>();
+  for (const attr of activity.attributes) {
+    const ref = attributeFieldRef(attr.type_config as Record<string, unknown> | undefined);
+    if (ref && ref.typeId === typeId) landing.set(attr.key, ref.fieldKey);
+  }
+  return landing;
 }
 
 export interface Engine {
@@ -415,9 +434,11 @@ export function createEngine({ store, config, services: hostServices = [], user 
       const cfKeys = new Set(
         store.getRecordTypeDef(typeId).custom_fields.map(cf => cf.key)
       );
+      const landing = landingFields(activity, typeId);
       const mappedFields: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(captured)) {
-        if (cfKeys.has(k) && !(k in waived)) mappedFields[k] = v; // waived: field seeds from default
+        const field = landing.get(k) ?? k;
+        if (cfKeys.has(field) && !(k in waived)) mappedFields[field] = v; // waived: field seeds from default
       }
       const newRecord = store.createRecord(typeId, mappedFields);
       targetRecordId = newRecord.id;
@@ -426,11 +447,13 @@ export function createEngine({ store, config, services: hostServices = [], user 
       const cfKeys = new Set(
         store.getRecordTypeDef(anchorRecord!.typeRef).custom_fields.map(cf => cf.key)
       );
+      const landing = landingFields(activity, anchorRecord!.typeRef);
       const mappedFields: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(captured)) {
+        const field = landing.get(k) ?? k;
         // Waived = "can't provide it now" — it must never blank a value
         // someone captured earlier
-        if (cfKeys.has(k) && !(k in waived)) mappedFields[k] = v;
+        if (cfKeys.has(field) && !(k in waived)) mappedFields[field] = v;
       }
       store.updateRecord(anchorRecord!.id, mappedFields);
       targetRecordId = anchorRecord!.id;

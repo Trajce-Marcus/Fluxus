@@ -37,9 +37,10 @@ export class MemoryAdapter implements Store {
       const def = attrMap.get(usage.attribute_ref);
       if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
       // Carry usage-level settings onto the resolved attribute
-      const merged = usage.show_condition || usage.required || usage.validation || usage.can_waive
+      const merged = usage.show_condition || usage.required || usage.validation || usage.can_waive || usage.source
         ? {
             ...def,
+            source: usage.source ?? def.source,
             show_condition: usage.show_condition ?? def.show_condition,
             required: usage.required,
             validation: usage.validation ?? def.validation,
@@ -314,6 +315,20 @@ export class MemoryAdapter implements Store {
     return [...this.records.values()].filter(
       r => r.typeRef === typeId && String(r.customFields[fieldKey] ?? '') === value
     );
+  }
+
+  /**
+   * What a record type's field points at — a plain lookup, no policy.
+   *
+   * Called with the field a reference attribute **declares**
+   * (`type_config.field`, `rt_wbs_nodes.parent_id`), which is how one target
+   * is stated in one place: the attribute names the field, the field names the
+   * type it references.
+   */
+  resolveAttributeTarget(typeId: string, attrKey: string): string | undefined {
+    const rt = this.recordTypes.find(r => r.id === typeId);
+    const cf = rt?.custom_fields.find(c => c.key === attrKey);
+    return cf?.type === 'fk_ref' ? cf.fk_record_type : undefined;
   }
 
   resolveAttributeDisplayField(typeId: string, attrKey: string): string | undefined {
