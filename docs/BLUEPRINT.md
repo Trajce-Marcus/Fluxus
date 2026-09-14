@@ -260,6 +260,98 @@ directly, as an append-only change ledger over the admin tables. The SDM stays
 the right home for the platform's own *business* objects — orgs, billing,
 catalogue, approvals — none of which sit in the authorization path.
 
+## Building by AI assistance — *Direction* (agreed 2026-09-13)
+
+Hand-crafting a solution — model, activities, pages, roles — takes too long to
+be the way solutions get made. **The end goal is that a designer describes a
+process to an AI assistant and the platform is built from that description.**
+Everything below is direction; none of it is built.
+
+Why the platform is unusually suited to it: the assistant generates over a
+closed, validated vocabulary — a fixed component catalogue, one language, one
+pipeline — and it emits stored, validated definitions rather than code. Rule 5
+(*everything validates at save time*) and rule 6 (*pages are data, not code*)
+are what make AI-authored artifacts safe, and they are already Built. The
+assistant saves through the same activities a person does, so it gets no
+privileged write path and lands in the same audit history.
+
+**Shape:** a server-side agent in the Console with a small tool set — read the
+model, list components, validate, save, run an activity — and context assembled
+from the solution's SDM plus the component manifest. Two constraints:
+it needs a scratch operation to try things in without touching live data, and
+every save is put to the designer for approval, never committed straight to a
+solution people are running.
+
+### Spec first — no spec, no build
+
+The SDM is already a spec that executes, but it holds what the model *is*, not
+what the business *needs*. That intent — the process, the people, the rules —
+is a **separate stored artifact, versioned per solution** alongside pages and
+the model. It is what the assistant generates from, and regenerates from when
+the business changes.
+
+The gain is on the second and third pass, not the first. Initial authoring is
+only somewhat faster; the win is six months later, when a change to the spec
+lets the assistant re-derive what it touches and report what it cannot resolve,
+instead of a hunt through pages, activities, hooks and roles. This only holds
+while the spec stays the source of truth: once pages are hand-edited or an
+operation holds live records, re-derivation becomes a diff put up for approval,
+and beyond that it is the release/migration problem already flagged above.
+
+### Scoring a spec
+
+The assistant reports whether a spec is ready to build from. The number is
+mechanical, not the model rating its own confidence, and it always decomposes
+into a named list of gaps — a headline figure that does not is decoration.
+Three parts:
+
+- **Coverage** — the slots a working solution needs, filled or not: what one
+  record of each type means, its fields, its lifecycle and when it is finished
+  (`complete_when`), the activities on it and who may run them, roles, screens,
+  retention.
+- **Consistency** — defects derived *between* slots, which is where the real
+  leverage is: an activity capturing an attribute with no matching custom field
+  (silently dropped today), a status no activity ever sets, a required field no
+  activity captures, a record type no page shows, a role with no activities.
+  Each is computable, and each is a question to put to the designer rather than
+  a guess to make.
+- **Endorsement** — how much of the model a human confirmed versus the
+  assistant inferred. The honest answer to "does it know enough": it never
+  does, it has assumptions, and what matters is how many have been signed off.
+
+**Scenarios beat the score.** A spec that names walkthroughs — tech logs
+reading, supervisor approves, job closes — lets the assistant *run* them
+against sample data in a scratch operation. That is pass/fail rather than an
+estimate, and it catches the model that is structurally clean and
+business-wrong, which no score will.
+
+**The interview is inverted.** Nobody answers forty questions. From a thin
+brief the assistant proposes a complete draft and the designer corrects it —
+people react far better than they specify — and endorsement measures how much
+of that draft has been accepted.
+
+**Where the gate belongs:** publishing, not building. Try anything at any
+score; do not cut a release with unresolved consistency defects.
+
+### What this makes load-bearing
+
+Work that reads as housekeeping today becomes the foundation of the assistant,
+and should be done with that in mind:
+
+- **The component manifest is the assistant's prompt.** Single-sourcing the
+  three un-derived registries (`componentManifests`, `SESSION_COMPONENTS`,
+  `componentSchemas`), already noted above as cleanup, is a precondition.
+- **Validator errors must be structured** — path and reason, machine-readable.
+  A model corrects from a rejection it can parse, not from a message meant for
+  a person.
+- **Docs are prompt material.** The static guidance an assistant needs is the
+  same guidance a repo skill gives Claude working in this codebase — the
+  cheapest dry run available, and the test of whether the SPECs are sufficient
+  grounding at all.
+
+Open, not settled: what the spec artifact is called and where it is stored, the
+weighting behind the score, and how sample data is generated.
+
 ## The commercial layer — *Direction*
 
 Orgs subscribe to the platform (the org row, profile, and plan field are Built;
