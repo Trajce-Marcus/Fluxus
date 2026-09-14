@@ -1,3 +1,13 @@
+/**
+ * **A component's root carries no outer padding** (ruled 2026-09-14, the
+ * user's call). The container owns layout; the component owns content. A
+ * component that pads itself is deciding spacing for a page it cannot see —
+ * which is how three stacked `Text` blocks came to sit 32px apart with no
+ * page definition able to take it back. Internal spacing is still the
+ * component's business: gaps between rows, a toolbar, the inside of a popup.
+ *
+ * Padding belongs on the `Panel`, where the layout editor already offers it.
+ */
 import type { ComponentType } from 'react';
 
 // A component's prop schema: the declarative contract the page wiring layer

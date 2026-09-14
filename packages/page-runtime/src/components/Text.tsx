@@ -62,7 +62,7 @@ function TextComponent({ text = '', style, align, verticalAlign }: TextProps) {
 // stored with the breaks the author typed, and this stops the browser eating
 // them. Wrapping still happens, so a long line is not a horizontal scroll.
 const css = `
-  .tx-root { font-family: system-ui, sans-serif; padding: 1rem; box-sizing: border-box; height: 100%; display: flex; flex-direction: column; white-space: pre-wrap; overflow-wrap: anywhere; color: #1e293b; }
+  .tx-root { font-family: system-ui, sans-serif; box-sizing: border-box; height: 100%; display: flex; flex-direction: column; white-space: pre-wrap; overflow-wrap: anywhere; color: #1e293b; }
   .tx-vtop { justify-content: flex-start; }
   .tx-vmiddle { justify-content: center; }
   .tx-vbottom { justify-content: flex-end; }

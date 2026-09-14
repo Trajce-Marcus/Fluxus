@@ -579,7 +579,13 @@ function RecordListComponent({
                 <th
                   key={columnKey(col, i)}
                   className={headingClass(col, sortable && hasSortableValue(col))}
-                  style={{ width: columnWidth(col.width) }}
+                  // An action column is as wide as its button and no wider.
+                  // The `<td>` already says `width: 1%` — the shrink-to-content
+                  // trick — but a column takes its width from the widest cell
+                  // that states one, and an unconstrained heading let the
+                  // leftover space land here instead of on the columns that
+                  // could use it.
+                  style={{ width: columnWidth(col.width) ?? (isAction(col) ? '1%' : undefined) }}
                   onClick={sortable && hasSortableValue(col)
                     ? () => setSort(nextSort(sort, col.key as string))
                     : undefined}
@@ -700,7 +706,7 @@ function RecordListComponent({
 }
 
 const css = `
-  .rl-root { font-family: system-ui, sans-serif; padding: 1rem; height: 100%; box-sizing: border-box; overflow: auto; }
+  .rl-root { font-family: system-ui, sans-serif; height: 100%; box-sizing: border-box; overflow: auto; }
   .rl-head { display: flex; align-items: center; margin-bottom: 0.75rem; gap: 1rem; }
   .rl-title { font-size: 1rem; margin: 0; }
   .rl-count { font-size: 0.75rem; color: #64748b; }

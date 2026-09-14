@@ -44,7 +44,11 @@ const anchor = (record: string | null | undefined): string | null =>
 // drawn *inside* another component — a RecordList row, its toolbar — is
 // therefore unstyled unless the host component carries these rules too.
 export const actionCss = `
-  .fx-action-btn { padding: 2px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #334155; cursor: pointer; font-size: 0.7rem; font-family: inherit; white-space: nowrap; }
+  /* A panel is a flex container, so a bare button placed in one stretches to
+     its full width — the cross axis of a column. align-self keeps a button
+     the size of its label wherever it is put (2026-09-14). Inside a table cell
+     it is not a flex item and this is simply ignored. */
+  .fx-action-btn { align-self: flex-start; padding: 2px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #334155; cursor: pointer; font-size: 0.7rem; font-family: inherit; white-space: nowrap; }
   .fx-action-btn:hover { background: #f1f5f9; }
 `;
 
