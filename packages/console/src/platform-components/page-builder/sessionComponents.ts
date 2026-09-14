@@ -6,6 +6,7 @@ export const SESSION_COMPONENTS = [
   { name: 'InventorList', version: '1.0.0' },
   { name: 'InventorProfile', version: '1.0.0' },
   { name: 'WorkOrderList', version: '1.0.0' },
+  { name: 'RecordActivities', version: '1.0.0' },
   { name: 'RecordList', version: '1.0.0' },
   { name: 'RecordTree', version: '1.0.0' },
   { name: 'Text', version: '1.0.0' },

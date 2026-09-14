@@ -31,11 +31,14 @@ export {
   toOffsetIso,
 } from './capture/attributeWidgets';
 export { componentManifests } from './componentManifests';
+export { availableActivities } from './availableActivities';
+export type { ActivityOption, ConditionEvaluator } from './availableActivities';
 export { OpenPage, RunActivity } from './components/actionComponents';
 export { AppHeader } from './components/AppHeader';
 export { InventorList } from './components/InventorList';
 export { InventorProfile } from './components/InventorProfile';
 export { Map } from './components/Map';
+export { RecordActivities } from './components/RecordActivities';
 export { RecordList } from './components/RecordList';
 export { RecordTree } from './components/RecordTree';
 export { Text } from './components/Text';
