@@ -28,13 +28,19 @@ const APP_CONTEXT = { name: 'Fluxus' };
 // follows. The property was in LAYOUT_EDITOR_SPEC from the start and had never
 // been read; `'scroll'` renders as `auto`, so scrollbars appear when there is
 // something to scroll and not before.
-function panelStyle(panel: Panel): React.CSSProperties {
+// Exported for its test: the size/overflow rules are the layout, and they are
+// checkable without a DOM.
+export function panelStyle(panel: Panel): React.CSSProperties {
   const style: React.CSSProperties = {
     overflow: panel.overflow ? (panel.overflow === 'scroll' ? 'auto' : 'hidden') : (panel.children.length > 0 ? 'hidden' : 'auto'),
     display: 'flex',
     flexDirection: panel.direction === 'vertical' ? 'column' : 'row',
   };
   if (panel.size.type === 'flex') style.flex = panel.size.value;
+  // `auto` is content-sized: never grow, never shrink, be as tall as what is
+  // inside. The one size that can make a column longer than its container,
+  // which is what gives a page a scrollbar of its own (layout.ts).
+  else if (panel.size.type === 'auto') style.flex = '0 0 auto';
   else style.flexBasis = panel.size.value;
   if (panel.background) style.background = panel.background;
   if (panel.gap) style.gap = panel.gap;
@@ -178,7 +184,19 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
 
   return (
     <div className="pr-root">
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      {/*
+        `display: flex` is load-bearing, not decoration. The root panel asks for
+        `flex: 1`, and flex is only meaningful inside a flex container — in a
+        plain block this div was, the root panel fell back to `height: auto` and
+        sized itself to its content. Every panel below it then had an indefinite
+        height to resolve against, so `flex: 1` bottomed out at content height
+        too, and the overflow landed here, where it was clipped with no
+        scrollbar to say so. That is why no page could scroll however its panels
+        were declared (found 2026-09-14, after `auto` alone did not fix it).
+        `minHeight: 0` lets this shrink below its content, which is what gives
+        the panel that declares `overflow: 'scroll'` something to scroll.
+      */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
         <PanelNode
           runtime={runtime}
           panel={layout.root}

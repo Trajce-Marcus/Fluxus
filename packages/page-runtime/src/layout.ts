@@ -13,7 +13,23 @@ export interface Panel {
   id: string;
   name?: string;
   direction: 'vertical' | 'horizontal';
-  size: { type: 'flex'; value: number } | { type: 'fixed'; value: number };
+  /**
+   * How the panel's size is decided along its parent's direction.
+   *
+   * - `flex` — a share of what is left, the value being the weight.
+   * - `fixed` — that many pixels.
+   * - `auto` — **as big as its content**, growing and shrinking with it, the
+   *   way an ordinary block does (2026-09-14). It is what lets a page be
+   *   taller than the window: a scrolling panel holding `auto` children ends
+   *   up with more content than height, so it scrolls as one column instead of
+   *   dividing itself between them. `flex` and `fixed` both take their size
+   *   from the space available, so a layout built only from those can never
+   *   exceed the window, whatever it holds.
+   *
+   * The word is CSS's own (`height: auto`, `flex-basis: auto`) and the one a
+   * blank column `width` already means in `RecordList`.
+   */
+  size: { type: 'flex'; value: number } | { type: 'fixed'; value: number } | { type: 'auto' };
   minSize?: number;
   maxSize?: number;
   gap?: number;

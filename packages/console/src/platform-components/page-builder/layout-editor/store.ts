@@ -116,6 +116,10 @@ export function createLayoutActions(store: ContextStore<LayoutPageState>) {
           name: `PANEL${num}`,
           direction: 'vertical',
           size: { type: 'flex', value: 1 },
+          // Padding is the panel's job, not the component's (manifest.ts,
+          // ruled 2026-09-14), so a new panel starts with some rather than
+          // letting whatever is dropped in touch the edge.
+          padding: { top: 12, right: 12, bottom: 12, left: 12 },
           children: [],
         });
         const next = nextSlotNumber(prev.current.root);

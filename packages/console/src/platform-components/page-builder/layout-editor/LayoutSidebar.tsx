@@ -214,6 +214,9 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
 
   const splitterOptions = getSplitterOptions(selected, parent);
   const isFixed = selected.size.type === 'fixed';
+  // `auto` carries no number, so switching away from it starts from the
+  // default rather than from whatever the last size happened to be.
+  const sizeValue = 'value' in selected.size ? selected.size.value : 0;
 
   function updatePanel(changes: Partial<Omit<Panel, 'id' | 'children'>>) {
     actions.updatePanel(selected!.id, changes);
@@ -359,7 +362,7 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
                   type="radio"
                   name={`size-${selected.id}`}
                   checked={selected.size.type === 'flex'}
-                  onChange={() => updatePanel({ size: { type: 'flex', value: selected.size.value || 1 } })}
+                  onChange={() => updatePanel({ size: { type: 'flex', value: sizeValue || 1 } })}
                 />
                 Flex
               </label>
@@ -379,7 +382,7 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
                   type="radio"
                   name={`size-${selected.id}`}
                   checked={selected.size.type === 'fixed'}
-                  onChange={() => updatePanel({ size: { type: 'fixed', value: selected.size.value || 50 } })}
+                  onChange={() => updatePanel({ size: { type: 'fixed', value: sizeValue || 50 } })}
                 />
                 Fixed
               </label>
@@ -393,6 +396,18 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
                 onChange={(e) => updatePanel({ size: { type: 'fixed', value: parseInt(e.target.value, 10) || 0 } })}
               />
               <span className="le-unit">px</span>
+            </div>
+            <div className="le-size-row">
+              <label className="le-radio-label">
+                <input
+                  type="radio"
+                  name={`size-${selected.id}`}
+                  checked={selected.size.type === 'auto'}
+                  onChange={() => updatePanel({ size: { type: 'auto' } })}
+                />
+                Auto
+              </label>
+              <span className="le-unit">as tall as its content</span>
             </div>
           </div>
         )}

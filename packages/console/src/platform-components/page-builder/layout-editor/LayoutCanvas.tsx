@@ -38,6 +38,8 @@ function PanelView({
     ? { flex: 1, minWidth: 0, minHeight: 0 }
     : panel.size.type === 'flex'
     ? { flex: panel.size.value, minWidth: 0, minHeight: 0, margin: CANVAS_MARGIN }
+    : panel.size.type === 'auto'
+    ? { flex: '0 0 auto', margin: CANVAS_MARGIN }
     : parentIsVertical
     ? { height: `${panel.size.value}px`, flexShrink: 0, margin: CANVAS_MARGIN }
     : { width: `${panel.size.value}px`, flexShrink: 0, margin: CANVAS_MARGIN };

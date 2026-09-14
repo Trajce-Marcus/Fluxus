@@ -16,7 +16,7 @@ A panel is the fundamental unit of the layout editor. Everything is a panel — 
 
 Each panel has:
 - A **direction** (vertical or horizontal) controlling how its children are arranged
-- A **size** (flex number or fixed size) controlling how it occupies space within its parent
+- A **size** (flex number, fixed size, or auto) controlling how it occupies space within its parent
 - Zero or more **child panels**
 - A set of **visual and spacing properties**
 
@@ -47,11 +47,12 @@ Properties apply to the currently selected panel.
 | Property | Type | Notes |
 |---|---|---|
 | Direction | vertical / horizontal | How child panels are arranged |
-| Size type | Flex or Fixed | Mutually exclusive |
+| Size type | Flex, Fixed or Auto | Mutually exclusive |
 | — Flex number | integer ≥ 0 | Default: 1. Controls proportion of available space |
 | — Fixed size | px | Explicit height (vertical parent) or width (horizontal parent) |
-| Min size | px | Minimum height or width. Prevents panel collapsing to zero (critical when splitters are present) |
-| Max size | px | Maximum height or width |
+| — Auto | (no value) | As big as its content, growing and shrinking with it. See *A page that scrolls* below |
+| Min size | px | Minimum height or width. Prevents panel collapsing to zero (critical when splitters are present). **Not read by the page renderer** — the editor canvas honours it, `PageRenderer` does not |
+| Max size | px | Maximum height or width. Same gap as Min size |
 | Gap | px | Space between child panels |
 | Padding | top / right / bottom / left (px) | Inner spacing |
 | Overflow | hidden / scroll | Only relevant on fixed-size panels |
@@ -214,3 +215,26 @@ The `LayoutDefinition` produced by the layout editor maps to the `layout` sectio
   }
 }
 ```
+
+
+## A page that scrolls (2026-09-14)
+
+`flex` and `fixed` both take their size from the space available, so a layout
+built only from those can never be longer than the window: every panel shrinks
+to fit, and a page is always a split screen whose parts scroll separately.
+
+**`auto` is the size that can exceed its container** — content-sized, never
+growing, never shrinking (`flex: 0 0 auto`). The shape that makes a page read
+like a document:
+
+- a **fixed** title panel that stays put;
+- a **flex** body panel with `overflow: scroll`;
+- inside the body, a stack of **auto** panels — details, then each table.
+
+The stack comes to more than the body's height, so the body scrolls once, for
+the whole page, and each table renders at its full length instead of becoming a
+small scroller of its own. `projects · pages/project` is built this way.
+
+Added because a real page needed it (`solutions/projects/docs/PROJECT_PROFILE_PAGE.md`).
+Nothing existing changed: no page used `auto` before it existed, so `flex` and
+`fixed` behave exactly as they always have.
