@@ -9,7 +9,7 @@
 // was unusable. It now edits the datasource; `values` is surfaced read-only
 // where an existing solution still carries one.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveAttributes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
@@ -26,6 +26,27 @@ export function AttributesEditor() {
 
   const attrs = draft.attributes;
   const cur: AttributeDef | undefined = attrs[sel];
+
+  // An attribute earns its place by being composed somewhere: named by an
+  // activity, or named as a sub-attribute of a composite. Anything else is
+  // unused — a normal state while authoring, not a fault, so the panel says so
+  // quietly rather than flagging it as an error. A composite's parts count as
+  // used even where the composite itself is not, so its pieces don't all light
+  // up beside it.
+  const used = useMemo(() => {
+    const keys = new Set<string>();
+    for (const wf of draft.workflows) {
+      for (const act of wf.activities) {
+        for (const usage of act.attributes ?? []) {
+          if ('attribute_ref' in usage) keys.add(usage.attribute_ref);
+        }
+      }
+    }
+    for (const a of draft.attributes) {
+      for (const sub of a.type_config?.attributes ?? []) keys.add(sub.attribute_ref);
+    }
+    return keys;
+  }, [draft]);
 
   function setAttrs(next: AttributeDef[]) {
     setDraft((d) => ({ ...d, attributes: next }));
@@ -69,7 +90,13 @@ export function AttributesEditor() {
       <InnerPanel title="Attributes" actions={<button className="panel-btn" onClick={add}>New</button>}>
         {attrs.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
         {attrs.map((a, i) => (
-          <PanelItem key={i} name={a.key || '(new)'} sub={a.type} active={i === sel} onClick={() => setSel(i)} />
+          <PanelItem
+            key={i}
+            name={a.key || '(new)'}
+            sub={<>{a.type}{a.key && !used.has(a.key) && <span className="panel-item-flag"> · unused</span>}</>}
+            active={i === sel}
+            onClick={() => setSel(i)}
+          />
         ))}
       </InnerPanel>
 

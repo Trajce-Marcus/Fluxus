@@ -141,6 +141,9 @@ export const css = `
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* An item the model does not yet compose anywhere (an unused attribute).
+     Dimmed amber, not red: authoring one before wiring it is ordinary. */
+  .panel-item-flag { color: #c9922f; }
   .panel-btn {
     background: none;
     border: 1px solid var(--color-border);
