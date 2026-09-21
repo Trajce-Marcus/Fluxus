@@ -212,18 +212,8 @@ export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): 
         // throwing here leaves the store untouched.
         const going = new Set(ops.filter((op) => op.op === 'delete').map((op) => op.id));
         for (const id of going) {
-          const record = adapter.getRecord(id);
-          for (const ref of adapter.getReverseRefs(record.typeRef)) {
-            const holders = adapter
-              .getRecordsByField(ref.sourceTypeId, ref.fieldKey, id)
-              .filter((r) => !going.has(r.id));
-            if (holders.length === 0) continue;
-            const names = holders.slice(0, 3).map((r) => r.id).join(', ');
-            const more = holders.length > 3 ? `, and ${holders.length - 3} more` : '';
-            throw new Error(
-              `'${id}' cannot be deleted — ${ref.sourceTypeId}.${ref.fieldKey} still points at it (${names}${more})`,
-            );
-          }
+          const blocked = blockingReferences(adapter, id, going);
+          if (blocked) throw new Error(blocked);
         }
         for (const op of ops) {
           if (op.op === 'create') {
@@ -474,4 +464,34 @@ export function buildEvalHost(
     onQueuedFailure: (label, message) => console.warn(`[queued ${label}] failed: ${message}`),
     extras: script.extras,
   };
+}
+
+/**
+ * Why a record may not be deleted, or null when it may: the records still
+ * pointing at it through an fk_ref, named so the author can work bottom-up
+ * (2026-09-21, the user's rule).
+ *
+ * `alsoGoing` are ids being deleted in the same act. A reference held by one of
+ * those does not count — otherwise deleting a subtree would refuse itself, the
+ * children blocking the parent they are leaving with.
+ *
+ * Shared by both delete paths: a hook's `delete()` (through the mutate
+ * surface) and an activity's DELETE record map. One act, one rule.
+ */
+export function blockingReferences(
+  store: Store,
+  recordId: string,
+  alsoGoing: ReadonlySet<string> = new Set(),
+): string | null {
+  const record = store.getRecord(recordId);
+  for (const ref of store.getReverseRefs(record.typeRef)) {
+    const holders = store
+      .getRecordsByField(ref.sourceTypeId, ref.fieldKey, recordId)
+      .filter((r) => !alsoGoing.has(r.id));
+    if (holders.length === 0) continue;
+    const names = holders.slice(0, 3).map((r) => r.id).join(', ');
+    const more = holders.length > 3 ? `, and ${holders.length - 3} more` : '';
+    return `'${recordId}' cannot be deleted — ${ref.sourceTypeId}.${ref.fieldKey} still points at it (${names}${more})`;
+  }
+  return null;
 }

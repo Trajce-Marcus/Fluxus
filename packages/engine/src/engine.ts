@@ -8,7 +8,7 @@
 import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ActivityDef, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
 import type { Store } from './store';
-import { buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
+import { blockingReferences, buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
 import { attributeFieldRef } from './attributeTypes';
@@ -458,10 +458,32 @@ export function createEngine({ store, config, services: hostServices = [], user 
       store.updateRecord(anchorRecord!.id, mappedFields);
       targetRecordId = anchorRecord!.id;
     } else if (activity.record_map === 'DELETE') {
-      if (String(captured['confirm'] ?? '').trim() !== 'DELETE') return { status: 'done', warnings };
+      // Four steps, the user's sequence (2026-09-21): initiate, confirm, the
+      // record and its history go, the caller is told what happened.
+      //
+      // **Confirm** is the platform's existing soft-stop, not a hidden
+      // attribute. Until this date the engine looked for a captured attribute
+      // literally named `confirm` holding the string 'DELETE' — a contract
+      // stated nowhere in the model, and worse, a run that did not satisfy it
+      // returned 'done' having deleted nothing. Now a delete always raises the
+      // stop, so the confirmation is guaranteed rather than left to whether an
+      // author remembered to ask; an author wanting their own wording adds a
+      // `warn()` in the before hook and it is shown alongside.
       const recordId = anchorRecord!.id;
+      if (!options?.acknowledgedWarnings) {
+        return {
+          status: 'needs-confirmation',
+          warnings: [...warnings, `Deleting '${recordId}' also deletes its history. This cannot be undone.`],
+        };
+      }
+      // **Referential integrity**, the same rule a hook's delete() obeys: a
+      // record other records point at is refused, and the message names them.
+      const blocked = blockingReferences(store, recordId);
+      if (blocked) throw new Error(blocked);
       store.deleteRecord(recordId);
-      return { status: 'done', warnings, recordId };
+      // **The result.** `deleted` is what tells a caller the record is gone
+      // rather than merely changed — the id alone cannot say which.
+      return { status: 'done', warnings, recordId, deleted: true };
     } else {
       // ordinary capture — append against the anchor record
       targetRecordId = anchorRecord!.id;

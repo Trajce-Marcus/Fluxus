@@ -147,3 +147,63 @@ describe('a hook that deletes', () => {
     expect(() => executeScript('context.record.delete()', host, { mode: 'read' })).toThrow(/after hooks only/);
   });
 });
+
+// The DELETE record map — the other way a record dies. Same rule as the hook
+// verb (one act, one rule), plus the confirmation step the user set out:
+// initiate, confirm, record + history go, caller told.
+describe('the DELETE record map', () => {
+  const deleteConfig = {
+    ...config,
+    workflows: [
+      (config as unknown as { workflows: unknown[] }).workflows[0],
+      { id: 'wf_wbs_nodes', name: 'WBS', activities: [{
+        id: 'act_delete_wbs_nodes', name: 'Delete Node', description: '', sort_order: 0, record_map: 'DELETE',
+        before_hook: null, after_hook: null, attributes: [],
+      }] },
+    ],
+  } as unknown as ClientSolutionConfig;
+
+  function scene() {
+    const adapter = new MemoryAdapter(deleteConfig);
+    const project = adapter.createRecord('rt_projects', { project_no: 'P24-042' });
+    const parent = adapter.createRecord('rt_wbs_nodes', { code: 'AAA', project_id: project.id });
+    const child = adapter.createRecord('rt_wbs_nodes', { code: 'AAA111', project_id: project.id, parent_id: parent.id });
+    const engine = createEngine({ store: adapter, config: deleteConfig, user: { id: 'u', name: 'u', email: null, roles: [] } });
+    const activity = adapter.getRecordTypeDef('rt_wbs_nodes').workflow.activities[0] as ActivityDef;
+    return { adapter, engine, activity, parent, child };
+  }
+
+  it('asks first, and deletes nothing while unconfirmed', () => {
+    const { adapter, engine, activity, child } = scene();
+    const result = engine.runActivity(activity, {}, adapter.getRecord(child.id));
+    expect(result.status).toBe('needs-confirmation');
+    expect(result.warnings.join(' ')).toMatch(/also deletes its history/);
+    expect(adapter.getRecord(child.id).customFields.code).toBe('AAA111');
+  });
+
+  it('deletes once acknowledged, and says the record is gone', () => {
+    const { adapter, engine, activity, child } = scene();
+    const result = engine.runActivity(activity, {}, adapter.getRecord(child.id), { acknowledgedWarnings: true });
+    expect(result.status).toBe('done');
+    expect(result.recordId).toBe(child.id);
+    expect(result.deleted).toBe(true);
+    expect(() => adapter.getRecord(child.id)).toThrow(/Record not found/);
+  });
+
+  it('obeys the same referential rule as a hook delete', () => {
+    const { adapter, engine, activity, parent } = scene();
+    expect(() => engine.runActivity(activity, {}, adapter.getRecord(parent.id), { acknowledgedWarnings: true }))
+      .toThrow(/cannot be deleted — rt_wbs_nodes.parent_id still points at it/);
+    expect(adapter.getRecord(parent.id).customFields.code).toBe('AAA');
+  });
+
+  // The old contract: an attribute literally named `confirm` holding 'DELETE'.
+  // Nothing declares it, so its absence used to mean a silent no-op reported as
+  // success. Confirmation is the engine's now, and no attribute names it.
+  it('needs no magic attribute — acknowledgement is the whole contract', () => {
+    const { adapter, engine, activity, child } = scene();
+    const result = engine.runActivity(activity, { confirm: 'not the magic word' }, adapter.getRecord(child.id), { acknowledgedWarnings: true });
+    expect(result.status).toBe('done');
+    expect(result.deleted).toBe(true);
+  });
+});

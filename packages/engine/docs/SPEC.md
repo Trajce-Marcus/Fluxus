@@ -103,11 +103,41 @@ One engine per host per SDM — a platform singleton created at bootstrap
 
 ### RunActivityResult
 
-`{ status: 'done' | 'needs-confirmation', warnings, recordId? }`.
+`{ status: 'done' | 'needs-confirmation', warnings, recordId?, deleted? }`.
 `recordId` (added at extraction) is the record acted on — created, updated,
-appended to, or deleted; absent when nothing persisted (needs-confirmation, or
-a DELETE whose confirm text didn't match). Hosts use it to react (the
-workbench deselects a deleted record).
+appended to, or deleted; absent when nothing persisted, which now means only a
+run awaiting confirmation. Hosts use it to react (the workbench deselects a
+deleted record). **`deleted`** (2026-09-21) says the record named is gone: a
+caller cannot infer that from the id, since every other outcome leaves the
+record there, and it is what lets a host say "deleted" rather than "saved" and
+leave a page about a record that no longer exists.
+
+### The DELETE record map (reworked 2026-09-21)
+
+Four steps, the user's sequence: **initiate, confirm, the record and its
+history go, the caller is told what happened.**
+
+*Confirm* is the platform's existing soft-stop. A DELETE always returns
+`needs-confirmation` first, carrying a line saying the history goes with the
+record and cannot be recovered; the caller re-runs with `acknowledgedWarnings`
+to proceed, and dropping it cancels for free since nothing was touched. An
+author who wants their own wording adds `warn()` in the before hook and it is
+shown alongside.
+
+What this replaced: the engine looked for a captured attribute **literally
+named `confirm`** holding the string `'DELETE'` — a contract stated nowhere in
+the model, so an author who named it anything else got a run that returned
+`done` having deleted nothing. Confirmation is now guaranteed by the engine
+rather than left to whether an author remembered to ask for it, and a run that
+is not confirmed reads as cancelled rather than as success.
+
+*The referential check* is the same one a hook's `delete()` obeys —
+`blockingReferences`, shared by both paths, so one act has one rule. A record
+others point at is refused and the message names them.
+
+No trace survives, by design: deleting is for a record that should never have
+existed, and a removal that needs a trace is modelled as a marked field
+instead.
 
 ## GET activities — the read path (built 2026-08-09)
 

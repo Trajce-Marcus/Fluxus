@@ -358,10 +358,17 @@ export interface RunActivityResult {
   warnings: string[];
   /**
    * The record the activity acted on (created, updated, appended to, or
-   * deleted). Absent when nothing persisted: needs-confirmation, or a DELETE
-   * whose confirm text didn't match.
+   * deleted). Absent when nothing persisted — a run awaiting confirmation.
    */
   recordId?: string;
+  /**
+   * The record named by `recordId` no longer exists: a DELETE record map that
+   * went through (2026-09-21). A caller cannot infer this from the id alone —
+   * every other outcome leaves the record there — and it is what lets a host
+   * say "deleted" rather than "saved", and navigate away from a page about a
+   * record that is gone.
+   */
+  deleted?: boolean;
 }
 
 // ── Runtime types (store reads/writes these) ──────────────────────────────────
