@@ -674,7 +674,15 @@ function RecordListComponent({
                 ) : (
                   <td
                     key={columnKey(col, i)}
-                    className={isRightAligned(col.type) ? 'rl-num' : undefined}
+                    className={[
+                      isRightAligned(col.type) ? 'rl-num' : '',
+                      // A tree cell holds an expander and then a value, and a
+                      // narrow column will break the line between them — the
+                      // triangle on one line, the code under it. They are one
+                      // thing, so the cell does not wrap; the column widens
+                      // instead, which a code column can afford.
+                      nested && i === labelColumn ? 'rl-tree-cell' : '',
+                    ].filter(Boolean).join(' ') || undefined}
                     // **The indent is the cell's padding** (2026-09-21). It was
                     // a flex box wrapping the expander, and a flex box inside a
                     // narrow column is a negotiation: the blank standing in for
@@ -765,9 +773,10 @@ const css = `
      the baseline of the text beside it (which left the first column sitting
      lower than the rest of its row). The indent itself is the cell's padding,
      set inline above. */
-  .rl-expander { display: inline-block; width: 1.25rem; padding: 0; border: none; background: none; color: #475569; cursor: pointer; font-size: 0.85rem; line-height: 1; font-family: inherit; text-align: left; vertical-align: middle; }
+  .rl-expander { display: inline-block; width: 1.25rem; padding: 0; border: none; background: none; color: #475569; cursor: pointer; font-size: 0.75rem; line-height: 1; font-family: inherit; text-align: left; vertical-align: middle; }
   .rl-expander:hover { color: #0f172a; }
   .rl-expander--none { cursor: default; }
+  .rl-tree-cell { white-space: nowrap; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
   .rl-action { white-space: nowrap; text-align: right; width: 1%; }
   .rl-unknown { color: #b45309; font-size: 0.7rem; }
