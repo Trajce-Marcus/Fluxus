@@ -239,6 +239,16 @@ records — owned by its designer and installed into a solution.
   activity declares it, the solution registers a script against it. That is
   publish/subscribe over the existing hook and `queue` machinery — never
   editing the module's internals.
+- **It ships its own pages** *(2026-09-22)*. A module with no UI of its own
+  would force the host to build every screen against a model it cannot see,
+  which contradicts the ownership rule — and a module component dropped onto a
+  host page still needs somewhere to send the user for its own settings or
+  detail views. The addressing already works: `services.page.open(page,
+  record)` called inside a module script resolves in the module's vocabulary,
+  so the host never learns the page or the record. Module pages are invisible
+  to the host's page editor and menu builder the same way its record types
+  are. This narrows the standing rule that *a new page is always a solution* —
+  written when solutions were the only authored thing.
 - **Why this works where composition did not:** a module never has to work with
   another module, only with the host it was installed into. Modules need
   *distinct* ids, not *agreed* meanings — uniqueness is easy, agreement is
@@ -255,6 +265,20 @@ modules for them.
 
 None of it is built — there is no module mechanism, no install path, and no
 dependency of any kind between solutions.
+
+**Sequencing — ruled 2026-09-22: modules wait.** Until a solution can do
+everything it needs to do on its own, there is no module authoring, no install
+path, and no third-party components. A solution that needs bespoke UI gets a
+component built in the repo registry as today. The unification — how modules,
+components and solutions compose — is expected to fall out of finishing
+solutions, not to be designed ahead of it.
+
+**The component supply chain is the unaddressed half.** Components are repo
+code in the platform's registry, shipped by us; nothing says how a component
+is built by someone else, distributed, versioned, or made available to a
+module or another org's solution. Only the posture exists — no automatic
+updates, the designer propagates deliberately (the component rule the upgrade
+bullet above refers to), and **pinning** as a term. Mechanism: unaddressed.
 
 ### Connection
 
