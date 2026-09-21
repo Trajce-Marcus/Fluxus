@@ -14,10 +14,12 @@
 // default, and an unknown type or an unreadable format falls back to plain
 // text rather than breaking the row.
 
-/** Column types this step draws. Anything else falls back to text. */
-export type ColumnType = 'text' | 'int' | 'decimal' | 'datetime' | 'time' | 'boolean' | 'photo' | 'file';
+import { geoPointText } from '@fluxus/engine';
 
-const KNOWN: readonly string[] = ['text', 'int', 'decimal', 'datetime', 'time', 'boolean', 'photo', 'file'];
+/** Column types this step draws. Anything else falls back to text. */
+export type ColumnType = 'text' | 'int' | 'decimal' | 'datetime' | 'time' | 'boolean' | 'photo' | 'file' | 'geopoint';
+
+const KNOWN: readonly string[] = ['text', 'int', 'decimal', 'datetime', 'time', 'boolean', 'photo', 'file', 'geopoint'];
 
 /** The declared type, or 'text' for blank/unknown — never an error. */
 export const columnType = (type: string | undefined): ColumnType =>
@@ -173,6 +175,16 @@ function drawDescriptor(value: unknown): string {
   return list.length > 1 ? `${name} +${list.length - 1}` : name;
 }
 
+// ── points ──────────────────────────────────────────────────────────────────
+
+// The degrees, written the way the record keeps them. A map is a component, not
+// a cell: a table of projects wants the coordinate legible next to the name.
+//
+// A point draws as degrees **even in an undeclared column** (the default case
+// below), because the alternative is the raw JSON of the bag. That matters for
+// a details table, whose one `value` column holds a different type every row
+// and so can declare none of them.
+
 // ── the cell ────────────────────────────────────────────────────────────────
 
 /** Draw one value the way its column says to. Never throws; never empty. */
@@ -194,6 +206,7 @@ export function drawCell(
     case 'boolean': return drawBoolean(value, format);
     case 'photo':
     case 'file': return drawDescriptor(value);
-    default: return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    case 'geopoint': return geoPointText(value) || BLANK_CELL;
+    default: return typeof value === 'object' ? (geoPointText(value) || JSON.stringify(value)) : String(value);
   }
 }

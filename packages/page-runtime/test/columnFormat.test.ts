@@ -3,7 +3,7 @@
 // read sensibly on its own.
 
 import { describe, expect, it } from 'vitest';
-import { columnType, columnWidth, drawCell, isRightAligned, resolveCurrency } from '../src/components/columnFormat';
+import { BLANK_CELL, columnType, columnWidth, drawCell, isRightAligned, resolveCurrency } from '../src/components/columnFormat';
 
 const draw = (value: unknown, type?: string, format?: string, currency?: string) =>
   drawCell(value, type, format, currency);
@@ -156,5 +156,13 @@ describe('photos and files', () => {
     expect(draw(one, 'file')).toBe('site-plan.pdf');
     expect(draw([two, one], 'photo')).toBe('deck.jpg +1');
     expect(draw([], 'photo')).toBe('—');
+  });
+});
+
+describe('geopoint', () => {
+  it('draws the degrees, and a blank point as the blank cell', () => {
+    expect(drawCell({ lat: -37.9003, lng: 144.662 }, 'geopoint', undefined, undefined)).toBe('-37.9003, 144.6620');
+    expect(drawCell({ lat: 'south' }, 'geopoint', undefined, undefined)).toBe(BLANK_CELL);
+    expect(drawCell(null, 'geopoint', undefined, undefined)).toBe(BLANK_CELL);
   });
 });

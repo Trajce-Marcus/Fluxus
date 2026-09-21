@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { FkDisplay } from './FkDisplay';
 import { FileChips, PhotoThumbs, isDescriptorValue } from '@fluxus/page-runtime';
 import { useWorkbench } from '../WorkbenchContext';
-import { fieldLabel } from '@fluxus/engine';
+import { fieldLabel, geoPointText } from '@fluxus/engine';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
@@ -29,7 +29,8 @@ export function RecordDetails({ record, typeDef, navigateTo }: Props) {
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px' }}>
         {fields.map(cf => {
           const raw = record.customFields[cf.key];
-          const rawValue = String(raw ?? '');
+          // A geopoint is a bag, so String() would print '[object Object]'.
+          const rawValue = geoPointText(raw) || String(raw ?? '');
           const isLink = cf.type === 'fk_ref' && rawValue !== '';
           return (
             <Fragment key={cf.key}>

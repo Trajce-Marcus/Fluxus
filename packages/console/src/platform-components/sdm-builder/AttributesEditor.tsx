@@ -14,7 +14,7 @@ import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveAttributes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
-const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'reference', 'list', 'photo', 'file'];
+const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'geopoint', 'reference', 'list', 'photo', 'file'];
 
 export function AttributesEditor() {
   const loaded = useLoadedConfig();

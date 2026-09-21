@@ -95,7 +95,9 @@ grid, record view and history card.
   direct-to-R2 PUT flow lives in `@fluxus/client` (client SPEC), not here.
 - **Descriptor rendering** on records/history keys off the value shape
   (`isDescriptorValue`): a bag with a `storage_key` renders as thumbs/chips
-  instead of `[object Object]`. Custom fields stay dumb storage — a photo maps
+  instead of `[object Object]`. A **geopoint** is a bag with no `storage_key`,
+  so the grid and the record view print it through the engine's `geoPointText`
+  (`-37.9003, 144.6614`) — same reason, same one-line treatment (2026-09-22). Custom fields stay dumb storage — a photo maps
   to a field only by exact-key, else it lives in history alone.
 
 ## Services (DSL Phase 3)

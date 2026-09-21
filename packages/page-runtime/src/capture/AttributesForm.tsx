@@ -9,7 +9,7 @@ import { useCaptureHost, type CaptureScript } from './host';
 import { coerceCaptured, coerceCapturedValue, compositeSubs, evaluateWithGets, isBlank } from '@fluxus/engine';
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
-import { DateTimeInput, FileInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
+import { DateTimeInput, FileInput, GeoPointInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
 import { attributeFieldRef } from '@fluxus/engine';
 import { contextFilledKeys, seedValue } from './seed';
 import type { AttributeSeed } from '../pageHost';
@@ -29,6 +29,8 @@ function ScalarInput({ attr, value, onChange, uploads }: {
     case 'file':
       return <FileInput value={value} attributeKey={attr.key} config={attr.type_config} uploads={uploads}
         onChange={(v) => onChange(v)} />;
+    case 'geopoint':
+      return <GeoPointInput value={value} onChange={onChange} />;
     case 'datetime':
       return <DateTimeInput value={str} onChange={onChange} />;
     case 'time':

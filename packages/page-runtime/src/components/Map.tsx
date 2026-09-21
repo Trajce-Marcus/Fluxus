@@ -1,101 +1,110 @@
+// A point on a map. Replaces the demo Map (a dot on a 0–100 grid) that came
+// from the react-in-html prototype and stood for nothing real.
+//
+// Deliberately the smallest thing that works: an OpenStreetMap embed in an
+// iframe, one marker, no key, no account, no script to load. The frame's
+// vocabulary is a bounding box plus `marker=<lat>,<lng>` — it cannot label a
+// pin or draw a second one, which is why the component takes neither. Zoom is
+// expressed as the box we ask for, since the embed has no zoom parameter.
+//
+// The interface is the narrow one the user ruled for this first cut: one
+// point, one pin. Lines, polygons and lists of points are expected later, and
+// will take a different service (a real map library over tiles) — the props
+// here are the ones that survive that change, not a shape chosen to be
+// extended in place.
+
+import type { PropSchema } from '../manifest';
+
 interface MapProps {
-  x: number;
-  y: number;
+  lat: number;
+  lng: number;
+  /** Map zoom, 1 (the globe) to 19 (a building). Blank shows a suburb. */
+  zoom?: number;
 }
 
-const WIDTH = 320;
-const HEIGHT = 320;
-const PADDING = 32;
-const RANGE = 100; // coordinate space: 0–100 on each axis
+const DEFAULT_ZOOM = 13;
 
-function toSvg(val: number, axis: 'x' | 'y'): number {
-  const ratio = val / RANGE;
-  if (axis === 'x') return PADDING + ratio * (WIDTH - PADDING * 2);
-  // y-axis: flip so 0 is at the bottom
-  return HEIGHT - PADDING - ratio * (HEIGHT - PADDING * 2);
+/**
+ * Half-width in degrees of longitude for a zoom level — the embed takes a box,
+ * not a zoom. Level 13 is about 0.04°, and each level halves it, which is what
+ * a slippy map's zoom means. Latitude uses half the span so the box matches the
+ * frame's landscape shape rather than stretching the view.
+ */
+function halfSpan(zoom: number): number {
+  const level = Math.min(19, Math.max(1, Number.isFinite(zoom) ? zoom : DEFAULT_ZOOM));
+  return 0.04 * 2 ** (DEFAULT_ZOOM - level);
 }
 
-const GRID_LINES = [0, 25, 50, 75, 100];
+/** Degrees, or NaN for anything that is not a reading — blank included, since
+ *  `Number('')` is 0 and 0,0 is a point in the Gulf of Guinea, not "nowhere". */
+const degrees = (value: unknown): number =>
+  value === '' || value === null || value === undefined ? NaN : Number(value);
 
-function MapComponent({ x, y }: MapProps) {
-  const cx = toSvg(x, 'x');
-  const cy = toSvg(y, 'y');
+function MapComponent({ lat, lng, zoom }: MapProps) {
+  const y = degrees(lat);
+  const x = degrees(lng);
+  if (!Number.isFinite(y) || !Number.isFinite(x)) {
+    return <div className="map-card map-empty">No location</div>;
+  }
+
+  const dx = halfSpan(degrees(zoom ?? DEFAULT_ZOOM));
+  const dy = dx / 2;
+  const bbox = [x - dx, y - dy, x + dx, y + dy].map((n) => n.toFixed(6)).join(',');
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${y.toFixed(6)},${x.toFixed(6)}`;
 
   return (
     <div className="map-card">
-      <div className="map-title">Map</div>
-      <svg width={WIDTH} height={HEIGHT} className="map-svg">
-        {/* Grid lines */}
-        {GRID_LINES.map((v) => (
-          <g key={v}>
-            <line
-              x1={toSvg(v, 'x')} y1={PADDING}
-              x2={toSvg(v, 'x')} y2={HEIGHT - PADDING}
-              stroke="#e5e7eb" strokeWidth={1}
-            />
-            <line
-              x1={PADDING} y1={toSvg(v, 'y')}
-              x2={WIDTH - PADDING} y2={toSvg(v, 'y')}
-              stroke="#e5e7eb" strokeWidth={1}
-            />
-            <text x={toSvg(v, 'x')} y={HEIGHT - 8} textAnchor="middle" className="map-label">{v}</text>
-            <text x={10} y={toSvg(v, 'y') + 4} textAnchor="middle" className="map-label">{v}</text>
-          </g>
-        ))}
-
-        {/* Axes */}
-        <line x1={PADDING} y1={PADDING} x2={PADDING} y2={HEIGHT - PADDING} stroke="#9ca3af" strokeWidth={1.5} />
-        <line x1={PADDING} y1={HEIGHT - PADDING} x2={WIDTH - PADDING} y2={HEIGHT - PADDING} stroke="#9ca3af" strokeWidth={1.5} />
-
-        {/* Crosshair */}
-        <line x1={cx} y1={PADDING} x2={cx} y2={HEIGHT - PADDING} stroke="#4f46e5" strokeWidth={1} strokeDasharray="4 3" opacity={0.5} />
-        <line x1={PADDING} y1={cy} x2={WIDTH - PADDING} y2={cy} stroke="#4f46e5" strokeWidth={1} strokeDasharray="4 3" opacity={0.5} />
-
-        {/* Marker */}
-        <circle cx={cx} cy={cy} r={7} fill="#4f46e5" />
-        <circle cx={cx} cy={cy} r={3} fill="white" />
-
-        {/* Coordinate label */}
-        <text x={cx + 10} y={cy - 10} className="map-coord">({x}, {y})</text>
-      </svg>
+      <iframe className="map-frame" src={src} title="Map" loading="lazy" />
+      <a className="map-link" href={`https://www.openstreetmap.org/?mlat=${y}&mlon=${x}#map=${Math.round(degrees(zoom) || DEFAULT_ZOOM)}/${y}/${x}`}
+        target="_blank" rel="noreferrer">View larger map</a>
     </div>
   );
 }
 
+// The component states its own size, and the page gives it an `auto` panel.
+// A map has a shape — a landscape frame — where a table has only a width, so
+// "as tall as the window leaves" is the wrong answer for one. 700px wide is
+// the user's call (2026-09-22), and it stops short of the page's full width on
+// purpose; below that it fills what it is given and keeps the proportion.
 const css = `
   .map-card {
-    font-family: system-ui, sans-serif;
-    background: white;
-    border-radius: 12px;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    display: inline-block;
-  }
-  .map-title {
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    color: #111;
-  }
-  .map-svg { display: block; }
-  .map-label {
-    font-size: 10px;
-    fill: #9ca3af;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 700px;
     font-family: system-ui, sans-serif;
   }
-  .map-coord {
+  .map-frame {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    /* If aspect-ratio is not honoured, a landscape frame still stands. */
+    min-height: 300px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+  .map-link {
+    margin-top: 6px;
     font-size: 12px;
-    fill: #4f46e5;
-    font-weight: 600;
-    font-family: system-ui, sans-serif;
+    color: #4f46e5;
+    text-decoration: none;
+  }
+  .map-link:hover { text-decoration: underline; }
+  .map-empty {
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    color: #9ca3af;
+    font-size: 13px;
+    border: 1px dashed #e5e7eb;
+    border-radius: 8px;
   }
 `;
 
-import type { PropSchema } from '../manifest';
-
 const schema: PropSchema[] = [
-  { name: 'x', kind: 'dynamic-data', type: 'number', required: true,  description: 'X coordinate (0–100)' },
-  { name: 'y', kind: 'dynamic-data', type: 'number', required: true,  description: 'Y coordinate (0–100)' },
+  { name: 'lat', kind: 'dynamic-data', type: 'number', required: true, description: 'Latitude in degrees (WGS 84)' },
+  { name: 'lng', kind: 'dynamic-data', type: 'number', required: true, description: 'Longitude in degrees (WGS 84)' },
+  { name: 'zoom', kind: 'static-config', type: 'number', required: false, description: 'Zoom 1–19; blank shows the suburb' },
 ];
 
 export const Map = Object.assign(MapComponent, { css, schema });

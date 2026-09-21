@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Descriptor, FileDescriptor, PhotoDescriptor, UploadService } from '@fluxus/client';
-import type { AttributeTypeConfig } from '@fluxus/engine';
+import { geoPoint, type AttributeTypeConfig } from '@fluxus/engine';
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -64,6 +64,40 @@ export function NumberInput({ value, onChange, step, placeholder }: { value: str
   return (
     <input type="number" value={value} step={step ?? 'any'} placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)} style={inputStyle} />
+  );
+}
+
+/**
+ * A geopoint: two degree boxes, and the value is the bag `{ lat, lng }` the
+ * record keeps — not two strings the form would have to reassemble. Half a
+ * point is no point, so the value stays blank until both boxes read as
+ * numbers; the boxes themselves hold what was typed so a minus sign or a
+ * trailing dot survives the keystroke.
+ */
+export function GeoPointInput({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const point = geoPoint(value);
+  const [typed, setTyped] = useState<{ lat: string; lng: string }>(() => ({
+    lat: point ? String(point.lat) : '',
+    lng: point ? String(point.lng) : '',
+  }));
+
+  const edit = (which: 'lat' | 'lng', raw: string) => {
+    const next = { ...typed, [which]: raw };
+    setTyped(next);
+    const lat = Number(next.lat);
+    const lng = Number(next.lng);
+    const complete = next.lat.trim() !== '' && next.lng.trim() !== '' && Number.isFinite(lat) && Number.isFinite(lng);
+    onChange(complete ? { lat, lng } : '');
+  };
+
+  const box = { ...inputStyle, width: '50%' } as const;
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <input type="number" step="any" value={typed.lat} placeholder="Latitude"
+        onChange={(e) => edit('lat', e.target.value)} style={box} />
+      <input type="number" step="any" value={typed.lng} placeholder="Longitude"
+        onChange={(e) => edit('lng', e.target.value)} style={box} />
+    </div>
   );
 }
 

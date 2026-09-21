@@ -7,7 +7,7 @@ import { CsvImportModal } from './CsvImportModal';
 import { NoOperationNotice } from './OperationPicker';
 import { PhotoCountCell, isDescriptorValue } from '@fluxus/page-runtime';
 import { exportToCSV, exportToJSON } from '../export';
-import { fieldLabel } from '@fluxus/engine';
+import { fieldLabel, geoPointText } from '@fluxus/engine';
 import type { RecordInstance } from '@fluxus/engine';
 
 interface Props {
@@ -402,7 +402,7 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
                   >
                     {customFields.map(cf => {
                       const raw = record.customFields[cf.key];
-                      const cellValue = String(raw ?? '');
+                      const cellValue = geoPointText(raw) || String(raw ?? '');
                       const isFk = !pickerMode && cf.type === 'fk_ref' && cellValue !== '';
                       return (
                         <td

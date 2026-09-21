@@ -7,7 +7,7 @@ import type { SolutionConfig, CustomFieldDef, RecordTypeDef } from '@fluxus/engi
 import { readConfig, idProblems, refreshSolutionViews, saveRecordTypes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 
-const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'fk_ref'];
+const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'geopoint', 'fk_ref'];
 
 /** `rt_assets` from "Assets" — the §1 id convention, entities plural. */
 function recordTypeId(name: string): string {
