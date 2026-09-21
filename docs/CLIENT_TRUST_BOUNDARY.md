@@ -273,6 +273,29 @@ the trim selects the columns and rows it wants, and "unreadable types" and
 one round trip either way, and a pure function is testable without a database.
 Pushing the row cuts into SQL stays available as an optimisation.
 
+### The whitelist fails closed, so it is locked to the types
+
+`clientUsage` and `clientAttribute` build a fresh object naming each field to
+keep. That is the right posture — a field nobody has thought about stays on the
+server — but it fails *silently*: a field added to the model and not added
+there is dropped, and whatever depends on it works on the server and not in the
+browser. Both halves of the same commit (2026-09-15) were exactly that:
+`source` went missing, so an attribute filled from `context.page.record`
+reached the form with no source and the WBS create form asked for the project
+whose page the button was on; and `field` went missing from `clientTypeConfig`,
+so a reference attribute that names the field it fills had no target type in
+the browser and its picker refused to open. Both were found on 2026-09-18, the
+second only because the first prompted a look.
+
+Three tests in `packages/server/test/projection.test.ts` close it (2026-09-18):
+each builds a `Required<AttributeUsageDef>` / `Required<ClientAttributeTypeConfig>`
+/ `Required<ClientAttributeDef>` literal and asserts every key either survives
+the projection or appears in that test's withheld list. A new field breaks compilation until it is in the literal,
+and then fails the assertion until someone decides which side of the boundary it
+is on. Only `sub_attributes` is withheld today, and not for secrecy: it is
+resolution output the adapter rebuilds from the composite's sub-usages, which do
+ship.
+
 ---
 
 ## 3. What the client may say

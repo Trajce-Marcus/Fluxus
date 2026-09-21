@@ -4,7 +4,7 @@
 // `config.getForOperation` is covered in rbac.test.ts.
 
 import { describe, expect, it } from 'vitest';
-import type { SolutionConfig } from '@fluxus/engine';
+import type { AttributeUsageDef, ClientAttributeDef, ClientAttributeTypeConfig, SolutionConfig } from '@fluxus/engine';
 import { projectConfig } from '../src/projection';
 
 const activity = (id: string, refs: string[]): SolutionConfig['workflows'][number]['activities'][number] => ({
@@ -182,5 +182,104 @@ describe('projectConfig — what the client does need', () => {
     };
     expect(projectConfig(calling, { roles: ['role_a'], enforced: true }).functions?.map((f) => f.name).sort())
       .toEqual(['pricing', 'rate']);
+  });
+});
+
+// Both projections are whitelists — a fresh object naming each field to keep —
+// so a field added to the model and not added there is dropped in silence and
+// the feature behind it works on the server and not in the browser. That is
+// what happened to `source` (2026-09-15 → 2026-09-17): the WBS create form
+// asked for the project the page it was launched from was already showing.
+//
+// These two lock the whitelists to the types. `Required<…>` is the mechanism:
+// add a field to `AttributeUsageDef` or `ClientAttributeDef` and the literal
+// below stops compiling until it is listed here, at which point the assertion
+// makes it a decision — ships, or named as deliberately withheld.
+describe('projectConfig — every field is decided, none dropped by omission', () => {
+  /** Fields deliberately withheld from the browser. Adding to these is a
+   *  trust-boundary call (docs/CLIENT_TRUST_BOUNDARY.md §2), not a formality. */
+  const WITHHELD_FROM_USAGE: string[] = [];
+  // `max_size_mb` is on the server grade (`AttributeTypeConfig`), not the
+  // client one, so the type keeps it out of this literal on its own.
+  const WITHHELD_FROM_TYPE_CONFIG: string[] = [];
+  const WITHHELD_FROM_ATTRIBUTE = [
+    // Resolution output, not authored state: the adapter rebuilds it from the
+    // composite's `type_config.attributes`, which do ship.
+    'sub_attributes',
+  ];
+
+  it('carries every field of an attribute usage', () => {
+    const full: Required<AttributeUsageDef> = {
+      attribute_ref: 'note',
+      source: 'context.page.record.id',
+      show_condition: 'true',
+      required: true,
+      validation: 'value != ""',
+      validation_message: 'required',
+      can_waive: true,
+    };
+    const projected = projectConfig(
+      { ...config, workflows: [{ ...config.workflows[0], activities: [{ ...activity('act_touch_alphas', []), attributes: [full] }] }] },
+      { roles: ['role_a'], enforced: true },
+    ).workflows[0].activities[0].attributes[0];
+
+    for (const key of Object.keys(full)) {
+      if (WITHHELD_FROM_USAGE.includes(key)) expect(projected).not.toHaveProperty(key);
+      else expect(projected, `usage field '${key}' is dropped by projection`).toHaveProperty(key);
+    }
+  });
+
+  it('carries every knob of a type config', () => {
+    const full: Required<ClientAttributeTypeConfig> = {
+      fk_record_type: 'rt_alpha',
+      field: 'rt_alpha.ref',
+      values: ['a'],
+      expression: 'x',
+      multi: true,
+      datasource: 'crewnames()',
+      key_field: 'id',
+      display_field: 'name',
+      columns: ['a'],
+      multiline: true,
+      decimal_places: 2,
+      accept: ['.pdf'],
+      max_count: 3,
+      attributes: [{ attribute_ref: 'part_a' }],
+    };
+    const projected = projectConfig(
+      { ...config, attributes: config.attributes.map((a) => (a.key === 'note' ? { ...a, type_config: full } : a)) },
+      { roles: ['role_a'], enforced: true },
+    ).attributes.find((a) => a.key === 'note')?.type_config;
+
+    for (const key of Object.keys(full)) {
+      if (WITHHELD_FROM_TYPE_CONFIG.includes(key)) expect(projected).not.toHaveProperty(key);
+      else expect(projected, `type_config knob '${key}' is dropped by projection`).toHaveProperty(key);
+    }
+  });
+
+  it('carries every field of a pool attribute, bar the resolved ones', () => {
+    const full: Required<ClientAttributeDef> = {
+      key: 'note',
+      label: 'Note',
+      description: 'a note',
+      type: 'text',
+      type_config: { multiline: true },
+      sub_attributes: [],
+      source: 'context.page.record.id',
+      show_condition: 'true',
+      required: true,
+      validation: 'value != ""',
+      validation_message: 'required',
+      can_waive: true,
+    };
+    const projected = projectConfig(
+      { ...config, attributes: [full, ...config.attributes.filter((a) => a.key !== 'note')] },
+      { roles: ['role_a'], enforced: true },
+    ).attributes.find((a) => a.key === 'note');
+
+    for (const key of Object.keys(full)) {
+      if (WITHHELD_FROM_ATTRIBUTE.includes(key)) expect(projected).not.toHaveProperty(key);
+      else expect(projected, `attribute field '${key}' is dropped by projection`).toHaveProperty(key);
+    }
   });
 });

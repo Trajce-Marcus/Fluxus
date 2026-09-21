@@ -76,6 +76,15 @@ function clientCustomField(cf: ClientCustomFieldDef): ClientCustomFieldDef {
 function clientTypeConfig(cfg: ClientAttributeTypeConfig): ClientAttributeTypeConfig {
   const out: ClientAttributeTypeConfig = {};
   if (cfg.fk_record_type !== undefined) out.fk_record_type = cfg.fk_record_type;
+  // The field a reference attribute fills, which is what names the type its
+  // picker browses. Missing here until 2026-09-18 — the same omission as
+  // `source`, from the same commit — so a `field`-typed reference had no
+  // target in the browser and its picker refused to open.
+  if (cfg.field !== undefined) out.field = cfg.field;
+  // The field a reference attribute fills, which is what names the type its
+  // picker browses. Missing here until 2026-09-18 — the same omission as
+  // `source`, from the same commit — so a `field`-typed reference had no
+  // target in the browser and its picker refused to open.
   if (cfg.values !== undefined) out.values = cfg.values;
   if (cfg.expression !== undefined) out.expression = cfg.expression;
   if (cfg.multi !== undefined) out.multi = cfg.multi;
@@ -92,10 +101,16 @@ function clientTypeConfig(cfg: ClientAttributeTypeConfig): ClientAttributeTypeCo
 }
 
 /** A usage wrapper is client-facing in full — every field on it decides what
- *  the form does. */
+ *  the form does. Keep it that way: this is a whitelist, so a field added to
+ *  `AttributeUsageDef` and not added here is silently dropped and whatever
+ *  depends on it stops working in the browser only. `source` was exactly that
+ *  between 2026-09-15 and 2026-09-17 — the WBS create form asked for the
+ *  project the page was already showing. `usageFieldsAreDecided` in
+ *  test/projection.test.ts fails the next omission. */
 function clientUsage(usage: AttributeUsageDef): AttributeUsageDef {
   return {
     attribute_ref: usage.attribute_ref,
+    ...(usage.source !== undefined ? { source: usage.source } : {}),
     ...(usage.show_condition !== undefined ? { show_condition: usage.show_condition } : {}),
     ...(usage.required !== undefined ? { required: usage.required } : {}),
     ...(usage.validation !== undefined ? { validation: usage.validation } : {}),
@@ -116,6 +131,7 @@ function clientAttribute(attr: ClientAttributeDef): ClientAttributeDef {
     description: attr.description,
     type: attr.type,
     ...(attr.type_config !== undefined ? { type_config: clientTypeConfig(attr.type_config) } : {}),
+    ...(attr.source !== undefined ? { source: attr.source } : {}),
     ...(attr.show_condition !== undefined ? { show_condition: attr.show_condition } : {}),
     ...(attr.required !== undefined ? { required: attr.required } : {}),
     ...(attr.validation !== undefined ? { validation: attr.validation } : {}),
@@ -148,7 +164,6 @@ function clientRecordType(rt: ClientRecordTypeDef): ClientRecordTypeDef {
     name: rt.name,
     description: rt.description,
     workflow_ref: rt.workflow_ref,
-    ...(rt.id_field !== undefined ? { id_field: rt.id_field } : {}),
     custom_fields: rt.custom_fields.map(clientCustomField),
   };
 }

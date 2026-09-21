@@ -62,7 +62,13 @@ src/host.ts            — loadOperationHost (resolve operation → solution, th
 src/projection.ts      — the client projection: computeReadable (the record-type
                          read filter, shared by the data and model cuts) and
                          projectConfig (the stored model → the browser's copy).
-                         The ONE place that decides what leaves the server
+                         The ONE place that decides what leaves the server.
+                         Its per-field whitelists are locked to the model types
+                         by three tests (2026-09-18) — a field added to a usage
+                         wrapper, a type config or a pool attribute and not
+                         named here fails the build rather than going missing in
+                         the browser, which is how `source` and `field` were
+                         both lost for three days
 src/router.ts          — the tRPC router: orgs.get/putProfile,
                          solutions.list/create/update/delete,
                          operations.list/get/create/putConfig,
