@@ -27,6 +27,7 @@ const config = {
       custom_fields: [
         { key: 'code', type: 'text', label: 'Code', default: '' },
         { key: 'project_id', type: 'fk_ref', label: 'Project', default: '', fk_record_type: 'rt_projects', fk_display_field: 'project_no' },
+        { key: 'parent_id', type: 'fk_ref', label: 'Parent', default: '', fk_record_type: 'rt_wbs_nodes', fk_display_field: 'code' },
       ] },
   ],
   workflows: [
@@ -46,12 +47,14 @@ function build() {
   const adapter = new MemoryAdapter(config);
   const project = adapter.createRecord('rt_projects', { project_no: 'P24-042' });
   const other = adapter.createRecord('rt_projects', { project_no: 'P26-011' });
-  const nodes = ['AAA', 'AAA111', 'AAA222'].map((code) =>
-    adapter.createRecord('rt_wbs_nodes', { code, project_id: project.id }));
+  const parent = adapter.createRecord('rt_wbs_nodes', { code: 'AAA', project_id: project.id });
+  const children = ['AAA111', 'AAA222'].map((code) =>
+    adapter.createRecord('rt_wbs_nodes', { code, project_id: project.id, parent_id: parent.id }));
+  const nodes = [parent, ...children];
   const keep = adapter.createRecord('rt_wbs_nodes', { code: '5.0', project_id: other.id });
   const engine = createEngine({ store: adapter, config, user: { id: 'u', name: 'u', email: null, roles: [] } });
   const activity = adapter.getRecordTypeDef('rt_projects').workflow.activities[0] as ActivityDef;
-  return { adapter, engine, activity, project, nodes, keep };
+  return { adapter, engine, activity, project, nodes, keep, parent, children };
 }
 
 describe('a hook that deletes', () => {
@@ -95,6 +98,47 @@ describe('a hook that deletes', () => {
     executeScript(`records.wbs_nodes.where(id = '${project.id}').delete()`, host, { mode: 'mutate' });
     expect(adapter.getRecord(project.id).customFields.project_no).toBe('P24-042');
     void engine;
+  });
+
+  it('refuses to delete a record something still points at', () => {
+    const { adapter, parent } = build();
+    const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(parent.id) });
+    expect(() => executeScript('context.record.delete()', host, { mode: 'mutate' }))
+      .toThrow(/cannot be deleted — rt_wbs_nodes.parent_id still points at it/);
+    expect(adapter.getRecord(parent.id).customFields.code).toBe('AAA');
+  });
+
+  // The reason the check runs over the whole staged set rather than per record:
+  // a subtree goes in one statement, and the children pointing at the parent
+  // are themselves on the way out. Checking one at a time would have the script
+  // refuse itself.
+  it('allows a subtree to go in one run, parent included', () => {
+    const { adapter, engine, activity, project, nodes } = build();
+    const result = engine.runActivity(activity, { reason: 'whole subtree' }, adapter.getRecord(project.id));
+    expect(result.status).toBe('done');
+    for (const node of nodes) expect(() => adapter.getRecord(node.id)).toThrow(/Record not found/);
+  });
+
+  it('names what is holding the reference, so the author can work bottom-up', () => {
+    const { adapter, parent, children } = build();
+    const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(parent.id) });
+    try {
+      executeScript('context.record.delete()', host, { mode: 'mutate' });
+      throw new Error('should have refused');
+    } catch (err) {
+      expect(String(err)).toContain(children[0].id);
+    }
+  });
+
+  it('nothing is written when the check refuses', () => {
+    const { adapter, parent, children } = build();
+    const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(parent.id) });
+    expect(() => executeScript(
+      `records.wbs_nodes.where(id = '${children[0].id}').update({ code: 'CHANGED' })
+       context.record.delete()`,
+      host, { mode: 'mutate' },
+    )).toThrow(/cannot be deleted/);
+    expect(adapter.getRecord(children[0].id).customFields.code).toBe('AAA111');
   });
 
   it('is refused in a before hook', () => {

@@ -104,6 +104,11 @@ lifecycle state, build or production, one-way, with delete refused after the
 flip. **Until that exists the verb is unguarded** — nothing stops a hook
 destroying records in a live operation.
 
+**A delete is refused while something still points at the record** — the error
+names what is holding the reference, so records are removed from the bottom up.
+A subtree deleted in one run is fine: the check runs over the whole staged set,
+so a child on its way out does not count as a reference holding its parent.
+
 **Two things left open.** Reporting rows projected from a deleted record's
 history are not purged with it (deferred, and pinned by a test). And **erasure**
 — removing one person's data from records and history entries that themselves

@@ -492,6 +492,17 @@ marks and filters on — the projects solution's `expired` — and that stays th
 author's to design rather than the platform's to impose (the user's ruling; the
 reasoning and the rejected alternatives are in the DSL GRAMMAR, D15).
 
+**Referential integrity is checked across the whole staged set**, at the start
+of `apply`, before a single op lands. A delete is refused while another record
+still points at it, and the error names the holders so the author can work
+bottom-up. The check is not in `prepareDelete` for a specific reason: a script
+deleting a subtree stages the parent and its children together, and a
+per-record check against the store would see the children still present and
+refuse the parent — the script blocking itself. A reference only counts if the
+record holding it is not itself on the way out, which is knowable only once the
+set is complete. Nothing is written before the check, so a refusal leaves the
+store untouched.
+
 **Two gaps, both deliberate.** Reporting rows projected from a deleted record's
 history are not purged with it — deferred, and pinned by a test so the day it
 changes, something says so. And nothing stops this running against a production

@@ -103,6 +103,8 @@ for each r in attributes.wo_resources {
 
   **The audit lives on the actor.** The deleted record's history goes with it, so what survives is the entry on the record the deleting activity was anchored to — the ids it named and, if the author asked for one, the reason. A delete activity must therefore be anchored on something that outlives the run; anchoring it on what it deletes destroys its own audit trail.
 
+  **A delete is refused while something still points at the record.** The check runs over the whole staged set at commit — so a subtree deleted in one statement is allowed, because the children holding the reference are themselves going — and the error names the holders. Records come out from the bottom up.
+
   **Two things deliberately left open.** Reporting rows projected from a deleted record's history are not purged (deferred). And nothing yet stops this running against a production operation — the intended guard is an operation lifecycle state (build vs production) that does not exist yet, so the verb is unguarded until it does.
 
 ## 5. Attributes and datasources

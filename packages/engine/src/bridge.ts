@@ -199,6 +199,32 @@ export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): 
         }
       },
       apply: (ops) => {
+        // Referential integrity, checked across the WHOLE staged set before a
+        // single op lands (2026-09-21, the user's rule: a delete is refused
+        // while something still points at the record).
+        //
+        // Why here and not in prepareDelete: a script deleting a subtree stages
+        // the parent and its children together, and a per-record check against
+        // the store would see the children still present and refuse the parent
+        // — the script blocking itself. A reference only counts if the record
+        // holding it is not itself on the way out, which is knowable only once
+        // the set is complete. Nothing has been written at this point, so
+        // throwing here leaves the store untouched.
+        const going = new Set(ops.filter((op) => op.op === 'delete').map((op) => op.id));
+        for (const id of going) {
+          const record = adapter.getRecord(id);
+          for (const ref of adapter.getReverseRefs(record.typeRef)) {
+            const holders = adapter
+              .getRecordsByField(ref.sourceTypeId, ref.fieldKey, id)
+              .filter((r) => !going.has(r.id));
+            if (holders.length === 0) continue;
+            const names = holders.slice(0, 3).map((r) => r.id).join(', ');
+            const more = holders.length > 3 ? `, and ${holders.length - 3} more` : '';
+            throw new Error(
+              `'${id}' cannot be deleted — ${ref.sourceTypeId}.${ref.fieldKey} still points at it (${names}${more})`,
+            );
+          }
+        }
         for (const op of ops) {
           if (op.op === 'create') {
             adapter.insertRecord({
