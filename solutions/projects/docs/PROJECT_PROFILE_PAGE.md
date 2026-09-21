@@ -545,6 +545,7 @@ in `packages/server/scripts/`, the convention for one-offs.
 | `verify-wbs-lifecycle.ts` | the lifecycle driven end to end through the real engine, **never written back** — kept as the regression harness |
 | `wbs-attributes.ts` (2026-09-15) | `wbs_parent` / `wbs_project` — a reference attribute that names the field it fills, and the project sourced from the page rather than picked |
 | `wbs-delete-source.ts` (2026-09-18) | `expired` sourced to `'true'` on the delete activity — see below |
+| `projects-new-button.ts` (2026-09-22) | `pages/projects` given its **New project** label — the `onNew` callback was already wired, so the list had a create path with no control to reach it |
 | `wbs-one-edit.ts` (2026-09-21) | Modify + Baseline + Forecast merged into one **Edit** activity; the other two deleted |
 | `wbs-page-buttons.ts` (2026-09-21) | the Baseline and Forecast buttons taken off the WBS table |
 | `retire-id-field.ts` (2026-09-18) | `id_field` dropped from `rt_projects`, `rt_wbs_nodes`, `rt_cbs_nodes` — every record now gets an issued UUIDv7 |
