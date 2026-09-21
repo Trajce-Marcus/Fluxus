@@ -23,7 +23,15 @@ const caller = () => appRouter.createCaller({ db, sink });
 // mutation returns — drain it before asserting on the sink.
 const drainQueue = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-const CHECKLIST_ID = 'etp_001';
+// The platform issues every record id (2026-09-18), so nothing here can name a
+// record before creating it: each fixture keeps the id its run returned, and
+// the tests below address records by those.
+let jobId: string;
+let workgroupId: string;
+let checklistId: string;
+// Assigned by the CREATE test — the describe below runs in order, and every
+// later case acts on the work order that one raised.
+let woId: string;
 
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
@@ -36,14 +44,14 @@ beforeAll(async () => {
   // under test. A work order's job_id is a required FK (hence the job and
   // workgroup); the location tests need two cities each holding a suburb, so
   // whichever the list returns first has both a matching and a foreign suburb.
-  await caller().activities.run({
+  jobId = (await caller().activities.run({
     activityId: 'act_raise_inspection_jobs',
-    attributes: { id: 'JOB-1', job_no: 'J-100', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' },
-  });
-  await caller().activities.run({
+    attributes: { job_no: 'J-100', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' },
+  })).recordId!;
+  workgroupId = (await caller().activities.run({
     activityId: 'act_create_workgroups',
-    attributes: { id: 'WG-1', name: 'Crew A' },
-  });
+    attributes: { name: 'Crew A' },
+  })).recordId!;
   for (const [city, state, suburb] of [['Sydney', 'NSW', 'Newtown'], ['Melbourne', 'VIC', 'Fitzroy']]) {
     const created = await caller().activities.run({
       activityId: 'act_create_cities',
@@ -54,10 +62,10 @@ beforeAll(async () => {
       attributes: { name: suburb, city_id: created.recordId },
     });
   }
-  await caller().activities.run({
+  checklistId = (await caller().activities.run({
     activityId: 'act_raise_inspection_checklists',
-    attributes: { id: CHECKLIST_ID, checklist_no: 'ETP-001', work_area: 'Switchroom — Level 1', site_location: '12 Harbour St, Sydney', client: 'Acme Constructions', contract_id: '' },
-  });
+    attributes: { checklist_no: 'ETP-001', work_area: 'Switchroom — Level 1', site_location: '12 Harbour St, Sydney', client: 'Acme Constructions', contract_id: '' },
+  })).recordId!;
 });
 
 describe('config storage', () => {
@@ -125,15 +133,12 @@ describe('page storage (opaque defs on the config pipeline)', () => {
 });
 
 describe('headless activity invocation', () => {
-  const woId = 'WO-9001';
-
   it('CREATE: the attribute list is the parameter signature', async () => {
     const result = await caller().activities.run({
       activityId: 'act_create_work_orders',
       attributes: {
-        id: woId,
-        job_id: 'JOB-1',
-        workgroup_id: 'WG-1',
+        job_id: jobId,
+        workgroup_id: workgroupId,
         activity_code: 'MNT',
         problem_code: 'LEAK',
         location: 'Pump station 4',
@@ -141,7 +146,7 @@ describe('headless activity invocation', () => {
       },
     });
     expect(result.status).toBe('done');
-    expect(result.recordId).toBe(woId);
+    woId = result.recordId!;
 
     const stored = await caller().records.get({ recordId: woId });
     expect(stored.customFields.location).toBe('Pump station 4');
@@ -161,7 +166,7 @@ describe('headless activity invocation', () => {
     await expect(
       caller().activities.run({
         activityId: 'act_create_work_orders',
-        attributes: { id: 'WO-9003', job_id: 'JOB-NOPE', activity_code: 'MNT' },
+        attributes: { job_id: 'JOB-NOPE', activity_code: 'MNT' },
       }),
     ).rejects.toThrow(/no jobs record 'JOB-NOPE'/);
   });
@@ -257,7 +262,8 @@ describe('headless activity invocation', () => {
 });
 
 describe('composite attributes (MR014 checklist, staged)', () => {
-  const clId = CHECKLIST_ID; // raised in beforeAll, so status is 'Raised'
+  // `checklistId` is raised in beforeAll, so its status is 'Raised'. Read at
+  // use rather than aliased at describe time, when it is still unassigned.
 
   it('enforces stage order: pre-start is unavailable while status is Raised', async () => {
     // Payload is valid (validateSubmission passes) — the availability gate
@@ -265,7 +271,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
     await expect(
       caller().activities.run({
         activityId: 'act_complete_prestart_inspection_checklists',
-        recordId: clId,
+        recordId: checklistId,
         attributes: {
           'fixtures_removed.ok': 'TT',
           'prestart_protection.ok': 'TT',
@@ -282,7 +288,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
     await expect(
       caller().activities.run({
         activityId: 'act_complete_preliminaries_inspection_checklists',
-        recordId: clId,
+        recordId: checklistId,
         attributes: { signoff_name: 'T', signoff_signature: 'T', signoff_date: '2026-07-18' },
       }),
     ).rejects.toThrow(/Access permission obtained — Initialled\/OK is required/);
@@ -290,7 +296,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
     await expect(
       caller().activities.run({
         activityId: 'act_complete_preliminaries_inspection_checklists',
-        recordId: clId,
+        recordId: checklistId,
         attributes: { 'access_permission.bogus': 'x' },
       }),
     ).rejects.toThrow(/Unknown attribute 'access_permission.bogus'/);
@@ -299,7 +305,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
   it('accepts nested cells with a per-cell waiver; entry nests, status advances', async () => {
     const result = await caller().activities.run({
       activityId: 'act_complete_preliminaries_inspection_checklists',
-      recordId: clId,
+      recordId: checklistId,
       attributes: {
         access_permission: { ok: 'TT', ref: 'SWMS-04' },
         access_obtained: { ok: 'TT' },
@@ -314,7 +320,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
     });
     expect(result.status).toBe('done');
 
-    const stored = await caller().records.get({ recordId: clId });
+    const stored = await caller().records.get({ recordId: checklistId });
     expect(stored.customFields.status).toBe('Preliminaries Complete');
     const entry = stored.activityHistory.at(-1)!;
     expect(entry.capturedAttributes.access_permission).toEqual({ ok: 'TT', ref: 'SWMS-04' });
@@ -325,7 +331,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
   it('accepts dotted-flat cells too, and projects one rpt row per cell', async () => {
     const result = await caller().activities.run({
       activityId: 'act_complete_prestart_inspection_checklists',
-      recordId: clId,
+      recordId: checklistId,
       attributes: {
         'fixtures_removed.ok': 'TT',
         'prestart_protection.ok': 'TT',
@@ -340,7 +346,7 @@ describe('composite attributes (MR014 checklist, staged)', () => {
     const runs = await db
       .select()
       .from(rptActivities)
-      .where(and(eq(rptActivities.operationId, DEFAULT_OPERATION), eq(rptActivities.recordId, clId)));
+      .where(and(eq(rptActivities.operationId, DEFAULT_OPERATION), eq(rptActivities.recordId, checklistId)));
     const prelim = runs.find((r) => r.activityId === 'act_complete_preliminaries_inspection_checklists')!;
     const attrs = await db.select().from(rptAttributes).where(eq(rptAttributes.activityRowId, prelim.id));
     const byKey = new Map(attrs.map((a) => [a.key, a]));
@@ -359,7 +365,7 @@ describe('reporting projection (synchronous, normalized)', () => {
     const runs = await db
       .select()
       .from(rptActivities)
-      .where(and(eq(rptActivities.operationId, DEFAULT_OPERATION), eq(rptActivities.recordId, 'WO-9001')));
+      .where(and(eq(rptActivities.operationId, DEFAULT_OPERATION), eq(rptActivities.recordId, woId)));
     // create + set_location + complete — the rejected/soft-stopped runs left no rows.
     expect(runs.map((r) => r.activityId).sort()).toEqual([
       'act_complete_work_orders',
@@ -380,7 +386,7 @@ describe('reporting projection (synchronous, normalized)', () => {
     const rows = await db
       .select()
       .from(records)
-      .where(and(eq(records.operationId, DEFAULT_OPERATION), eq(records.id, 'WO-9001')));
+      .where(and(eq(records.operationId, DEFAULT_OPERATION), eq(records.id, woId)));
     expect(rows).toHaveLength(1);
     expect(rows[0].activityHistory.length).toBe(3);
   });

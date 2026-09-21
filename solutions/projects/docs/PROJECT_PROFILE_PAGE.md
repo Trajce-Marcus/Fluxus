@@ -353,7 +353,7 @@ already flagged, unchanged here.
 | `act_baseline_wbs_nodes` | UPDATE | baseline_budget, target_start, target_completion | availability: draft **and** leaf. after hook: copies each value into the matching forecast field |
 | `act_forecast_wbs_nodes` | UPDATE | forecast_cost, forecast_start, forecast_completion | availability: leaf. Allowed in both states — this is the only thing approval leaves open |
 | `act_move_wbs_nodes` | UPDATE | parent_id | availability: draft |
-| `act_delete_wbs_nodes` | UPDATE | expired | availability: draft **and** leaf — a node with children is refused (below) |
+| `act_delete_wbs_nodes` | UPDATE | expired, **sourced** `'true'` | availability: draft **and** leaf — a node with children is refused (below). Nothing is asked: the flag is filled from the model, so Delete has no form and runs on the click (2026-09-18) |
 | `act_list_wbs_nodes` | GET | project_id | — |
 | `act_total_wbs_baseline` | GET | project_id | calls a named function (§3.5) |
 | `act_total_wbs_forecast` | GET | project_id | calls a named function (§3.5) |
@@ -547,6 +547,31 @@ in `packages/server/scripts/`, the convention for one-offs.
 | `load-cbs-detail.ts` | 7 CBS parents renamed, **20** children created, P26-011 moved to `Created` |
 | `project-page.ts` | `pages/project` written, and the `Open` column added to `pages/projects` |
 | `verify-wbs-lifecycle.ts` | the lifecycle driven end to end through the real engine, **never written back** — kept as the regression harness |
+| `wbs-attributes.ts` (2026-09-15) | `wbs_parent` / `wbs_project` — a reference attribute that names the field it fills, and the project sourced from the page rather than picked |
+| `wbs-delete-source.ts` (2026-09-18) | `expired` sourced to `'true'` on the delete activity — see below |
+| `retire-id-field.ts` (2026-09-18) | `id_field` dropped from `rt_projects`, `rt_wbs_nodes`, `rt_cbs_nodes` — every record now gets an issued UUIDv7 |
+
+**The WBS was keyed on its code** until 2026-09-18, and that is what produced
+`Record id "AAA" already exists` when a node was deleted and re-added: the id
+outlives the record in the reporting rows. Codes are ordinary values now and
+identity is issued (BLUEPRINT, "Record identity"). Two consequences for this
+solution: nodes created before that date keep their code-shaped ids and nothing
+re-keyed them, so the WBS table holds both shapes; and **a WBS code is no longer
+unique by construction**. It was globally unique before, which was wrong anyway
+— a second project could not have reused the first's codes — but the rule that
+actually fits, unique *within a project*, has no expression in the model yet.
+
+**Delete asked instead of acting** (found 2026-09-18, in use). `act_delete_wbs_nodes`
+captured a bare `expired`, so the row action opened a form holding one text box,
+and an UPDATE prefills from the record it is about — the box arrived reading
+`false` and Run wrote false over false. The dev data carries four such runs,
+every one capturing `{ expired: 'false' }`, and nothing ever expired. The answer
+was never a question, so it is now sourced to the literal `'true'`; the activity
+has nothing left to capture and Delete runs on the click. That drops a
+confirmation step nobody had designed as one — `show_condition` still refuses a
+node with children or an approved WBS, and the act reverses by flipping the flag
+back. Re-running `wbs-lifecycle.ts` would undo this **and** the 2026-09-15
+attributes; it predates both.
 
 **Verified** (17 checks, all passing): a leaf takes a baseline and the forecast
 copies from it; a parent is refused one; a leaf that gains a child loses its

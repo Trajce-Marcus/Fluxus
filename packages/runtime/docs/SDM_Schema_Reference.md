@@ -26,6 +26,7 @@ A standalone, named process definition. Records point at workflows; a workflow d
 | Field | Type | Notes |
 | :--- | :--- | :--- |
 | `id` | identifier | Unique. |
+| *(record identity)* | — | **Issued by the platform, never declared** (2026-09-18). Every Record instance gets a UUIDv7 at creation; a record type cannot nominate a field to key on. `id_field` did exactly that until this date — see 1.3a. |
 | `name` | text | |
 | `description` | text | |
 | `activities` | list of Activity | Ordered (see `sort_order` on Activity). |
@@ -39,9 +40,40 @@ The central, universal object. Every piece of business data is a Record of some 
 | `name` | text | |
 | `description` | text | |
 | `workflow_ref` | reference → Workflow | Exactly one. The Record's process. |
-| `id_field` | identifier? | Optional. When set, the named custom field's value is used as the Record instance's id instead of an auto-generated one. The field should carry `required: true`, `unique: true`, and `immutable: true`. A Record instance's id is the storage key `(scope, id)`, so it must be **unique across every record type in the scope**, not just its own type — creating a Record with an id already used by any type (e.g. reusing a Job's id for a Work Order) is rejected with an error, never silently overwritten. |
 | `custom_fields` | list of CustomField | The Record's own data — typed key-values (see 1.4). |
 | `states` | *(deferred)* | The set of states an instance can be in (e.g. Raised, Complete). Definition deferred. |
+
+### 1.3a Record identity — issued, not declared
+
+A Record instance's id is the storage key `(scope, id)` and is **the platform's
+to issue**: a UUIDv7 generated at creation, unique across every record type in
+the scope. Nothing in the model names it, and nothing may set it.
+
+Until 2026-09-18 a record type could nominate a custom field to key on
+(`id_field`), and the projects solution keyed its WBS and CBS on their codes.
+That made a business value load-bearing in three ways nobody had asked for:
+
+- **Deleting reserved the value forever.** A node's code could not be used
+  again, because the reporting rows that outlive the record still address it.
+- **Renaming split the record.** The id kept the old value while the field
+  showed the new one, and the two silently disagreed.
+- **Two types could not share a code.** `rt_wbs_nodes` and `rt_cbs_nodes` both
+  numbering a node `1.0` collided outright, as would a second project reusing
+  the first's codes.
+
+A code is a value; identity is the platform's. Version 7 rather than 4 because
+it leads with a timestamp, so ids sort by creation and inserts land at the end
+of the index instead of scattering across it.
+
+**Uniqueness did not come along for free.** A natural key was unique *because*
+it was the id; a record type that needs its value unique now declares
+`unique: true` on the field and says so. Uniqueness scoped to a parent — a WBS
+code unique within its project, rather than across the operation — has no
+expression in the model and is an open gap, deliberately not invented here.
+
+**Existing records keep the ids they have.** An id is a string and nothing
+parses one, so a store holding both old value-shaped ids and new UUIDs is
+consistent.
 
 **The Record as anchor.** A Record instance is the *anchor* a workflow runs against. During execution a workflow's activities may read and act on *other* Records too — but every action is **recorded against the workflow's own Record instance**. So the rule *a workflow acts against exactly one Record* holds even when its actions touch many: the one Record is the anchor; the others are merely operated on.
 

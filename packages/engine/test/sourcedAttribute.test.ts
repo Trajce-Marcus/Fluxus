@@ -18,9 +18,9 @@ const config = {
     { key: 'code', type: 'text', label: 'Code' },
   ],
   recordTypes: [
-    { id: 'rt_projects', name: 'Projects', workflow_ref: 'wf_projects', id_field: 'code',
+    { id: 'rt_projects', name: 'Projects', workflow_ref: 'wf_projects',
       custom_fields: [{ key: 'code', type: 'text', label: 'Code', default: '' }] },
-    { id: 'rt_wbs_nodes', name: 'WBS', workflow_ref: 'wf_wbs_nodes', id_field: 'code',
+    { id: 'rt_wbs_nodes', name: 'WBS', workflow_ref: 'wf_wbs_nodes',
       custom_fields: [
         { key: 'code', type: 'text', label: 'Code', default: '' },
         { key: 'project_id', type: 'fk_ref', label: 'Project', default: '', fk_record_type: 'rt_projects', fk_display_field: 'code' },
@@ -40,26 +40,28 @@ const config = {
   ],
 } as unknown as ClientSolutionConfig;
 
+// The platform issues every id (2026-09-18), so the project's is whatever the
+// create returned — the fixture reads it back rather than assuming its code.
 const build = () => {
   const adapter = new MemoryAdapter(config);
-  adapter.createRecord('rt_projects', { code: 'P26-011' });
+  const project = adapter.createRecord('rt_projects', { code: 'P26-011' });
   const engine = createEngine({ store: adapter, config, user: { id: 'u', name: 'u', email: null, roles: [] } });
   const activity = adapter.getRecordTypeDef('rt_wbs_nodes').workflow.activities[0] as ActivityDef;
-  return { adapter, engine, activity };
+  return { adapter, engine, activity, projectId: project.id };
 };
 
 describe('a sourced attribute', () => {
   it('may carry a value even though the form never showed it', () => {
-    const { engine, activity } = build();
-    const issues = validateSubmission(engine, activity, { wbs_project: 'P26-011', code: 'T1' }, null);
+    const { engine, activity, projectId } = build();
+    const issues = validateSubmission(engine, activity, { wbs_project: projectId, code: 'T1' }, null);
     expect(issues).toEqual([]);
   });
 
   it('lands in the field it names', () => {
-    const { engine, adapter, activity } = build();
-    const result = engine.runActivity(activity, { wbs_project: 'P26-011', code: 'T1' }, null);
+    const { engine, adapter, activity, projectId } = build();
+    const result = engine.runActivity(activity, { wbs_project: projectId, code: 'T1' }, null);
     expect(result.status).toBe('done');
-    expect(adapter.getRecord('T1')?.customFields.project_id).toBe('P26-011');
+    expect(adapter.getRecord(result.recordId!).customFields.project_id).toBe(projectId);
   });
 
   it('is still checked against the target its field names', () => {
@@ -72,8 +74,8 @@ describe('a sourced attribute', () => {
 describe('an attribute the model rules out', () => {
   // Unchanged: a value for one of those means the caller misread the signature.
   it('is still refused when a value arrives for it', () => {
-    const { engine, activity } = build();
-    const issues = validateSubmission(engine, activity, { wbs_project: 'P26-011', ruled_out: 'x', code: 'T1' }, null);
+    const { engine, activity, projectId } = build();
+    const issues = validateSubmission(engine, activity, { wbs_project: projectId, ruled_out: 'x', code: 'T1' }, null);
     expect(issues.map(i => i.message)).toEqual(["'ruled_out' is not applicable for this submission"]);
   });
 });

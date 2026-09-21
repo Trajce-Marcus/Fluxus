@@ -4,17 +4,7 @@
     "name": "Contracts",
     "description": "Customer contracts under which jobs are raised.",
     "workflow_ref": "wf_contracts",
-    "id_field": "id",
     "custom_fields": [
-      {
-        "key": "id",
-        "type": "text",
-        "default": "",
-        "required": true,
-        "unique": true,
-        "immutable": true,
-        "indexed": true
-      },
       {
         "key": "name",
         "type": "text",
@@ -57,9 +47,6 @@
         "sort_order": 0,
         "record_map": "CREATE",
         "attributes": [
-          {
-            "attribute_ref": "id"
-          },
           {
             "attribute_ref": "name"
           },

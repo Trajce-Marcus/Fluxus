@@ -19,6 +19,13 @@ const caller = () => appRouter.createCaller({ db, sink });
 
 type WorkOrderRow = { id: string; status: string; location: string; crew: string | null; due_date: string };
 
+// The platform issues every record id (2026-09-18), so the fixture keeps what
+// each run returned and the assertions address records by those rather than by
+// a code they were named with.
+let jobQ: string;
+let woQ1: string; // Site A
+let woQ2: string; // Site B
+
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
   await ensureSolution(db, DEFAULT_SOLUTION, 'Demo');
@@ -27,16 +34,18 @@ beforeAll(async () => {
 
   // Everything the queries read is built through the write pipeline — an
   // operation has no seeding path.
-  await caller().activities.run({
+  jobQ = (await caller().activities.run({
     activityId: 'act_raise_inspection_jobs',
-    attributes: { id: 'JOB-Q', job_no: 'J-900', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' },
-  });
-  for (const [id, location, due] of [['WO-Q1', 'Site A', '2026-09-02'], ['WO-Q2', 'Site B', '2026-09-01']]) {
-    await caller().activities.run({
+    attributes: { job_no: 'J-900', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' },
+  })).recordId!;
+  const created: string[] = [];
+  for (const [location, due] of [['Site A', '2026-09-02'], ['Site B', '2026-09-01']]) {
+    created.push((await caller().activities.run({
       activityId: 'act_create_work_orders',
-      attributes: { id, job_id: 'JOB-Q', activity_code: 'AC-1', problem_code: '', location, due_date: due, workgroup_id: '' },
-    });
+      attributes: { job_id: jobQ, activity_code: 'AC-1', problem_code: '', location, due_date: due, workgroup_id: '' },
+    })).recordId!);
   }
+  [woQ1, woQ2] = created;
 });
 
 describe('GET activities', () => {
@@ -46,7 +55,7 @@ describe('GET activities', () => {
       attributes: { status: 'Raised' },
     });
     const rows = result.data as WorkOrderRow[];
-    expect(rows.map((r) => r.id).sort()).toEqual(['WO-Q1', 'WO-Q2']);
+    expect(rows.map((r) => r.id).sort()).toEqual([woQ1, woQ2].sort());
     // select() decides the shape, and records arrive flattened — an SDM-blind
     // caller gets plain data, not DslRecords.
     expect(Object.keys(rows[0]).sort()).toEqual(['crew', 'due_date', 'id', 'location', 'status']);
@@ -65,7 +74,7 @@ describe('GET activities', () => {
       activityId: 'act_get_work_orders',
       attributes: { status: 'Raised' },
     });
-    expect((result.data as WorkOrderRow[]).map((r) => r.id)).toEqual(['WO-Q2', 'WO-Q1']);
+    expect((result.data as WorkOrderRow[]).map((r) => r.id)).toEqual([woQ2, woQ1]);
   });
 
   it('validates the parameters like any other submission', async () => {
@@ -84,7 +93,7 @@ describe('GET activities', () => {
 
   it('refuses to run a GET through the write door', async () => {
     await expect(
-      caller().activities.run({ activityId: 'act_get_work_orders', recordId: 'WO-Q1', attributes: { status: 'Raised' } }),
+      caller().activities.run({ activityId: 'act_get_work_orders', recordId: woQ1, attributes: { status: 'Raised' } }),
     ).rejects.toThrow(/GET activity/);
   });
 
@@ -103,15 +112,15 @@ describe('a GET is logged light', () => {
     (await caller().records.get({ recordId })).activityHistory;
 
   it('records the run on the anchor: parameters, caller, outcome, duration', async () => {
-    const before = (await historyOf('WO-Q1')).length;
+    const before = (await historyOf(woQ1)).length;
 
     await caller().activities.query({
       activityId: 'act_get_work_orders',
-      recordId: 'WO-Q1',
+      recordId: woQ1,
       attributes: { status: 'Raised' },
     });
 
-    const history = await historyOf('WO-Q1');
+    const history = await historyOf(woQ1);
     expect(history.length).toBe(before + 1);
     const entry = history[history.length - 1];
     expect(entry.activityId).toBe('act_get_work_orders');
@@ -125,33 +134,33 @@ describe('a GET is logged light', () => {
   it('never records what came back', async () => {
     await caller().activities.query({
       activityId: 'act_get_work_orders',
-      recordId: 'WO-Q1',
+      recordId: woQ1,
       attributes: { status: 'Raised' },
     });
 
-    const entry = (await historyOf('WO-Q1')).at(-1)!;
+    const entry = (await historyOf(woQ1)).at(-1)!;
     // The answer named both work orders; nothing in the entry may.
-    expect(JSON.stringify(entry.capturedAttributes)).not.toContain('WO-Q2');
+    expect(JSON.stringify(entry.capturedAttributes)).not.toContain(woQ2);
   });
 
   it('leaves the record data untouched', async () => {
-    const before = (await caller().records.get({ recordId: 'WO-Q2' })).customFields;
+    const before = (await caller().records.get({ recordId: woQ2 })).customFields;
     await caller().activities.query({
       activityId: 'act_get_work_orders',
-      recordId: 'WO-Q2',
+      recordId: woQ2,
       attributes: { status: 'Raised' },
     });
-    expect((await caller().records.get({ recordId: 'WO-Q2' })).customFields).toEqual(before);
+    expect((await caller().records.get({ recordId: woQ2 })).customFields).toEqual(before);
   });
 
   it('reaches the reporting projection like any other run', async () => {
     await caller().activities.query({
       activityId: 'act_get_work_orders',
-      recordId: 'WO-Q1',
+      recordId: woQ1,
       attributes: { status: 'Raised' },
     });
     const rows = await db.execute(
-      sql`SELECT activity_id FROM rpt_activities WHERE record_id = 'WO-Q1' AND activity_id = 'act_get_work_orders'`,
+      sql`SELECT activity_id FROM rpt_activities WHERE record_id = ${woQ1} AND activity_id = 'act_get_work_orders'`,
     );
     expect(rows.rows.length).toBeGreaterThan(0);
   });
@@ -169,13 +178,13 @@ describe('a GET is logged light', () => {
     await putConfig(db, SOL, broken, sink);
     await ensureOperation(db, OP, SOL, 'Failing');
     const c = () => appRouter.createCaller({ db, sink });
-    await c().activities.run({ operationId: OP, activityId: 'act_raise_inspection_jobs', attributes: { id: 'JOB-F', job_no: 'J-902', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' } });
+    const jobF = (await c().activities.run({ operationId: OP, activityId: 'act_raise_inspection_jobs', attributes: { job_no: 'J-902', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' } })).recordId!;
 
     await expect(
-      c().activities.query({ operationId: OP, activityId: 'act_get_work_orders', recordId: 'JOB-F', attributes: { status: 'Raised' } }),
+      c().activities.query({ operationId: OP, activityId: 'act_get_work_orders', recordId: jobF, attributes: { status: 'Raised' } }),
     ).rejects.toThrow();
 
-    const entry = (await c().records.get({ operationId: OP, recordId: 'JOB-F' })).activityHistory.at(-1)!;
+    const entry = (await c().records.get({ operationId: OP, recordId: jobF })).activityHistory.at(-1)!;
     expect(entry.activityId).toBe('act_get_work_orders');
     expect(entry.capturedAttributes.system_outcome).toBe('error');
     expect(String(entry.capturedAttributes.system_log)).toContain('returns failed');
@@ -195,12 +204,12 @@ describe('a GET is logged light', () => {
     const run = (activityId: string, attributes: Record<string, unknown>, recordId?: string) =>
       c().activities.run({ operationId: OP, activityId, recordId, attributes });
 
-    await run('act_raise_inspection_jobs', { id: 'JOB-N', job_no: 'J-903', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' });
-    await run('act_create_work_orders', { id: 'WO-N1', job_id: 'JOB-N', activity_code: 'AC-1', problem_code: '', location: 'Site D', due_date: '2026-09-04', workgroup_id: '' });
-    await run('act_dispatch_work_orders', { crew: 'Crew A' }, 'WO-N1');
-    await run('act_complete_work_orders', { completed_date: '2026-08-02' }, 'WO-N1');
+    const jobN = (await run('act_raise_inspection_jobs', { job_no: 'J-903', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' })).recordId!;
+    const woN1 = (await run('act_create_work_orders', { job_id: jobN, activity_code: 'AC-1', problem_code: '', location: 'Site D', due_date: '2026-09-04', workgroup_id: '' })).recordId!;
+    await run('act_dispatch_work_orders', { crew: 'Crew A' }, woN1);
+    await run('act_complete_work_orders', { completed_date: '2026-08-02' }, woN1);
 
-    const history = (await c().records.get({ operationId: OP, recordId: 'WO-N1' })).activityHistory;
+    const history = (await c().records.get({ operationId: OP, recordId: woN1 })).activityHistory;
     expect(history.map((e) => e.activityId)).not.toContain('act_get_work_orders');
   });
 });
@@ -279,15 +288,15 @@ describe('invoke() from a hook', () => {
     const run = (activityId: string, attributes: Record<string, unknown>, recordId?: string) =>
       appRouter.createCaller({ db, sink }).activities.run({ operationId: OP, activityId, recordId, attributes });
 
-    await run('act_raise_inspection_jobs', { id: 'JOB-I', job_no: 'J-901', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' });
-    await run('act_create_work_orders', { id: 'WO-I1', job_id: 'JOB-I', activity_code: 'AC-1', problem_code: '', location: 'Site C', due_date: '2026-09-03', workgroup_id: '' });
+    const jobI = (await run('act_raise_inspection_jobs', { job_no: 'J-901', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' })).recordId!;
+    const woI1 = (await run('act_create_work_orders', { job_id: jobI, activity_code: 'AC-1', problem_code: '', location: 'Site C', due_date: '2026-09-03', workgroup_id: '' })).recordId!;
 
     // Nothing dispatched yet — the gate's query comes back empty and blocks.
-    await expect(run('act_complete_work_orders', { completed_date: '2026-08-01' }, 'WO-I1'))
+    await expect(run('act_complete_work_orders', { completed_date: '2026-08-01' }, woI1))
       .rejects.toThrow(/Nothing is dispatched/);
 
     // Dispatch one, and the same gate now passes on the same data.
-    await run('act_dispatch_work_orders', { crew: 'Crew A' }, 'WO-I1');
-    await expect(run('act_complete_work_orders', { completed_date: '2026-08-01' }, 'WO-I1')).resolves.toMatchObject({ status: 'done' });
+    await run('act_dispatch_work_orders', { crew: 'Crew A' }, woI1);
+    await expect(run('act_complete_work_orders', { completed_date: '2026-08-01' }, woI1)).resolves.toMatchObject({ status: 'done' });
   });
 });

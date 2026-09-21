@@ -23,8 +23,11 @@ beforeAll(() => {
   } as Storage;
 });
 
-// Cities and suburbs carry no id_field, so the fixture pins ids explicitly —
-// the datasource assertions below match suburbs to cities by FK value.
+// The platform issues every record id (2026-09-18), so this fixture inserts its
+// locations directly with `insertRecord` to pin them — the datasource
+// assertions below match suburbs to cities by FK value, which needs both ends
+// known in advance. A work order, by contrast, is created through the adapter
+// and read back by the id the create returned.
 const LOCATION_FIXTURE: { typeId: string; id: string; fields: Record<string, unknown> }[] = [
   { typeId: 'rt_cities', id: 'c_syd', fields: { name: 'Sydney', state: 'NSW' } },
   { typeId: 'rt_cities', id: 'c_mel', fields: { name: 'Melbourne', state: 'VIC' } },
@@ -155,7 +158,7 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
       }),
       { mode: 'mutate' },
     );
-    const updated = adapter.getRecord('WO-P2');
+    const updated = adapter.getRecord(wo.id);
     expect(updated.customFields.status).toBe('Completed');
     expect(updated.customFields.completed_date).toBe('2026-07-01');
 
@@ -179,7 +182,7 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
         { mode: 'read' },
       ),
     ).toThrow(/after hooks only/);
-    expect(adapter.getRecord('WO-P2-RO').customFields.status).toBe('Raised');
+    expect(adapter.getRecord(wo.id).customFields.status).toBe('Raised');
   });
 
   it('a failing after hook applies nothing (transaction)', async () => {
@@ -195,7 +198,7 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
         { mode: 'mutate' },
       ),
     ).toThrow(FluxFailError);
-    expect(adapter.getRecord('WO-P2-TX').customFields.status).toBe('Raised');
+    expect(adapter.getRecord(wo.id).customFields.status).toBe('Raised');
   });
 
   it('can_waive carries through usage resolution (serial_no on Create Asset)', async () => {
@@ -228,8 +231,8 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
       evaluateExpression(complete.show_condition!, buildEvalHost(adapter, config, { anchorRecord })) === true;
 
     expect(available(wo)).toBe(true);
-    adapter.updateRecord('WO-AVAIL', { status: 'Completed' });
-    expect(available(adapter.getRecord('WO-AVAIL'))).toBe(false);
+    adapter.updateRecord(wo.id, { status: 'Completed' });
+    expect(available(adapter.getRecord(wo.id))).toBe(false);
   });
 
   it('activity show_condition may not reference attributes (validated at config load)', async () => {
@@ -285,8 +288,8 @@ describe('DSL Phase 3 — services through the SDM wiring', () => {
     const landed = notifications.list();
     expect(landed.length).toBe(1);
     expect(landed[0].channel).toBe('user');
-    expect(landed[0].message).toBe('Work order WO-P3 was completed');
-    expect(adapter.getRecord('WO-P3').customFields.status).toBe('Completed');
+    expect(landed[0].message).toBe(`Work order ${wo.id} was completed`);
+    expect(adapter.getRecord(wo.id).customFields.status).toBe('Completed');
   });
 
   it('a failing after hook dispatches no notification (outbox holds until commit)', async () => {

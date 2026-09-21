@@ -75,6 +75,32 @@ columns exist today; the install path doesn't).
 6. **Pages are data, not code.** A page is a stored, validated definition
    interpreted at render time — no compile step, no arbitrary bundles.
 
+## Record identity — *Built* (ruled 2026-09-18)
+
+**Every record gets its own id, issued by the platform** — a UUIDv7, unique
+across every record type in the operation. Nothing in the model names it, and
+nothing may set it.
+
+A record type could nominate one of its own fields to key on (`id_field`), and
+the projects solution keyed its WBS and CBS on their codes. That made a business
+value load-bearing in three ways nobody had asked for: deleting a node reserved
+its code forever, because the reporting rows that outlive the record still
+address it; renaming one left the id saying the old code while the field said
+the new one; and two record types numbering something `1.0` collided outright,
+as would a second project reusing the first's codes. **A code is a value;
+identity is the platform's.** `id_field` is retired from the model — no future
+solution can opt in.
+
+What follows from it:
+
+- **Uniqueness is now stated, not inherited.** A natural key was unique because
+  it *was* the id. A type that needs a value unique declares it on the field.
+- **Uniqueness scoped to a parent is an open gap** — a WBS code unique within
+  its project rather than across the operation has no expression in the model.
+  Global uniqueness was an accident of the old scheme, not a decision.
+- **Existing records keep the ids they have.** Nothing parses an id, so old
+  value-shaped ids and new UUIDs coexist; no re-keying migration was run.
+
 ## Versioning and upgrades — *Direction* (agreed 2026-07-27)
 
 - A **release** is one numbered snapshot of a whole solution — the model plus a

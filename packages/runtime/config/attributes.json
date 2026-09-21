@@ -113,12 +113,6 @@
     "type": "text"
   },
   {
-    "key": "id",
-    "label": "ID",
-    "description": "Unique identifier for this record.",
-    "type": "text"
-  },
-  {
     "key": "name",
     "label": "Name",
     "description": "Display name.",

@@ -83,7 +83,7 @@ export function SchemaNavGraph({ focalTypeId, onSelectType }: Props) {
       const leftEl = leftRefs.current[i];
       if (!leftEl) return;
       const targetDef = getRecordTypeDef(fk.targetTypeId);
-      const targetAnchorKey = targetDef?.id_field ?? targetDef?.custom_fields[0]?.key;
+      const targetAnchorKey = targetDef?.custom_fields[0]?.key;
       const leftRect = leftEl.getBoundingClientRect();
       lines.push({
         x1: fr.left - cr.left,
@@ -100,7 +100,7 @@ export function SchemaNavGraph({ focalTypeId, onSelectType }: Props) {
       const sourceDef = getRecordTypeDef(rev.sourceTypeId);
       if (!sourceDef) return;
       const fkFieldDef = sourceDef.custom_fields.find(f => f.key === rev.fieldKey);
-      const focalAnchorKey = focalDef.id_field ?? focalDef.custom_fields[0]?.key;
+      const focalAnchorKey = focalDef.custom_fields[0]?.key;
       const rightRect = rightEl.getBoundingClientRect();
       lines.push({
         x1: rightRect.left - cr.left,
@@ -184,7 +184,7 @@ export function SchemaNavGraph({ focalTypeId, onSelectType }: Props) {
         {uniqueForward.length > 0 ? uniqueForward.map((fk, i) => {
           const def = getRecordTypeDef(fk.targetTypeId);
           if (!def) return null;
-          const targetAnchorKey = def.id_field ?? def.custom_fields[0]?.key;
+          const targetAnchorKey = def.custom_fields[0]?.key;
           return (
             <SchemaNavCard
               key={fk.targetTypeId}
@@ -208,7 +208,7 @@ export function SchemaNavGraph({ focalTypeId, onSelectType }: Props) {
             highlightFields={[
               ...focalFKKeys,
               ...(uniqueReverse.length > 0
-                ? [(focalDef.id_field ?? focalDef.custom_fields[0]?.key)].filter(Boolean) as string[]
+                ? [focalDef.custom_fields[0]?.key].filter(Boolean) as string[]
                 : []),
             ]}
           />

@@ -268,7 +268,6 @@ export interface ClientRecordTypeDef {
   name: string;
   description: string;
   workflow_ref: string;
-  id_field?: string;
   custom_fields: ClientCustomFieldDef[];
 }
 

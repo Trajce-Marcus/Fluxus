@@ -4,7 +4,6 @@
     "name": "Asset Types",
     "description": "A classification of asset (e.g. Pump, Valve, Pipe).",
     "workflow_ref": "wf_asset_types",
-    "id_field": "code",
     "custom_fields": [
       {
         "key": "code",

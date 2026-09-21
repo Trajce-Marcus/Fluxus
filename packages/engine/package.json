@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fluxus/dsl": "0.1.0"
+    "@fluxus/dsl": "0.1.0",
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

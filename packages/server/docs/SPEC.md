@@ -59,6 +59,17 @@ src/host.ts            — loadOperationHost (resolve operation → solution, th
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig)
+scripts/retire-id-field.ts
+                       — one-off, 2026-09-18: drops `id_field` from every stored
+                         record type (every record now gets an issued UUIDv7).
+                         Idempotent, `--dry`. Ran against `projects` (3 types)
+                         on 2026-09-18 and `demo/sdm` (10) on 2026-09-21; every
+                         stored solution is now off natural keys. The delay was
+                         instructive: a config write validates the WHOLE graph,
+                         so two dead items in `demo/sdm`'s default menu — labels
+                         with no page and no children, unrelated to identity —
+                         refused every write to that solution until they were
+                         removed in the Console
 src/projection.ts      — the client projection: computeReadable (the record-type
                          read filter, shared by the data and model cuts) and
                          projectConfig (the stored model → the browser's copy).
@@ -632,7 +643,7 @@ somebody deliberately exposes them. This is the rule the whole module rests on.
 | | Ships | Stripped |
 |---|---|---|
 | attributes | `key`, `label`, `description`, `type`, display config, `max_count`, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | the presign gate (`max_size_mb`); attributes no surviving form reaches, and pool orphans |
-| record types | `id`, `name`, `description`, `workflow_ref`, `id_field`, custom field key + label + type + FK wiring | `access.read`; storage constraints (`required`/`unique`/`immutable`/`indexed`/`default`); **unreadable types entirely** |
+| record types | `id`, `name`, `description`, `workflow_ref`, custom field key + label + type + FK wiring | `access.read`; storage constraints (`required`/`unique`/`immutable`/`indexed`/`default`); **unreadable types entirely** |
 | activities | `id`, `name`, `description`, `sort_order`, `record_map`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely** |
 | workflows | `id`, `name`, `description`, and the activities that survive | workflows serving no surviving record type |
 | functions | those reachable from a shipped expression, transitively | the rest — including every hook-only helper |

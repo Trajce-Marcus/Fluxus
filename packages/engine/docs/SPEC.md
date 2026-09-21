@@ -316,7 +316,7 @@ and writes the diff back transactionally (root ARCHITECTURE.md
 truly async evaluator is ever needed.
 
 `MemoryAdapter` (extracted at DSL Phase 4) is THE Store: workflow/attribute
-resolution, constraint checks, staged mutation halves, natural-id migration —
+resolution, constraint checks, staged mutation halves, **record identity** —
 with a protected `persist()` no-op hook (for storage-backed subclasses, none
 currently live) and `allRecords()` for diffing hosts. Every host runs one:
 browser hosts fill it from `@fluxus/client`'s snapshot; the server host loads
@@ -471,6 +471,44 @@ surface, so record writes fail at runtime even in `mutate`-mode scripts — the
 page-callback posture (service effects allowed, direct writes never).
 `functionSignatures(config)` exposes the named-function signature map for
 hosts running their own `validate*` calls (validatePage in the page builder).
+
+## Every record gets its own id (2026-09-18)
+
+A record's id is **issued by the engine, never declared by the model**:
+`MemoryAdapter.buildRecord` generates a **UUIDv7** (the `uuid` package, the
+engine's only runtime dependency besides `@fluxus/dsl`). The id is the storage
+key `(scope, id)`, and the cross-type clash guard stays as a guard — one map
+lookup that fails loudly rather than silently overwriting a record of another
+type.
+
+`RecordTypeDef.id_field` is **gone**. It let a record type key on one of its own
+custom fields, and the projects solution keyed the WBS and the CBS on their
+codes — which made a business value load-bearing three ways: a deleted node
+reserved its code against the reporting rows that outlive the record, a rename
+left the id saying the old code while the field said the new one, and two record
+types numbering a node `1.0` collided outright. A code is a value; identity is
+the platform's to issue. Version 7 rather than 4 because it leads with a
+timestamp, so ids sort by creation and inserts land at the end of the index.
+
+Consequences worth knowing:
+
+- **Uniqueness must now be stated.** A natural key was unique because it *was*
+  the id. A type that needs a value unique declares `unique: true` on the field,
+  which `buildRecord`/`validateUpdate` already enforce per type.
+- **Uniqueness within a parent has no expression** — a WBS code unique inside
+  its project rather than across the operation. Global uniqueness was an
+  accident of the old scheme (it would have refused the second project a node
+  coded `1.0`); the scoped rule is an open gap, not something invented here.
+- **Existing records keep the ids they have.** Nothing parses an id, so a store
+  holding both old value-shaped ids and new UUIDs is consistent. The adapter's
+  `migrateNaturalIds` — a re-keying routine nothing ever called — went with the
+  feature.
+- **Anything that named a record by its code must read back what a create
+  returned.** That is what changed across the test fixtures at this date.
+
+`test/recordIdentity.test.ts` holds the rule: issued not taken, unique, sorted,
+two types free to share a code, rename-safe, and no id ever reused after a
+delete.
 
 ## An attribute names the field it fills (2026-09-15)
 

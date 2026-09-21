@@ -4,17 +4,7 @@
     "name": "Work Groups",
     "description": "Functional unit pairing labour, plant, and equipment resources.",
     "workflow_ref": "wf_workgroups",
-    "id_field": "id",
     "custom_fields": [
-      {
-        "key": "id",
-        "type": "text",
-        "default": "",
-        "required": true,
-        "unique": true,
-        "immutable": true,
-        "indexed": true
-      },
       {
         "key": "name",
         "type": "text",
@@ -50,9 +40,6 @@
         "sort_order": 0,
         "record_map": "CREATE",
         "attributes": [
-          {
-            "attribute_ref": "id"
-          },
           {
             "attribute_ref": "name"
           },

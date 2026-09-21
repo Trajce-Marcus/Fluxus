@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from 'uuid';
 import type { Store } from './store';
 import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
 import { activityHooks, joinScript } from './bridge';
@@ -99,51 +100,6 @@ export class MemoryAdapter implements Store {
   /** Persistence hook, called after every mutation — no-op in memory. */
   protected persist(): void {}
 
-  // For record types with id_field set, rename any record whose stored id doesn't
-  // match the natural key value, then patch FK references pointing at the old ids.
-  // Storage-format upgrade for pre-natural-id data — subclasses with durable
-  // storage call it after construction; a fresh in-memory store never needs it.
-  protected migrateNaturalIds(): void {
-    const idRemap = new Map<string, string>();
-
-    for (const [oldId, record] of this.records) {
-      const rt = this.recordTypes.find(r => r.id === record.typeRef);
-      if (!rt?.id_field) continue;
-      const naturalId = String(record.customFields[rt.id_field] ?? '').trim();
-      if (naturalId && naturalId !== oldId) {
-        idRemap.set(oldId, naturalId);
-      }
-    }
-
-    if (idRemap.size === 0) return;
-
-    // Rename the records themselves
-    for (const [oldId, newId] of idRemap) {
-      const record = this.records.get(oldId)!;
-      this.records.delete(oldId);
-      this.records.set(newId, { ...record, id: newId });
-    }
-
-    // Patch FK values in all records that pointed at the old ids
-    for (const record of this.records.values()) {
-      const rt = this.recordTypes.find(r => r.id === record.typeRef);
-      if (!rt) continue;
-      let changed = false;
-      const newFields = { ...record.customFields };
-      for (const cf of rt.custom_fields) {
-        if (cf.type === 'fk_ref') {
-          const fkVal = String(newFields[cf.key] ?? '');
-          const remapped = idRemap.get(fkVal);
-          if (remapped) { newFields[cf.key] = remapped; changed = true; }
-        }
-      }
-      if (changed) record.customFields = newFields;
-    }
-
-    this.persist();
-  }
-
-  /** Every record in the store — snapshot/diff support for write-back hosts. */
   allRecords(): RecordInstance[] {
     return [...this.records.values()];
   }
@@ -219,17 +175,23 @@ export class MemoryAdapter implements Store {
       }
     }
 
-    let id: string;
-    if (rt.id_field) {
-      id = String(merged[rt.id_field] ?? '').trim();
-    } else {
-      id = `r_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    }
+    // **Every record gets its own id** (ruled 2026-09-18). A record type could
+    // nominate a field to key on (`id_field`), and the WBS keyed on its code —
+    // which made the code load-bearing in three ways it was never meant to be:
+    // deleting a node reserved its code forever against the reporting rows that
+    // outlive it, renaming one left the id saying the old code, and two
+    // solutions picking the same short code collided across types. The code is
+    // a value; identity is the platform's to issue.
+    //
+    // UUIDv7, not v4: it leads with a timestamp, so ids sort by creation and
+    // inserts land at the end of the index instead of scattering across it.
+    const id = uuidv7();
 
     // Record identity is (scope, id): an id must be unique across ALL record
-    // types in the scope, not just its own type — storage keys on it. Guard
-    // here so a colliding id fails loudly instead of silently overwriting a
-    // record of another type.
+    // types in the scope, not just its own type — storage keys on it. Kept as a
+    // guard rather than dropped with the natural keys: it is one map lookup,
+    // and it fails loudly rather than silently overwriting a record of another
+    // type if an id ever arrives from somewhere other than the line above.
     const clashingId = this.records.get(id);
     if (clashingId) {
       throw new Error(
