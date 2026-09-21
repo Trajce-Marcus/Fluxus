@@ -503,11 +503,16 @@ record holding it is not itself on the way out, which is knowable only once the
 set is complete. Nothing is written before the check, so a refusal leaves the
 store untouched.
 
-**Two gaps, both deliberate.** Reporting rows projected from a deleted record's
+**One gap, deliberate.** Reporting rows projected from a deleted record's
 history are not purged with it — deferred, and pinned by a test so the day it
-changes, something says so. And nothing stops this running against a production
-operation: the intended guard is an operation lifecycle state (build vs
-production) that does not exist, so the verb is unguarded until it does.
+changes, something says so.
+
+There is deliberately **no environment gate**. A "no deletes in production"
+rule, gated by an operation lifecycle state, was ruled and then reversed the
+same day (2026-09-21): publishing governs the SDM and pages, while data needs no
+dev/prod split, and a solution is expected to ship the tools to manage its own
+data. Delete is guarded like any other change — it runs inside an activity, so
+availability, roles and hooks apply, plus the referential check above.
 
 ## Every record gets its own id (2026-09-18)
 

@@ -97,12 +97,18 @@ anchored to — the ids it named, and the reason if the author captured one —
 never on the record destroyed. So a delete activity must be anchored on
 something that outlives the run.
 
-**Direction — no deletes in production.** Deleting records is an
-implementation-and-setup capability. Once an operation is live there should be
-no delete ability at all. This needs something the platform lacks: an operation
-lifecycle state, build or production, one-way, with delete refused after the
-flip. **Until that exists the verb is unguarded** — nothing stops a hook
-destroying records in a live operation.
+**Reversed 2026-09-21 (same day): "no deletes in production" is dropped.** The
+ruling was that deleting is a setup-only capability, gated by an operation
+lifecycle state — in development vs live, one-way, delete refused after the
+flip. It was reversed on reflection the same day: **publishing governs the SDM
+and pages; data needs no dev/prod split.** A solution is expected to ship the
+tools to manage its own data, and removing a duplicate stock item is ordinary
+operational work, not something only an implementer may do before go-live.
+
+So no operation lifecycle state is planned, and delete is guarded the way every
+other change is: it runs inside an activity, so the availability gate, roles and
+hooks all apply, and the referential check refuses it while anything still
+points at the record.
 
 **A delete is refused while something still points at the record** — the error
 names what is holding the reference, so records are removed from the bottom up.

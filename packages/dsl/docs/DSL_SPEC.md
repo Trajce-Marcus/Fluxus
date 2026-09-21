@@ -105,7 +105,7 @@ for each r in attributes.wo_resources {
 
   **A delete is refused while something still points at the record.** The check runs over the whole staged set at commit — so a subtree deleted in one statement is allowed, because the children holding the reference are themselves going — and the error names the holders. Records come out from the bottom up.
 
-  **Two things deliberately left open.** Reporting rows projected from a deleted record's history are not purged (deferred). And nothing yet stops this running against a production operation — the intended guard is an operation lifecycle state (build vs production) that does not exist yet, so the verb is unguarded until it does.
+  **One thing deliberately left open:** reporting rows projected from a deleted record's history are not purged (deferred). There is no environment gate and none planned — "no deletes in production", gated by an operation lifecycle state, was ruled and reversed the same day (2026-09-21): publishing governs the SDM and pages, data does not, and a solution ships the tools to manage its own data. Delete is guarded by being an activity (availability, roles, hooks) and by the referential check.
 
 ## 5. Attributes and datasources
 
