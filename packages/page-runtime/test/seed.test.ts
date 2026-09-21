@@ -105,3 +105,26 @@ describe('what the form answered for the user still reaches the run', () => {
     expect([...contextFilledKeys([code], { code: 'AAA111' }, undefined)]).toEqual([]);
   });
 });
+
+// A sourced attribute is hidden even when its source resolves to nothing
+// (2026-09-21). It used to stay visible in that case so a page that could not
+// answer it left someone who could — but that made one activity serve two
+// launches badly: the WBS create is seeded with a parent from "Add child" and
+// has none from "New node", and the unseeded case then showed a parent picker
+// on a form whose answer is "no parent".
+//
+// `contextFilledKeys` is the payload half of the same rule, and it does NOT
+// change: a blank stays out of the submission, so the field keeps its default
+// rather than being written empty.
+describe('a source that resolves to nothing', () => {
+  const parent = { key: 'wbs_parent', label: 'Parent', type: 'reference', source: "''" } as AttributeDef;
+
+  it('still carries a seeded value when there is one', () => {
+    const keys = contextFilledKeys([parent], { wbs_parent: 'P1' }, { attribute: 'wbs_parent', records: ['P1'] });
+    expect([...keys]).toEqual(['wbs_parent']);
+  });
+
+  it('submits nothing when it resolved to nothing', () => {
+    expect([...contextFilledKeys([parent], { wbs_parent: '' }, undefined)]).toEqual([]);
+  });
+});

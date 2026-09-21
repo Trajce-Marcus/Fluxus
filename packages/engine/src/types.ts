@@ -121,10 +121,13 @@ export interface ClientAttributeDef {
    * the record a new one is created *under* had no way of reaching it except a
    * seed, which carries exactly one attribute.
    *
-   * An expression that cannot resolve leaves the value blank and says so —
-   * `context.page.record` is null wherever there is no page, such as the
-   * workbench, and an activity whose source reads a field the page's record
-   * does not have is being used on a page it was not written for.
+   * An expression that cannot resolve leaves the value blank — and the
+   * attribute stays hidden (2026-09-21; it used to become visible again).
+   * Sourcing declares the value is not this person's question, and failing to
+   * resolve does not turn it back into one. `context.page.record` is null
+   * wherever there is no page, such as the workbench, and an activity whose
+   * source reads a field the page's record does not have is being used on a
+   * page it was not written for.
    */
   source?: string;
   /** FluxScript expression; carried over from the usage wrapper during resolution. */

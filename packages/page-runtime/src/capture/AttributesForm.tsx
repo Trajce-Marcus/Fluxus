@@ -215,10 +215,19 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
     // from the form, not withheld from the run.
     //
     // Both ways in count: a seed the page supplied, and a `source` the
-    // activity declared. A source that resolved to nothing stays visible, so a
-    // page that cannot answer it leaves someone able to.
+    // activity declared.
+    //
+    // A sourced attribute is hidden **even when the source resolved to
+    // nothing** (2026-09-21, the user's call). It used to stay visible so a
+    // page that could not answer it left someone who could — but that made one
+    // activity serve two launches badly: the WBS create is seeded with a parent
+    // from "Add child" and has none from "New node", and the unseeded case then
+    // showed a parent picker on a form whose answer is "no parent". Sourcing
+    // says the value is not this person's question; failing to resolve does not
+    // turn it back into one. The cost, accepted: a source that silently yields
+    // nothing leaves the field blank rather than fillable by hand.
     if (seed && seed.attribute === attr.key && !seedValue(attr, seed.records).error) return false;
-    if (attr.source !== undefined && !isBlank(values[attr.key])) return false;
+    if (attr.source !== undefined) return false;
     if (!attr.show_condition) return true;
     try {
       return evaluate(attr.show_condition, {
