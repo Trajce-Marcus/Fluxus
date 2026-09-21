@@ -20,6 +20,15 @@ interface Props {
   pageCtx: PageContext;
   onContextChange: (key: string, value: unknown) => void;
   onError: (error: Error, componentName: string) => void;
+  /**
+   * Bumped by the page whenever ANY component's activity run lands, so every
+   * component's dynamic props re-evaluate — not only those of the one that
+   * launched it. It was this component's own `useState` until 2026-09-18,
+   * which is why "New node" never refreshed the table beside it.
+   */
+  refreshTick: number;
+  /** Tell the page a run landed. */
+  onActivityRun: () => void;
 }
 
 interface PendingForm {
@@ -32,7 +41,7 @@ interface PendingForm {
   seed?: AttributeSeed;
 }
 
-export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError }: Props) {
+export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError, refreshTick, onActivityRun }: Props) {
   const [dynamicData, setDynamicData] = useState<Record<string, unknown>>({});
   // Typed-in text with `{{ }}` holes in it, filled. Kept apart from the static
   // config it came from so the author's own words are never overwritten.
@@ -40,13 +49,10 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
   const [pendingForm, setPendingForm] = useState<PendingForm | null>(null);
-  // Bumped after a run-activity completes so dynamic props re-evaluate — how
-  // activity outcomes flow back to the app (locked ROADMAP behaviour).
-  const [refreshTick, setRefreshTick] = useState(0);
 
   // Runs the pipeline server-side (the client refreshes the snapshot after).
-  // A run that lands bumps the refresh tick, which is how an activity's
-  // outcome reaches the page's dynamic props.
+  // A run that lands tells the page, which bumps the tick every component
+  // reads — how an activity's outcome reaches the page's dynamic props.
   const runOnce = useCallback(async (
     activity: ActivityDef,
     captured: Record<string, unknown>,
@@ -60,9 +66,9 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
       waived: options?.waived,
       acknowledgedWarnings: options?.acknowledgedWarnings,
     });
-    if (result.status === 'done') setRefreshTick((t) => t + 1);
+    if (result.status === 'done') onActivityRun();
     return result;
-  }, [runtime]);
+  }, [runtime, onActivityRun]);
 
   // An attribute-less activity has no form to carry the soft stop, so the
   // platform (not the component) asks here. A form activity's warnings go to

@@ -11,7 +11,7 @@ import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } fro
 import type { UploadService } from '@fluxus/client';
 import { DateTimeInput, FileInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
 import { attributeFieldRef } from '@fluxus/engine';
-import { seedValue } from './seed';
+import { contextFilledKeys, seedValue } from './seed';
 import type { AttributeSeed } from '../pageHost';
 
 /** The capture widget for a non-reference/non-list attribute or composite cell. */
@@ -281,14 +281,18 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
   // The submission payload: hidden attributes are not part of it — except one
   // that was **filled from context** rather than hidden by the model. Hiding
   // says two different things and only one of them means "not captured": an
-  // attribute the model rules out does not apply to this run, while a sourced
-  // one is already answered. Dropping the second would create a WBS node with
-  // no project (2026-09-15).
-  const sourcedKeys = new Set(
-    activity.attributes.filter(a => a.source !== undefined && !isBlank(values[a.key])).map(a => a.key)
-  );
+  // attribute the model rules out does not apply to this run, while one filled
+  // from context is already answered. Dropping the second would create a WBS
+  // node with no project (2026-09-15).
+  //
+  // Both ways in count, and `isVisible` hides both — but until 2026-09-18 only
+  // the sourced half was added back here, so a **seeded** attribute was hidden
+  // from the form and then dropped from the submission. "Add child" on a WBS
+  // row created a node at the root; a bulk action carried none of the records
+  // that were ticked. Nothing had ever tested the payload of a seeded run.
+  const contextKeys = contextFilledKeys(activity.attributes, values, seed);
   const capturedForSubmit = () => {
-    const keys = new Set([...captureUnits.map(u => u.key), ...sourcedKeys]);
+    const keys = new Set([...captureUnits.map(u => u.key), ...contextKeys]);
     return Object.fromEntries(Object.entries(values).filter(([k]) => keys.has(k)));
   };
 

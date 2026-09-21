@@ -59,9 +59,12 @@ interface PanelNodeProps {
   pageCtx: PageContext;
   onContextChange: (key: string, value: unknown) => void;
   onError: (error: Error, componentName: string) => void;
+  /** Bumped when any component's activity run lands — see PageRenderer. */
+  refreshTick: number;
+  onActivityRun: () => void;
 }
 
-function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError }: PanelNodeProps) {
+function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun }: PanelNodeProps) {
   if (panel.children.length > 0) {
     return (
       <div style={panelStyle(panel)}>
@@ -74,6 +77,8 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
             pageCtx={pageCtx}
             onContextChange={onContextChange}
             onError={onError}
+            refreshTick={refreshTick}
+            onActivityRun={onActivityRun}
           />
         ))}
       </div>
@@ -93,6 +98,8 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
           pageCtx={pageCtx}
           onContextChange={onContextChange}
           onError={onError}
+          refreshTick={refreshTick}
+          onActivityRun={onActivityRun}
         />
       ) : (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '0.75rem', fontStyle: 'italic' }}>
@@ -168,6 +175,18 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
     setErrors((prev) => [...prev, { componentName, message: error.message }]);
   }, []);
 
+  // An activity run refreshes the WHOLE page, not the component that launched
+  // it (2026-09-18). The tick lived in `ComponentContainer`, so a run only
+  // re-evaluated the props of the component it started from: pressing "New
+  // node" — a button in its own slot — left the WBS table next to it showing
+  // the list as it was before the node existed, until the page was reloaded.
+  // Nothing scopes an activity's effects to one slot: a CREATE lands in
+  // records any component's GET may be reading, so the page is the honest
+  // blast radius. Every component's dynamic props re-evaluate, which for a
+  // GET-backed prop is one round trip each.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const handleActivityRun = useCallback(() => setRefreshTick((t) => t + 1), []);
+
   if (!layout) {
     return <div className="pr-empty">No layout defined for this page.</div>;
   }
@@ -204,6 +223,8 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
           pageCtx={pageCtx}
           onContextChange={handleContextChange}
           onError={handleError}
+          refreshTick={refreshTick}
+          onActivityRun={handleActivityRun}
         />
       </div>
 

@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { AttributeDef } from '@fluxus/engine';
-import { seedValue } from '../src/capture/seed';
+import { contextFilledKeys, seedValue } from '../src/capture/seed';
 
 const one = { key: 'work_order', name: 'Work order', type: 'reference' } as AttributeDef;
 const many = { key: 'work_orders', name: 'Work orders', type: 'reference', type_config: { multi: true } } as AttributeDef;
@@ -43,5 +43,65 @@ describe('a single-valued attribute', () => {
 
   it('leaves the attribute alone when nothing was selected', () => {
     expect(seedValue(one, [])).toEqual({});
+  });
+});
+
+// What actually reaches the run. The form hides an attribute it answered for
+// the user — a sourced one, a seeded one — and until 2026-09-18 added only the
+// sourced half back to the payload, so the seeded value was hidden and then
+// dropped: "Add child" on a WBS row made a root node, and a bulk action
+// carried none of the records that were ticked.
+describe('what the form answered for the user still reaches the run', () => {
+  const parent = { key: 'wbs_parent', label: 'Parent', type: 'reference' } as AttributeDef;
+  const project = { key: 'wbs_project', label: 'Project', type: 'reference', source: 'context.page.record.id' } as AttributeDef;
+  const code = { key: 'code', label: 'Code', type: 'text' } as AttributeDef;
+
+  it('keeps a seeded attribute — the row the action was launched from', () => {
+    const keys = contextFilledKeys([parent, code], { wbs_parent: 'AAA', code: 'AAA111' }, { attribute: 'wbs_parent', records: ['AAA'] });
+    expect([...keys]).toEqual(['wbs_parent']);
+  });
+
+  it('keeps a sourced attribute — the record the page was showing', () => {
+    const keys = contextFilledKeys([project, code], { wbs_project: 'P24-042', code: 'AAA111' }, undefined);
+    expect([...keys]).toEqual(['wbs_project']);
+  });
+
+  it('keeps both at once, which is the WBS create form', () => {
+    const keys = contextFilledKeys(
+      [project, parent, code],
+      { wbs_project: 'P24-042', wbs_parent: 'AAA', code: 'AAA111' },
+      { attribute: 'wbs_parent', records: ['AAA'] },
+    );
+    expect([...keys].sort()).toEqual(['wbs_parent', 'wbs_project']);
+  });
+
+  it('keeps the whole list a bulk action ticked', () => {
+    const crews = { key: 'work_orders', label: 'Work orders', type: 'reference', type_config: { multi: true } } as AttributeDef;
+    const keys = contextFilledKeys([crews], { work_orders: ['WO-1', 'WO-2'] }, { attribute: 'work_orders', records: ['WO-1', 'WO-2'] });
+    expect([...keys]).toEqual(['work_orders']);
+  });
+
+  // The three ways an attribute is an ordinary question again: nothing filled
+  // it, the source resolved to nothing, or the seed was refused. Each stays
+  // visible in the form, so each is captured the ordinary way, and none of
+  // them belongs in this set.
+  it('leaves out a source that resolved to nothing', () => {
+    expect([...contextFilledKeys([project], { wbs_project: '' }, undefined)]).toEqual([]);
+  });
+
+  it('leaves out an empty selection', () => {
+    expect([...contextFilledKeys([parent], { wbs_parent: '' }, { attribute: 'wbs_parent', records: [] })]).toEqual([]);
+  });
+
+  // Forty rows into a single-valued attribute: the form refuses the seed and
+  // shows its error, so whatever the field happens to hold is not an answer
+  // this run may carry.
+  it('leaves out a seed the attribute cannot hold, even holding a value', () => {
+    const values = { wbs_parent: 'AAA' };
+    expect([...contextFilledKeys([parent], values, { attribute: 'wbs_parent', records: ['AAA', 'BBB'] })]).toEqual([]);
+  });
+
+  it('leaves an ordinary typed attribute alone', () => {
+    expect([...contextFilledKeys([code], { code: 'AAA111' }, undefined)]).toEqual([]);
   });
 });
