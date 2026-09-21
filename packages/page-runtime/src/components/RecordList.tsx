@@ -672,27 +672,35 @@ function RecordListComponent({
                     {renderAction(col, row, services)}
                   </td>
                 ) : (
-                  <td key={columnKey(col, i)} className={isRightAligned(col.type) ? 'rl-num' : undefined}>
-                    {/* The indent and the expander go on the first column that
-                        holds a value — an action column draws a button and has
-                        nothing to indent. A row with no children keeps the same
-                        indent and no control, so the values stay in line. */}
-                    {nested && i === labelColumn && (
-                      <span className="rl-twist" style={{ paddingLeft: depth * 14 }}>
-                        {hasChildren ? (
-                          <button
-                            className="rl-expander"
-                            aria-label={shut ? `Expand ${row.id}` : `Collapse ${row.id}`}
-                            aria-expanded={!shut}
-                            onClick={(e) => { e.stopPropagation(); setCollapsed(toggleCollapsed(collapsed, row.id)); }}
-                          >
-                            {shut ? '▸' : '▾'}
-                          </button>
-                        ) : (
-                          <span className="rl-expander rl-expander--none" />
-                        )}
-                      </span>
-                    )}
+                  <td
+                    key={columnKey(col, i)}
+                    className={isRightAligned(col.type) ? 'rl-num' : undefined}
+                    // **The indent is the cell's padding** (2026-09-21). It was
+                    // a flex box wrapping the expander, and a flex box inside a
+                    // narrow column is a negotiation: the blank standing in for
+                    // a childless row had no content to protect it and
+                    // collapsed, taking the indent with it. A `td`'s padding is
+                    // not up for negotiation — the column may be 90px and the
+                    // text may wrap, but the padding is still there. One
+                    // property, no layout argument.
+                    style={nested && i === labelColumn && depth > 0 ? { paddingLeft: depth * 18 } : undefined}
+                  >
+                    {/* The expander goes on the first column that holds a value
+                        — an action column draws a button and has nothing to
+                        indent. A row with no children keeps the same slot and
+                        no control, so values stay in line across a level. */}
+                    {nested && i === labelColumn && (hasChildren ? (
+                      <button
+                        className="rl-expander"
+                        aria-label={shut ? `Expand ${row.id}` : `Collapse ${row.id}`}
+                        aria-expanded={!shut}
+                        onClick={(e) => { e.stopPropagation(); setCollapsed(toggleCollapsed(collapsed, row.id)); }}
+                      >
+                        {shut ? '▶' : '▼'}
+                      </button>
+                    ) : (
+                      <span className="rl-expander rl-expander--none" />
+                    ))}
                     {cell(row, col)}
                   </td>
                 )))}
@@ -751,23 +759,15 @@ const css = `
   .rl-pop-clear { padding: 2px 8px; border: none; background: none; color: #2563eb; cursor: pointer; font-size: 0.7rem; font-family: inherit; }
   .rl-pop-done { padding: 2px 10px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.7rem; font-family: inherit; }
   .rl-nomatch { color: #94a3b8; font-size: 0.8rem; padding: 10px 0; }
-  /* The indent slot. \`flex: none\` on both the button and the blank is
-     load-bearing (2026-09-21): the twist is an inline-flex box, so the blank
-     standing in for a childless row is a flex item with no content — its
-     min-content width is 0, and inside a narrow column (the WBS Code column is
-     90px) the default flex-shrink collapsed it to nothing. The triangle
-     survived because it has a glyph, so a parent's text was pushed right by its
-     expander while its children's text was not pushed at all: the children read
-     as the outer level and the parent as the nested one. The nesting was always
-     correct; only the indent was being eaten.
-
-     \`vertical-align: middle\` is the other half — an inline-flex box sitting in
-     a line of text drags the baseline of the text beside it, so the Code column
-     sat a little lower than the Name column in the same row. */
-  .rl-twist { display: inline-flex; align-items: center; vertical-align: middle; }
-  .rl-expander { flex: none; width: 1.1rem; padding: 0; border: none; background: none; color: #64748b; cursor: pointer; font-size: 0.8rem; line-height: 1; font-family: inherit; }
-  .rl-expander:hover { color: #1e293b; }
-  .rl-expander--none { display: inline-block; flex: none; cursor: default; }
+  /* The expander slot — a plain inline-block, deliberately not a flex box.
+     Fixed width so a row with a triangle and a row without start their value at
+     the same place, and vertical-align middle so an empty box does not drag
+     the baseline of the text beside it (which left the first column sitting
+     lower than the rest of its row). The indent itself is the cell's padding,
+     set inline above. */
+  .rl-expander { display: inline-block; width: 1.25rem; padding: 0; border: none; background: none; color: #475569; cursor: pointer; font-size: 0.85rem; line-height: 1; font-family: inherit; text-align: left; vertical-align: middle; }
+  .rl-expander:hover { color: #0f172a; }
+  .rl-expander--none { cursor: default; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
   .rl-action { white-space: nowrap; text-align: right; width: 1%; }
   .rl-unknown { color: #b45309; font-size: 0.7rem; }
