@@ -75,6 +75,41 @@ columns exist today; the install path doesn't).
 6. **Pages are data, not code.** A page is a stored, validated definition
    interpreted at render time — no compile step, no arbitrary bundles.
 
+## Deleting — *Built and Direction* (ruled 2026-09-21)
+
+**Built.** The DSL has `delete()` — `r.delete()`, or
+`records.<type>.where(...).delete()` in bulk — and it destroys the record **and
+its history**. That is deliberate: a delete is for a record that should never
+have existed. Keeping a record while taking it out of circulation is a
+different act, done by marking a field the author declares and their queries
+filter on, the way the projects solution uses `expired`. **The platform does not
+own that flag** — whether a removal is real or a mark is the implementer's
+decision, made per solution.
+
+Rejected on the way here: a parallel DELETED record type per type (a record type
+defines shape and behaviour, not a place to put things — and nothing retypes a
+record), one DELETED type for everything (custom fields are per type, so a
+heterogeneous bucket has no schema to read back through), and a platform-owned
+live/deleted state with automatic filtering.
+
+The audit of a deletion lives on the record the **deleting activity** was
+anchored to — the ids it named, and the reason if the author captured one —
+never on the record destroyed. So a delete activity must be anchored on
+something that outlives the run.
+
+**Direction — no deletes in production.** Deleting records is an
+implementation-and-setup capability. Once an operation is live there should be
+no delete ability at all. This needs something the platform lacks: an operation
+lifecycle state, build or production, one-way, with delete refused after the
+flip. **Until that exists the verb is unguarded** — nothing stops a hook
+destroying records in a live operation.
+
+**Two things left open.** Reporting rows projected from a deleted record's
+history are not purged with it (deferred, and pinned by a test). And **erasure**
+— removing one person's data from records and history entries that themselves
+stay — is not this, and is not a platform capability: an implementer builds the
+tool, selects the records, and the hooks do the work.
+
 ## Record identity — *Built* (ruled 2026-09-18)
 
 **Every record gets its own id, issued by the platform** — a UUIDv7, unique

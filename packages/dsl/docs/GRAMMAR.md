@@ -263,13 +263,18 @@ records.wo_resources.create({ work_order_id: context.record.id, resource_id: r.i
 records.work_orders
   .where(status = 'Open' and due_date < now())
   .update({ status: 'Overdue' })
+
+// delete — the record and its history both go   ⚑ D15
+node.delete()
+records.wbs_nodes.where(project_id = context.record.id).delete()
 ```
 
 - **Records are read-only values**: `r.status = 'Overdue'` is a validation error whose message points to `r.update({ status: 'Overdue' })`. No silent-local vs persisted-write confusion can exist.
 - **Projected rows are not records**: results of `.select(...)` carry no identity; `.update()` on them is a validation error.
-- **Bulk update requires a `where`**: `records.assets.update({...})` with no preceding `.where(...)` is a validation error (SQL's UPDATE-without-WHERE disaster, made impossible). Updating genuinely every record must be explicit: `.where(true).update({...})`. The same rule will apply to bulk delete when delete semantics arrive. A bulk update evaluates to the affected count; an instance update evaluates to the record.
+- **Bulk update requires a `where`**: `records.assets.update({...})` with no preceding `.where(...)` is a validation error (SQL's UPDATE-without-WHERE disaster, made impossible). Updating genuinely every record must be explicit: `.where(true).update({...})`. A bulk update evaluates to the affected count; an instance update evaluates to the record.
+- **`delete()` follows every one of those rules** (2026-09-21): no argument, filter mandatory in bulk, projected rows refused, after hooks only, staged and rolled back with the rest. It destroys the record **and its history** — anything worth keeping is marked instead, the way a solution's own `expired` field does. Deleting a record the same script created cancels the create rather than staging a delete of a row the host has never seen, and an update staged against a record later deleted is dropped.
 - Update-by-raw-id is `records.jobs.where(id = x).first.update({...})`; a `.get(id)` sugar is deferred until that chafes.
-- All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. Delete is deferred pending SDM delete semantics.
+- All mutations run only in after hooks, are staged in the hook's transaction, and respect field constraints (`immutable`, `required`, `unique`) enforced by the store; bulk updates are subject to row quotas. The same holds for `delete`.
 
 ### Example (after hook)
 
@@ -335,4 +340,5 @@ Method-style may extend to strings/numbers (`s.upper()`, `n.round(2)`) for consi
 | D11 | Variable semantics | **Resolved** | Variables hold **snapshot copies**, materialized at assignment; store changes don't ripple in; field writes on variables never hit the store (records reject them outright, D14); chaining filters in memory. Nuance settled in the Phase 2 build: a record you call `.update()` on reflects the staged change immediately, and **new** reads (queries, `context.record`, FK derefs) see staged mutations (read-your-writes); snapshots taken *earlier* stay as they were. |
 | D12 | Reverse-FK navigation | **Resolved** | Incoming FKs exposed as list properties named by source type (`wo.wo_resources`); disambiguation `name(by: field)` when a source type has two FKs to the target; powered by the SDM's existing reverse-FK index. |
 | D13 | Bulk update | **Resolved** | `.where(...).update({...})` chain terminal; transactional, row-quota'd, after hooks only (Phase 2). **A `where` is mandatory** — update without one is a validation error; "all records" must be explicit via `.where(true)`. |
+| D15 | Delete | **Resolved 2026-09-21** | `r.delete()` / `.where(...).delete()`; destroys the record and its history, because the keep-it case is a field the author marks and filters on (the projects solution's `expired`). Alternatives weighed and dropped: a parallel DELETED record type per type (a record type defines shape and behaviour, not location — and nothing retypes a record), one DELETED type for everything (fields are per type; a heterogeneous bucket has no schema to read back through), and a platform-owned live/deleted flag with automatic filtering (takes a decision belonging to the author). The audit lives on the record the deleting activity was anchored to, never on what it destroyed. Open: whether reporting rows are purged with it, and the operation lifecycle state meant to keep the verb out of production. |
 | D14 | Mutation shape | **Resolved** | `r.update({fields})` on the record itself (user-proposed); records are read-only values (`r.field = x` errors, pointing to `.update`); `create` collection-level; projections not updatable. Case coverage confirmed during Phase 2 build. |

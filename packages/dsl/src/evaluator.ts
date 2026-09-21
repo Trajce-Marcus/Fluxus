@@ -656,7 +656,7 @@ class Evaluator {
       // so the collection is never materialized just to mutate it; the inner
       // object is evaluated once and the chain resumed from it.
       let object: unknown;
-      if ((method === 'create' || method === 'update') && callee.object.kind === 'member') {
+      if ((method === 'create' || method === 'update' || method === 'delete') && callee.object.kind === 'member') {
         const inner = this.eval(callee.object.object, scope);
         if (inner instanceof RecordsRoot) {
           const type = callee.object.name;
@@ -665,6 +665,12 @@ class Evaluator {
           }
           if (method === 'create') {
             return this.createRecord(type, this.fieldsArg(expr, scope, 'create'), expr.pos);
+          }
+          if (method === 'delete') {
+            throw new FluxRuntimeError(
+              `Bulk delete needs a filter: records.${type}.where(...).delete()`,
+              expr.pos,
+            );
           }
           throw new FluxRuntimeError(
             `Bulk update needs a filter: records.${type}.where(...).update({...})`,
@@ -700,6 +706,28 @@ class Evaluator {
         for (const item of object) {
           this.tick(expr.pos);
           this.updateRecord(item as DslRecord, fields, expr.pos);
+        }
+        return object.length;
+      }
+      if (method === 'delete' && isRecord(object)) {
+        this.noArgs(expr, 'delete');
+        return this.deleteRecord(object, expr.pos);
+      }
+      if (method === 'delete' && Array.isArray(object)) {
+        // Bulk delete as chain terminal — the selection decides what goes, the
+        // same way bulk update decides what changes.
+        this.noArgs(expr, 'delete');
+        for (const item of object) {
+          if (!isRecord(item)) {
+            throw new FluxRuntimeError(
+              'Only records can be deleted — projected rows have no identity',
+              expr.pos,
+            );
+          }
+        }
+        for (const item of object) {
+          this.tick(expr.pos);
+          this.deleteRecord(item as DslRecord, expr.pos);
         }
         return object.length;
       }
@@ -1082,6 +1110,46 @@ class Evaluator {
     this.stagedPatches.set(record.type, patches);
     Object.assign(record.fields, fields); // the held snapshot reads its own write
     return record;
+  }
+
+  /**
+   * Delete a record: the row and its history both go (the user's ruling,
+   * 2026-09-21 — a delete is for what should never have existed, and anything
+   * worth keeping is marked instead). Deleting one this script created cancels
+   * the create rather than staging a delete of a record that was never
+   * persisted; any patches staged against it go too, since there is nothing
+   * left to patch.
+   */
+  private deleteRecord(record: DslRecord, pos: Position): DslRecord {
+    const mutate = this.mutationHost(pos, 'delete');
+
+    const creates = this.stagedCreates.get(record.type);
+    const createdAt = creates?.findIndex((r) => r.id === record.id) ?? -1;
+    if (creates && createdAt !== -1) {
+      creates.splice(createdAt, 1);
+      this.staged = this.staged.filter(
+        (op) => !((op.op === 'create' && op.record.id === record.id) || (op.op !== 'create' && op.id === record.id)),
+      );
+      this.stagedPatches.get(record.type)?.delete(record.id);
+      return record;
+    }
+
+    try {
+      mutate.prepareDelete(record.type, record.id);
+    } catch (e) {
+      throw new FluxRuntimeError(e instanceof Error ? e.message : String(e), pos);
+    }
+    this.staged = this.staged.filter((op) => op.op === 'create' || op.id !== record.id);
+    this.stagedPatches.get(record.type)?.delete(record.id);
+    this.staged.push({ op: 'delete', type: record.type, id: record.id });
+    return record;
+  }
+
+  /** A method that answers nothing but the call itself — `delete()` takes no argument. */
+  private noArgs(expr: Expr & { kind: 'call' }, what: string): void {
+    if (expr.args.length !== 0) {
+      throw new FluxRuntimeError(`${what}() takes no arguments`, expr.pos);
+    }
   }
 
   /** The single `{ field: value }` argument of create/update, values normalized to ids. */

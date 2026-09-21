@@ -96,7 +96,14 @@ for each r in attributes.wo_resources {
 - `fail('message')` — abort with a user-facing message (see hook semantics, §6).
 - `warn('message')` — non-blocking message to the invoking surface.
 - `queue <service call>` — fire-and-forget; see §7. The validator rejects any use of a `queue`d call's return value.
-- Mutations: `r.update({...})` on the record itself; `records.<type>.create({...})` at collection level; bulk `.where(...).update({...})` as a chain terminal. Records are read-only values — field assignment errors, pointing to `.update`. (Delete deferred until the SDM defines its delete semantics; see GRAMMAR §5 D13/D14.)
+- Mutations: `r.update({...})` on the record itself; `records.<type>.create({...})` at collection level; bulk `.where(...).update({...})` as a chain terminal. Records are read-only values — field assignment errors, pointing to `.update`.
+- **`delete()`** (2026-09-21): `r.delete()` on a record, `records.<type>.where(...).delete()` in bulk, returning the count. It takes no argument, refuses a whole collection without a filter (`.where(true)` says it out loud), and refuses projected rows — they have no identity. It is a mutation like any other: after hooks only.
+
+  **What a delete means here.** It destroys the record and its history. That is the whole point of having it: anything worth keeping is *marked* instead — a field the author declares and their queries filter on, which is what the projects solution does with `expired`. A delete is for a record that should never have existed. Ruled by the user 2026-09-21, after the alternatives (a parallel DELETED record type, one DELETED type for everything, a platform-owned live/deleted flag) were weighed and dropped: a record type is a definition of shape and behaviour, not a place to put things, and a platform flag would take a decision that belongs to the author.
+
+  **The audit lives on the actor.** The deleted record's history goes with it, so what survives is the entry on the record the deleting activity was anchored to — the ids it named and, if the author asked for one, the reason. A delete activity must therefore be anchored on something that outlives the run; anchoring it on what it deletes destroys its own audit trail.
+
+  **Two things deliberately left open.** Reporting rows projected from a deleted record's history are not purged (deferred). And nothing yet stops this running against a production operation — the intended guard is an operation lifecycle state (build vs production) that does not exist yet, so the verb is unguarded until it does.
 
 ## 5. Attributes and datasources
 

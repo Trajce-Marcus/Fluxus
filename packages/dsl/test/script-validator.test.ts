@@ -116,6 +116,22 @@ describe('script validation — mutations', () => {
     expect(errors(`context.record.update({ id: 'x' })`)[0]).toMatch(/'id' is not writable/);
   });
 
+  it('bulk delete requires a where, like bulk update', () => {
+    expect(errors(`records.work_orders.delete()`)[0]).toMatch(/Bulk delete needs a filter/);
+    expect(check(`records.work_orders.where(true).delete()`)).toEqual([]);
+    expect(check(`context.record.delete()`)).toEqual([]);
+  });
+
+  it('projected rows cannot be deleted, and delete takes no argument', () => {
+    expect(errors(`records.work_orders.where(true).select(id, code).delete()`)[0]).toMatch(/have no identity/);
+    expect(errors(`context.record.delete({ reason: 'x' })`)[0]).toMatch(/takes no arguments/);
+  });
+
+  it('delete is a mutation, so the same tiers refuse it', () => {
+    expect(errors(`context.record.delete()`, { mode: 'before' })[0]).toMatch(/Before hooks validate only/);
+    expect(errors(`context.record.delete()`, { mode: 'callback' })[0]).toMatch(/mutations flow through activities/);
+  });
+
   it('the expression tier rejects mutations and fail/warn', () => {
     const expr = (s: string) => validateExpression(s, SCHEMA, { anchorType: 'work_orders' }).map((d) => d.message);
     expect(expr(`records.work_orders.where(true).update({ status: 'x' })`)[0]).toMatch(/not allowed in expressions/);

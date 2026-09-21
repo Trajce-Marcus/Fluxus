@@ -472,6 +472,32 @@ page-callback posture (service effects allowed, direct writes never).
 `functionSignatures(config)` exposes the named-function signature map for
 hosts running their own `validate*` calls (validatePage in the page builder).
 
+## A hook may delete (2026-09-21)
+
+`RecordsMutationHost` gains `prepareDelete(type, id)` and `MutationOp` gains
+`{ op: 'delete' }`, so the DSL's `delete()` reaches the store the way create and
+update do: validated while the script runs, staged, applied atomically on
+commit. `prepareDelete` reads the record — proving it exists — and refuses it if
+its type is not the one the script named, since a script deleting a record of
+the wrong type would be silently destructive. `apply` calls
+`Store.deleteRecord`, which takes the row and the history embedded in it.
+
+On the server this needs nothing new: `writeBack` diffs the partition by
+absence, so a record a hook removed in memory becomes a real row delete
+(`test/hookDelete.test.ts` in @fluxus/server proves it at the database).
+
+What the platform is saying by having this verb destroy history: a delete is for
+a record that should never have existed. The keep-it case is a field the author
+marks and filters on — the projects solution's `expired` — and that stays the
+author's to design rather than the platform's to impose (the user's ruling; the
+reasoning and the rejected alternatives are in the DSL GRAMMAR, D15).
+
+**Two gaps, both deliberate.** Reporting rows projected from a deleted record's
+history are not purged with it — deferred, and pinned by a test so the day it
+changes, something says so. And nothing stops this running against a production
+operation: the intended guard is an operation lifecycle state (build vs
+production) that does not exist, so the verb is unguarded until it does.
+
 ## Every record gets its own id (2026-09-18)
 
 A record's id is **issued by the engine, never declared by the model**:

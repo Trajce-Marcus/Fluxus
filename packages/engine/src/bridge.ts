@@ -189,6 +189,15 @@ export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): 
       prepareUpdate: (type, id, fields) => {
         adapter.validateUpdate(String(id), serializeFields(fields));
       },
+      prepareDelete: (type, id) => {
+        // Reads the record to prove it exists (getRecord throws if not) and to
+        // check it is the type the script named — a script that deleted a
+        // record of the wrong type would be silently destructive.
+        const record = adapter.getRecord(String(id));
+        if (record.typeRef !== fullId(type)) {
+          throw new Error(`Record '${id}' is not a ${type}`);
+        }
+      },
       apply: (ops) => {
         for (const op of ops) {
           if (op.op === 'create') {
@@ -198,8 +207,14 @@ export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): 
               customFields: serializeFields(op.record.fields),
               activityHistory: [],
             });
-          } else {
+          } else if (op.op === 'update') {
             adapter.updateRecord(op.id, serializeFields(op.fields));
+          } else {
+            // The row and its embedded history both go. The reporting rows
+            // projected from that history are NOT touched here — deciding
+            // their fate is deferred (2026-09-21), and leaving them is the
+            // behaviour a DELETE record map already has.
+            adapter.deleteRecord(op.id);
           }
         }
       },

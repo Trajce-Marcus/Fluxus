@@ -24,7 +24,8 @@ export class FkPointer {
 /** A staged record mutation (DSL_SPEC §7): held by the evaluator, applied atomically on commit. */
 export type MutationOp =
   | { op: 'create'; type: string; record: DslRecord }
-  | { op: 'update'; type: string; id: string; fields: Record<string, unknown> };
+  | { op: 'update'; type: string; id: string; fields: Record<string, unknown> }
+  | { op: 'delete'; type: string; id: string };
 
 /**
  * Mutation surface of a records host (Phase 2). `prepare*` validate and shape a
@@ -36,6 +37,13 @@ export interface RecordsMutationHost {
   prepareCreate(type: string, fields: Record<string, unknown>): DslRecord;
   /** Validate an update (immutable/unique constraints). Does not persist. Throws on violation. */
   prepareUpdate(type: string, id: string, fields: Record<string, unknown>): void;
+  /**
+   * Validate a delete — the record exists and is of the type named. Does not
+   * persist. The record's history goes with it (2026-09-21, the user's ruling):
+   * a delete is for what should never have existed, and anything worth keeping
+   * is marked rather than deleted.
+   */
+  prepareDelete(type: string, id: string): void;
   /** Commit staged mutations, in order. */
   apply(ops: MutationOp[]): void;
 }

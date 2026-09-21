@@ -660,7 +660,7 @@ class Validator {
       const object = this.check(callee.object, itemType);
       const method = callee.name;
 
-      if (method === 'create' || method === 'update') {
+      if (method === 'create' || method === 'update' || method === 'delete') {
         const handled = this.mutation(object, method, expr, itemType);
         if (handled !== null) return handled;
         // not a records mutation — fall through (e.g. a service module's own method)
@@ -702,7 +702,7 @@ class Validator {
    * Mutation placement rules (D13/D14, DSL_SPEC §6–§7). Returns null when the
    * call is not a records mutation and should fall through to generic handling.
    */
-  private mutation(object: Shape, method: 'create' | 'update', expr: Expr & { kind: 'call' }, itemType: string | null): Shape | null {
+  private mutation(object: Shape, method: 'create' | 'update' | 'delete', expr: Expr & { kind: 'call' }, itemType: string | null): Shape | null {
     const target =
       object.kind === 'record' || object.kind === 'recordList' || object.kind === 'rowList' ? object : null;
     if (target === null && !(object.kind === 'unknown' && this.isCtxRecordChain(expr.callee))) return null;
@@ -728,6 +728,24 @@ class Validator {
       }
       this.checkFieldsArg(expr, object.type, itemType, 'create');
       return { kind: 'record', type: object.type };
+    }
+
+    if (method === 'delete') {
+      // Deleting destroys the record and its history, so the same two rules as
+      // bulk update apply — identity is required, and "everything" must be said
+      // out loud rather than fallen into.
+      if (object.kind === 'rowList') {
+        this.error(expr, 'Projected rows have no identity and cannot be deleted — delete the records themselves');
+        return UNKNOWN;
+      }
+      if (object.kind === 'recordList' && !object.filtered) {
+        this.error(expr, `Bulk delete needs a filter: records.${object.type}.where(...).delete() — deleting every record must say .where(true)`);
+      }
+      if (expr.args.length !== 0) this.error(expr, 'delete() takes no arguments');
+      expr.args.forEach((arg) => this.check(arg.value, itemType));
+      if (object.kind === 'record') return object;
+      if (object.kind === 'recordList') return SCALAR; // bulk delete yields the affected count
+      return UNKNOWN;
     }
 
     // update

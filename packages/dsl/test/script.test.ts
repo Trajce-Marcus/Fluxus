@@ -56,11 +56,16 @@ function makeStore(): TestStore {
         if ('code' in fields) throw new Error('"code" is immutable and cannot be changed');
         void type; void id;
       },
+      prepareDelete: (type, id) => {
+        if (!data[type]?.some((r) => r.id === id)) throw new Error(`Record not found: ${id}`);
+      },
       apply: (ops) => {
         applied.push(ops);
         for (const op of ops) {
           if (op.op === 'create') data[op.type].push(op.record);
-          else {
+          else if (op.op === 'delete') {
+            data[op.type] = data[op.type].filter((r) => r.id !== op.id);
+          } else {
             const target = data[op.type].find((r) => r.id === op.id);
             if (target) target.fields = { ...target.fields, ...op.fields };
           }
@@ -329,6 +334,84 @@ describe('scripts — staged mutations', () => {
     expect(() => run(`records.wo_resources.create({ qty: 1 })`, host(store), 'read')).toThrow(
       /after hooks only/,
     );
+  });
+});
+
+// ── delete (D-something, 2026-09-21) ────────────────────────────────────────────
+//
+// The platform's position on deleting, in one line: a delete is for what should
+// never have existed, and anything worth keeping is marked instead. So the verb
+// destroys the record and its history, takes no arguments, and — like bulk
+// update — refuses to act on a whole collection unless the script says so.
+
+describe('scripts — delete', () => {
+  it('deletes one record', () => {
+    const store = makeStore();
+    run(`context.record.delete()`, host(store));
+    expect(store.data.work_orders.map((r) => r.id)).toEqual(['wo2']);
+    expect(store.applied[0]).toEqual([{ op: 'delete', type: 'work_orders', id: 'wo1' }]);
+  });
+
+  it('bulk delete via where() returns the affected count', () => {
+    const store = makeStore();
+    const { value } = run(`return records.resources.where(status = 'Active').delete()`, host(store));
+    expect(value).toBe(2);
+    expect(store.data.resources.every((r) => r.fields.status !== 'Active')).toBe(true);
+  });
+
+  it('refuses a whole collection without a filter', () => {
+    expect(() => run(`records.resources.delete()`, host(makeStore()))).toThrow(/Bulk delete needs a filter/);
+  });
+
+  it('takes no arguments', () => {
+    expect(() => run(`context.record.delete({ reason: 'x' })`, host(makeStore()))).toThrow(/takes no arguments/);
+  });
+
+  it('is refused in read mode, like every other mutation', () => {
+    expect(() => run(`context.record.delete()`, host(makeStore()), 'read')).toThrow(/after hooks only/);
+  });
+
+  it('surfaces a host refusal at the statement, staging nothing', () => {
+    const store = makeStore();
+    expect(() => run(`records.resources.where(id = 'nope').delete()`, host(store))).not.toThrow();
+    expect(store.applied).toHaveLength(0); // nothing matched, nothing staged, no commit
+  });
+
+  // Deleting something the same script created cancels the create: there is no
+  // persisted record to destroy, and staging both would ask the host to delete
+  // an id it has never seen.
+  it('deleting a record created in the same script cancels the create', () => {
+    const store = makeStore();
+    run(
+      `let line = records.wo_resources.create({ work_order_id: 'wo1', qty: 1 })
+       line.delete()`,
+      host(store),
+    );
+    expect(store.applied).toHaveLength(0); // the create never reaches the host
+    expect(store.data.wo_resources).toHaveLength(0);
+  });
+
+  // An update staged before the delete is pointless work the host would have to
+  // apply to a row on its way out.
+  it('drops an update staged against a record later deleted', () => {
+    const store = makeStore();
+    run(
+      `context.record.update({ status: 'Scheduled' })
+       context.record.delete()`,
+      host(store),
+    );
+    expect(store.applied[0]).toEqual([{ op: 'delete', type: 'work_orders', id: 'wo1' }]);
+    expect(store.data.work_orders.map((r) => r.id)).toEqual(['wo2']);
+  });
+
+  it('rolls back with everything else when a later statement fails', () => {
+    const store = makeStore();
+    expect(() =>
+      run(`context.record.delete()
+           let boom = 1 / 0`, host(store)),
+    ).toThrow(FluxRuntimeError);
+    expect(store.applied).toHaveLength(0);
+    expect(store.data.work_orders).toHaveLength(2);
   });
 });
 
