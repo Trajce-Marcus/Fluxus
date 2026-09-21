@@ -94,8 +94,11 @@ round trip, because the anchor record is already resolved and carries every
 field:
 
 ```
-[ { id: 'client',     property: 'Client',           value: context.record.client },
+[ { id: 'name',       property: 'Name',             value: context.record.name },
+  { id: 'client',     property: 'Client',           value: context.record.client },
   { id: 'job_type',   property: 'Job type',         value: context.record.job_type },
+  { id: 'location',   property: 'Location',         value: context.record.location },
+  { id: 'geo_point',  property: 'GPS coordinate',   value: context.record.geo_point },
   { id: 'status',     property: 'Status',           value: context.record.status },
   { id: 'wbs_status', property: 'WBS',              value: context.record.wbs_status },
   { id: 'start',      property: 'Target start',     value: context.record.target_start },
@@ -105,6 +108,29 @@ field:
 ```
 
 Each row carries an `id` because the table keys and selects on it.
+
+**Name joined the table 2026-09-22** — it had only ever been the page's
+subheading, and a heading is a title rather than a field someone can look up.
+The subheading stays; the row is the one Details is read for.
+
+**Location and the coordinate joined the table 2026-09-22**, with the project's
+two new fields (`location`, a plain description of where the works are, and
+`geo_point`, a `geopoint` for their centre). The coordinate row passes **the bag
+itself**, not `.lat + ', ' + .lng`: a point draws as degrees in any column
+(page-runtime SPEC), and the dotted form throws on a project that has no
+coordinate — which would take the whole Details table down with it, not just
+that row.
+
+### 3.2a Map
+
+A `Map` below Details and above the WBS section, in an **`auto`** panel — the
+component states its own size (700px wide, landscape), so the panel only has to
+be as tall as what is in it. A `fixed` panel was tried first and collapsed to a
+10px strip: `fixed` sets `flex-basis` alone, and every sibling in that column is
+content-sized. Its
+`lat`/`lng` are guarded — `iif(context.record.geo_point = '', '',
+context.record.geo_point.lat)` — for the same reason, and the component draws
+"No location" for a project with no point rather than the Gulf of Guinea.
 
 **The known cost of a key/value table: one column, many types, so nothing
 formats.** A column's `format` applies to the whole column, and the DSL has no
@@ -549,6 +575,8 @@ in `packages/server/scripts/`, the convention for one-offs.
 | `wbs-one-edit.ts` (2026-09-21) | Modify + Baseline + Forecast merged into one **Edit** activity; the other two deleted |
 | `wbs-page-buttons.ts` (2026-09-21) | the Baseline and Forecast buttons taken off the WBS table |
 | `retire-id-field.ts` (2026-09-18) | `id_field` dropped from `rt_projects`, `rt_wbs_nodes`, `rt_cbs_nodes` — every record now gets an issued UUIDv7 |
+| `projects-location.ts` (2026-09-22) | `location` + `geo_point` on `rt_projects` and both project activities; the eleven projects given a place, a coordinate and a description — **written straight to the records**, the user's ruling for demo data |
+| `project-page-location.ts` (2026-09-22) | Name, Location and the coordinate added to Details; a `Map` panel between Details and the WBS. Edits the stored draft rather than rewriting it, so Console changes survive |
 
 **One Edit, not three** (2026-09-21, the user's call). Three activities existed
 because availability is declared per activity: baseline and forecast fields
