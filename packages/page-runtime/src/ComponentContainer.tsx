@@ -39,6 +39,13 @@ interface PendingForm {
   recordTypeId: string;
   /** Records the control was about, filling one named attribute. */
   seed?: AttributeSeed;
+  /**
+   * The anchor record is still being fetched. The dialog opens on the click and
+   * says so, rather than the click doing nothing visible until the round trip
+   * lands (2026-09-21, the user's call: the indicator belongs in the dialog,
+   * not on the button).
+   */
+  loading?: boolean;
 }
 
 export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError, refreshTick, onActivityRun }: Props) {
@@ -116,6 +123,19 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     // The callback script has already returned by the time any of this
     // resolves, so failures surface through the host error channel rather than
     // as a throw nobody is left to catch.
+    // Whether a dialog opens at all is known before the fetch — it depends on
+    // the activity's attributes, not on the record — so an activity with a form
+    // shows its dialog immediately and fills it when the anchor lands.
+    const opensDialog = found.activity.attributes.length > 0;
+    if (opensDialog) {
+      setPendingForm({
+        activity: found.activity,
+        anchorRecord: null,
+        recordTypeId: found.typeDef.id,
+        seed,
+        loading: anchorId !== null,
+      });
+    }
     void (async () => {
       try {
         // The anchor is fetched, not read out of the snapshot (2026-08-16): a
@@ -124,12 +144,15 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
         // is also the authorisation check — a record the caller may not read
         // comes back as not-found.
         const anchorRecord = anchorId ? await runtime.client.fetchRecord(anchorId) : null;
-        if (found.activity.attributes.length > 0) {
+        if (opensDialog) {
           setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id, seed });
         } else {
           await runWithConfirm(found.activity, anchorRecord);
         }
       } catch (err: unknown) {
+        // The dialog cannot stay open on a record that never arrived — the form
+        // would read an anchor it does not have.
+        if (opensDialog) setPendingForm(null);
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       }
     })();
@@ -291,6 +314,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
           activity={pendingForm.activity}
           anchorRecord={pendingForm.anchorRecord}
           recordTypeId={pendingForm.recordTypeId}
+          loading={pendingForm.loading}
           pageRecord={pageCtx.record ?? null}
           seed={pendingForm.seed}
           host={runtime.captureHost}

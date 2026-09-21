@@ -250,6 +250,21 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
 }
 
 export const css = `
+  /* The activity dialog's wait, while the anchor record is fetched. It lives
+     here rather than in ActivityFormModal because this is the css string every
+     host already includes, and the dialog renders inside this tree. */
+  .afm-spinner {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    border: 2px solid #cbd5e1;
+    border-top-color: #64748b;
+    border-radius: 50%;
+    animation: afm-spin 0.7s linear infinite;
+  }
+  @keyframes afm-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .afm-spinner { animation-duration: 2.4s; } }
+
   .pr-root {
     width: 100%;
     height: 100%;
