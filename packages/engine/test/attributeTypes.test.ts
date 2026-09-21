@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { coerceValue, coerceCapturedValue, isBlank } from '../src/bridge';
-import { descriptorShapeIssues } from '../src/attributeTypes';
+import { ATTRIBUTE_TYPES, descriptorShapeIssues, geoPoint, geoPointText, isDescriptorType, isUploadType } from '../src/attributeTypes';
 import { validateConfig } from '../src/validateConfig';
 import type { SolutionConfig } from '../src/types';
 
@@ -72,6 +72,35 @@ describe('descriptorShapeIssues', () => {
   });
   it('is a no-op for non-descriptor types', () => {
     expect(descriptorShapeIssues('text', 'anything', 'X')).toEqual([]);
+  });
+});
+
+describe('geopoint', () => {
+  it('shape-checks a point like any other bag', () => {
+    expect(descriptorShapeIssues('geopoint', { lat: -37.9003, lng: 144.662 }, 'Location')).toEqual([]);
+    expect(descriptorShapeIssues('geopoint', { lat: -37.9 }, 'Location')).toContain("Location is missing 'lng'");
+    expect(descriptorShapeIssues('geopoint', { lat: 'south', lng: 144.662 }, 'Location'))
+      .toContain("Location field 'lat' must be a number");
+    expect(descriptorShapeIssues('geopoint', 'somewhere', 'Location')).toEqual(['Location is not a valid geopoint']);
+  });
+
+  it('is a bag, but not an upload — the presign gate refuses it', () => {
+    expect(isDescriptorType('geopoint')).toBe(true);
+    expect(isUploadType('geopoint')).toBe(false);
+    expect(isUploadType('photo')).toBe(true);
+    expect(isUploadType('file')).toBe(true);
+  });
+
+  it('reads degrees back, and refuses half a point', () => {
+    expect(geoPoint({ lat: -37.9003, lng: 144.662 })).toEqual({ lat: -37.9003, lng: 144.662 });
+    expect(geoPoint({ lat: -37.9003 })).toBeNull();
+    expect(geoPoint('')).toBeNull();
+    expect(geoPointText({ lat: -37.9003, lng: 144.662 })).toBe('-37.9003, 144.6620');
+    expect(geoPointText(null)).toBe('');
+  });
+
+  it('takes no multi — one point until the map takes a list', () => {
+    expect(ATTRIBUTE_TYPES.geopoint.multi).toBe(false);
   });
 });
 

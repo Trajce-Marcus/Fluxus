@@ -11,7 +11,11 @@
 //     (§3 "config vs validation" — a closed set; no format mini-language). Any
 //     other key is an error at config-save time.
 //   - `multi`: whether `type_config.multi: true` is legal (every type except
-//     composite — repeating composites are deferred, §11).
+//     composite and geopoint — repeating composites are deferred, §11, and a
+//     geopoint is one point until the map component takes a list).
+//   - `upload`: whether the type's value arrives through the blob store. The
+//     presign gate asks this, not "has a descriptor": `geopoint` is a by-value
+//     bag too (2026-09-22), and nothing is uploaded for one.
 //
 // Three consumers read it: the client upload core (what descriptor fields to
 // write), validateSubmission (server-authoritative descriptor shape check), and
@@ -38,6 +42,8 @@ export interface AttributeTypeSpec {
   configKeys: readonly string[];
   /** Whether `type_config.multi: true` is legal for this type. */
   multi: boolean;
+  /** Whether the value is a file in the blob store — what the presign gate asks. */
+  upload?: true;
 }
 
 // Descriptor field sets (§4). `file` is the base; `photo` extends it with
@@ -61,10 +67,20 @@ const PHOTO_DESCRIPTOR = {
   taken_at: { type: 'datetime', optional: true },
 } as const satisfies Record<string, DescriptorField>;
 
+// A point on the earth, captured by the person filling the form rather than
+// written by an uploader — the first descriptor bag that is neither (2026-09-22).
+// Degrees, WGS 84, the pair every map library and every geo format starts from;
+// a fuller `geo` type carrying lines and polygons may replace it later.
+const GEOPOINT_DESCRIPTOR = {
+  lat: { type: 'decimal' },
+  lng: { type: 'decimal' },
+} as const satisfies Record<string, DescriptorField>;
+
 export const ATTRIBUTE_TYPES: Record<string, AttributeTypeSpec> = {
   // ── This build (§1) ──────────────────────────────────────────────────────
-  photo: { descriptor: PHOTO_DESCRIPTOR, configKeys: ['max_count', 'max_size_mb'], multi: true },
-  file: { descriptor: FILE_DESCRIPTOR, configKeys: ['accept', 'max_count', 'max_size_mb'], multi: true },
+  photo: { descriptor: PHOTO_DESCRIPTOR, configKeys: ['max_count', 'max_size_mb'], multi: true, upload: true },
+  file: { descriptor: FILE_DESCRIPTOR, configKeys: ['accept', 'max_count', 'max_size_mb'], multi: true, upload: true },
+  geopoint: { descriptor: GEOPOINT_DESCRIPTOR, configKeys: [], multi: false },
   text: { configKeys: ['multiline'], multi: true },
   datetime: { configKeys: [], multi: true },
   time: { configKeys: [], multi: true },
@@ -113,9 +129,30 @@ export function descriptorFields(type: string | undefined): Record<string, Descr
   return attributeTypeSpec(type)?.descriptor ?? null;
 }
 
-/** Whether a type's value is a by-value descriptor bag (photo/file). */
+/** Whether a type's value is a by-value descriptor bag (photo/file/geopoint). */
 export function isDescriptorType(type: string | undefined): boolean {
   return descriptorFields(type) !== null;
+}
+
+/** Whether a type's value is a file in the blob store — photo/file, not geopoint. */
+export function isUploadType(type: string | undefined): boolean {
+  return attributeTypeSpec(type)?.upload === true;
+}
+
+/** A geopoint's degrees, or null for anything that is not one. */
+export function geoPoint(value: unknown): { lat: number; lng: number } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const bag = value as Record<string, unknown>;
+  const lat = Number(bag.lat);
+  const lng = Number(bag.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+/** A geopoint written for a person: four decimals, about eleven metres. */
+export function geoPointText(value: unknown): string {
+  const point = geoPoint(value);
+  return point ? `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}` : '';
 }
 
 /**

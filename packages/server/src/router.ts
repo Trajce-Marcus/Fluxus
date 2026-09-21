@@ -8,7 +8,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { DEMO_USER, isDescriptorType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
+import { DEMO_USER, isUploadType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -675,7 +675,7 @@ export const appRouter = t.router({
           const config = await getSolutionConfig(ctx.db, input.solutionId);
           const attr = config.attributes.find((a) => a.key === input.attributeKey);
           if (!attr) throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown attribute '${input.attributeKey}'` });
-          if (!isDescriptorType(attr.type)) {
+          if (!isUploadType(attr.type)) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.attributeKey}' is not a file/photo attribute` });
           }
           const cfg = attr.type_config ?? {};

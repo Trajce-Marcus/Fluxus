@@ -47,7 +47,10 @@ export {
   attributeTypeSpec,
   descriptorFields,
   descriptorShapeIssues,
+  geoPoint,
+  geoPointText,
   isDescriptorType,
+  isUploadType,
 } from './attributeTypes';
 export { attributeFieldRef } from './attributeTypes';
 export type { AttributeFieldRef, AttributeTypeSpec, DescriptorField, DescriptorFieldType } from './attributeTypes';

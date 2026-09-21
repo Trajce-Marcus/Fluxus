@@ -339,7 +339,10 @@ takes `operationId?` (both default `demo/sdm`):
   / **`files.presignGet`** `{ solutionId?, key }` → `{ url }` — the blob upload/read
   door (ATTRIBUTE_TYPES_FILES_SCALARS §6). Bytes never transit the server: the
   browser PUTs straight to R2 with the returned URL. `presignUpload` is the
-  cost chokepoint (§7), enforced BEFORE any bytes move: the platform per-file
+  cost chokepoint (§7), enforced BEFORE any bytes move: the attribute must be
+  an **upload** type (`isUploadType` — photo/file; it was "has a descriptor"
+  until `geopoint` became a descriptor bag that is not a file, 2026-09-22), the
+  platform per-file
   ceiling (20 MB), the attribute's `max_size_mb`, the `file` `accept` filter
   (photos are images), and the environment storage fuse (ledger SUM(size) vs
   8 GB). It inserts the `pending` ledger row and, for photos, a second

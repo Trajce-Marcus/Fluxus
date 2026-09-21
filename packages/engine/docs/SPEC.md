@@ -42,10 +42,10 @@ src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storag
                      mergeRecords() adds or replaces some without touching the
                      rest (2026-08-16) — how a host that was never handed the
                      partition fills its snapshot as it goes
-src/attributeTypes.ts — the attribute type registry (files, photos, scalars):
-                     per-type descriptor field schemas + accepted type_config
-                     keys, read by the client uploader, validateSubmission, and
-                     validateConfig
+src/attributeTypes.ts — the attribute type registry (files, photos, scalars,
+                     geopoint): per-type descriptor field schemas + accepted
+                     type_config keys, read by the client uploader,
+                     validateSubmission, and validateConfig
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
 src/evaluateWithGets.ts — the waiting loop for a host whose GET answers are a
@@ -447,14 +447,26 @@ validator — descriptor dot-access (`attrs.before_photo.taken_at`,
 is; typed dot-paths in hooks/validations are a later, additive step.
 
 - **Types this build**: `photo`, `file`, `datetime`, `time`, `int`, `decimal`;
-  `text` gains `multiline`. GIS types are direction-only (not built).
+  `text` gains `multiline`.
+- **`geopoint`** (2026-09-22): one point on the earth — `{ lat, lng }` in
+  degrees, WGS 84 — captured by the person filling the form. It is a descriptor
+  bag like a photo, so it gets the shape check and the by-value threading for
+  free, but it is the first bag that is **not** a file: the presign gate now
+  asks `isUploadType` (the registry's `upload` flag, photo/file) instead of
+  "has a descriptor", or a geopoint attribute would have been an upload target.
+  No `multi` — one point until the map component takes a list — and no
+  `type_config` keys. `geoPoint(value)` reads the degrees back and
+  `geoPointText(value)` writes them for a person (`-37.9003, 144.6614`); both
+  are what the UI draws with, since `String()` on a bag says `[object Object]`.
+  A fuller `geo` type carrying lines and polygons may replace it later; the
+  rest of GIS stays direction-only.
 - **Descriptor value** (`photo`/`file`, §4): a by-value bag
   (`storage_key`/`name`/`mime`/`size`/`hash`; photo adds
   `width`/`height`/`thumb_key` and optional EXIF `lat`/`lng`/`taken_at`).
   Stored by-value in the pipeline exactly like a composite — history entries
   stay self-contained; bytes never enter the pipeline. `isDescriptorType` /
   `descriptorFields` / `descriptorShapeIssues` expose the schema and the shape
-  check.
+  check; `isUploadType` says which of them are files.
 - **Cardinality** is one flag, `type_config.multi: true` (§2): the value is
   then always an array and `required` means ≥ 1 item. Legal on every type
   except `composite` (repeating composites deferred). Replaces the former
