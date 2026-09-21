@@ -751,10 +751,23 @@ const css = `
   .rl-pop-clear { padding: 2px 8px; border: none; background: none; color: #2563eb; cursor: pointer; font-size: 0.7rem; font-family: inherit; }
   .rl-pop-done { padding: 2px 10px; border: none; border-radius: 4px; background: #2563eb; color: #fff; cursor: pointer; font-size: 0.7rem; font-family: inherit; }
   .rl-nomatch { color: #94a3b8; font-size: 0.8rem; padding: 10px 0; }
-  .rl-twist { display: inline-flex; align-items: center; }
-  .rl-expander { width: 1.1rem; padding: 0; border: none; background: none; color: #64748b; cursor: pointer; font-size: 0.65rem; line-height: 1; font-family: inherit; }
+  /* The indent slot. \`flex: none\` on both the button and the blank is
+     load-bearing (2026-09-21): the twist is an inline-flex box, so the blank
+     standing in for a childless row is a flex item with no content — its
+     min-content width is 0, and inside a narrow column (the WBS Code column is
+     90px) the default flex-shrink collapsed it to nothing. The triangle
+     survived because it has a glyph, so a parent's text was pushed right by its
+     expander while its children's text was not pushed at all: the children read
+     as the outer level and the parent as the nested one. The nesting was always
+     correct; only the indent was being eaten.
+
+     \`vertical-align: middle\` is the other half — an inline-flex box sitting in
+     a line of text drags the baseline of the text beside it, so the Code column
+     sat a little lower than the Name column in the same row. */
+  .rl-twist { display: inline-flex; align-items: center; vertical-align: middle; }
+  .rl-expander { flex: none; width: 1.1rem; padding: 0; border: none; background: none; color: #64748b; cursor: pointer; font-size: 0.8rem; line-height: 1; font-family: inherit; }
   .rl-expander:hover { color: #1e293b; }
-  .rl-expander--none { display: inline-block; cursor: default; }
+  .rl-expander--none { display: inline-block; flex: none; cursor: default; }
   .rl-num { text-align: right; font-variant-numeric: tabular-nums; }
   .rl-action { white-space: nowrap; text-align: right; width: 1%; }
   .rl-unknown { color: #b45309; font-size: 0.7rem; }
