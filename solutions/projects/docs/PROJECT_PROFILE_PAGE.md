@@ -170,9 +170,7 @@ dialog over this page:
 | label | component | target | attribute |
 | --- | --- | --- | --- |
 | Edit | RunActivity | `act_modify_wbs_nodes` | — |
-| Baseline | RunActivity | `act_baseline_wbs_nodes` | — |
-| Forecast | RunActivity | `act_forecast_wbs_nodes` | — |
-| Add child | RunActivity | `act_create_wbs_nodes` | `parent_id` |
+| Add child | RunActivity | `act_create_wbs_nodes` | `wbs_parent` |
 | Move | RunActivity | `act_move_wbs_nodes` | — |
 | Delete | RunActivity | `act_delete_wbs_nodes` | — |
 
@@ -349,9 +347,7 @@ already flagged, unchanged here.
 | Activity | Record map | Captures | Gate |
 | --- | --- | --- | --- |
 | `act_create_wbs_nodes` | CREATE | project_id, parent_id, code, name, description, cbs_codes | before hook: project's `wbs_status` must be `draft`. after hook: a parent that carried figures has all seven cleared — it has stopped being a leaf |
-| `act_modify_wbs_nodes` | UPDATE | code, name, description, cbs_codes | availability: `context.record.project_id.wbs_status <> 'approved'` |
-| `act_baseline_wbs_nodes` | UPDATE | baseline_budget, target_start, target_completion | availability: draft **and** leaf. after hook: copies each value into the matching forecast field |
-| `act_forecast_wbs_nodes` | UPDATE | forecast_cost, forecast_start, forecast_completion | availability: leaf. Allowed in both states — this is the only thing approval leaves open |
+| `act_modify_wbs_nodes` — **"Edit WBS Node"** | UPDATE | code, name, description, cbs_codes, baseline_budget, target_start, target_completion, forecast_cost, forecast_start, forecast_completion — **each with its own `show_condition`** | availability: draft **or** leaf. Merged 2026-09-21; see below |
 | `act_move_wbs_nodes` | UPDATE | parent_id | availability: draft |
 | `act_delete_wbs_nodes` | UPDATE | expired, **sourced** `'true'` | availability: draft **and** leaf — a node with children is refused (below). Nothing is asked: the flag is filled from the model, so Delete has no form and runs on the click (2026-09-18) |
 | `act_list_wbs_nodes` | GET | project_id | — |
@@ -549,7 +545,37 @@ in `packages/server/scripts/`, the convention for one-offs.
 | `verify-wbs-lifecycle.ts` | the lifecycle driven end to end through the real engine, **never written back** — kept as the regression harness |
 | `wbs-attributes.ts` (2026-09-15) | `wbs_parent` / `wbs_project` — a reference attribute that names the field it fills, and the project sourced from the page rather than picked |
 | `wbs-delete-source.ts` (2026-09-18) | `expired` sourced to `'true'` on the delete activity — see below |
+| `wbs-one-edit.ts` (2026-09-21) | Modify + Baseline + Forecast merged into one **Edit** activity; the other two deleted |
+| `wbs-page-buttons.ts` (2026-09-21) | the Baseline and Forecast buttons taken off the WBS table |
 | `retire-id-field.ts` (2026-09-18) | `id_field` dropped from `rt_projects`, `rt_wbs_nodes`, `rt_cbs_nodes` — every record now gets an issued UUIDv7 |
+
+**One Edit, not three** (2026-09-21, the user's call). Three activities existed
+because availability is declared per activity: baseline and forecast fields
+belong only to a leaf, and approval freezes the baseline while leaving the
+forecast open. Splitting them was how that got said — at the cost of three
+buttons on every row, and a "Baseline" column whose reader had to know it meant
+the budget and not the dates.
+
+It is said per attribute instead. An attribute usage carries its own
+`show_condition`, evaluated against the record as the form opens and re-checked
+by `validateSubmission`, so the approval freeze is still **enforced** rather than
+merely undrawn:
+
+| Fields | Offered when |
+| --- | --- |
+| code, name, description, cbs_codes | the project's WBS is unapproved |
+| baseline_budget, target_start, target_completion | leaf **and** unapproved |
+| forecast_cost, forecast_start, forecast_completion | leaf — after approval too |
+
+The activity itself is offered on `draft or leaf`: an approved parent has
+nothing left to edit, and a form with every field hidden is worse than no
+button.
+
+**The baseline's after hook went with it.** It copied the baseline into the
+matching forecast fields, on the reasoning that a plan with no projection reads
+as one nobody has looked at. Entering target dates and finding the forecast
+dates silently filled was reported as a bug, and with one form a person fills
+both in the same act if that is what they mean.
 
 **The WBS was keyed on its code** until 2026-09-18, and that is what produced
 `Record id "AAA" already exists` when a node was deleted and re-added: the id
