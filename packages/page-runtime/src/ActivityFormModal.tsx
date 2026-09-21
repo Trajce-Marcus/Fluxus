@@ -5,6 +5,7 @@
 // page-runtime became a library, so this is now chrome only: the standard
 // capture form (./capture) does the work, exactly as it does in the workbench.
 
+import { useEffect } from 'react';
 import type { ActivityDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import { AttributesForm } from './capture/AttributesForm';
 import { CaptureHostProvider, type CaptureHost } from './capture/host';
@@ -43,8 +44,30 @@ interface Props {
 }
 
 export function ActivityFormModal({ activity, anchorRecord, recordTypeId, host, seed, pageRecord, loading, onSubmit, onClose }: Props) {
+  // Escape closes it (2026-09-21). Cancelling capture is free — nothing has run
+  // and nothing is staged — so the cheap way out should be the obvious one,
+  // including while the anchor is still loading, which is exactly when someone
+  // decides they clicked the wrong row.
+  //
+  // Listening on the document rather than the dialog: focus may sit in an input,
+  // on the backdrop, or nowhere at all after the dialog opens on a click.
+  // `keydown`, not `keyup` — a browser dialog closes on the press.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={activity.name}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+    >
       <div style={{ background: '#fff', borderRadius: 8, padding: 20, minWidth: 340, maxWidth: 480, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.2)' }}>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{activity.name}</div>
         <div style={{ color: '#64748b', fontSize: 12, marginBottom: 12 }}>
