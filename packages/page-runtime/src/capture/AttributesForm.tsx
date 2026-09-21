@@ -165,6 +165,8 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
   // A seed the attribute cannot hold — forty records into a single-valued
   // attribute — is an authoring mistake, and it shows in the same banner a
   // failed run does rather than being dropped on the way in.
+  /** A run is in flight — the form is inert until it answers. */
+  const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(() => {
     if (!seed) return null;
     const attr = activity.attributes.find((a) => a.key === seed.attribute);
@@ -310,6 +312,11 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
     capturedWaived: Record<string, string>,
     options?: { acknowledgedWarnings?: boolean }
   ) => {
+    // The run is a round trip, and until 2026-09-21 nothing said so: the button
+    // stayed live, so a second click ran the activity a second time — a
+    // duplicate record, or a second entry on the history. The form goes inert
+    // for the duration and the button says what is happening.
+    setBusy(true);
     try {
       const result = await onSubmit(captured, { ...options, waived: capturedWaived });
       if (result.status === 'needs-confirmation') {
@@ -322,6 +329,12 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
       // surface here; the modal stays open so the user can correct and resubmit.
       setPending(null);
       setSubmitError(err instanceof Error ? err.message : String(err));
+    } finally {
+      // A run that landed closes the dialog from above, so this may set state on
+      // a component already gone — harmless, and the alternative (tracking
+      // mountedness) is machinery for nothing. A run that failed or needs
+      // confirmation leaves the form open and usable again.
+      setBusy(false);
     }
   };
 
@@ -377,7 +390,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
       <form onSubmit={handleSubmit}>
         {/* Fields lock while a warning decision is pending — the snapshot that
             was validated is what Continue submits, so editing must wait. */}
-        <fieldset disabled={pending !== null} style={{ border: 'none', padding: 0, margin: 0, minInlineSize: 'auto', opacity: pending ? 0.6 : 1 }}>
+        <fieldset disabled={pending !== null || busy} style={{ border: 'none', padding: 0, margin: 0, minInlineSize: 'auto', opacity: pending || busy ? 0.6 : 1 }}>
         {visibleAttributes.map(attr => attr.type === 'section' ? (
           <div key={attr.key} style={{ margin: '16px 0 10px' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', borderBottom: '1px solid #e2e8f0', paddingBottom: 4 }}>
@@ -552,15 +565,18 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
             <>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => submit(pending.captured, pending.waived, { acknowledgedWarnings: true })}
-                style={{ padding: '7px 16px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '7px 16px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}
               >
-                Continue anyway
+                {busy && <span className="afm-spinner afm-spinner--light" aria-hidden="true" />}
+                {busy ? 'Working…' : 'Continue anyway'}
               </button>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => setPending(null)}
-                style={{ padding: '7px 16px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
+                style={{ padding: '7px 16px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}
               >
                 Cancel
               </button>
@@ -569,12 +585,15 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
             <>
               <button
                 type="submit"
-                style={{ padding: '7px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                disabled={busy}
+                style={{ padding: '7px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.8 : 1, display: 'inline-flex', alignItems: 'center', gap: 8 }}
               >
-                Submit
+                {busy && <span className="afm-spinner afm-spinner--light" aria-hidden="true" />}
+                {busy ? 'Submitting…' : 'Submit'}
               </button>
               <button
                 type="button"
+                disabled={busy}
                 onClick={onClose}
                 style={{ padding: '7px 16px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13, cursor: 'pointer' }}
               >

@@ -262,6 +262,8 @@ export const css = `
     border-radius: 50%;
     animation: afm-spin 0.7s linear infinite;
   }
+  /* On a filled button, where the grey would disappear. */
+  .afm-spinner--light { border-color: rgba(255,255,255,0.45); border-top-color: #fff; }
   @keyframes afm-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .afm-spinner { animation-duration: 2.4s; } }
 
