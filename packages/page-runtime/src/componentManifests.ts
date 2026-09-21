@@ -14,7 +14,6 @@ import { InventorProfile } from './components/InventorProfile';
 import { Map } from './components/Map';
 import { RecordActivities } from './components/RecordActivities';
 import { RecordList } from './components/RecordList';
-import { RecordTree } from './components/RecordTree';
 import { Text } from './components/Text';
 import { WorkOrderList } from './components/WorkOrderList';
 import type { ComponentManifest } from './manifest';
@@ -29,7 +28,6 @@ export const componentManifests: Record<string, ComponentManifest> = {
   OpenPage:        { name: 'OpenPage',        version: '1.0.0', component: OpenPage        as unknown as AnyComponent, schema: OpenPage.schema,        css: OpenPage.css },
   RecordActivities: { name: 'RecordActivities', version: '1.0.0', component: RecordActivities as unknown as AnyComponent, schema: RecordActivities.schema, css: RecordActivities.css },
   RecordList:      { name: 'RecordList',      version: '1.0.0', component: RecordList      as unknown as AnyComponent, schema: RecordList.schema,     css: RecordList.css },
-  RecordTree:      { name: 'RecordTree',      version: '1.0.0', component: RecordTree      as unknown as AnyComponent, schema: RecordTree.schema,     css: RecordTree.css },
   RunActivity:     { name: 'RunActivity',     version: '1.0.0', component: RunActivity     as unknown as AnyComponent, schema: RunActivity.schema,     css: RunActivity.css },
   Text:            { name: 'Text',            version: '1.0.0', component: Text            as unknown as AnyComponent, schema: Text.schema,           css: Text.css },
   WorkOrderList:   { name: 'WorkOrderList',   version: '1.0.0', component: WorkOrderList   as unknown as AnyComponent, schema: WorkOrderList.schema,   css: WorkOrderList.css },

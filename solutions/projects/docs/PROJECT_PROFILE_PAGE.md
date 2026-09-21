@@ -577,6 +577,7 @@ in `packages/server/scripts/`, the convention for one-offs.
 | `retire-id-field.ts` (2026-09-18) | `id_field` dropped from `rt_projects`, `rt_wbs_nodes`, `rt_cbs_nodes` — every record now gets an issued UUIDv7 |
 | `projects-location.ts` (2026-09-22) | `location` + `geo_point` on `rt_projects` and both project activities; the eleven projects given a place, a coordinate and a description — **written straight to the records**, the user's ruling for demo data |
 | `project-page-location.ts` (2026-09-22) | Name, Location and the coordinate added to Details; a `Map` panel between Details and the WBS. Edits the stored draft rather than rewriting it, so Console changes survive |
+| `retire-cbs-page.ts` (2026-09-22) | the **Cost Breakdown** column taken off the projects list, `pages/cbs` deleted (draft + 4 published versions), and the attribute pool swept for unused entries — there were none |
 
 **One Edit, not three** (2026-09-21, the user's call). Three activities existed
 because availability is declared per activity: baseline and forecast fields
@@ -640,5 +641,13 @@ a page written by a script never meets `validatePage`.
 **Not working: the totals** (§3.5, §8-5) — the arithmetic gap.
 
 **Pages are drafts.** `pages/project` and the changed `pages/projects` need
-publishing in the Console before the Runtime app shows them. `pages/cbs` is now
-redundant — the CBS lives on the project page — and can be retired whenever.
+publishing in the Console before the Runtime app shows them.
+
+**`pages/cbs` is gone** (2026-09-22, the user's call): the CBS lives on the
+project page, so the standalone page and its four published versions were
+deleted outright and the **Cost Breakdown** column came off the projects list.
+Deleting published versions is normally forbidden — they are append-only, and
+rollback is a republish — and it was done here because "remove the page
+altogether" means that. **Until `pages/projects` is republished, the published
+version the Runtime app renders still carries the Cost Breakdown button, and it
+now opens nothing.**

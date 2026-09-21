@@ -40,7 +40,6 @@ export { InventorProfile } from './components/InventorProfile';
 export { Map } from './components/Map';
 export { RecordActivities } from './components/RecordActivities';
 export { RecordList } from './components/RecordList';
-export { RecordTree } from './components/RecordTree';
 export { Text } from './components/Text';
 export { WorkOrderList } from './components/WorkOrderList';
 export {
