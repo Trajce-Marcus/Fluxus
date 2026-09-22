@@ -163,11 +163,14 @@ const descriptors = (value: unknown): Record<string, unknown>[] => {
   return list.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object');
 };
 
-// NOT the thumbnail §2.1 asks for: drawing the image needs a presigned URL, and
-// a component has no door to the upload service — every host service reaches a
-// component as a declared prop. The names are honest and the column shape is
-// the final one, so the cell upgrades to a thumbnail the day that seam exists
-// without a page changing a line.
+// The file's NAME, and deliberately still so. Drawing the image needs a
+// presigned URL, and a formatter returns a string that the table renders as
+// text — a thumbnail cannot come out of one. The seam a component reaches the
+// upload service through now exists (`services.resolveUrl`, 2026-09-23), and a
+// `photo` column does draw its thumbnail — but that branch is in the **table**,
+// before this is called (`RecordList.photoCell`), which is what keeps this pure
+// and string-testable. This stays the answer for a `file`, which is not an
+// image, and for any host that supplies no resolver.
 function drawDescriptor(value: unknown): string {
   const list = descriptors(value);
   if (list.length === 0) return BLANK_CELL;

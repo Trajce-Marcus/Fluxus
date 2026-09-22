@@ -624,9 +624,22 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
         // handed back a record — which on a page returns the raw id, because a
         // page holds no snapshot. The picker is told which field to show and
         // says what it showed.
-        const fkDisplayField = ref
-          ? resolveAttributeDisplayField(ref.typeId, ref.fieldKey)
-          : resolveAttributeDisplayField(recordTypeId, attr.key);
+        //
+        // Two sources, in this order (§3/§5 over §6, settled 2026-09-23):
+        // the attribute's own `display_field` is this picker's override, said
+        // once for one question; the target field's `fk_display_field` is the
+        // model's standing answer, said once and used everywhere.
+        //
+        // **And no third.** A `list` falls back to a literal `name` because it
+        // has no field declaration to consult and never will; a reference does,
+        // so guessing here would hide a modelling gap behind plausible-looking
+        // rows (the user's call). Undefined reaches the picker and the picker
+        // says what is missing. `validateConfig` refuses such a field at save,
+        // so this is the net under a model that drifted, not the usual path.
+        const fkDisplayField = attr.type_config?.display_field
+          ?? (ref
+            ? resolveAttributeDisplayField(ref.typeId, ref.fieldKey)
+            : resolveAttributeDisplayField(recordTypeId, attr.key));
         const picked = (value: string, label: string) => {
           setValues(v => ({ ...v, [openPickerFor]: value }));
           setDisplayLabels(d => ({ ...d, [openPickerFor]: label || value }));

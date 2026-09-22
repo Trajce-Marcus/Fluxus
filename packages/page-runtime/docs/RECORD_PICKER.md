@@ -38,14 +38,22 @@ supplies candidates:
 { key: 'sr_wbs', type: 'reference',
   type_config: {
     field: 'rt_shift_wbs.wbs_id',
-    datasource: "invoke('act_search_wbs_nodes', { project_id: context.page.record.id, term: attributes.search })",
+    datasource: "invoke('act_search_wbs_nodes', { project_id: context.page.record.id, term: term })",
     display_field: 'code',
   } }
 ```
 
 `reference` currently allows `fk_record_type` and `field`
-(`engine/src/attributeTypes.ts`). `datasource`, `display_field` and `columns`
-are added to it, spelled exactly as `list` already spells them. The same setting, read by a second kind of attribute.
+(`engine/src/attributeTypes.ts`). `datasource`, `key_field`, `display_field` and
+`columns` are added to it, spelled exactly as `list` already spells them. The same setting, read by a second kind of attribute.
+
+**The search term is the bare root `term`, not `attributes.search`** (corrected
+2026-09-23 when this was built — §10 settled that the term travels as an extra
+root, and this example had not caught up). The distinction is not cosmetic:
+`attributes.search` saves with no complaint, because the form's values are
+unknown-shaped, and then reads as blank at runtime, leaving a picker stuck on
+the empty-term answer with nothing to diagnose it. That is exactly the silent
+collision §10 warns about.
 
 The target type is unchanged: it comes from the field the attribute names
 (`field: 'rt_shift_wbs.wbs_id'` → that field's declaration), the 2026-09-15
@@ -100,7 +108,14 @@ A list of rows, each carrying at least the stored value and something readable.
 Resolved the way `list` already resolves its options:
 
 - `key_field` — the stored value, default `id`.
-- `display_field` — the readable label, default `name`.
+- `display_field` — the readable label. **Two sources and no third** (settled
+  2026-09-23 when this was built): the attribute's own `display_field` is this
+  picker's override, and the target field's `fk_display_field` is the model's
+  standing answer. `list`'s literal `name` default does **not** carry across —
+  a `list` guesses because it has no field declaration to consult and never
+  will, while a reference has one, so guessing would draw plausible rows over a
+  modelling gap. With neither source the picker says what is missing, and
+  `validateConfig` refuses such a field at save.
 - `columns` — optional extra fields to show as secondary text on each row, so
   `3.4` can be shown beside `Mechanized Welding`.
 

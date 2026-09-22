@@ -32,6 +32,20 @@ export const SEARCH_DEBOUNCE_MS = 300;
  */
 export const SEARCH_MIN_CHARS = 2;
 
+/**
+ * What a picker with no display field says, instead of guessing.
+ *
+ * A `list` attribute falls back to a literal `name` because it has no field
+ * declaration anywhere to consult and never will. A reference does — the target
+ * field's `fk_display_field` — so guessing here would draw plausible-looking
+ * rows over a modelling gap and hide it from the one person who can fix it
+ * (the user's call, 2026-09-23). `validateConfig` refuses such a field at save;
+ * this is the net under a model that drifted after it.
+ */
+const NO_DISPLAY_FIELD =
+  'No display field for this reference. Set `display_field` on the attribute, '
+  + 'or `fk_display_field` on the field it points at.';
+
 /** One candidate resolved to what the list draws. */
 interface Candidate {
   value: string;
@@ -148,9 +162,13 @@ export function SearchRecordPicker({
     return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
-  const { candidates, skipped } = Array.isArray(rows)
-    ? resolveCandidates(rows, keyField ?? 'id', displayField ?? 'name', columns ?? [])
+  const { candidates, skipped } = Array.isArray(rows) && displayField
+    ? resolveCandidates(rows, keyField ?? 'id', displayField, columns ?? [])
     : { candidates: [], skipped: 0 };
+
+  // Said in place of the list, the same posture a GET error and a non-list
+  // answer already take — there is nothing readable to draw, so nothing is.
+  const fault = !displayField ? NO_DISPLAY_FIELD : error;
 
   const short = typed.trim().length > 0 && typed.trim().length < SEARCH_MIN_CHARS;
 
@@ -191,8 +209,10 @@ export function SearchRecordPicker({
 
         {/* A GET error replaces the list, with the message — the same posture
             the dropdown takes, since the same round trip is underneath. */}
-        {error ? (
-          <div style={{ fontSize: 12, color: '#b91c1c', padding: '8px 0' }}>Search failed: {error}</div>
+        {fault ? (
+          <div style={{ fontSize: 12, color: '#b91c1c', padding: '8px 0' }}>
+            {displayField ? `Search failed: ${fault}` : fault}
+          </div>
         ) : loading ? (
           <div style={{ fontSize: 13, color: '#94a3b8', padding: '8px 0' }}>Searching…</div>
         ) : candidates.length === 0 ? (
