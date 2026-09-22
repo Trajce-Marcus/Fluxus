@@ -249,6 +249,20 @@ Editing one would mean unwinding the cost it has already put on the WBS.
 
 One row per WBS node the work group touched this shift.
 
+**Only a node with no children may take hours.** Nine of P26-011's
+twenty-seven nodes are parents, and hours booked to `3.0` rather than `3.4`
+would sit on a node that is meant to be the sum of the ones below it. This is
+the same rule already settled for cost codes.
+
+It is enforced by **which GET the attribute names**, not by the picker, which
+draws whatever it is handed: `act_search_wbs_leaves` returns only nodes with no
+children and is named by this row's WBS attribute, while `act_search_wbs_nodes`
+returns every node and is named where a parent is the right answer — choosing
+the parent of a new node. Same component, same attribute type, different
+candidates. No further check: demonstration data is written straight to the
+records and would not pass through one anyway, so the loader is correct by
+construction.
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `report_id` | `fk_ref` → `rt_shift_reports` | Taken from the page. |
@@ -270,6 +284,7 @@ standard set, priced at `work_hours`. Confirm, adjust, or remove.
 | `resource_id` | `fk_ref` → `rt_resources` | Blank for something added by hand that is not in the catalogue. |
 | `description` | `text` | Copied from the resource. |
 | `quantity` | `decimal` | `work_hours` × the standard count, adjustable. |
+| `calculated` | `text` | `'true'` once Calculate has priced this line; cleared when it is run again. |
 | `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | Copied at the time and never changed afterwards. |
 | `wbs_id` | `fk_ref` → `rt_wbs_nodes` | **Normally blank.** Set only to say this one resource sat on one node all shift, in which case its cost is not split (§5.1). |
 | `tracked_cost` | `decimal` | `quantity × rate`, written by a hook. Never typed, never written to `actual_cost`. |
@@ -339,23 +354,37 @@ one where you cannot.
 ## 5. Filing a shift report
 
 1. The manager starts a report and enters the date, start time and end time.
-   Total hours follow.
-2. Breaks are entered; `work_hours` follows.
-3. The work group is chosen. **Its standard resources are written as usage
-   lines immediately**, each priced at `work_hours` × its standard count, with
-   the rate, unit and cost code copied. Confirm, adjust, or remove; add
-   anything used that is not in the set.
-4. Add WBS rows: node, hours, quantity completed. Hours must total
-   `work_hours`.
-5. Add photos, narrative, hours lost.
-6. Raise any defects found — each becomes its own record, citing this report.
-7. Submit. The report is then read-only.
+   `work_hours` follows, less the breaks entered — worked out by
+   `services.time.hoursBetween`, which crosses midnight so a night shift from
+   18:00 to 06:00 is twelve hours, not an error.
+2. WBS rows: node, hours on it, quantity completed.
+3. The work group's standard resources appear as lines, taken from its set.
+   Confirm, adjust, remove, or add something used that is not in the set.
+   **Nothing is priced yet.**
+4. Add photos, narrative, hours lost.
+5. Raise any defects found — each becomes its own record, citing this report.
+6. **Calculate.** This checks the WBS hours total `work_hours`, failing with a
+   message if they do not, and then prices every line at quantity × rate. It
+   may be run again as often as the report changes; each run clears what the
+   last one wrote.
+7. Submit. The report is then read-only. **A report that has not been
+   calculated cannot be submitted.**
 8. The parent group's manager approves it. **On approval the cost is divided
    across the WBS rows** and written to `rt_wbs_resource_usage`.
 
-Confirm-and-adjust rather than type-from-blank is the point: it is why a
-standard set exists. The work group is chosen without checking who the person
-filing is; access is not enforced in this build.
+**Calculate exists because pricing must not drift.** Lines priced as soon as
+the work group is chosen go stale the moment a finish time is corrected, and a
+report would show ten hours at the top and twelve hours of resources beneath
+it. An explicit step removes the window entirely rather than policing it, and
+it gives the hours check a natural home. The user's design, 2026-09-23.
+
+**The division stays at approval** rather than moving into Calculate, so the
+cost table holds only approved money and every total over it is a plain sum
+with no "does this one count" filter.
+
+Confirm-and-adjust rather than type-from-blank is the point of a standard set.
+The work group is chosen without checking who is filing; access is not enforced
+in this build.
 
 ### 5.1 How a shift's cost reaches the WBS
 
@@ -522,14 +551,21 @@ cost nearly exact:
 - `WG-TIE` — tie-ins and river crossing. Flat, its own manager and resources.
 - `WG-PLANT` — shared plant. Drawn on, files nothing.
 
-Six consecutive working days, day shift. Two clean days, a wet day losing four
+**Four weeks, six days a week — 24 shifts per group, 96 reports in all.** Each
+group is sized at roughly double a minimum crew, which puts a day across the
+four filing groups near $64,000 and the four weeks near **$1.5M, about 3.8% of
+the budget**. That is proportionate rather than arbitrary: four weeks of what
+would be an eighteen-month pipeline is around 5% of its duration, so 3–4% of
+its cost is what early progress should look like. Six days at $32k read as
+0.47% and showed nothing.
+
+Within those four weeks, day shift throughout. Two clean days, a wet day losing four
 hours, a day the NDT subcontractor finds a repair, a heavy backfill day, a
 river-crossing tie-in day.
 
 Cost lands on the project's real WBS nodes (`3.1`, `3.2`, `3.4`, `3.5`, `3.6`,
 `3.7`, `3.8`, `3.9`, `3.10`) against cost codes `1200`, `1300`, `3100`, `4100`,
-`4200`, `4300`, `5100`. Roughly $25k–$40k **per day across all groups**, so
-about $190k over six days.
+`4200`, `4300`, `5100`. Roughly $60k–$70k **per day across all groups**.
 
 Four groups file each day — the three spread children and `WG-TIE`. Hughie
 approves the spread's three; `WG-TIE`'s manager approves their own. Some
@@ -554,8 +590,15 @@ Things the model cannot express, handled in hooks or not at all:
   it skips a number after a delete. Field-level `unique` is not used, because
   it compares across every record of the type rather than within a project.
 - **WBS hours must total `work_hours`** — checked by a `fail()` in the before
-  hook on Submit, not as rows are added, because a before hook may only
-  validate and there is no `sum`.
+  hook on **Calculate** (§5 step 6), not as rows are added, because a before
+  hook may only validate and there is no `sum`. Submit checks only that
+  Calculate has run.
+- **`work_hours`** comes from `services.time.hoursBetween(start_time, end_time)`
+  less `break_hours`. The DSL has no duration arithmetic of its own — a `time`
+  field holds `'17:00'` as a string and subtracting two of them errors — so a
+  small `time` service module is built beside `geo` in the engine, available to
+  every solution and every host. Operators are language; calculations are
+  capability, and this is a calculation.
 - **The fixed lists** — `wg_type`, `res_type`, `shift`, `severity`, both
   `status` sets — are enforced at capture by a `list` attribute naming its
   values. Nothing constrains the stored field, so demonstration data written
