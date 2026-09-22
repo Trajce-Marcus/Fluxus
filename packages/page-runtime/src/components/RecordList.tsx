@@ -50,6 +50,7 @@ import { createElement, useCallback, useEffect, useReducer, useRef, useState } f
 import type { PropSchema } from '../manifest';
 import type { PageServiceHandlers } from '../pageHost';
 import { actionComponents, actionCss } from './actionComponents';
+import { PhotoCountCell } from '../capture/attributeWidgets';
 import { columnWidth, drawCell, isRightAligned, resolveCurrency } from './columnFormat';
 import {
   emitted,
@@ -185,6 +186,25 @@ interface RecordListProps {
 
 const cell = (row: RecordListRow, col: RecordListColumn): string =>
   drawCell(col.key ? row[col.key] : undefined, col.type, col.format, resolveCurrency(col.currency, row));
+
+/**
+ * A `photo` column draws the first thumbnail with a count badge over it, now
+ * that a component can reach the upload service (COMPONENT_PHOTOS §4). **No
+ * page changed a line** — the column shape was already the final one.
+ *
+ * The branch is here, in the table, and **not** in the formatter: a formatter
+ * returns a string and the table renders it as text, so a thumbnail cannot come
+ * out of one. Keeping it out leaves `columnFormat` pure and string-testable.
+ *
+ * Without the host's `resolveUrl` — or for a `file`, which is not an image —
+ * the formatter's honest file name stands.
+ */
+function photoCell(row: RecordListRow, col: RecordListColumn, services: PageServiceHandlers | undefined) {
+  if (col.type !== 'photo' || !col.key || !services?.resolveUrl) return null;
+  const value = row[col.key];
+  if (!value || (Array.isArray(value) && value.length === 0)) return null;
+  return <PhotoCountCell value={value} uploads={{ resolveUrl: services.resolveUrl }} />;
+}
 
 /** A column that draws a button rather than a value (§1.3 / §2.5). */
 const isAction = (col: RecordListColumn): boolean => !!col.component;
@@ -709,7 +729,7 @@ function RecordListComponent({
                     ) : (
                       <span className="rl-expander rl-expander--none" />
                     ))}
-                    {cell(row, col)}
+                    {photoCell(row, col, services) ?? cell(row, col)}
                   </td>
                 )))}
               </tr>

@@ -8,6 +8,8 @@ export const SESSION_COMPONENTS = [
   { name: 'WorkOrderList', version: '1.0.0' },
   { name: 'RecordActivities', version: '1.0.0' },
   { name: 'RecordList', version: '1.0.0' },
+  { name: 'Contributions', version: '1.0.0' },
+  { name: 'Photos', version: '1.0.0' },
   { name: 'Text', version: '1.0.0' },
   { name: 'OpenPage', version: '1.0.0' },
   { name: 'RunActivity', version: '1.0.0' },

@@ -4,10 +4,12 @@
 // floated cleanup, not agreed).
 import {
   AppHeader,
+  Contributions,
   InventorList,
   InventorProfile,
   Map,
   OpenPage,
+  Photos,
   RecordActivities,
   RecordList,
   Text,
@@ -18,10 +20,12 @@ import {
 
 export const componentSchemas: Record<string, PropSchema[]> = {
   AppHeader: AppHeader.schema ?? [],
+  Contributions: Contributions.schema ?? [],
   InventorList: InventorList.schema ?? [],
   InventorProfile: InventorProfile.schema ?? [],
   Map: Map.schema ?? [],
   OpenPage: OpenPage.schema ?? [],
+  Photos: Photos.schema ?? [],
   RecordActivities: RecordActivities.schema ?? [],
   RecordList: RecordList.schema ?? [],
   Text: Text.schema ?? [],

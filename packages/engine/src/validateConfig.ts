@@ -51,6 +51,15 @@ function walkCalls(node: unknown, visit: (call: Call) => void): void {
 const serverGrade = (activity: ClientActivityRawDef): boolean =>
   'before_hook' in activity || 'after_hook' in activity;
 
+/**
+ * The extra roots a datasource may name. `term` is the record picker's search
+ * box (RECORD_PICKER §4): it lives in its own state, debounced, and reaches the
+ * expression as a root — putting it in the form's values would collide
+ * silently, since those are unknown-shaped and `attributes.term` would simply
+ * read as blank at runtime.
+ */
+const DATASOURCE_ROOTS = ['term'];
+
 export function validateConfig(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): Finding[] {
   // services.logger is engine-owned and part of every host's registry
   // (createEngine appends it, name reserved) — validation must see the same
@@ -156,7 +165,11 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
       }
     }
     if (attr.type_config?.datasource) {
-      collect(`attribute '${attr.key}' datasource`, attr.type_config.datasource);
+      // `term` is the record picker's search box, injected as an extra root
+      // rather than riding in the form's values (RECORD_PICKER §10) — without
+      // it here every reference datasource that searches would save as an
+      // error. Harmless on a list attribute, which simply never names it.
+      collect(`attribute '${attr.key}' datasource`, attr.type_config.datasource, undefined, DATASOURCE_ROOTS);
     }
     if (attr.type !== 'composite') continue;
 
@@ -239,7 +252,7 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
           collect(`${activity.id} → '${usage.attribute_ref}' validation`, validation, anchorType, ['value']);
         }
         if (attr?.type_config?.datasource) {
-          collect(`${activity.id} → '${usage.attribute_ref}' datasource`, attr.type_config.datasource, anchorType);
+          collect(`${activity.id} → '${usage.attribute_ref}' datasource`, attr.type_config.datasource, anchorType, DATASOURCE_ROOTS);
         }
       }
       // Hooks (scripts tier): before = gate (validate only), after = effects.

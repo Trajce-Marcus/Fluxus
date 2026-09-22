@@ -95,7 +95,11 @@ export const ATTRIBUTE_TYPES: Record<string, AttributeTypeSpec> = {
   // `parent_id` had to serve every record type that has a parent and could
   // name only one target between them, so a WBS parent was checked against
   // cost codes. `fk_record_type` stays for attributes that name no field.
-  reference: { configKeys: ['fk_record_type', 'field'], multi: true },
+  // `datasource`, `display_field` and `columns` are the same three settings a
+  // `list` already spells, read here by a second kind of attribute (RECORD_PICKER
+  // §3): they name the GET that supplies candidates for the picker. An attribute
+  // that declares none keeps the raw-id text box it has always had.
+  reference: { configKeys: ['fk_record_type', 'field', 'datasource', 'display_field', 'columns'], multi: true },
   list: { configKeys: ['datasource', 'key_field', 'display_field', 'columns'], multi: true },
   // Repeating composites (multi) are deferred (§11) — multi is rejected here.
   composite: { configKeys: ['attributes'], multi: false },

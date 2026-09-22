@@ -12,7 +12,10 @@ export { ActivityFormModal } from './ActivityFormModal';
 // and the workbench open the same form, and each supplies its own host.
 export { AttributesForm } from './capture/AttributesForm';
 export { CaptureHostProvider, useCaptureHost } from './capture/host';
-export type { CaptureHost, CaptureScript, RecordPickerProps } from './capture/host';
+export type { CaptureHost, CaptureScript, RecordPickerCandidate, RecordPickerProps } from './capture/host';
+// Picking a reference by searching over a GET — the fill for hosts that hold no
+// record snapshot, chosen by the form whenever the attribute names a datasource.
+export { SearchRecordPicker, resolveCandidates, SEARCH_DEBOUNCE_MS, SEARCH_MIN_CHARS } from './capture/RecordPicker';
 // Capture + display widgets for the file/photo/scalar attribute types — pure
 // controlled components, used by the form here and by the workbench's grid and
 // record view.
@@ -35,6 +38,9 @@ export { availableActivities } from './availableActivities';
 export type { ActivityOption, ConditionEvaluator } from './availableActivities';
 export { OpenPage, RunActivity } from './components/actionComponents';
 export { AppHeader } from './components/AppHeader';
+export { Contributions } from './components/Contributions';
+export type { ContributionCell, ContributionRow, ContributionState } from './components/Contributions';
+export { Photos } from './components/Photos';
 export { InventorList } from './components/InventorList';
 export { InventorProfile } from './components/InventorProfile';
 export { Map } from './components/Map';

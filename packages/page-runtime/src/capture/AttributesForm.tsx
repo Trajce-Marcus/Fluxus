@@ -10,6 +10,8 @@ import { coerceCaptured, coerceCapturedValue, compositeSubs, evaluateWithGets, i
 import type { ActivityDef, AttributeDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
 import type { UploadService } from '@fluxus/client';
 import { DateTimeInput, FileInput, GeoPointInput, NumberInput, PhotoInput, TextAreaInput, TimeInput } from './attributeWidgets';
+import { SearchRecordPicker } from './RecordPicker';
+import type { RecordPickerCandidate, RecordPickerProps } from './host';
 import { attributeFieldRef } from '@fluxus/engine';
 import { contextFilledKeys, seedValue } from './seed';
 import type { AttributeSeed } from '../pageHost';
@@ -455,10 +457,12 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
                   boxSizing: 'border-box',
                 }}
               />
-            ) : attr.type === 'reference' && !recordPicker ? (
-              // No picker from this host: the id is typed, which is what a page
-              // has always offered here. Browsing records to choose one needs
-              // records, and a page holds none.
+            ) : attr.type === 'reference' && !recordPicker && !attr.type_config?.datasource ? (
+              // No picker from this host and no datasource of its own: the id
+              // is typed, which is what a page has always offered here.
+              // Browsing records to choose one needs records, and a page holds
+              // none — and an attribute that names no GET has no other source
+              // of candidates either. Nothing existing changes.
               <TextInput
                 value={String(values[attr.key] ?? '')}
                 onChange={val => setValues(v => ({ ...v, [attr.key]: val }))}
@@ -606,7 +610,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
         </div>
       </form>
 
-      {openPickerFor && recordPicker && (() => {
+      {openPickerFor && (() => {
         const attr = activity.attributes.find(a => a.key === openPickerFor)!;
         // The attribute names the field it fills; that field names the type it
         // points at. One `parent_id` field per record type, each with its own
@@ -615,19 +619,45 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
         const fkRecordType = (ref ? resolveAttributeTarget(ref.typeId, ref.fieldKey) : undefined)
           ?? attr.type_config?.fk_record_type;
         if (!fkRecordType) return null;
+        // **The display field travels in, and the label travels out** (§6).
+        // It used to be resolved here, off the snapshot, after the picker
+        // handed back a record — which on a page returns the raw id, because a
+        // page holds no snapshot. The picker is told which field to show and
+        // says what it showed.
+        const fkDisplayField = ref
+          ? resolveAttributeDisplayField(ref.typeId, ref.fieldKey)
+          : resolveAttributeDisplayField(recordTypeId, attr.key);
+        const picked = (value: string, label: string) => {
+          setValues(v => ({ ...v, [openPickerFor]: value }));
+          setDisplayLabels(d => ({ ...d, [openPickerFor]: label || value }));
+          setOpenPickerFor(null);
+        };
+        // An attribute that names a GET searches over it, on **every** host:
+        // that needs nothing the host has not already supplied. One that names
+        // none falls back to the host's own picker — the workbench's, browsing
+        // the record snapshot.
+        if (attr.type_config?.datasource) {
+          return (
+            <SearchingPicker
+              attr={attr}
+              allValues={values}
+              anchorRecord={anchorRecord}
+              pageRecord={pageRecord}
+              activity={activity}
+              targetTypeId={fkRecordType}
+              displayField={fkDisplayField}
+              onSelect={picked}
+              onClose={() => setOpenPickerFor(null)}
+            />
+          );
+        }
+        if (!recordPicker) return null;
         const RecordPicker = recordPicker;
         return (
           <RecordPicker
             targetTypeId={fkRecordType}
-            onSelect={(record) => {
-              setValues(v => ({ ...v, [openPickerFor]: record.id }));
-              const fkDisplayField = ref
-                ? resolveAttributeDisplayField(ref.typeId, ref.fieldKey)
-                : resolveAttributeDisplayField(recordTypeId, attr.key);
-              const label = resolveDisplayLabel(fkRecordType, fkDisplayField, record.id);
-              setDisplayLabels(d => ({ ...d, [openPickerFor]: label }));
-              setOpenPickerFor(null);
-            }}
+            displayField={fkDisplayField}
+            onSelect={picked}
             onClose={() => setOpenPickerFor(null)}
           />
         );
@@ -753,6 +783,105 @@ function ListField({ attr, value, allValues, anchorRecord, pageRecord, activity,
         <option key={o.value} value={o.value}>{o.label}</option>
       ))}
     </select>
+  );
+}
+
+// ── Record picker over a GET (RECORD_PICKER §10) ──────────────────────────────
+// **The form evaluates the datasource, not the picker.** Every other caller of
+// the evaluate-fetch-evaluate helper is a form field, and a page's other route
+// to a GET is the component container's batched pass; having the picker
+// evaluate would work — it renders inside the form's provider — but it would
+// make the workbench's dialog and this one structurally different components
+// rather than two fills of one slot.
+//
+// The search term arrives from the picker, already debounced and already past
+// its minimum length, and goes in as the **`term` root** rather than into the
+// form's values: those are unknown-shaped, so `attributes.term` would raise no
+// error at save and read as blank at runtime — and naming it there would
+// re-evaluate every other datasource on the form on every keystroke.
+//
+// The rules are `ListField`'s, because the same round trip is underneath: a run
+// overtaken by a newer one discards its answer, an error shows in place of the
+// list, loading shows only when something is genuinely in flight, and a host
+// with no `query` makes `invoke` fail loudly and reports it.
+
+interface SearchingPickerProps {
+  attr: AttributeDef;
+  allValues: Record<string, unknown>;
+  anchorRecord: RecordInstance | null;
+  pageRecord?: RecordInstance | null;
+  activity: ActivityDef;
+  targetTypeId: string;
+  displayField?: string;
+  onSelect: RecordPickerProps['onSelect'];
+  onClose: () => void;
+}
+
+function SearchingPicker({
+  attr, allValues, anchorRecord, pageRecord, activity, targetTypeId, displayField, onSelect, onClose,
+}: SearchingPickerProps) {
+  const { evaluate, query } = useCaptureHost();
+  const datasource = attr.type_config?.datasource ?? '';
+  const keyField = attr.type_config?.key_field ?? 'id';
+  const columns = attr.type_config?.columns;
+  // The picker opens by asking with an empty term — what that returns is the
+  // GET's decision, not this component's.
+  const [term, setTerm] = useState('');
+  const [{ rows, error, loading }, setState] = useState<{
+    rows: RecordPickerCandidate[] | null;
+    error: string | null;
+    loading: boolean;
+  }>({ rows: null, error: null, loading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState(s => ({ ...s, loading: true }));
+    void (async () => {
+      try {
+        const result = await evaluateWithGets(
+          invoke => evaluate(datasource, {
+            attributes: coerceCaptured(activity.attributes, allValues),
+            anchorRecord,
+            pageRecord,
+            activity: { id: activity.id, name: activity.name },
+            extras: { term },
+            invoke,
+          }),
+          { query, anchorId: anchorRecord?.id, label: `Datasource for '${attr.key}'` },
+        );
+        if (cancelled) return;
+        // A result that is not a list is an error in place of the dialog body,
+        // which is what the dropdown does with the same answer.
+        if (!Array.isArray(result)) {
+          setState({ rows: null, error: 'datasource did not return a list', loading: false });
+          return;
+        }
+        setState({ rows: result, error: null, loading: false });
+      } catch (err) {
+        if (cancelled) return;
+        setState({ rows: null, error: err instanceof Error ? err.message : String(err), loading: false });
+      }
+    })();
+    return () => { cancelled = true; };
+    // The form's other values are read once, when the picker opens: they are
+    // what the datasource filters by (`attributes.project_id`), and the form is
+    // behind a modal while this is open, so they cannot change under it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasource, term, anchorRecord?.id]);
+
+  return (
+    <SearchRecordPicker
+      targetTypeId={targetTypeId}
+      displayField={displayField}
+      keyField={keyField}
+      columns={columns}
+      rows={rows}
+      loading={loading}
+      error={error}
+      onSearch={setTerm}
+      onSelect={onSelect}
+      onClose={onClose}
+    />
   );
 }
 

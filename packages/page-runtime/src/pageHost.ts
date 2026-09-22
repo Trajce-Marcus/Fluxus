@@ -101,6 +101,18 @@ export interface PageServiceHandlers {
    * draws buttons, from what the host already holds.
    */
   listActivities(record: unknown): Promise<ActivityOption[]>;
+  /**
+   * A stored file key → an address a browser can load (2026-09-23,
+   * COMPONENT_PHOTOS §2). The channel a photo reaches a component through: the
+   * container assigns host services onto every component's resolved props, and
+   * this package's SPEC already named that as the route to
+   * `UploadService.resolveUrl`.
+   *
+   * A **component** door, not a script one — absent from `buildPageServices`
+   * below, exactly as `listActivities` is, so no FluxScript can name it. A
+   * page's script has no business minting file addresses.
+   */
+  resolveUrl(storageKey: string): Promise<string>;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -150,9 +162,10 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
 export const pageServicesStub = (): ServiceModuleDef[] =>
   buildPageServices({
     setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {},
-    // Not in any module below, so nothing can name it in a script — it is here
-    // only because the handler set is one interface.
+    // Not in any module below, so nothing can name them in a script — they are
+    // here only because the handler set is one interface.
     listActivities: async () => [],
+    resolveUrl: async () => '',
   });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────

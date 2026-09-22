@@ -34,8 +34,18 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
+/**
+ * What the **display** widgets need of the upload service: turning a stored key
+ * into an address, and nothing else. Narrowed from `UploadService` on
+ * 2026-09-23 so a page component can draw a photo — a component reaches the
+ * host through `services`, which hands over `resolveUrl` alone and no way to
+ * upload (COMPONENT_PHOTOS §2). The capture widgets still take the whole
+ * service, because they upload.
+ */
+export type UrlResolver = Pick<UploadService, 'resolveUrl'>;
+
 /** Resolve a stored object key to a presigned URL (lazy, once). */
-function useResolvedUrl(uploads: UploadService, key: string | undefined): string | null {
+function useResolvedUrl(uploads: UrlResolver, key: string | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!key) { setUrl(null); return; }
@@ -260,7 +270,7 @@ const tileStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 0,
 };
 
-function Thumb({ descriptor, uploads, onRemove }: { descriptor: PhotoDescriptor; uploads: UploadService; onRemove?: () => void }) {
+function Thumb({ descriptor, uploads, onRemove }: { descriptor: PhotoDescriptor; uploads: UrlResolver; onRemove?: () => void }) {
   const url = useResolvedUrl(uploads, descriptor.thumb_key ?? descriptor.storage_key);
   const open = async () => {
     const full = await uploads.resolveUrl(descriptor.storage_key);
@@ -283,7 +293,7 @@ function Thumb({ descriptor, uploads, onRemove }: { descriptor: PhotoDescriptor;
   );
 }
 
-function FileRow({ descriptor, uploads, onRemove }: { descriptor: FileDescriptor; uploads: UploadService; onRemove?: () => void }) {
+function FileRow({ descriptor, uploads, onRemove }: { descriptor: FileDescriptor; uploads: UrlResolver; onRemove?: () => void }) {
   const download = async () => {
     const url = await uploads.resolveUrl(descriptor.storage_key);
     window.open(url, '_blank', 'noopener');
@@ -303,7 +313,7 @@ function FileRow({ descriptor, uploads, onRemove }: { descriptor: FileDescriptor
 }
 
 /** Read-only thumb grid for a photo value (history / record details). */
-export function PhotoThumbs({ value, uploads }: { value: unknown; uploads: UploadService }) {
+export function PhotoThumbs({ value, uploads }: { value: unknown; uploads: UrlResolver }) {
   const list = asList(value);
   if (list.length === 0) return <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>;
   return (
@@ -314,14 +324,14 @@ export function PhotoThumbs({ value, uploads }: { value: unknown; uploads: Uploa
 }
 
 /** Read-only file chip rows for a file value (history / record details). */
-export function FileChips({ value, uploads }: { value: unknown; uploads: UploadService }) {
+export function FileChips({ value, uploads }: { value: unknown; uploads: UrlResolver }) {
   const list = asList(value);
   if (list.length === 0) return <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>;
   return <div>{list.map((d, i) => <FileRow key={`${d.storage_key}-${i}`} descriptor={d} uploads={uploads} />)}</div>;
 }
 
 /** Compact grid-cell view: first thumbnail with a count badge (§10). */
-export function PhotoCountCell({ value, uploads }: { value: unknown; uploads: UploadService }) {
+export function PhotoCountCell({ value, uploads }: { value: unknown; uploads: UrlResolver }) {
   const list = asList(value);
   const url = useResolvedUrl(uploads, list[0] ? ((list[0] as PhotoDescriptor).thumb_key ?? list[0].storage_key) : undefined);
   if (list.length === 0) return <span style={{ color: '#cbd5e1' }}>—</span>;

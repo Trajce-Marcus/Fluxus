@@ -37,9 +37,52 @@ export interface CaptureScript {
   invoke?: RoundInvoke;
 }
 
+/**
+ * One candidate as the GET answered it — a DslRecord (`{id, type, fields}`) or
+ * a projected row. Resolved against `keyField`/`displayField` by the picker.
+ */
+export type RecordPickerCandidate = unknown;
+
+/**
+ * What a record picker is handed. Two components fill this slot and nothing
+ * else does: the workbench's `RecordPickerDialog`, which browses the record
+ * snapshot, and this package's `SearchRecordPicker`, which searches over a GET.
+ *
+ * **The picker supplies the label** (RECORD_PICKER §6). It used to hand back a
+ * record and the form resolved the label off the snapshot — which on a page
+ * returns the raw id, because a page holds no snapshot. So the display field
+ * travels *in* and the readable label travels *out*.
+ */
 export interface RecordPickerProps {
   targetTypeId: string;
-  onSelect: (record: RecordInstance) => void;
+  /**
+   * Which field of a candidate to show. Comes from the attribute's declared
+   * field, resolved by the form — the picker is told, it does not work it out.
+   */
+  displayField?: string;
+  /** Which field of a candidate holds the stored value. Default `id`. */
+  keyField?: string;
+  /** Extra fields drawn as secondary text on a row — `3.4` beside a name. */
+  columns?: string[];
+  /**
+   * Candidates from the attribute's datasource. **The form evaluates it, not
+   * the picker** (§10): every other caller of the evaluate-fetch-evaluate
+   * helper is a form field, and having the picker evaluate would make the two
+   * fills of this slot structurally different components. Absent in the
+   * workbench, which browses the snapshot instead.
+   */
+  rows?: RecordPickerCandidate[] | null;
+  /** A search is in flight. */
+  loading?: boolean;
+  /** The datasource failed — shown in place of the list, with the message. */
+  error?: string | null;
+  /**
+   * Ask for candidates matching a term. The picker debounces and applies its
+   * own minimum length before calling this; the form does the fetching.
+   */
+  onSearch?: (term: string) => void;
+  /** The stored value, and something a person can read. */
+  onSelect: (value: string, label: string) => void;
   onClose: () => void;
 }
 
@@ -66,8 +109,12 @@ export interface CaptureHost {
    * How a reference attribute is picked. Injected because browsing records to
    * choose one is the workbench's own dialog and needs the record snapshot a
    * page does not have; a host that omits it gets a plain id input (what a
-   * page has always had here). It plugs in when a page can reach records
-   * through a GET.
+   * page has always had here).
+   *
+   * This is the **no-datasource** path only. An attribute that names a
+   * `datasource` gets `SearchRecordPicker` from the form itself, on every host,
+   * because searching over a GET needs nothing the host has not already
+   * supplied (`evaluate` and `query`).
    */
   recordPicker?: ComponentType<RecordPickerProps>;
 }

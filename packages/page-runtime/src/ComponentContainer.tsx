@@ -195,7 +195,11 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     runActivity: launchActivity,
     openPage,
     listActivities,
-  }), [onContextChange, launchActivity, openPage, listActivities]);
+    // A stored key → a presigned address, so a component can draw a photo
+    // (COMPONENT_PHOTOS §2). Like `listActivities` it is on the handler set but
+    // in no service module, so a component may call it and a script may not.
+    resolveUrl: (storageKey: string) => runtime.client.uploads.resolveUrl(storageKey),
+  }), [onContextChange, launchActivity, openPage, listActivities, runtime]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is
