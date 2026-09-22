@@ -218,11 +218,15 @@ slot-cbs-total   Budget total  {{ invoke('act_total_cbs_nodes', { project_id: co
 slot-wbs-total   Baseline {{ invoke('act_total_wbs_baseline', …) }} · Forecast {{ invoke('act_total_wbs_forecast', …) }}
 ```
 
-> **BUILT, and it does not work — see §8-5.** The functions and the three total
-> GETs are in the model and validate cleanly, but a decimal field is **stored as
-> text** and the language has no way to turn text into a number, so the loop
-> below concatenates instead of adding. The page carries the project's stored
-> `approved_budget`, labelled as the contract figure, until that is fixed.
+> **BUILT — broken 2026-09-14, working 2026-09-22.** The functions and the
+> three total GETs were always right; what defeated them was a defect two
+> packages away. `runActivity` wrote the raw captured bag into the record and
+> coerced a separate copy for the hooks, so a `decimal` field kept the form's
+> string and the loop below concatenated instead of adding. With the engine
+> coercing at the write and the 18 stored values converted,
+> `act_total_cbs_nodes` returns **30,000,000** for P26-011. Nothing in this
+> solution changed. The WBS totals read 0 because no baseline or forecast has
+> been entered yet, which is the honest answer rather than a broken one.
 
 **Buildable with what exists — through a named function.** The query chain has
 `count` and `first` and no `sum` (aggregation is deferred, DSL_SPEC §4.2/§12),
@@ -577,6 +581,7 @@ in `packages/server/scripts/`, the convention for one-offs.
 | `retire-id-field.ts` (2026-09-18) | `id_field` dropped from `rt_projects`, `rt_wbs_nodes`, `rt_cbs_nodes` — every record now gets an issued UUIDv7 |
 | `projects-location.ts` (2026-09-22) | `location` + `geo_point` on `rt_projects` and both project activities; the eleven projects given a place, a coordinate and a description — **written straight to the records**, the user's ruling for demo data |
 | `project-page-location.ts` (2026-09-22) | Name, Location and the coordinate added to Details; a `Map` panel between Details and the WBS. Edits the stored draft rather than rewriting it, so Console changes survive |
+| `numeric-fields-to-numbers.ts` (2026-09-22) | the 18 stored `int`/`decimal` values converted from strings to numbers, after the engine was fixed to coerce at the write — this is what made the totals above work |
 | `retire-cbs-page.ts` (2026-09-22) | the **Cost Breakdown** column taken off the projects list, `pages/cbs` deleted (draft + 4 published versions), and the attribute pool swept for unused entries — there were none |
 
 **One Edit, not three** (2026-09-21, the user's call). Three activities existed
@@ -638,7 +643,10 @@ works from Active. The page's every expression and hole evaluates, and every
 activity it names exists — checked by `project-page.ts` before it wrote, since
 a page written by a script never meets `validatePage`.
 
-**Not working: the totals** (§3.5, §8-5) — the arithmetic gap.
+**The totals work** (§3.5, §8-5) as of 2026-09-22 — the arithmetic gap was a
+storage defect in the engine, not a hole in the language, and it is fixed. The
+page still shows `approved_budget` as the contract figure; swapping that panel
+for the live CBS total is a page edit nobody has made yet.
 
 **Pages are drafts.** `pages/project` and the changed `pages/projects` need
 publishing in the Console before the Runtime app shows them.

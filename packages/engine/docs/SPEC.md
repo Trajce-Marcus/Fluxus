@@ -494,6 +494,31 @@ is; typed dot-paths in hooks/validations are a later, additive step.
   cardinality, `max_count`, and per-file `max_size_mb` (the presign gate is the
   first check; this is the re-check at submit).
 
+## Numbers are stored as numbers (2026-09-22)
+
+A `decimal` or `int` field holds a **number** in the record, coerced at the one
+door every write goes through — `MemoryAdapter.buildRecord` and `updateRecord`,
+so an activity write and a hook write are treated alike
+(`coerceFieldValues`, `test/numericStorage.test.ts`).
+
+It corrects a defect, not a design. `runActivity` wrote the **raw captured
+bag** into the record fields and coerced a *separate* copy for the hooks, so
+the coercion existed, ran on every run, and never reached storage: CBS budgets
+read `"2400000"`. What it cost sat two packages away and looked like a language
+problem — `+` concatenated instead of adding, so the projects solution's total
+GETs returned `024000001260000018000004500000…` and were written up as an
+arithmetic gap in the DSL. There was no gap. With the write fixed and the 18
+stored values converted (`packages/server/scripts/numeric-fields-to-numbers.ts`),
+those totals return real figures with no script changed.
+
+Two values are deliberately left alone, and both keep an existing meaning
+rather than introducing one: a blank stays `''`, because blank already means
+blank everywhere; and a string that is not a number — `"2,400,000"`, a typo —
+stays as typed, so a bad value stays visible instead of silently becoming null.
+History entries are untouched: `capturedAttributes` is what a person submitted,
+append-only, and a record of a submission rather than a value anything computes
+with.
+
 ## Bridge and validation
 
 `bridge.ts` translates between SDM shapes and the DSL's hosts: config →

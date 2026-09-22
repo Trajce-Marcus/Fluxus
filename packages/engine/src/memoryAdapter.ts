@@ -1,7 +1,7 @@
 import { v7 as uuidv7 } from 'uuid';
 import type { Store } from './store';
 import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
-import { activityHooks, joinScript } from './bridge';
+import { activityHooks, coerceValue, joinScript } from './bridge';
 
 // THE Store: all reference-Store behaviour (workflow resolution, constraint
 // checks, staged mutation halves) with no storage attached. Every host runs
@@ -159,6 +159,41 @@ export class MemoryAdapter implements Store {
     return r;
   }
 
+  /**
+   * Numbers are stored as numbers (2026-09-22, correcting a defect).
+   *
+   * `runActivity` wrote the raw captured bag straight into the record, so a
+   * `decimal` field kept whatever the form's `<input>` handed over — the CBS
+   * budgets read `"2400000"`, a string. The coercion existed the whole time and
+   * ran on the way to the hooks; it simply never reached storage. The cost was
+   * paid downstream: `+` concatenated instead of adding, so no script could
+   * total anything, and sorting a money column compared text.
+   *
+   * Every write into a record field passes through here — activity writes and
+   * hook writes both land in `buildRecord`/`updateRecord`, which is why this is
+   * the one place it belongs.
+   *
+   * Two values are deliberately left alone: a blank stays `''` rather than
+   * becoming null, because blank already means blank everywhere; and a string
+   * that is not a number (`"2,400,000"`, a typo) stays as typed, so a bad value
+   * stays visible instead of silently becoming null.
+   */
+  private coerceFieldValues(typeId: string, fields: Record<string, unknown>): Record<string, unknown> {
+    const rt = this.recordTypes.find(r => r.id === typeId);
+    if (!rt) return fields;
+    const numeric = new Set(rt.custom_fields.filter(cf => cf.type === 'int' || cf.type === 'decimal').map(cf => cf.key));
+    if (numeric.size === 0) return fields;
+    const out: Record<string, unknown> = { ...fields };
+    for (const key of Object.keys(out)) {
+      if (!numeric.has(key)) continue;
+      const value = out[key];
+      if (typeof value !== 'string' || value.trim() === '') continue;
+      const coerced = coerceValue('decimal', value.trim());
+      if (typeof coerced === 'number') out[key] = coerced;
+    }
+    return out;
+  }
+
   // Validate + shape a create without persisting — the staging half of createRecord.
   // Hooks build records while their script runs and insert only on commit.
   buildRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance {
@@ -166,7 +201,7 @@ export class MemoryAdapter implements Store {
     if (!rt) throw new Error(`RecordType not found: ${typeId}`);
 
     const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default ?? '']));
-    const merged = { ...defaults, ...customFields };
+    const merged = this.coerceFieldValues(typeId, { ...defaults, ...customFields });
 
     // Enforce field constraints
     for (const cf of rt.custom_fields) {
@@ -246,7 +281,7 @@ export class MemoryAdapter implements Store {
   updateRecord(recordId: string, fields: Record<string, unknown>): void {
     this.validateUpdate(recordId, fields);
     const r = this.records.get(recordId)!;
-    r.customFields = { ...r.customFields, ...fields };
+    r.customFields = { ...r.customFields, ...this.coerceFieldValues(r.typeRef, fields) };
     this.persist();
     this.notify();
   }
