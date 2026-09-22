@@ -12,6 +12,7 @@ export { MemoryAdapter } from './memoryAdapter';
 export type { MemoryAdapterOptions } from './memoryAdapter';
 
 export { buildGeoModule } from './services/geo';
+export { buildTimeModule } from './services/time';
 
 export { evaluateWithGets } from './evaluateWithGets';
 export type { GetQueryFn, RoundInvoke, EvaluateWithGetsOptions } from './evaluateWithGets';

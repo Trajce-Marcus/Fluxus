@@ -55,6 +55,8 @@ src/evaluateWithGets.ts — the waiting loop for a host whose GET answers are a
 src/validateSubmission.ts — headless payload validation (DSL Phase 4): the
                      attribute trio + datasource membership as one check
 src/services/geo.ts — shared geo module (Store-backed, host-agnostic)
+src/services/time.ts — duration arithmetic over 'HH:MM' clock times; pure,
+                     no store, no host state
 src/services/logger.ts — the engine-owned logger manifest (one builder:
                      createEngine binds the live sink; validateConfig
                      registers it with a no-op so configs using
@@ -68,10 +70,11 @@ notification surfaces (`NotificationLog` stays in sdm), service module
 *implementations* with host-owned sinks (hosts supply them; the engine only
 carries them to the evaluator/validator — `notify` differs per host), and the
 SDM config itself (config distribution is an open thread — see root ROADMAP).
-Two service modules are engine-owned because their sink/source is engine
-state: `logger` (sink = the history entry) and, since DSL Phase 4, `geo`
+Three service modules are engine-owned. Two because their sink or source is
+engine state: `logger` (sink = the history entry) and, since DSL Phase 4, `geo`
 (source = Store reference data; moved from sdm so all three hosts share one
-implementation).
+implementation). The third, `time` (2026-09-23), because it has no sink or
+source at all — it is pure arithmetic every host needs and none can vary.
 
 ## The Engine object
 
@@ -256,6 +259,22 @@ An app-triggered run and a workbench run are then the same run.
   store. `kind: 'read'` deliberately, so it is callable from any hook;
   lines are discarded when no entry commits (rejected gate, cancelled soft
   stop, DELETE).
+- **`services.time`** — engine-owned, pure: `hoursBetween(start, end)` gives
+  the decimal hours from one `'HH:MM'` to another, treating an end at or before
+  the start as the next day, so a night shift 18:00→06:00 is 12 rather than an
+  error. It exists because the language cannot do it: a `time` field holds a
+  zone-less string, `'17:00' - '07:00'` is an error, date minus date is an
+  error, and there is no substring, split or numeric cast to build one from.
+  A service rather than a new operator because **operators are language and
+  calculations are capability** — subtracting two times is the same shape as a
+  geography lookup, and an operator would touch the grammar, the validator and
+  every host. `kind: 'read'`, so it is callable from a before hook, an after
+  hook and a `returns` expression alike. Anything unparseable answers 0 rather
+  than failing, because a half-filled draft is ordinary and a hook that threw
+  on one could not be run at all; the result is rounded to two decimals, since
+  every caller multiplies it by a rate and ten minutes is otherwise 0.1666….
+  No dependency: the module is itself the boundary, so a date library slots in
+  behind it if this ever grows into parsing, formatting or time zones.
 - **Entry append order** — the entry is appended *after* the after hook runs
   (one write carrying user input + hook-written attributes + system log), but
   a failing after hook still appends the entry before the error propagates —

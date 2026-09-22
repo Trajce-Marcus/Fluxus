@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { createEngine, buildGeoModule } from '@fluxus/engine';
+import { createEngine, buildGeoModule, buildTimeModule } from '@fluxus/engine';
 import type {
   ContextUser,
   Engine,
@@ -104,7 +104,7 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
       createEngine({
         store: adapter,
         config: client.config,
-        services: [buildNotifyModule(new NotificationLog()), buildGeoModule(adapter)],
+        services: [buildNotifyModule(new NotificationLog()), buildGeoModule(adapter), buildTimeModule()],
         user,
       }),
     [client, adapter, user]
