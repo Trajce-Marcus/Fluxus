@@ -687,6 +687,55 @@ Things the model cannot express, handled in hooks or not at all:
 - **One resource claimed once per shift** — not enforced (§4.1a).
 - **A resource's `unit` never changes** — not enforced (§4.2).
 
+## 10a. What the hook review established
+
+Both hooks were written out and run against the engine on 2026-09-23. They
+work: 12 resource lines across 3 WBS nodes produced 36 cost rows in 2 ms, using
+1.8% of the step budget, and re-running Calculate after a change re-priced
+correctly. Nested loops are legal, an after hook may update the record the
+activity ran on and create records of another type in the same run with no
+ordering constraint, and a service function may be called from a before hook,
+an after hook and a `returns` expression provided it declares itself as a read.
+
+**Four things bite, none of them obvious, all of them measured.**
+
+**A blank reference is not null.** A blank `fk_ref` stores `''` and reaches a
+script as a pointer with an empty id, so `line.wbs_id is not null` is **true for
+every line**. Written that way, the per-line exception (§5.1) took the
+whole-to-one-node branch for all twelve lines and wrote twelve rows with a blank
+node instead of thirty-six — no error, no warning. **`<> ''` is the only test
+that separates a blank reference from a set one**, and the same applies
+anywhere else a reference is tested for emptiness.
+
+**Float equality cannot be used on hours.** Hours of 0.1, 8.2 and 1.7 total
+9.999999999999998, so `total <> work_hours` rejects a correct report. The check
+compares `round(total, 6)`. `decimal` is float-backed and the attribute
+documentation says plainly it is not money-grade.
+
+**A blank number poisons a total.** `0 + ''` evaluates to the string `'0'`, and
+`'0' = 0` is false. One WBS row with its hours left blank turns the running
+total into text, so the hours check never matches and the division-by-zero
+guard never fires — the run then dies further down with a type error instead.
+Every accumulation guards each value, not just the result.
+
+**The divided shares do not add up.** $100 across three equal nodes rounds to
+$33.33 three times — $99.99. Nothing in the codebase allocates remainders.
+Across the demonstration that is up to $11.52 present in the shift's lines and
+absent from the cost rows, and since §7's totals read only the cost rows,
+nothing reconciles the two and the gap is silent.
+
+**The rule: largest remainder.** Every share is rounded, and the difference
+between their sum and the line's total is given to the largest share. The parts
+then always equal the whole, which is the property that matters when the two
+tables are compared.
+
+**Two smaller facts worth holding.** A failed after hook still leaves a history
+entry, so a failed approval is visible rather than silent. And the binding
+limit is rows, not steps: reaching a record's children reads that whole record
+type and is capped at 10,000 rows in the operation, so this stops working
+somewhere near 277 reports at twelve lines and three nodes. The demonstration
+is 96.
+
 ## 11. Specified, not built
 
 - **Sharing resources beyond one project** — importing a catalogue into a
