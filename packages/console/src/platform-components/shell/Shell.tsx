@@ -4,6 +4,7 @@ import { HeaderBar, css as headerBarCss } from './HeaderBar';
 import { SideNav, css as sideNavCss } from './SideNav';
 import { InnerPanelSlot, css as innerPanelCss } from './InnerPanel';
 import { ContentArea, css as contentAreaCss } from './ContentArea';
+import { monacoCss } from '../page-builder/fluxscriptLanguage';
 import { initRouter } from './router';
 import { css as pagesSectionCss } from '../page-builder/PagesSection';
 import { css as adminViewCss } from '../admin/AdminView';
@@ -45,6 +46,13 @@ function ShellComponent() {
 }
 
 const css = `
+  /* Monaco's stylesheet, once. Two surfaces embed an editor — the page
+     builder's expression dialog and the DSL editor — and each used to carry
+     its own copy into the shadow root, which meant ~309KB of exact duplicate
+     parsed on every load. It belongs to the shell because it belongs to
+     neither section. */
+  ${monacoCss}
+
   ${headerBarCss}
   ${sideNavCss}
   ${innerPanelCss}

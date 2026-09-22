@@ -55,6 +55,8 @@ export {
 export { attributeFieldRef } from './attributeTypes';
 export type { AttributeFieldRef, AttributeTypeSpec, DescriptorField, DescriptorFieldType } from './attributeTypes';
 
+export { modelSchemaTypes, modelRows, withModelTypes } from './modelProjection';
+export type { ModelProjectionOptions } from './modelProjection';
 export { validateConfig, reportConfigFindings } from './validateConfig';
 export type { Finding } from './validateConfig';
 

@@ -3,6 +3,16 @@ import { parseExpression, parseFunction, parseScript } from './parser';
 import { FluxFailError, FluxSyntaxError } from './errors';
 import { DEFAULT_QUOTAS, DslRecord, EvalHost, FkPointer, MutationOp, Quotas, RecordsHost, ServiceFunctionDef, ServiceModuleDef } from './host';
 
+/** Model collections are ordinary record types under this prefix, which no
+ *  script ever writes — `model.record_types` reads `sdm_record_types`. */
+export const MODEL_PREFIX = 'sdm_';
+
+/** A host holds the model when it answers for the collections' own prefix.
+ *  `record_types` is the one every projection has. */
+function hostHasModelTypes(records: RecordsHost): boolean {
+  return records.hasType(MODEL_PREFIX + 'record_types');
+}
+
 export class FluxRuntimeError extends Error {
   readonly line: number;
   readonly col: number;
@@ -55,7 +65,25 @@ export function executeScript(source: string | Script, host: EvalHost = {}, opti
 
 /** Marker for the `records` root; member access yields materialized record lists. */
 class RecordsRoot {
-  constructor(readonly host: RecordsHost) {}
+  /**
+   * `prefix` is how the `model` root reaches the SDM's own collections. They
+   * are ordinary record types in the same table, named `sdm_*` so a solution's
+   * types can never collide with them, and the prefix never appears in a
+   * script: `model.record_types` reads `sdm_record_types`.
+   *
+   * One root class rather than two, so every chain, projection and shape rule
+   * applies to the model exactly as it does to data (QUERYING_THE_MODEL §2).
+   */
+  constructor(readonly host: RecordsHost, readonly prefix = '') {}
+
+  typeName(name: string): string {
+    return this.prefix + name;
+  }
+
+  /** What an error should call it — the name as written, never the prefix. */
+  label(): string {
+    return this.prefix === '' ? 'record type' : 'model collection';
+  }
 }
 
 /** Marker for the `services` root; member access yields service modules. */
@@ -156,6 +184,11 @@ class Env {
 }
 
 const ROOT_NAMES = new Set(['context', 'attributes', 'records', 'services']);
+
+/** `model` resolves as a root only where the host supplied the collections, so
+ *  it is not in ROOT_NAMES: that set bans `let <name> = …` everywhere, and
+ *  `model` is an ordinary word (vehicle model, equipment model). */
+const CONDITIONAL_ROOT_NAMES = new Set(['model']);
 const MAX_CALL_DEPTH = 64;
 
 type Signal = { signal: 'return'; value: unknown } | null;
@@ -345,6 +378,15 @@ class Evaluator {
         case 'records':
           if (!this.host.records) return { found: false, value: undefined };
           return { found: true, value: new RecordsRoot(this.host.records) };
+        case 'model': {
+          // Only a root where the host actually holds the collections — which
+          // is how exposure stays opt-in, and why `model` is not a reserved
+          // word anywhere else.
+          if (!this.host.records || !hostHasModelTypes(this.host.records)) {
+            return { found: false, value: undefined };
+          }
+          return { found: true, value: new RecordsRoot(this.host.records, MODEL_PREFIX) };
+        }
         default: {
           // Embedding-point extras (e.g. `value` in validation, `event` in wiring)
           const extras = this.host.extras;
@@ -382,6 +424,16 @@ class Evaluator {
       case 'ident': {
         const result = scope(expr.name);
         if (!result.found) {
+          // `model` is a root only where the host supplied the collections, so
+          // it is an ordinary name elsewhere — but "Unknown name 'model'" reads
+          // as a typo when the real answer is that this surface does not have
+          // the model.
+          if (expr.name === 'model') {
+            throw new FluxRuntimeError(
+              "'model' is not available here — the model collections are supplied to the DSL Editor only",
+              expr.pos,
+            );
+          }
           throw new FluxRuntimeError(
             `Unknown name '${expr.name}' — bare field names are only available inside query methods`,
             expr.pos,
@@ -570,10 +622,17 @@ class Evaluator {
     if (object === null) return null; // null-safe navigation
 
     if (object instanceof RecordsRoot) {
-      if (!object.host.hasType(name)) {
-        throw new FluxRuntimeError(`Unknown record type '${name}'`, pos);
+      // The prefix is the model's, and it is reached through `model.` only.
+      // Without this, `records.sdm_record_types` read the model through the
+      // data root — the reserved prefix leaking back into script surface.
+      if (object.prefix === '' && name.startsWith(MODEL_PREFIX)) {
+        throw new FluxRuntimeError(`'${name}' is a model collection — reach it as model.${name.slice(MODEL_PREFIX.length)}`, pos);
       }
-      return this.readAll(name, pos);
+      const type = object.typeName(name);
+      if (!object.host.hasType(type)) {
+        throw new FluxRuntimeError(`Unknown ${object.label()} '${name}'`, pos);
+      }
+      return this.readAll(type, pos);
     }
 
     if (object instanceof ServicesRoot) {
@@ -659,6 +718,12 @@ class Evaluator {
       if ((method === 'create' || method === 'update' || method === 'delete') && callee.object.kind === 'member') {
         const inner = this.eval(callee.object.object, scope);
         if (inner instanceof RecordsRoot) {
+          // The model is read-only in every host: it changes through the
+          // Console's SDM editors and `config.put*`, never through a script.
+          // Both spellings are refused as read-only, not as unknown.
+          if (inner.prefix !== '' || callee.object.name.startsWith(MODEL_PREFIX)) {
+            throw new FluxRuntimeError(`The model is read-only — '${method}' is not available on model.${callee.object.name}`, callee.object.pos);
+          }
           const type = callee.object.name;
           if (!inner.host.hasType(type)) {
             throw new FluxRuntimeError(`Unknown record type '${type}'`, callee.object.pos);
@@ -696,6 +761,13 @@ class Evaluator {
         // Bulk update as chain terminal — every element must carry record identity
         const fields = this.fieldsArg(expr, scope, 'update');
         for (const item of object) {
+          // The model is read-only whatever route reaches it. Guarding the
+          // rows rather than the root catches the chain terminal too, which
+          // otherwise fell through to the store and failed as "record not
+          // found" — a confusing answer to an act that is simply not allowed.
+          if (isRecord(item) && item.type.startsWith(MODEL_PREFIX)) {
+            throw new FluxRuntimeError('The model is read-only — it changes through the SDM editors, not a script', expr.pos);
+          }
           if (!isRecord(item)) {
             throw new FluxRuntimeError(
               'Only records can be updated — projected rows have no identity',
@@ -1089,6 +1161,14 @@ class Evaluator {
   }
 
   private updateRecord(record: DslRecord, fields: Record<string, unknown>, pos: Position): DslRecord {
+    // The model never changes through a script, whichever route reaches the
+    // row — including a single record held in a variable or arrived at by
+    // dereference. Without this the write reaches the mutation host, which
+    // keys on id alone, so a model row whose id matched a real record's would
+    // have written to that record.
+    if (record.type.startsWith(MODEL_PREFIX)) {
+      throw new FluxRuntimeError('The model is read-only — it changes through the SDM editors, not a script', pos);
+    }
     const mutate = this.mutationHost(pos, 'update');
 
     // Updating a record this script created: fold into the staged create.
@@ -1121,6 +1201,11 @@ class Evaluator {
    * left to patch.
    */
   private deleteRecord(record: DslRecord, pos: Position): DslRecord {
+    // Same rule as bulk update: the model never changes through a script,
+    // whichever route reaches the row.
+    if (record.type.startsWith(MODEL_PREFIX)) {
+      throw new FluxRuntimeError('The model is read-only — it changes through the SDM editors, not a script', pos);
+    }
     const mutate = this.mutationHost(pos, 'delete');
 
     const creates = this.stagedCreates.get(record.type);

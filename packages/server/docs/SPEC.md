@@ -1005,3 +1005,81 @@ server) is the Console, and remains an open thread on the root ROADMAP.
   compiling; the deploy target is Vercel (`api/index.ts`, docs/DEPLOYMENT.md).
 - Multi-value (`selection: multi`) datasource membership validates array
   values element-wise but the capture form doesn't produce them yet.
+
+## `scripts.query` — ad-hoc FluxScript, read-only (BUILT 2026-09-21)
+
+Runs arbitrary FluxScript against one operation's records and returns the value.
+The Console's DSL Editor is its only caller
+(`packages/console/docs/DSL_EDITOR_SPEC.md`).
+
+**Why this is not a hole in the read rule.**
+`docs/DATA_THROUGH_ACTIVITIES.md` governs the *application* read path, where a
+query belongs in the model as a GET so it can be authorised and logged. This is
+workbench-class admin inspection, and the workbench is already outside that —
+the Console takes the whole operation partition at connect to evaluate locally
+against it. Running the query on the server is **narrower**: the browser gets
+the filtered subset instead of every record.
+
+**It is not logged.** A history entry lives on a record and an ad-hoc query has
+no anchor. Accepted, and recorded as debt against the unified-log design.
+
+**Read-only is structural, not a validation pass.** `readonlyRecords: true`
+removes `records.mutate` from the eval host, so the capability is not on the
+object; `engine.evaluate` additionally runs in expression posture. Static
+checking would not have done: a model function's body is validated separately,
+so a mutating function passes at its call site.
+
+**`engine.evaluate`, not `executeScript`.** `executeScript` returns the value of
+a top-level `return` and null otherwise, so a bare expression or query would
+answer null.
+
+**Access: `requireOpUser` — entry gate only.** The same gate the workbench's
+data door uses; the Console is reachable only by solution designers, so no admin
+tier on top. Deliberate departure from `records.partition`, which also filters
+rows by role-readable types: a script here reads **every** type in the
+operation. As with every gate but platform-admin, `requireOpUser` returns early
+when auth is unconfigured, so on such a deployment this endpoint is open.
+
+**Quotas** are raised per call (`maxRows: 100_000`, `maxSteps: 2_000_000`,
+`timeoutMs: 15_000`) — the partition is already in memory by then. Hooks keep
+`DEFAULT_QUOTAS`.
+
+A failed script returns a result carrying `error`, not a TRPCError; the editor
+needs the position. A bad anchor record id answers the same way, for the same
+reason — it is the caller's typo, not a transport failure.
+
+**Two error kinds, classified server-side.** `engine.evaluate` parses as well as
+evaluates, so `FluxSyntaxError` lands in the same catch as `FluxRuntimeError`;
+`compile` is the former, `runtime` everything else. Neither DSL error class has
+a `position` object — both carry `line`/`col` as own fields. Messages cross with
+their `(line n, col n)` suffix stripped, and **an error that is neither DSL
+class is internal: its text is not forwarded**, only that the script failed.
+
+**`invoke` is supplied** from `host.engine.invoke` with the anchor, so the
+built-in reaches GET activities as it does everywhere else — it is read-only by
+construction. A GET records a light history entry, so the run writes back even
+though the script cannot mutate.
+
+**The result is walked before it is sent** (`forWire`): `Date` values go back as
+wall-clock text and `FkPointer` as its id. A Date would otherwise serialise as a
+UTC instant, and since `date('2026-07-01')` parses at *local* midnight while the
+record persists the raw wall-clock string, a server ahead of UTC would report
+the previous day. A tRPC transformer does not fix this — it preserves the Date
+and the browser renders it in the browser's zone instead.
+
+**Scripts are capped at 4,000 characters** — a tRPC query's input travels in the
+URL and Node's default 16KB header limit counts the request line, so a longer
+script died as an opaque transport failure. Raising it means POSTing every
+query in the app.
+
+### `scripts.query` supplies the model (2026-09-22)
+
+The call passes `modelTypes: true`, so `model.*` answers from the operation's
+solution config alongside `records.*` (`docs/QUERYING_THE_MODEL.md`). Nothing
+else passes it — no hook, page binding, datasource or GET — so a model query
+outside the editor fails as an unknown collection rather than quietly working.
+
+Hook and `returns` source text is included in the projection. The Console is the
+gate (the user's ruling, 2026-09-22, the same one that set this endpoint's
+access): operation users have no Console access. The wider-door caveat already
+recorded for this endpoint applies to model content too.

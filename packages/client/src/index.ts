@@ -20,7 +20,7 @@ import type {
   SolutionConfig,
   WorkflowRawDef,
 } from '@fluxus/engine';
-import type { AppRouter } from '@fluxus/server';
+import type { AppRouter, ScriptQueryResult } from '@fluxus/server';
 import { runUpload, type Descriptor, type PresignRequest, type Presigned, type UploadService } from './upload';
 
 export type {
@@ -33,6 +33,7 @@ export type {
   Exif,
 } from './upload';
 export { sha256Hex, readExif, dmsToDecimal, runUpload } from './upload';
+export type { ScriptQueryResult } from '@fluxus/server';
 export { createHostAuth } from './auth';
 export type { AuthSession, HostAuth } from './auth';
 
@@ -868,5 +869,22 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       recordId: input.recordId,
       attributes: input.attributes ?? {},
     })) as QueryActivityResult;
+  }
+
+  /**
+   * Ad-hoc FluxScript, read-only, against this operation's records — the
+   * Console's DSL Editor. Not an application data path: see the reasoning on
+   * `scripts.query` in the server router.
+   *
+   * A failed script comes back as a result carrying `error`, not as a thrown
+   * TRPCClientError — the editor needs the message and its position to show
+   * against the source. Transport and gate failures still throw.
+   */
+  async runScript(input: { source: string; recordId?: string }): Promise<ScriptQueryResult> {
+    return (await this.trpc.scripts.query.query({
+      operationId: this.operationId,
+      source: input.source,
+      recordId: input.recordId,
+    })) as ScriptQueryResult;
   }
 }

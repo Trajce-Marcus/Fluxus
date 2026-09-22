@@ -78,3 +78,40 @@ The configuration column carries the two **page-level** sections above the selec
 2. **Manifest shape contracts** — *deferred by ruling (2026-07-11)*: with attributes captured by the standard form rather than mapped from payloads, contracts lost their main consumer; revisit if silent payload mapping ever becomes needed.
 3. **App modules:** coarse-grained reusable apps (e.g. calendar scheduler) ship as manifest-bearing components, rewired per SDM through slot config. The pattern is model-agnostic (non-SDM backends can sit behind the wiring), but schema validation and the audit spine exist only with an SDM.
 4. **Pages as SDM citizens:** a page file is a declarative definition validated against the model — same species as an entity file. Shape lands with the backend phase (same store, same write path, same audit).
+
+## DSL Editor (BUILT 2026-09-21)
+
+`platform-components/dsl-editor/DslEditorView.tsx`, registered as
+**Data → DSL Editor** beside Workbench. Full spec:
+[DSL_EDITOR_SPEC.md](DSL_EDITOR_SPEC.md).
+
+What it is for: the workbench lists and inspects records of one type but cannot
+query them. This adds the querying — filter, project, look at subsets — which is
+why it is an admin surface.
+
+Points worth knowing before changing it:
+
+- **Nothing of the workbench is reused.** `OperationPicker` and `FkDisplay` take
+  no props and read `useWorkbench()`, and the capture host is not exported, so
+  none of them mount outside a `WorkbenchProvider`. The editor builds its own
+  operation picker and takes the capture form from `@fluxus/page-runtime`, which
+  is the shared one both apps already use.
+- **Validation is `pageRuntime.validateExpression`** — the same door the page
+  builder's dialog uses, so the two stay consistent. It bans `attributes`, stubs
+  services (an empty registry would make every `services.*` call an unknown
+  module) and takes functions from the config.
+- **Markers are new here.** `ExpressionDialog` lists diagnostics underneath;
+  this sets Monaco model markers so they appear as squiggles. `Diagnostic` has
+  no end position, so each marker covers the word at its point. The page builder
+  can adopt the same treatment.
+- **Run acts on the selection if there is one, otherwise the whole buffer**
+  (Cmd/Ctrl+Enter). No separator token, no statement splitting.
+- **The buffer is kept per solution** in `localStorage` under
+  `fluxus:console:dsl-editor:<solutionId>` — one script and the anchor id,
+  written on change, restored on mount. Per solution because a script names that
+  solution's record types. This is also what stops an operation switch losing
+  the editor: `selectOperation` bumps `scopeVersion` and remounts every
+  solution-scoped view.
+- **No FK display values and no record picker.** `.select()` unwraps FKs to raw
+  ids, so the target type is gone; reference attributes in the activity form
+  take a plain id.

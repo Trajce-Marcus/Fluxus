@@ -3,7 +3,8 @@
 // EvalHosts for script execution. Scripts use short type names (records.assets),
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
-import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
+import { withModelTypes, resolvedCaptureLists } from './modelProjection';
+import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type Quotas, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
 import type {
   ActivityRawDef,
   AttributeDef,
@@ -11,6 +12,7 @@ import type {
   ClientCustomFieldDef,
   ClientSolutionConfig,
   ContextUser,
+  SolutionConfig,
   RecordInstance,
 } from './types';
 import type { Store } from './store';
@@ -275,6 +277,22 @@ export interface ScriptContext {
    * evaluates leaves it absent and `invoke` fails loudly.
    */
   invoke?: (activityId: string, params: Record<string, unknown>) => unknown;
+  /**
+   * Per-call interpreter limits, merged over DEFAULT_QUOTAS. Absent → the
+   * defaults, which is what hooks and page evaluation use. The DSL editor
+   * raises them: its host has already loaded the whole partition into memory,
+   * so the row cap is not protecting anything there, and a 1s budget is too
+   * short to be interactive.
+   */
+  quotas?: Partial<Quotas>;
+  /**
+   * Answer `model.*` from this config as well as `records.*` from the store
+   * (docs/QUERYING_THE_MODEL.md). Absent — which is every hook, page binding
+   * and datasource — means the model collections are not in the host at all,
+   * so naming one fails as an unknown collection. That absence is how exposure
+   * stays opt-in.
+   */
+  modelTypes?: boolean;
 }
 
 // ── Composite attributes (one question's row of sub-fields) ──────────────────
@@ -443,8 +461,13 @@ export function buildEvalHost(
     }
   }
 
-  const records = buildRecordsHost(adapter, config);
+  let records = buildRecordsHost(adapter, config);
   if (script.readonlyRecords) delete records.mutate;
+  if (script.modelTypes) {
+    records = withModelTypes(records, config as SolutionConfig, {
+      resolvedAttributes: resolvedCaptureLists(adapter),
+    });
+  }
 
   return {
     records,
@@ -463,6 +486,7 @@ export function buildEvalHost(
     // is the workbench's channel for them (a toast slot may take over later).
     onQueuedFailure: (label, message) => console.warn(`[queued ${label}] failed: ${message}`),
     extras: script.extras,
+    quotas: script.quotas,
   };
 }
 

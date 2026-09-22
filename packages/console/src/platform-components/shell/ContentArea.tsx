@@ -7,6 +7,7 @@ import { sectionsForScope } from './sections';
 import { css as workbenchCss } from '../workbench/WorkbenchView';
 import { css as overviewCss } from './OverviewSection';
 import { css as solutionSettingsCss } from './SolutionSettingsSection';
+import { css as dslEditorCss } from '../dsl-editor/DslEditorView';
 
 function ContentAreaComponent() {
   const { solutionId, activeSection } = useShellState(['solutionId', 'activeSection']);
@@ -29,6 +30,7 @@ export const css = `
   ${workbenchCss}
   ${overviewCss}
   ${solutionSettingsCss}
+  ${dslEditorCss}
 
   .content-area {
     flex: 1;

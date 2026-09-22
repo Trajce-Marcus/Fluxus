@@ -3,6 +3,13 @@ import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, 
 export interface Store {
   listRecordTypes(): RecordTypeDef[];
   getRecordTypeDef(typeId: string): RecordTypeDef & { workflow: WorkflowDef };
+  /**
+   * Every resolved workflow, including any no record type points at. Optional
+   * because the record-type route covers every workflow a solution actually
+   * uses; the model projection needs the rest too, since `model.activities`
+   * lists them and their capture lists would otherwise be silently missing.
+   */
+  listWorkflows?(): WorkflowDef[];
   getRecordTypeData(typeId: string): RecordInstance[];
   getRecord(recordId: string): RecordInstance;
   createRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance;

@@ -2,6 +2,27 @@
 
 Canonical definitions. If a doc or discussion uses one of these terms differently, this file wins; if a new term earns repeated use, add it here.
 
+## Model collections (`model.*`)
+
+**Built 2026-09-22** — `docs/QUERYING_THE_MODEL.md`.
+
+The SDM queried as data: `model.record_types`, `model.fields`,
+`model.attributes`, `model.workflows`, `model.activities`,
+`model.activity_attributes`, `model.functions`, `model.roles`. They are ordinary
+record types under an internal `sdm_` prefix, answered from the solution's
+config rather than the record store, so the ordinary chain, the record/row rule
+and static validation all apply to them.
+
+Note the collision of words, deliberately not resolved: `sdm_record_types`,
+`sdm_attributes`, `sdm_workflows`, `sdm_functions` and `sdm_roles` are **also**
+the names of the storage tables, with different columns. The projected
+collection and the table behind it are not the same thing, and `sdm_menus` has
+no projected counterpart at all.
+
+`model` is a root **only where the collections are declared** — the Console's
+DSL Editor endpoint. Everywhere else it is an ordinary name, so a field keyed
+`model` and a `let model = …` are both still fine.
+
 ## Model
 
 - **SDM (Shared Data Model)** — the single definition of record types, attributes, workflows, and activities; the platform's unit of scope (records, scripts, and the DSL all bind to one SDM). The canonical source of truth; everything else is a projection over it.

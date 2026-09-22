@@ -605,3 +605,88 @@ Why: attributes are a shared pool, so with the key doing both jobs one `parent_i
 ## An attribute may be sourced rather than asked for (2026-09-15)
 
 `AttributeUsageDef.source` — a FluxScript expression evaluated when the capture form opens, filling the value instead of putting a question to someone. The case it exists for: a CREATE has no anchor, so `context.record` is null and the record a new one is created **under** could not reach it. `act_create_wbs_nodes` sources the project with `context.page.record.id` — see the page-runtime SPEC for that root, and for the rule that an attribute arriving filled (sourced or seeded) is not shown.
+
+## Per-call quotas (2026-09-21)
+
+`ScriptContext.quotas` (`Partial<Quotas>`) is passed through `buildEvalHost`
+onto the eval host, where the evaluator merges it over `DEFAULT_QUOTAS`. Absent
+— which is every hook, every page evaluation, every existing caller — means the
+defaults, unchanged.
+
+The DSL Editor's endpoint raises them. Its reasoning: `loadOperationHost` has
+already loaded the operation's whole record set into memory before the script
+runs, so `maxRows` is not protecting server memory at that point, and
+`timeoutMs: 1_000` is too short for an interactive tool. Hooks keep the
+conservative defaults because their failure mode is different — a runaway hook
+blocks a user's submission.
+
+Note what the row quota does: it **throws**, and it throws in `readAll`, before
+`where` runs. A record type larger than `maxRows` cannot be queried at all, not
+even by id. The real fix is query pushdown (DSL_SPEC §9); raising the cap is the
+interim.
+
+## Defect: `resolveUsage` drops the pool's `required` (found 2026-09-22, not fixed)
+
+An attribute is declared once in the solution's pool and then *used* by
+activities, which may override some of its settings. `resolveUsage`
+(`memoryAdapter.ts`) merges the two.
+
+It falls back to the pool definition for `source`, `show_condition`,
+`validation`, `validation_message` and `can_waive` — but **not for `required`**:
+
+```ts
+required: usage.required,        // no `?? def.required`
+```
+
+So an activity whose usage sets *any* override — a `show_condition`, say — and
+does not restate `required` silently loses the pool's required flag, and the
+attribute becomes optional on that activity. A usage that overrides nothing
+takes the pool definition whole and is unaffected, which is why this has not
+been noticed.
+
+Two readings, and the fix depends on which is intended:
+
+- **Pool `required` is a default.** Then the merge is wrong and needs
+  `?? def.required` like its four neighbours.
+- **`required` belongs to the usage alone.** Then the merge is right, the pool
+  should not carry `required` at all, and `AttributeDef.required`'s own comment
+  ("carried over from the usage wrapper") is the intended story.
+
+**Not fixed deliberately.** Either change alters how existing solutions
+validate submissions — the first could start rejecting captures that pass
+today. It needs the user's ruling and a look at live configs first.
+
+Found while specifying `docs/QUERYING_THE_MODEL.md`, which wanted to project
+pool-level defaults and could not describe them truthfully.
+
+## The model projected as record types (BUILT 2026-09-22)
+
+`modelProjection.ts` turns a `SolutionConfig` into the `sdm_*` collections
+behind the DSL's `model` root — see `docs/QUERYING_THE_MODEL.md` for the design
+and `modelProjection.test.ts` for what is pinned.
+
+- `modelSchemaTypes()` — the collections as `DslSchema.types` entries, for a
+  host that validates (the Console's editor).
+- `withModelTypes(base, config, opts)` — wraps a records host so those types
+  answer from the config while everything else falls through to the store.
+- `ScriptContext.modelTypes` turns it on. Absent everywhere but the editor's
+  endpoint, which is how exposure stays opt-in rather than opt-out.
+
+Three things the projection has to do, each of which broke a draft:
+
+- **Materialize every column, absent ones as explicit null.** Bare-field scope
+  tests `name in obj`, so a merely-missing key falls through to the outer scope
+  and raises "Unknown name" inside `where`/`select`. Config objects come from
+  JSON, where optionals are simply absent.
+- **Answer the name a script can use.** `query_name` is the stored id minus
+  `rt_`; a projection answering `rt_projects` hands back something that cannot
+  be pasted after `records.`.
+- **Project the resolved capture list, not the raw one.** An activity's stored
+  attribute list is heterogeneous — usages and section markers, the latter with
+  no attribute reference at all — so `resolvedCaptureLists` reads the adapter's
+  resolution and a heading becomes a row with `kind: 'section'`.
+
+Two links are derived rather than stored: an activity's `workflow_ref` (from
+nesting) and its `record_type_ref` (reverse lookup through the workflow). 
+**Nothing enforces one record type per workflow**, so that answers null when
+none points at the workflow and the first by config order when several do.

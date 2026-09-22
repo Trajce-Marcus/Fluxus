@@ -29,4 +29,4 @@ console.log(`Auth: ${auth.configured ? 'Neon Auth via NEON_AUTH_URL — session 
 export { app, db };
 // Type-only surface for @fluxus/client (erased at compile time — importing
 // the type never boots this entry).
-export type { AppRouter } from './router';
+export type { AppRouter, ScriptQueryResult } from './router';

@@ -665,3 +665,24 @@ mechanical derivations of the endorsed `ClientSolutionConfig`, renameable
 together if the prefix is not wanted.
 
 GLOSSARY carries the endorsed set; the rest go in when they are settled.
+
+
+## The model as data (2026-09-22)
+
+`docs/QUERYING_THE_MODEL.md` makes the SDM queryable as `model.*` from the
+Console's DSL Editor, hook and `returns` source included.
+
+What that means for §2's grades: this is a **third reader of the server grade**,
+alongside `config.get`. It is not gated the way `config.get` is — that requires
+sol admin, while `scripts.query` requires only `requireOpUser`. The ruling
+(2026-09-22, the user) is that the Console is the gate and operation users have
+no Console access. The endpoint is nonetheless callable directly with an
+operation user's token, which is recorded in
+`packages/console/docs/DSL_EDITOR_SPEC.md` §10 and applies to model content too.
+
+Two things are stripped on the way out and must stay stripped: `access.read`
+(the RBAC read surface, never in the script environment) and `max_size_mb` (the
+server-only presign gate). `indexed` is also left out, as a storage hint rather
+than model.
+
+Revisit the gate with the operation-lifecycle work, not piecemeal.

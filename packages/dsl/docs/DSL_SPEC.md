@@ -39,6 +39,24 @@ The entire environment a script can touch, dependency-injected by the host at ca
 
 Additional roots may be injected per embedding point (e.g. `callbackData` — the emitted value, `{ value }` — in page callback wiring; `value` in validation rules). Hooks get **no** extra root: `callbackData` was withdrawn from them 2026-08-09 ([DATA_THROUGH_ACTIVITIES §4](../../../docs/DATA_THROUGH_ACTIVITIES.md)), because a value a hook may act on must be a declared attribute. The converse also holds: an embedding point may **withhold** a standard root when it cannot exist there — activity availability conditions run before capture begins, so `attributes` is banned and the validator rejects a reference at config-save time; page embedding points ban `attributes` for the same reason (no activity in flight).
 
+**`model` — a fifth root, and a lookup alias rather than a new environment**
+(BUILT 2026-09-22, `docs/QUERYING_THE_MODEL.md`). The SDM's own collections —
+record types, fields, attributes, workflows, activities, capture lists,
+functions, roles — are ordinary record types in the **same type table**, named
+`sdm_*`. `model.record_types` resolves `sdm_record_types` and returns the same
+shape `records.<type>` returns, so every chain method, the record/row rule, FK
+dereference and static validation apply unchanged. The prefix never appears in
+a script, and `validateConfig` refuses a solution record type that would
+collide with it.
+
+The four roots above are unaffected: `model` adds no new environment, injects
+nothing new, and a host that does not declare the model types has none, so
+naming one fails as an unknown collection. **It is supplied to the Console's
+DSL Editor endpoint and nowhere else** — no hook, page binding, datasource or
+GET activity has it, which is what keeps model queries out of stored scripts.
+The model is read-only through it in every posture, including an after hook's
+mutate mode.
+
 **Every script is a function.** Inline scripts (hooks, conditions, datasources) receive the four roots implicitly. Named functions (see §8) may declare explicit parameters and still receive the roots implicitly. Scripts never construct their environment; the host always hands it in — which is why the same script runs unchanged in the browser, in Lambda, and inside the page builder.
 
 **Scripts are scope-blind.** They never name an organisation, operation, or project. Scope arrives via injection. This invariant is locked now so that the future org → operation → project hierarchy changes no scripts.
@@ -277,6 +295,12 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 - Aggregations/grouping in queries — add when a real case demands them. **One arrived 2026-09-14** (a WBS wanting a budget total) and was written as a named function looping over the rows, per "expressions ask, functions think" — which then hit the next item.
 - **No text → number cast, so stored money cannot be added up** (found 2026-09-14, undecided). A `decimal` field persists as **text** — capture coerces for scripts, but what is stored is what the user typed — while `+` with a string concatenates, `-`/`*`/`/` throw on one, and no builtin casts (`iif`, `now`, `date`, `exact`, `len`, `lower`, `upper`, `trim`, `abs`, `round`, `fail`, `warn`, `invoke`). A total therefore comes back as `024000001260000018000004500000…`. Smallest fix is a `number(text)` builtin; `sum` on the chain needs the same coercion underneath. Written up in `solutions/projects/docs/PROJECT_PROFILE_PAGE.md` §8-5.
 - **A declared field absent from a record throws rather than reading as its default** (found 2026-09-14, undecided). Field defaults are applied on create only (`MemoryAdapter.buildRecord`), so every row that predates a new field lacks the key, and `evaluator.ts:615` raises `'<type>' has no field '<key>'` — breaking every GET, gate and hook that names it. Since the validator proves field names against the model at save time, the runtime throw can only fire on a sparse row. Same write-up, same section.
+- **Combining record types in one query** (raised 2026-09-21, building the DSL
+  Editor). A query has one root collection, with FK auto-dereference reaching
+  outward along declared foreign keys. Joining types that are not FK-related,
+  unions, and grouping across types have no expression. Ad-hoc investigation is
+  where the lack is felt first — the editor exists to ask questions the
+  workbench cannot, and "one root type" is the next wall after that.
 - `warn(...)` surfacing: before-hook warnings are a **soft stop** (Continue/Cancel in the form — see sdm SPEC "Hooks"); after-hook warnings are informational and still console-only, pending a toast/banner slot.
 - ~~Named-function governance constraints~~ — floor shipped with Phase 2 (§8); versioning/permissions later.
 - ~~Multi-line script storage in the SDM JSON~~ — settled: the `functions` collection with array-of-lines bodies (§8); inline hooks use the same array form.

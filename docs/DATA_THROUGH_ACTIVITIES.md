@@ -514,6 +514,19 @@ free of the partition.
   activity to anchor a history entry to, so it is either unlogged — reopening
   what step 3 closed — or a new kind of entry; and `context.page` would cross
   the wire as the undeclared bag step 0 removed.
+- **Admin inspection is outside this document** (recorded 2026-09-21, building
+  the Console's DSL Editor). The rule above governs the **application** read
+  path — a page serving an end user, where the query belongs in the model as a
+  GET so it can be authorised and logged. The workbench has always sat outside
+  it: the Console takes the whole operation partition at connect precisely so
+  the workbench can evaluate locally against it. The DSL Editor's
+  `scripts.query` joins it there, and is **narrower** than what already
+  happens — the browser gets the filtered subset instead of every record.
+  What it does not have is a log: an ad-hoc query has no record to anchor an
+  entry to, which is the same objection that sank the stored-expression option
+  above. Accepted for the admin surface and recorded as debt against the
+  unified-log design, where a non-record-anchored entry would belong. It is not
+  a precedent for the application path.
 - **Read service calls are not logged individually** (datasource-evaluation
   volume) — proposed 2026-07-10, still never confirmed.
 

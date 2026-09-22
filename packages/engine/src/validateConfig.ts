@@ -112,6 +112,16 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   };
   for (const rt of config.recordTypes) {
     for (const cf of rt.custom_fields) checkKey(`record type '${rt.id}'`, cf.key);
+    // The SDM's own collections are record types under this prefix, reached as
+    // `model.<collection>` (docs/QUERYING_THE_MODEL.md). A solution type whose
+    // stripped name starts with it would collide in the one type table, so the
+    // clash is refused where it is authored rather than discovered in a query.
+    if (shortName(rt.id).toLowerCase().startsWith('sdm_')) {
+      note(
+        `record type '${rt.id}'`,
+        `'sdm_' is reserved for the model's own collections — rename this record type`,
+      );
+    }
   }
 
   for (const attr of config.attributes) {

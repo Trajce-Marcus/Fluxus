@@ -203,3 +203,20 @@ so an op admin who does not build the solution sees an empty inherited menu.
   question (root tt_todo); the seam is `refresh()`.
 - Sign-in UI — the minimal email+password form is per host (RBAC_DESIGN §0);
   this package supplies only the seam it drives.
+
+## `runScript` — ad-hoc FluxScript (2026-09-21)
+
+`runScript({ source, recordId? })` → `ScriptQueryResult`, calling the server's
+`scripts.query`. Read-only FluxScript over the connected operation's records,
+for the Console's DSL Editor (`packages/console/docs/DSL_EDITOR_SPEC.md`).
+
+Two things about its posture:
+
+- **A failed script is a result, not a throw.** The result carries
+  `error: { kind, message, line?, col? }`, because the editor shows the message
+  against the source and a thrown `TRPCClientError` would lose the position and
+  read as a transport failure. Gate and transport failures still throw.
+- **No snapshot refresh.** Nothing mutates, so there is nothing to re-fetch.
+
+`ScriptQueryResult` is re-exported from `@fluxus/server`, where the procedure
+defines it.

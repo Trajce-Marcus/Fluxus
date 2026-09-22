@@ -132,6 +132,11 @@ export class MemoryAdapter implements Store {
     this.listeners.forEach(cb => cb());
   }
 
+  /** Every resolved workflow, orphans included (Store.listWorkflows). */
+  listWorkflows(): WorkflowDef[] {
+    return [...this.workflows.values()];
+  }
+
   listRecordTypes(): RecordTypeDef[] {
     return this.recordTypes;
   }

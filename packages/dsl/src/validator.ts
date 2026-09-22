@@ -85,6 +85,17 @@ export interface Diagnostic {
 
 const ROOTS = new Set(['context', 'attributes', 'records', 'services']);
 
+/** `model` is a root only where the model collections are declared (see
+ *  `hasModelTypes`), so it is deliberately NOT in ROOTS: that set is what makes
+ *  a name reserved everywhere — banning `let <root> = …` and warning on a field
+ *  of the same name — and `model` is an ordinary word in a business model. */
+const CONDITIONAL_ROOTS = new Set(['model']);
+
+/** Model collections are ordinary record types under this prefix, invisible to
+ *  scripts: `model.record_types` resolves `sdm_record_types` in the same type
+ *  table (QUERYING_THE_MODEL §3). */
+export const MODEL_PREFIX = 'sdm_';
+
 const BUILTINS: Record<string, { min: number; max: number }> = {
   iif: { min: 3, max: 3 },
   date: { min: 1, max: 1 },
@@ -200,6 +211,7 @@ type Shape =
   | { kind: 'scalar' }
   | { kind: 'recordsRoot' }
   | { kind: 'servicesRoot' }                        // only when schema.services is declared
+  | { kind: 'modelRoot' }                           // the SDM's own collections
   | { kind: 'serviceModule'; name: string }
   | { kind: 'record'; type: string }
   // collection: bare `records.<type>` (create lives here); filtered: a where() ran (D13)
@@ -460,7 +472,24 @@ class Validator {
           return UNKNOWN;
         }
         if (expr.name === 'records') return { kind: 'recordsRoot' };
+        // The model reuses the record machinery wholesale — same type table,
+        // same shapes, same chain — so it needs a root marker and nothing else.
+        //
+        // Only a root where the model types are actually declared. Otherwise
+        // `model` stays an ordinary name, so adding this root does not make it
+        // a reserved word in every host — `let model = 1` and a record type
+        // with a field keyed `model` (vehicle model, equipment model) go on
+        // working everywhere the editor is not.
+        if (expr.name === 'model' && this.hasModelTypes()) return { kind: 'modelRoot' };
         if (expr.name === 'services' && this.schema.services) return { kind: 'servicesRoot' };
+        if (expr.name === 'model' && !this.hasModelTypes()) {
+          // Same reasoning as the evaluator's: an ordinary name here, but the
+          // useful error names the reason rather than calling it a typo. A
+          // declared `let model = …` already won above, so this only fires for
+          // a genuine attempt to reach the model.
+          this.error(expr, "'model' is not available at this embedding point");
+          return UNKNOWN;
+        }
         if (ROOTS.has(expr.name)) return UNKNOWN;
         if (this.options.extraRoots?.some((r) => r.toLowerCase() === expr.name)) return UNKNOWN;
         if (itemType !== null) {
@@ -522,16 +551,40 @@ class Validator {
 
   // ── Member shapes ─────────────────────────────────────────────────────────────
 
+  /** Whether this host declared the model collections. When it did not,
+   *  `model` is not a root at all — see the reasoning at its use. */
+  private hasModelTypes(): boolean {
+    for (const key of Object.keys(this.schema.types)) {
+      if (key.startsWith(MODEL_PREFIX)) return true;
+    }
+    return false;
+  }
+
   private member(object: Shape, expr: Expr & { kind: 'member' }, itemType: string | null): Shape {
     const name = expr.name;
 
     switch (object.kind) {
       case 'recordsRoot': {
+        if (name.startsWith(MODEL_PREFIX)) {
+          this.error(expr, `'${name}' is a model collection — reach it as model.${name.slice(MODEL_PREFIX.length)}`);
+          return UNKNOWN;
+        }
         if (!(name in this.schema.types)) {
           this.error(expr, `Unknown record type '${name}'`);
           return UNKNOWN;
         }
         return { kind: 'recordList', type: name, collection: true };
+      }
+
+      case 'modelRoot': {
+        // A host that did not declare the model types has none in its schema,
+        // so this is the clean failure that keeps exposure opt-in.
+        const type = MODEL_PREFIX + name;
+        if (!(type in this.schema.types)) {
+          this.error(expr, `Unknown model collection '${name}'`);
+          return UNKNOWN;
+        }
+        return { kind: 'recordList', type, collection: true };
       }
 
       case 'servicesRoot': {

@@ -8,6 +8,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
+import { FkPointer } from '@fluxus/dsl';
 import { DEMO_USER, isUploadType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
@@ -947,6 +948,190 @@ export const appRouter = t.router({
         }
       }),
   }),
+
+  /**
+   * Ad-hoc FluxScript over an operation's records, read-only — the Console's
+   * DSL Editor (packages/console/docs/DSL_EDITOR_SPEC.md).
+   *
+   * Why this is not a hole in the read rule: DATA_THROUGH_ACTIVITIES governs
+   * the APPLICATION read path, where a query belongs in the model as a GET so
+   * it can be authorised and logged. This is workbench-class admin inspection,
+   * and the workbench is already outside that — the Console takes the whole
+   * partition at connect to evaluate locally against it. Running the query
+   * here is NARROWER: the browser gets the filtered subset instead of every
+   * record. It is not logged (an ad-hoc query has no record to anchor an entry
+   * to); that is accepted and recorded as debt against the unified log.
+   *
+   * Read-only is structural, not a validation pass: `readonlyRecords` removes
+   * `records.mutate` from the host, so the capability is not on the object.
+   * Static checking would not do — a model function's body is validated
+   * separately, so a mutating function passes at the call site.
+   */
+  scripts: t.router({
+    query: t.procedure
+      .input(
+        z.object({
+          operationId: operationInput,
+          /**
+           * FluxScript: an expression or a query. Arbitrary text, deliberately.
+           *
+           * 4KB, not more: this is a tRPC **query**, so the input travels in the
+           * URL (`?input=…`), and Node's default 16KB max header size counts
+           * the request line. A longer script would die as an opaque transport
+           * failure rather than a script error. Raising this means POSTing —
+           * `methodOverride` on the client link — which changes transport for
+           * every query in the app and is not worth it for a scratchpad.
+           */
+          source: z.string().min(1).max(4_000),
+          /** Optional anchor, so `context.record` resolves. */
+          recordId: z.string().min(1).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }): Promise<ScriptQueryResult> => {
+        try {
+          // Entry gate only (DSL_EDITOR_SPEC §10). Deliberately NOT the
+          // readable-type filter `records.partition` applies: a script reads
+          // every type in the operation, accepted because the Console is
+          // reachable only by solution designers.
+          const user = await resolveUser(ctx, input.operationId);
+          const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+
+          const started = Date.now();
+          try {
+            // Inside the try: a bad anchor id is the caller's typo, not a
+            // transport failure, so it answers as a result like any other
+            // script error rather than a thrown BAD_REQUEST.
+            const anchorRecord = input.recordId ? host.adapter.getRecord(input.recordId) : null;
+
+            const value = host.engine.evaluate(input.source, {
+              anchorRecord,
+              readonlyRecords: true,
+              // The SDM answerable as `model.*` (docs/QUERYING_THE_MODEL.md).
+              // Only here: no hook, page binding or datasource passes this, so
+              // naming a model collection anywhere else fails as unknown.
+              modelTypes: true,
+              // `invoke` reaches GET activities only, so it stays read-only by
+              // construction. Without it the built-in fails loudly, which would
+              // make a documented capability silently absent.
+              invoke: (activityId, params) => host.engine.invoke(activityId, params, anchorRecord),
+              // The host has already loaded the whole partition, so the row cap
+              // is not protecting memory here; 1s is too short to be
+              // interactive. Hooks keep DEFAULT_QUOTAS.
+              quotas: { maxRows: 100_000, maxSteps: 2_000_000, timeoutMs: 15_000 },
+            });
+            // A GET reached through `invoke` records a light history entry, so
+            // the run has to be written back even though the script itself
+            // cannot mutate.
+            await writeBack(ctx.db, host);
+            return {
+              value: forWire(value),
+              rowCount: Array.isArray(value) ? value.length : undefined,
+              elapsedMs: Date.now() - started,
+            };
+          } catch (err) {
+            await writeBack(ctx.db, host);
+            return {
+              value: null,
+              elapsedMs: Date.now() - started,
+              error: scriptError(err),
+            };
+          }
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
+
+/**
+ * Render a script's result for the wire.
+ *
+ * `JSON.stringify` turns a Date into a **UTC instant**, which is the wrong
+ * representation for these values: what persists in a record is the raw ISO
+ * string the user typed, and `date('2026-07-01')` parses at *local* midnight
+ * (`evaluator.ts`, `bridge.ts`). On a server ahead of UTC that round-trips as
+ * `2026-06-30T14:00:00.000Z` — the tool reporting the day before the one the
+ * record holds, which is how a wrong conclusion gets drawn off a result set.
+ *
+ * So Dates go back as wall-clock text, the form they are stored and displayed
+ * in everywhere else. A tRPC transformer would not have fixed this: it
+ * preserves the Date and the browser then renders it in the *browser's* zone,
+ * which moves the shift rather than removing it.
+ *
+ * `FkPointer` is a class, so it would serialise as a bare
+ * `{ targetType, id }` and draw as raw JSON in a cell. Only the id is of use.
+ */
+export function forWire(value: unknown, depth = 0): unknown {
+  // Records nest a couple of levels at most ({ id, type, fields }); the guard
+  // is against a cycle a host value could carry, not against depth itself.
+  if (depth > 12) return value;
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return wallClock(value);
+  if (value instanceof FkPointer) return value.id;
+  if (Array.isArray(value)) return value.map((v) => forWire(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = forWire(v, depth + 1);
+  }
+  return out;
+}
+
+/** `YYYY-MM-DD` when the time is midnight, otherwise with the time — local
+ *  fields, matching how the value was parsed. */
+function wallClock(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) return date;
+  return `${date}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/**
+ * Classify a thrown script failure for the editor.
+ *
+ * `engine.evaluate` PARSES as well as evaluates, so a syntax error lands here
+ * too — the two must stay distinguishable, or a typo reads as "failed to run".
+ * Both DSL error classes carry `line`/`col` as own fields (there is no
+ * `position` object on either).
+ *
+ * Messages cross with their position suffix removed: the editor puts the error
+ * on the line itself, so "(line 3, col 12)" repeated in the text is noise. Any
+ * error that is neither DSL class is something internal — its text is not
+ * forwarded, only that the script failed.
+ */
+function scriptError(err: unknown): NonNullable<ScriptQueryResult['error']> {
+  const e = err as { name?: string; message?: string; line?: number; col?: number };
+  const dsl = e?.name === 'FluxSyntaxError' || e?.name === 'FluxRuntimeError' || e?.name === 'FluxFailError';
+  if (!dsl) {
+    return { kind: 'runtime', message: 'The script could not be run.' };
+  }
+  return {
+    kind: e.name === 'FluxSyntaxError' ? 'compile' : 'runtime',
+    message: (e.message ?? 'Script failed').replace(/\s*\(line \d+, col \d+\)$/, ''),
+    line: e.line,
+    col: e.col,
+  };
+}
+
+/**
+ * What `scripts.query` answers with. A failed script is a RESULT, not a thrown
+ * error: the editor shows the message against the source, and a tRPC error
+ * would lose the position and read as a transport failure.
+ */
+export interface ScriptQueryResult {
+  /** The expression's value, as JSON. Null when the script failed. Dates are
+   *  wall-clock text and FkPointers are their ids — see `forWire`. */
+  value: unknown;
+  /** Present when the value is a list. */
+  rowCount?: number;
+  elapsedMs: number;
+  error?: {
+    /** `engine.evaluate` parses as well as evaluates, so both kinds arise
+     *  here: 'compile' is a FluxSyntaxError, 'runtime' anything after it. */
+    kind: 'compile' | 'runtime';
+    message: string;
+    line?: number;
+    col?: number;
+  };
+}

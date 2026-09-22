@@ -8,6 +8,7 @@ import type { JSX } from 'react';
 import { AdminView } from '../admin/AdminView';
 import { SdmView } from '../sdm-builder/SdmView';
 import { WorkbenchView } from '../workbench/WorkbenchView';
+import { DslEditorView } from '../dsl-editor/DslEditorView';
 import { PagesSection } from '../page-builder/PagesSection';
 import { OverviewSection } from './OverviewSection';
 import { SolutionOperationsSection } from './SolutionOperationsSection';
@@ -68,6 +69,10 @@ export const SOLUTION_SECTIONS: ConsoleSection[] = [
   { id: 'roles', label: 'Roles', group: SDM_GROUP, render: () => <SdmView tab="roles" />, canLeave: canLeaveSdm },
   { id: 'menu', label: 'Menu', group: SDM_GROUP, render: () => <SdmView tab="menu" />, canLeave: canLeaveSdm },
   { id: 'workbench', label: 'Workbench', group: DATA_GROUP, render: () => <WorkbenchView /> },
+  /* Ad-hoc FluxScript over an operation's records, read-only (DSL_EDITOR_SPEC).
+     A sibling of the workbench rather than a tab inside it: the workbench's
+     frame is one record type at a time, and a query is not. */
+  { id: 'dsl-editor', label: 'DSL Editor', group: DATA_GROUP, render: () => <DslEditorView /> },
 ];
 
 export function sectionsForScope(solutionOpen: boolean): ConsoleSection[] {
