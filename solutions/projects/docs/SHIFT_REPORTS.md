@@ -133,14 +133,24 @@ same rule for the same reason.
 
 ## 4. The model
 
-Six new record types, one renamed field convention, and nothing added to the
-existing three beyond what §8a already did.
+Seven new record types and nothing added to the existing three beyond what §8a
+already did.
+
+**Two things about how these tables read.** A field's declaration carries only
+its key, label, type, what it points at, its default, and whether it is
+required, unique, immutable or indexed — there is no settings object on a
+field at all. So `photo (multi, max_count: 6)` and `text (multiline)` below
+describe the **attribute** that fills the field, not the field itself. And the
+Console's record-type editor offers only text, int, decimal, bool, date,
+geopoint and fk_ref — so every `datetime`, `time` and `photo` field here must
+be written by a script and cannot afterwards be edited there. There is
+precedent: `rt_projects.target_start` is already a script-written `datetime`.
 
 ### 4.1 `rt_work_groups`
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `wg_code` | `text` | `WG-WELD`. Immutable. Unique per project — checked in a hook, not by the field (§10). |
+| `wg_code` | `text` | `WG-WELD`. Typed. Unique per project — checked in a hook, not by the field (§10). Not `immutable`: see §10. |
 | `parent_id` | `fk_ref` → `rt_work_groups` | Optional. Sub-groups, each with its own manager (§4.1a). Reports are filed against the ones with no children; the parent's manager approves them. |
 | `name` | `text` | `Mainline welding crew`. |
 | `project_id` | `fk_ref` → `rt_projects` | Taken from the page, never asked for. |
@@ -225,7 +235,7 @@ group's are.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `report_no` | `text` | `SR-0001`. Immutable. Unique per project — written by a hook (§10). |
+| `report_no` | `text` | `SR-0001`. Written by a hook, so neither `required` nor `immutable` — see §10. |
 | `project_id` | `fk_ref` → `rt_projects` | Taken from the page. |
 | `wg_id` | `fk_ref` → `rt_work_groups` | Taken from the page, or chosen by the manager. |
 | `report_date` | `datetime` | |
@@ -316,7 +326,7 @@ approved figures, so it can be added up without qualification.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `defect_no` | `text` | `DEF-001`. Immutable. Unique per project — written by a hook (§10). |
+| `defect_no` | `text` | `DEF-001`. Written by a hook, so neither `required` nor `immutable` — see §10. |
 | `project_id` / `wbs_id` | `fk_ref` | Taken from the page / chosen. |
 | `report_id` | `fk_ref` → `rt_shift_reports` | Optional — the report that raised it. |
 | `raised_date` / `raised_by` | `datetime` / `text` | |
@@ -337,9 +347,22 @@ Two of the existing shared attributes cannot be reused:
 - **`parent_id`** declares that it points at cost codes. An attribute can name
   only one target, so a work group's parent is a new attribute, `wg_parent`,
   naming the field it fills (`rt_work_groups.parent_id`) exactly as
-  `wbs_parent` does. Every new reference attribute follows that spelling.
+  `wbs_parent` does.
+
+  **Only `parent_id` needs that spelling.** An attribute naming a field names
+  exactly one record type and one field, so applying it everywhere would mean
+  roughly thirteen reference attributes instead of five — `cbs_id` appears on
+  four of the new record types, `wbs_id` on four, `report_id` on three. Where
+  every type spells the field the same way and points at the same place, one
+  shared attribute serves them all, which is how `project_id` already works
+  across two record types. The field-naming spelling is for the case it was
+  built for: two record types disagreeing about the target.
 - **`description`** is single-line, which suits a resource and not a defect. A
   defect gets `def_description`.
+- **`status`** does not exist as an attribute at all today, only as a field on
+  `rt_projects`. Shift reports and defects both need one, with different value
+  sets, and the values live on the attribute — so they cannot share a key:
+  `sr_status` and `def_status`.
 
 An attribute's use by an activity may override where its value comes from,
 whether it is shown, whether it is required, and its validation — but not the
@@ -372,6 +395,16 @@ one where you cannot.
 8. The parent group's manager approves it. **On approval the cost is divided
    across the WBS rows** and written to `rt_wbs_resource_usage`.
 
+**The Approve activity must capture nothing and write `status` inside its own
+hook**, the way `act_approve_wbs_projects` already does. A failing after hook
+does not undo the activity's own field change — that is deliberate, and it is
+written into the server: the history entry and the mapped field change are
+applied before the hook runs and persist even when it throws. So an Approve
+that maps a captured status would leave a report reading Approved with no cost
+against it and, behind a show condition, no way to run it again. Writing the
+status inside the hook makes the whole thing succeed or fail together: the
+hook's own writes do roll back as one.
+
 **Calculate exists because pricing must not drift.** Lines priced as soon as
 the work group is chosen go stale the moment a finish time is corrected, and a
 report would show ten hours at the top and twelve hours of resources beneath
@@ -393,7 +426,8 @@ report's WBS rows in proportion to their hours: a 10-hour shift with 6 hours on
 `3.4` and 4 on `3.5` puts 60% of each line on `3.4` and 40% on `3.5`.
 
 Worked through: six welders at $95 for a 10-hour shift is $5,700 against cost
-code `1300`; two sidebooms at $310 is $6,200 against `4100`. The shift consumed
+code `1300`; two sidebooms at $310 is $6,200 against `4200`
+Specialized Lifting & Access. The shift consumed
 $11,900. Node `3.4` receives $7,140 of it and `3.5` receives $4,760 — and the
 cost codes are unaffected by the split, because each line carried its own.
 
@@ -415,6 +449,12 @@ else.
 **A division by zero is possible** — a report whose WBS hours total nothing —
 and the DSL throws rather than returning zero. The approval hook must not
 attempt the split when there are no hours.
+
+**Removed lines must be filtered explicitly.** Reaching a report's children
+through the record — its WBS rows, its resource lines — returns every incoming
+row and ignores `expired`. A line removed during filing is soft-deleted, as
+every record type here is, so without `where(expired <> 'true')` it would still
+be priced and still be divided across the WBS.
 
 ## 6. Knowing who has not filed
 
@@ -460,6 +500,26 @@ binds to the wrong row, so correlation must go through a named function.
 existing total functions add up every node at every level and must be changed
 to count only the codes with no children, so that an amount wrongly left on a
 parent is ignored rather than double-counted.
+
+To be clear about what that change is and is not: **none of the three returns a
+wrong number today**, because the parents now hold blank and blank contributes
+nothing. It is a guard against bad data arriving later, not a repair.
+
+Two traps, both verified, that the change must not fall into:
+
+- **The blank guard is load-bearing and must survive the edit.** Every empty
+  numeric field in this model stores `''`, not null, and `0 + ''` evaluates to
+  the string `'0'` because `+` concatenates when either side is text. The
+  existing `iif(x = '' or x = null, 0, x)` stays.
+- **"Has no children" written inline inside a query silently passes every
+  row.** `.where(... and records.cbs_nodes.where(parent_id = id).count = 0)`
+  returns all 27 nodes, not the 20 leaves: both `parent_id` and `id` bind to
+  the inner row, so the inner count is zero every time. No error. It must go
+  through a named function taking the row's id, or through
+  `not (id in records.cbs_nodes.values(parent_id))`. **§6's "who owes a report"
+  carries the same test** — written inline it would count the parent group and
+  the shared-plant group, which is exactly the number the dashboard exists to
+  get right.
 
 `actual_cost` on the WBS stays empty throughout, because no invoice has
 arrived. Showing tracked against actual, with actual blank, is the
@@ -586,9 +646,21 @@ four photos per shift report.
 Things the model cannot express, handled in hooks or not at all:
 
 - **`report_no` and `defect_no`** are written by the create activity's after
-  hook, counting the project's existing records and adding one. It races, and
-  it skips a number after a delete. Field-level `unique` is not used, because
-  it compares across every record of the type rather than within a project.
+  hook, counting the project's records — **not counting and adding one.** The
+  record the activity just made is already stored by the time the after hook
+  runs, so it is in its own count; adding one skips every number from the
+  first. Verified by running it.
+
+  Two further constraints, both verified: a **`required`** field blocks the
+  create before the hook can run, and an **`immutable`** field rejects the
+  hook's write even from blank, because the check compares new against stored
+  and blank-to-value is a change. So a hook-written number is neither. It
+  races, and it skips a number after a delete.
+
+  Zero-padding has no builtin — `iif(len(n) = 1, '000', '') + n` and so on.
+
+  Field-level `unique` is not used, because it compares across every record of
+  the type rather than within a project.
 - **WBS hours must total `work_hours`** — checked by a `fail()` in the before
   hook on **Calculate** (§5 step 6), not as rows are added, because a before
   hook may only validate and there is no `sum`. Submit checks only that
@@ -600,8 +672,17 @@ Things the model cannot express, handled in hooks or not at all:
   every solution and every host. Operators are language; calculations are
   capability, and this is a calculation.
 - **The fixed lists** — `wg_type`, `res_type`, `shift`, `severity`, both
-  `status` sets — are enforced at capture by a `list` attribute naming its
-  values. Nothing constrains the stored field, so demonstration data written
+  `status` sets — are enforced at capture by a `list` attribute whose
+  `datasource` is a list literal. There is no `values` setting; the only legal
+  settings on a list are its datasource, its key field, its display field and
+  its columns, and anything else is rejected when the model is saved.
+
+  **There is no `list` attribute anywhere in this repo today** — not in the
+  projects model, not in any script. Six of them arrive at once here, so this
+  is untested ground and the first one should be proven before the rest are
+  written.
+
+  Nothing constrains the stored field either way, so demonstration data written
   straight to the records must be correct by construction.
 - **One resource claimed once per shift** — not enforced (§4.1a).
 - **A resource's `unit` never changes** — not enforced (§4.2).
