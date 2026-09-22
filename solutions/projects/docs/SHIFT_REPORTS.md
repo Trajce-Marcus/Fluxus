@@ -1,10 +1,36 @@
 # Shift Reports & Work Groups — spec
 
-**Status: spec, not built** (revised 2026-09-23). The model, the activities,
-the pages and the demonstration data are all still to be built. Two things have
-happened: the cost codes have been rebuilt in the database (§8a), and the
-design below was reworked in discussion on 2026-09-22/23 — §1.1 records what
-moved and why.
+**Status: model built** (2026-09-23, branch `feat/console-users-ui` — the
+build continued on the branch already checked out, not a new one). The eight
+record types (§4), their attributes and activities, the numbering hook, the
+hours check, the largest-remainder division at Approve, and the two
+children-guard fixes to the existing CBS/WBS totals (§7) are written to Neon
+dev through `packages/server/scripts/shift-reports-model.ts` and pass
+`check-model.ts` clean. `packages/server/scripts/verify-shift-reports.ts`
+drives the whole lifecycle — work group → resources → standard set → shift
+report → WBS rows → Calculate → Submit → Approve → defect lifecycle — through
+the real engine with no `writeBack`, and re-checks the four defects §10a
+measured (blank-fk-is-not-null, float equality on hours, a blank number
+poisoning a total, shares that do not sum to the whole); all pass. **The
+pages (§8) and the demonstration data (§9) are still to be built** — a
+separate session for each, per the standing instruction.
+
+One departure from this spec's own wording, made during the build and flagged
+here rather than silently taken: §10's "both status sets... enforced at
+capture by a list attribute" is **not** how `sr_status`/`def_status` ended up
+built. Neither got a pool attribute; `status` is written straight inside each
+transition's after hook (`context.record.update({ status: 'Approved' })`),
+exactly as `rt_projects.status`/`wbs_status` already work, for the reason §5
+argues at length for Approve: a captured attribute whose key matches the field
+auto-applies as part of the activity's own write, outside the after hook's
+transactional boundary, so it survives a hook failure that leaves the rest of
+the transition half-done. `wg_type`, `res_type`, `shift` and `severity` did
+get real `list` attributes — proving the mechanism on real interactive capture
+(`severity`) as well as small fixed sets.
+
+Previously: two things had happened ahead of this build — the cost codes were
+rebuilt in the database (§8a), and the design was reworked in discussion on
+2026-09-22/23 (§1.1 records what moved and why).
 
 Started as a site diary for the demo. The discussion changed what is being
 built, so the name changed with it: the record is a **shift report**, filed by a
