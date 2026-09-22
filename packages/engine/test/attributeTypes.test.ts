@@ -127,6 +127,44 @@ describe('validateConfig — type_config key rules (§3/§11)', () => {
     expect(errorsOf(cfg)).toContain("unknown type_config key 'max_size_mb' for type 'datetime'");
   });
 
+  it('rejects a reference field that declares no display field', () => {
+    const cfg: SolutionConfig = {
+      attributes: [],
+      workflows: [],
+      recordTypes: [{
+        id: 'rt_shift_wbs', name: 'Shift WBS', workflow_ref: 'wf_x',
+        custom_fields: [{ key: 'wbs_id', label: 'WBS', type: 'fk_ref', fk_record_type: 'rt_wbs_nodes' }],
+      }] as unknown as SolutionConfig['recordTypes'],
+    };
+    expect(errorsOf(cfg)).toContain(
+      "reference field 'wbs_id' declares no fk_display_field — a picker has nothing readable to show",
+    );
+  });
+
+  it('accepts a reference field that declares one', () => {
+    const cfg: SolutionConfig = {
+      attributes: [],
+      workflows: [],
+      recordTypes: [{
+        id: 'rt_shift_wbs', name: 'Shift WBS', workflow_ref: 'wf_x',
+        custom_fields: [{ key: 'wbs_id', label: 'WBS', type: 'fk_ref', fk_record_type: 'rt_wbs_nodes', fk_display_field: 'name' }],
+      }] as unknown as SolutionConfig['recordTypes'],
+    };
+    expect(errorsOf(cfg).filter((m) => m.includes('fk_display_field'))).toEqual([]);
+  });
+
+  it('leaves a non-reference field alone', () => {
+    const cfg: SolutionConfig = {
+      attributes: [],
+      workflows: [],
+      recordTypes: [{
+        id: 'rt_shift_wbs', name: 'Shift WBS', workflow_ref: 'wf_x',
+        custom_fields: [{ key: 'note', label: 'Note', type: 'text' }],
+      }] as unknown as SolutionConfig['recordTypes'],
+    };
+    expect(errorsOf(cfg).filter((m) => m.includes('fk_display_field'))).toEqual([]);
+  });
+
   it('rejects multi on a composite (§11)', () => {
     const cfg = base([
       { key: 'ok', label: 'OK', description: '', type: 'text' },

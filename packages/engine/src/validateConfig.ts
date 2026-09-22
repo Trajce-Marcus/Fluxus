@@ -120,7 +120,24 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
     if (key.includes('.')) note(where, `key '${key}' contains '.' — reserved as the composite path separator`);
   };
   for (const rt of config.recordTypes) {
-    for (const cf of rt.custom_fields) checkKey(`record type '${rt.id}'`, cf.key);
+    for (const cf of rt.custom_fields) {
+      checkKey(`record type '${rt.id}'`, cf.key);
+      // A reference field has to say what to SHOW, not only what it points at
+      // (2026-09-23). `fk_display_field` has been documented as required on an
+      // fk_ref since it was written and enforced nowhere, which was harmless
+      // while a reference was drawn as its raw id. The record picker made it
+      // matter: with no display field there is nothing readable to put in the
+      // list, and the alternative to this rule is a silent fallback — guessing
+      // `name`, or drawing blanks — that hides a modelling gap from the one
+      // person who can fix it. Measured before adding: every reference field in
+      // every solution already declares one, so nothing existing fails.
+      if (cf.type === 'fk_ref' && !cf.fk_display_field) {
+        note(
+          `record type '${rt.id}'`,
+          `reference field '${cf.key}' declares no fk_display_field — a picker has nothing readable to show`,
+        );
+      }
+    }
     // The SDM's own collections are record types under this prefix, reached as
     // `model.<collection>` (docs/QUERYING_THE_MODEL.md). A solution type whose
     // stripped name starts with it would collide in the one type table, so the
