@@ -98,7 +98,7 @@ thing.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `wg_code` | `text` | `WG-WELD`. Unique, immutable. |
-| `parent_id` | `fk_ref` → `rt_work_groups` | Optional. A group may be **split** into sub-groups, each with its own manager (§4.2a). Reports are always filed against a leaf. |
+| `parent_id` | `fk_ref` → `rt_work_groups` | Optional. Sub-groups, each with its own manager (§4.2a). Reports are filed against leaves; the parent's manager approves them. |
 | `name` | `text` | `Mainline welding crew`. |
 | `project_id` | `fk_ref` → `rt_projects` | Sourced from the page. |
 | `manager` | `text` | The person who owes the shift report. |
@@ -107,36 +107,56 @@ thing.
 
 ### 4.2 `rt_wg_resources` — a work group's standard resources
 
+Held on whichever group owns them. A parent's resources are drawn down by its
+leaves (§4.2a), like the shared-plant group, and a resource may be claimed only
+once per shift.
+
 | Field | Type | Notes |
 | --- | --- | --- |
-| `wg_id` | `fk_ref` → `rt_work_groups` | Sourced. |
+| `wg_id` | `fk_ref` → `rt_work_groups` | Sourced. The owner — a leaf, or a parent whose leaves draw from it. |
 | `cbs_id` | `fk_ref` → `rt_cbs_nodes` | **What kind of resource.** Named once here; every usage line inherits it. |
 | `description` | `text` | `30t excavator + operator`, `Welder`. |
 | `quantity` | `decimal` | Standard count per shift — 6 welders, 2 sidebooms. |
 | `unit` | `text` | `hr`, `day`. Defaults from the CBS node. |
 | `rate` | `decimal` | Defaults from the CBS node's `unit_rate`. |
 
-### 4.2a Splitting a work group
+### 4.2a Splitting a work group — settled 2026-09-22
 
-A crew that works two fronts at once — two welders on the joint, two on
-coating — cannot be costed accurately as one group, because hours spread
-pro-rata across its WBS rows (§5) and those four people are not on the same
-node.
+A work group may hold **sub-groups**: `parent_id` points at the parent, and
+shift reports are always filed against a **leaf**. The parent's manager
+approves what its leaves file.
 
-Two ways to fix it, and the spec takes the second:
+The case it is for: one person owns a crew and a complete set of resources, and
+that crew works several fronts at once — welding, coating, trenching. Each
+front gets its own manager who files its report; the owner oversees and
+approves.
 
-1. **Separate work groups with the same manager.** Works, but one person then
-   files every report, which is the bottleneck work groups exist to remove.
-2. **Split the group** — `parent_id` makes sub-groups, each with its own
-   manager, so the split is delegated rather than centralised. The parent stays
-   as the reporting unit for roll-ups.
+Three things the hierarchy gives that a flat list cannot:
 
-Coverage counts **leaves only**, so splitting a group changes who owes reports
+- **One resource pool.** The standard set is held on the parent and drawn down
+  by the leaves. Duplicating it across flat groups lets the same excavator be
+  claimed twice; held once, it cannot be.
+- **Roll-up.** Cost, hours and coverage aggregate to the parent, so "what did
+  this crew cost last week" is a query rather than a new grouping mechanism.
+- **One set to maintain**, rather than several that drift apart.
+
+**A `delegate` column on a flat group was considered and rejected.** It is the
+same idea spelled smaller — a sub-group's manager *is* the delegate — and it
+gives neither pooling nor roll-up, while capping at one delegate per group. A
+crew with two fronts then needs two groups, and the resources duplicate again.
+
+**Granularity is the implementer's dial, not a rule.** On a pipeline, a group
+per activity — trenching, welding, coating, tie-ins — maps close to one WBS
+node per shift, which makes pro-rata allocation (§5.1) exact and coverage
+precise about which activity went unreported. Finer groups cost more reports to
+chase each day. There is no correct cut; the model carries either.
+
+**Coverage counts leaves only** (§6), so splitting changes who owes a report
 without changing the total expectation.
 
-**Parent sign-off is specified, not built** (§10): the parent manager
-confirming the day across their sub-groups is a workflow of its own, and the
-demo does not need it.
+**Not built: a parent-level daily record.** Hughie does not file a document of
+his own on top of the leaf reports. Approval on each report gives the same
+oversight without a second lifecycle.
 
 ### 4.3 `rt_shift_reports`
 
@@ -153,7 +173,8 @@ demo does not need it.
 | `work_summary` | `text` (multiline) | |
 | `site_notes` | `text` (multiline) | |
 | `report_photos` | `photo` (`multi`, `max_count: 6`) | Photos of the shift. A defect's photos go on the defect. |
-| `status` | `text` | `Draft` → `Submitted`. |
+| `status` | `text` | `Draft` → `Submitted` → `Approved`. |
+| `approved_by` / `approved_date` | `text` / `datetime` | Written by the Approve activity, available to the parent group's manager (§4.2a). A group with no parent is approved by its own manager. |
 
 ### 4.4 `rt_shift_wbs` — what was worked on
 
@@ -317,9 +338,16 @@ Then: the model (record types, activities, pages), then the demo data.
 
 **P26-011 — Cross-Country Steel Pipeline Project.**
 
-Four work groups: `WG-EARTH` (earthworks), `WG-WELD` (mainline welding),
-`WG-TIE` (tie-ins and crossings), `WG-PLANT` (shared plant, drawn from, does
-not file). Each with a standard resource set.
+Work groups cut per pipeline activity, which is the cut that makes allocation
+exact:
+
+- `WG-SPREAD` — the mainline spread, manager Hughie. **Parent**, holds the
+  crew's standard resources, files nothing, approves what its leaves file.
+  - `WG-TRENCH` — trenching and excavation.
+  - `WG-WELD` — mainline welding.
+  - `WG-COAT` — field joint coating.
+- `WG-TIE` — tie-ins and river crossing. Flat, its own manager and resources.
+- `WG-PLANT` — shared plant. Drawn from, files nothing.
 
 Six consecutive working days, day shift. Two clean days, a wet day losing four
 hours, a day the NDT subcontractor finds a repair, a heavy backfill day, a
@@ -330,9 +358,9 @@ Usage lands on the project's real WBS nodes (`3.1`, `3.2`, `3.4`, `3.5`, `3.7`,
 `4300`, `5100`. Roughly $25k–$40k per shift, ~$190k over six days against a
 $30M budget.
 
-`WG-WELD` is **split** into `WG-WELD-MAIN` and `WG-WELD-COAT`, each with its
-own manager, so the split feature is visible in the demo and the two fronts
-cost separately.
+Four groups file each day — the three spread leaves and `WG-TIE`. Hughie
+approves the spread's three; `WG-TIE`'s manager approves their own. Some
+reports are left `Submitted` rather than `Approved`, so both states show.
 
 **One crew misses one day's report on purpose** — not the shared-plant group,
 which files nothing by design — so the coverage panel shows a real gap with a
@@ -350,8 +378,6 @@ config writers. The activities are still built, because the pages need them.
 
 - **Roster** — which work groups work which dates, with a "no work today,
   roster wrong" escape so roster accuracy is itself measurable.
-- **Parent sign-off on split groups** — the parent manager confirming the day
-  across their sub-groups (§4.2a). Reports are filed at leaf level either way.
 - **Delays** — cause, compensability, notice served, extension of time. The
   contract side is the depth; a toy version teaches the wrong thing. The shift
   report keeps `hours_lost` as a measurement.
