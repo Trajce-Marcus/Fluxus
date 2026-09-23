@@ -64,7 +64,12 @@ spec and the diff) found three real gaps, since closed or corrected:
   Draft. **Reject** and **Cancel** were added with §5.3: approval may not be
   possible, so a submitted report goes back to `Draft` and is then either
   resubmitted or cancelled, and a cancelled report reads as a hole in §6
-  rather than papering over one.
+  rather than papering over one. **Amendments became their own record type**
+  (§4.8a/§4.8b) rather than a shift report with a zero `work_hours` and an
+  `amends_report_id`: as its own record an amendment restates nothing, needs no
+  Calculate and no hours check, and §6 needs no rule to exclude it. Its lines
+  carry a signed quantity and name their own WBS node, so approval posts them
+  to the ledger with no division. Ten record types now, not eight.
 
 One departure from this spec's own wording, made during the build and flagged
 here rather than silently taken: §10's "both status sets... enforced at
@@ -352,7 +357,6 @@ Every work group holds its own set — a child never draws on its parent's
 | `site_notes` | `text` (multiline) | |
 | `report_photos` | `photo` (`multi`, `max_count: 6`) | Photos of the shift. A defect's photos go on the defect. |
 | `status` | `text` | `Draft` → `Submitted` → `Approved`. |
-| `amends_report_id` | `fk_ref` → `rt_shift_reports` | Blank on an ordinary report. Set on an amendment, naming the approved report it corrects (§5.4). |
 | `approved_by` / `approved_date` | `text` / `datetime` | Written by the Approve activity, available to the parent group's manager (§4.1a). A group with no parent is approved by its own manager. |
 | `expired` | `text` | |
 
@@ -443,6 +447,49 @@ approved figures, so it can be added up without qualification.
 | `verified_date` / `verified_by` | `datetime` / `text` | |
 | `status` | `text` | `Open` → `Rectified` → `Closed`. |
 | `expired` | `text` | |
+
+### 4.8a `rt_shift_report_amendments` — correcting an approved report
+
+An approved report is never reopened (§5.4). A correction is an amendment: its
+own record, raised from the report it corrects, carrying only the lines that
+change. It has no times, no WBS hours rows and no Calculate — there is nothing
+to divide, because each line names the node its cost lands on.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `amendment_no` | `text` | `AMD-0001`. Written by a hook, so neither `required` nor `immutable` — same rules as `report_no` (§10). |
+| `report_id` | `fk_ref` → `rt_shift_reports` | The approved report being corrected. Taken from the page — an amendment is raised by a button on that report, never by picking one out of a list. |
+| `project_id` | `fk_ref` → `rt_projects` | Taken from the page. Numbering counts within it. |
+| `reason` | `text` (multiline) | Why the correction is needed. |
+| `status` | `text` | `Draft` → `Submitted` → `Approved`. |
+| `approved_by` / `approved_date` | `text` / `datetime` | As on a report: the parent group's manager, or the group's own where there is no parent (§5.3). |
+| `expired` | `text` | |
+
+The work group, the date and the shift are not restated — they are the
+report's, and `report_id` reaches them.
+
+### 4.8b `rt_amendment_lines` — what the correction moves
+
+One row per correction. The same shape as a usage line (§4.6) with two
+differences: **`quantity` may be negative**, and **`wbs_id` is carried on the
+line**, because an amendment is not divided across WBS rows by hours — it says
+where each correction lands.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `amendment_id` | `fk_ref` → `rt_shift_report_amendments` | Taken from the page. |
+| `resource_id` | `fk_ref` → `rt_resources` | Blank for something not in the catalogue. |
+| `description` | `text` | Copied from the resource. |
+| `wbs_id` | `fk_ref` → `rt_wbs_nodes` | **Where this correction lands.** Always set. |
+| `quantity` | `decimal` | **Signed.** Four excavator hours overstated is `-4`. |
+| `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | As on a usage line: copied when written, correctable while the amendment is Draft. |
+| `notes` | `text` (multiline) | Why this line. |
+| `tracked_cost` | `decimal` | `quantity × rate`, written by a hook. Signed, like the quantity. |
+| `expired` | `text` | |
+
+**On approval each line is written straight to `rt_wbs_resource_usage`** — one
+row per line, no division, carrying the sign. The ledger stays append-only and
+a corrected shift reads as the original plus its amendments.
 
 ### 4.9 Attribute keys
 
@@ -636,35 +683,35 @@ Cancelling is available on a `Draft` report only, which is where Reject leaves
 one. **An approved report is never rejected or cancelled** — its cost is in the
 ledger, and the way back is an amendment (§5.4).
 
-### 5.4 Correcting a submitted report
+### 5.4 Correcting an approved report
 
 **An approved report is never edited.** There is no reopen. A *submitted* one
 can still be sent back — that is Reject (§5.3), and it is free because nothing
-has posted yet. Once approved, that window is shut. The reason is the
-ledger: Approve divides cost into `rt_wbs_resource_usage` (§5.1), and editing
-the source of posted cost means un-posting and re-posting it.
+has posted yet. Once approved, that window is shut. The reason is the ledger:
+Approve divides cost into `rt_wbs_resource_usage` (§5.1), and editing the
+source of posted cost means un-posting and re-posting it.
 
-**A correction is a new shift report** for the same work group and the same
-shift, naming the report it amends. It carries only the difference, goes
-through Submit and Approve like any other report, and posts its own cost — so
-the ledger stays append-only and both the mistake and the fix survive in full.
+**A correction is an amendment** (§4.8a): its own record, raised by a button on
+the approved report, carrying only the lines that change. It is submitted and
+approved like a report, and on approval its lines post to the ledger — so the
+ledger stays append-only and both the mistake and the fix survive in full.
 
 It is deliberately a little awkward. Getting the resources and the WBS split
 right the first time is the cheaper path, and it should feel that way.
 
 Three things follow:
 
-- **Negative quantities and hours are legal on an amendment.** Four excavator
-  hours overstated is corrected by posting −4. The hours check, the pricing and
-  the division at approval all have to carry negatives — which nothing else in
-  this model does, and which the build must not quietly reject.
-- **An amendment claims no worked time.** Its `work_hours` is zero; the
-  original carries the shift's hours and is not restated. A WBS split corrected
-  by moving two hours between nodes is `+2` on one and `−2` on the other, which
-  totals zero and satisfies the check unchanged.
-- **§6 counts the original.** A group that filed and then amended has filed
-  once, not twice — the who-has-not-filed grid ignores amendments.
+- **Quantities are signed on an amendment line.** Four excavator hours
+  overstated is corrected by posting `-4`. Pricing and the write to the ledger
+  both carry the sign — which nothing else in this model does, and which the
+  build must not quietly reject.
+- **An amendment restates nothing.** No times, no work hours, no WBS hours
+  rows, no Calculate. The shift's hours stand as filed; only cost moves.
+- **An amendment is not a filing.** §6 never sees it — it is not a shift
+  report — so a group that filed and then amended has filed once.
 
+**Variations are the same shape and are not this.** Additional scope agreed
+mid-project is its own thing, and it is not built here (§11).
 
 ## 6. Knowing who has not filed
 
@@ -672,11 +719,10 @@ Who owes a report is a query over work group records: active, no children, type
 `Crew` or `Subcontractor`, for a project. Shared-plant groups file nothing and
 a split group's parent is covered by its children, so neither is expected.
 
-**Two kinds of report do not count here.** A cancelled one is `expired` and
-reads as nothing filed (§5.3) — that is what cancelling is for. An amendment
-does not count as a second filing either; the group filed once, and the report
-it amends is the one the grid sees (§5.4). Both mean this query filters
-`expired <> 'true'` and ignores any report whose `amends_report_id` is set.
+**A cancelled report does not count here.** It is `expired` and reads as
+nothing filed (§5.3) — that is what cancelling is for, so this query filters
+`expired <> 'true'`. Amendments need no rule at all: they are not shift
+reports (§4.8a), so the grid never sees them.
 
 Because cost lands at approval, each expected group is in one of three states
 for a date, and they mean different things:
