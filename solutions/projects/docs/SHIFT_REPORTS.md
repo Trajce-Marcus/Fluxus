@@ -1,18 +1,39 @@
 # Shift Reports & Work Groups — spec
 
-**Status: model built** (2026-09-23, branch `feat/console-users-ui` — the
-build continued on the branch already checked out, not a new one). The eight
-record types (§4), their attributes and activities, the numbering hook, the
-hours check, the largest-remainder division at Approve, and the two
-children-guard fixes to the existing CBS/WBS totals (§7) are written to Neon
-dev through `packages/server/scripts/shift-reports-model.ts` and pass
-`check-model.ts` clean. `packages/server/scripts/verify-shift-reports.ts`
-drives the whole lifecycle — work group → resources → standard set → shift
-report → WBS rows → Calculate → Submit → Approve → defect lifecycle — through
-the real engine with no `writeBack`, and re-checks the defects §10a measured
-(float equality on hours, a blank number poisoning a total, shares that do
-not sum to the whole; the fourth, blank-fk-is-not-null, is discussed below);
-all pass. **The pages (§8) and the demonstration data (§9) are still to be
+**Status: model built, second pass** (2026-09-23, branch `feat/console-users-ui`).
+The first pass (below) built the eight record types against the design as it
+stood before the cold review in §1.1; this pass rebuilds the pieces that
+review changed — work-group splitting (§4.1a), the Submit/Approve hours
+warning (§5.2), Reject and Cancel (§5.3), and amendments (§5.4) — and adds
+`services.math.distribute` to the engine (`packages/engine/docs/SPEC.md`,
+beside `services.time`), which Approve now calls instead of the hand-rolled
+largest-remainder arithmetic §10a found wrong on its first attempt. All of it
+is written to Neon dev through `packages/server/scripts/shift-reports-model.ts`
+and passes `check-model.ts` clean.
+
+Concretely, this pass: made `act_create_work_groups` ask for `wg_parent`
+instead of sourcing it blank, added the one-level-nesting refusal and the
+expire-unexpired-children refusal (§10), dropped `standardResourceSet`'s
+fall-back to a parent's resources, moved `report_date`/`start_time`/`end_time`
+off the record-type's own `required` (so an amendment can leave them blank)
+and onto the ordinary Create/Modify activities' attribute usage instead,
+added `act_reject_shift_reports` and renamed the existing "Delete Shift
+Report" to `act_cancel_shift_reports` (same mechanism, the name §5.3 actually
+uses), and brought `wbs_id` back onto `rt_shift_report_resource_usage`
+alongside a `notes` field, with `amended_report_id` new on `rt_shift_reports`.
+Approve's after hook now branches on a line's own `wbs_id` — set posts the
+line whole (an amendment's signed quantity carries straight through pricing
+into `rt_wbs_resource_usage`), blank divides by hours via `distribute()`. The
+amendment's own activity set landed on the same workflow as the ordinary
+report (`wf_shift_reports`, `wf_shift_report_resource_usage`): `Raise
+Amendment`, `Add/Adjust Amendment Line`, `Edit Notes`, and the shared
+Submit/Reject/Cancel/Approve. `packages/server/scripts/verify-shift-reports.ts`
+drives all of it — `distribute()` directly, the one-level cap and the
+expire-children-first order, the Submit/Approve warning (needs-confirmation,
+then `acknowledgedWarnings`), Reject, Cancel, and an amendment posting a
+negative quantity and cost undivided — through the real engine with no
+`writeBack`; every check passes, including the whole first pass's suite
+unchanged. **The pages (§8) and the demonstration data (§9) are still to be
 built** — a separate session for each, per the standing instruction.
 
 A cold-test pass against this build (§10a's own method, run cold against the
@@ -726,6 +747,27 @@ Two things follow:
 **The amendment page owns its activity set, and it is listed in §8.** A later
 session extending the shift-report page is not extending this one — if an
 amendment should gain something, it is added here deliberately.
+
+**Each set refuses the other's records, in a hook.** A page naming an activity
+is not a gate: an activity reachable through one page is reachable through any
+caller, so the model has to say which records it accepts. The rule is
+symmetric and there is no exemption:
+
+- **An amendment's activities refuse a record with `amended_report_id = ''`.**
+  Without this, an amendment's line — signed, naming its own `wbs_id`, never
+  Calculated — can be added to an ordinary report, where Approve posts it whole
+  and undivided into the ledger. That is the "pin one resource to one node"
+  exception §5.1 removed, reachable again under another name.
+- **A report's activities refuse a record with `amended_report_id <> ''`.**
+  Including **Calculate, which refuses outright rather than being made to
+  work** — an amendment has no WBS rows and no `work_hours`, so there is
+  nothing to calculate and blank-guarding the check would paper over that. The
+  same applies to the ordinary line activities, which would otherwise seed an
+  amendment from the work group's standard set.
+
+**Submit and Approve are shared, and their hours warning (§5.2) is skipped on
+an amendment** for the same reason: it has no WBS rows and no `work_hours`, so
+the comparison means nothing and would warn every time.
 
 **Variations are the same shape and are not this.** Additional scope agreed
 mid-project is its own thing, and it is not built here (§11).
