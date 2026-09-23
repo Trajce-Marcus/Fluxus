@@ -1,13 +1,14 @@
-// Read-only in effect, 2026-09-23. Drives the shift-reports model through the
-// real engine against the real config and P26-011's real WBS/CBS — and never
-// calls `writeBack`, so nothing persists. Answers the questions the pages are
-// about to be built on, and re-checks the defects §10a measured against an
-// earlier draft of these same hooks: float equality on hours, a blank number
-// poisoning a total, and shares that do not add up. The fourth
-// (blank-fk-is-not-null) was found in the per-line "pin to one WBS node"
-// exception, since removed (§5.1) — the rule it taught still guards
-// `standardResourceSet`'s parent lookup and the work-group leaf checks, but
-// there is no longer a dedicated section demonstrating it directly.
+// Read-only in effect, 2026-09-23 (second pass, against the reworked design —
+// SHIFT_REPORTS.md §1.1). Drives the shift-reports model through the real
+// engine against the real config and P26-011's real WBS/CBS — and never calls
+// `writeBack`, so nothing persists. Re-checks the four defects §10a measured
+// (float equality on hours, a blank number poisoning a total, shares that do
+// not add up, and a blank fk_ref reading as not-null — now the branch that
+// tells an amendment's whole-line posting from an ordinary report's divided
+// one) and drives the paths this pass added: `services.math.distribute`
+// directly, the work-group one-level cap and expire-children-first order, the
+// Submit/Approve hours warning, Reject and Cancel, and an amendment posting a
+// signed line to the ledger undivided.
 //
 // Sourcing (`context.page.record.*`) is a page-runtime/form concern, not the
 // engine's — `runActivity` takes already-resolved values. So every value a
@@ -17,6 +18,7 @@
 import { fileURLToPath } from 'node:url';
 import { createDb, closeDb } from '../src/db/client';
 import { findActivity, loadOperationHost } from '../src/host';
+import { buildMathModule } from '@fluxus/engine';
 
 if (!process.env.DATABASE_URL) {
   try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); } catch { /* PGlite */ }
@@ -40,13 +42,15 @@ const act = (id: string) => {
   if (!found) throw new Error(`${id} not found`);
   return found;
 };
-const run = (id: string, attrs: Record<string, unknown>, anchorId: string | null) => {
+const run = (id: string, attrs: Record<string, unknown>, anchorId: string | null, options?: { acknowledgedWarnings?: boolean }) => {
   const anchor = anchorId ? host.adapter.getRecord(anchorId) : null;
   try {
-    const result = host.engine.runActivity(act(id), attrs, anchor as never);
-    return result.status === 'done' ? { ok: true as const, result } : { ok: false as const, why: JSON.stringify(result) };
+    const result = host.engine.runActivity(act(id), attrs, anchor as never, options);
+    return result.status === 'done'
+      ? { ok: true as const, result, why: '' }
+      : { ok: false as const, why: JSON.stringify(result), result };
   } catch (err) {
-    return { ok: false as const, why: err instanceof Error ? err.message : String(err) };
+    return { ok: false as const, why: err instanceof Error ? err.message : String(err), result: undefined };
   }
 };
 const ask = (id: string, attrs: Record<string, unknown>, anchorId: string | null) =>
@@ -69,10 +73,40 @@ const cbs4200 = cbsRows.find((c) => c.code === '4200');
 check('found CBS 1300 and 4200', !!cbs1300 && !!cbs4200, `${cbs1300?.id} / ${cbs4200?.id}`);
 if (!cbs1300 || !cbs4200) { console.log('cannot continue without CBS codes'); await closeDb(db); process.exit(1); }
 
-console.log('\n── work groups ──────────────────────────────────────────────────────');
+console.log('\n── services.math.distribute, direct ─────────────────────────────────');
+const distribute = (weights: number[], total: number, precision: number) =>
+  buildMathModule().functions.distribute.fn(weights, total, precision) as number[];
+check('[3.5, 4.0, 2.5] over 81 at precision 0 is [28, 33, 20]',
+  JSON.stringify(distribute([3.5, 4.0, 2.5], 81, 0)) === JSON.stringify([28, 33, 20]));
+check('[1, 1, 1] over 100 at precision 2 is [33.34, 33.33, 33.33]',
+  JSON.stringify(distribute([1, 1, 1], 100, 2)) === JSON.stringify([33.34, 33.33, 33.33]));
+const negShares = distribute([1, 1, 1], -100, 2);
+check('a negative total gives negative parts that still sum to it',
+  negShares.every((s) => s <= 0) && Math.abs(negShares.reduce((a, b) => a + b, 0) - -100) < 1e-9,
+  JSON.stringify(negShares));
+
+console.log('\n── work groups: one level only, split, expire order ─────────────────');
 const wgCreated = run('act_create_work_groups', { project_id: PROJECT, wg_parent: '', wg_code: 'WG-TEST', name: 'Test crew', manager: 'Hughie', wg_type: 'Crew' }, null);
 check('create a work group', wgCreated.ok, wgCreated.ok ? '' : wgCreated.why);
 const wgId = wgCreated.ok ? wgCreated.result.recordId! : '';
+
+const wgParentCreated = run('act_create_work_groups', { project_id: PROJECT, wg_parent: '', wg_code: 'WG-TEST-SPREAD', name: 'Test spread', manager: 'Owner', wg_type: 'Crew' }, null);
+check('create a would-be parent group', wgParentCreated.ok, wgParentCreated.ok ? '' : wgParentCreated.why);
+const wgParentId = wgParentCreated.ok ? wgParentCreated.result.recordId! : '';
+
+const wgChildCreated = run('act_create_work_groups', { project_id: PROJECT, wg_parent: wgParentId, wg_code: 'WG-TEST-CHILD', name: 'Test child', manager: 'Child mgr', wg_type: 'Crew' }, null);
+check('create a child under it — one level is fine', wgChildCreated.ok, wgChildCreated.ok ? '' : wgChildCreated.why);
+const wgChildId = wgChildCreated.ok ? wgChildCreated.result.recordId! : '';
+
+const wgGrandchild = run('act_create_work_groups', { project_id: PROJECT, wg_parent: wgChildId, wg_code: 'WG-TEST-GRANDCHILD', name: 'Test grandchild', manager: 'X', wg_type: 'Crew' }, null);
+check('a group under a group that already has a parent is refused (one level only)', !wgGrandchild.ok, wgGrandchild.ok ? 'it was allowed' : '');
+
+const expireParentTooSoon = run('act_delete_work_groups', { expired: 'true' }, wgParentId);
+check('expiring a parent with an unexpired child is refused', !expireParentTooSoon.ok, expireParentTooSoon.ok ? 'it was allowed' : '');
+const expireChild = run('act_delete_work_groups', { expired: 'true' }, wgChildId);
+check('expire the child first', expireChild.ok, expireChild.ok ? '' : expireChild.why);
+const expireParentNow = run('act_delete_work_groups', { expired: 'true' }, wgParentId);
+check('now the parent expires (its only child is already expired)', expireParentNow.ok, expireParentNow.ok ? '' : expireParentNow.why);
 
 const wgDup = run('act_create_work_groups', { project_id: PROJECT, wg_parent: '', wg_code: 'WG-TEST', name: 'Duplicate', manager: 'X', wg_type: 'Crew' }, null);
 check('a duplicate wg_code on the same project is refused', !wgDup.ok, wgDup.ok ? 'it was allowed' : '');
@@ -188,6 +222,177 @@ check('every line split across both nodes (no per-line pinning left in the model
 const cost34 = usage2.filter((r) => r.customFields.wbs_id === wbs34.id).reduce((a, r) => a + Number(r.customFields.tracked_cost), 0);
 const cost35 = usage2.filter((r) => r.customFields.wbs_id === wbs35.id).reduce((a, r) => a + Number(r.customFields.tracked_cost), 0);
 check('an even 6h/6h split lands the cost evenly, 50/50', Math.abs(cost34 - cost35) < 0.01, `3.4=${cost34}, 3.5=${cost35}`);
+
+console.log('\n── §5.2: Submit and Approve warn rather than fail on stale hours ────');
+// A WBS row edited after Calculate, with no recalculation — the case §5.2
+// exists for. Ten-hour shift, one ten-hour WBS row, matching at Calculate;
+// then the row is edited to 8h, so work_hours (10) and the WBS total (8) part
+// company with no gate noticing until Submit re-checks.
+const reportWarn = run('act_create_shift_reports', {
+  project_id: PROJECT, wg_id: wgId,
+  report_date: '2026-09-23', shift: 'Day', start_time: '06:00', end_time: '16:00', break_hours: '0',
+}, null);
+check('create a report for the warning check', reportWarn.ok, reportWarn.ok ? '' : reportWarn.why);
+const reportWarnId = reportWarn.ok ? reportWarn.result.recordId! : '';
+const wbsWarnRow = run('act_create_shift_wbs', { project_id: PROJECT, report_id: reportWarnId, wbs_id: wbs34.id, hours: '10' }, null);
+check('add a matching 10h WBS row', wbsWarnRow.ok, wbsWarnRow.ok ? '' : wbsWarnRow.why);
+const wbsWarnRowId = wbsWarnRow.ok ? wbsWarnRow.result.recordId! : '';
+const calcWarn = run('act_calculate_shift_reports', {}, reportWarnId);
+check('Calculate accepts the matching total', calcWarn.ok, calcWarn.ok ? '' : calcWarn.why);
+
+run('act_modify_shift_wbs', { hours: '8' }, wbsWarnRowId);
+const submitWarn = run('act_submit_shift_reports', {}, reportWarnId);
+check('Submit needs confirmation once the WBS hours (8) no longer total work_hours (10)',
+  !submitWarn.ok && submitWarn.result?.status === 'needs-confirmation', JSON.stringify(submitWarn.result?.warnings));
+check('the warning names both figures', (submitWarn.result?.warnings ?? []).some((w) => w.includes('8') && w.includes('10')),
+  JSON.stringify(submitWarn.result?.warnings));
+const submitAck = run('act_submit_shift_reports', {}, reportWarnId, { acknowledgedWarnings: true });
+check('acknowledging the warning is a legitimate answer — Submit goes through', submitAck.ok, submitAck.ok ? '' : submitAck.why);
+
+const approveWarn = run('act_approve_shift_reports', {}, reportWarnId);
+check('Approve also needs confirmation for the parent manager, same mismatch',
+  !approveWarn.ok && approveWarn.result?.status === 'needs-confirmation', JSON.stringify(approveWarn.result?.warnings));
+const approveAck = run('act_approve_shift_reports', {}, reportWarnId, { acknowledgedWarnings: true });
+check('acknowledged, Approve runs — nothing reaches back and stops the division', approveAck.ok, approveAck.ok ? '' : approveAck.why);
+
+console.log('\n── §5.3: Reject sends a submitted report back to Draft, free ────────');
+const reportRC = run('act_create_shift_reports', {
+  project_id: PROJECT, wg_id: wgId,
+  report_date: '2026-09-23', shift: 'Day', start_time: '06:00', end_time: '16:00', break_hours: '0',
+}, null);
+const reportRCId = reportRC.ok ? reportRC.result.recordId! : '';
+run('act_create_shift_wbs', { project_id: PROJECT, report_id: reportRCId, wbs_id: wbs34.id, hours: '10' }, null);
+run('act_calculate_shift_reports', {}, reportRCId);
+const submitRC = run('act_submit_shift_reports', {}, reportRCId);
+check('submit a clean report (no warning, hours match)', submitRC.ok, submitRC.ok ? '' : submitRC.why);
+
+const rejected = run('act_reject_shift_reports', {}, reportRCId);
+check('Reject sends it back to Draft', rejected.ok && fields(reportRCId)?.status === 'Draft', rejected.ok ? '' : rejected.why);
+check('nothing posted to the ledger by a reject', allOf('rt_wbs_resource_usage', (f) => f.report_id === reportRCId).length === 0);
+
+console.log('\n── §5.3: Cancel expires a Draft report — §6 reads it as nothing filed ─');
+const cancelled = run('act_cancel_shift_reports', { expired: 'true' }, reportRCId);
+check('Cancel expires the (rejected, now draft) report', cancelled.ok && fields(reportRCId)?.expired === 'true', cancelled.ok ? '' : cancelled.why);
+const listAfterCancel = ask('act_list_shift_reports', { project_id: PROJECT }, PROJECT) as { id: string }[];
+check('the cancelled report no longer appears in the project\'s list', !listAfterCancel.some((r) => r.id === reportRCId));
+
+console.log('\n── §5.4: an amendment posts a signed line to the ledger, undivided ──');
+// A blank amended_report_id is sourced, not asked (§4.9), so `required` on
+// the attribute usage would not help even if set — a hidden/sourced
+// attribute is exempt from it. Refusing this in the hook is what stops the
+// activity from being used to create what is structurally an ordinary
+// report (missing every field the real Create/Modify activities require,
+// and none of its lines ever seeded) through the amendment-only path.
+const amendmentWithNoParent = run('act_create_shift_report_amendments', { project_id: PROJECT, wg_id: wgId, amended_report_id: '' }, null);
+check('Raise Amendment refuses a blank amended_report_id', !amendmentWithNoParent.ok, amendmentWithNoParent.ok ? 'it was allowed' : '');
+
+// reportId (the first report, above) is Approved by now — an amendment
+// corrects it. project_id/wg_id/amended_report_id are sourced from the page
+// in the real app; here they are passed explicitly, by the pool attribute's
+// own key, the same way every other sourced value in this script is.
+const amendment = run('act_create_shift_report_amendments', { project_id: PROJECT, wg_id: wgId, amended_report_id: reportId }, null);
+check('raise an amendment against the approved report', amendment.ok, amendment.ok ? '' : amendment.why);
+const amendmentId = amendment.ok ? amendment.result.recordId! : '';
+check('the amendment carries amended_report_id, project_id and wg_id — sourced, not asked',
+  fields(amendmentId)?.amended_report_id === reportId
+  && fields(amendmentId)?.project_id === PROJECT
+  && fields(amendmentId)?.wg_id === wgId);
+check('date, shift, start and end time are never asked — they sit blank',
+  fields(amendmentId)?.report_date === '' && fields(amendmentId)?.start_time === '' && fields(amendmentId)?.end_time === '');
+check('report_no assigned from the shared sequence', /^SR-\d{4}$/.test(String(fields(amendmentId)?.report_no ?? '')));
+
+const amendOnDraft = run('act_create_shift_report_amendments', { project_id: PROJECT, wg_id: wgId, amended_report_id: reportRCId }, null);
+check('an amendment cannot be raised against a report that is not approved', !amendOnDraft.ok, amendOnDraft.ok ? 'it was allowed' : '');
+
+const notes = run('act_edit_shift_report_amendment_notes', { site_notes: 'Welder hours overstated on the original report.' }, amendmentId);
+check('edit the amendment notes while draft', notes.ok, notes.ok ? '' : notes.why);
+
+// Four welder-hours overstated: -4 at $95, landing whole on 3.4 (§5.1, §5.4).
+const amendLine = run('act_add_shift_report_amendment_line', {
+  project_id: PROJECT, report_id: amendmentId, resource_id: welderId, quantity: '-4', wbs_id: wbs34.id, notes: 'Overstated hours',
+}, null);
+check('add a signed correction line, naming its own WBS node', amendLine.ok, amendLine.ok ? '' : amendLine.why);
+const amendLineId = amendLine.ok ? amendLine.result.recordId! : '';
+check('the line prices itself immediately — no Calculate for an amendment', (() => {
+  const f = fields(amendLineId);
+  return Number(f?.rate) === 95 && Number(f?.tracked_cost) === -380;
+})(), JSON.stringify(fields(amendLineId)));
+
+console.log('\n── §5.4: each activity set refuses the other\'s records ─────────────');
+// An activity reachable through one page is reachable through any caller, so
+// the refusal has to be a hook gate on both sides, not just a page's choice
+// of which button to show. reportRCId is Draft (§5.3 left it that way) and
+// amendmentId is still Draft here too — neither has been Submitted yet, so
+// DRAFT_REPORT_GATE cannot be what refuses either of these.
+const amendLineOnOrdinary = run('act_add_shift_report_amendment_line', {
+  project_id: PROJECT, report_id: reportRCId, resource_id: welderId, quantity: '-1', wbs_id: wbs34.id,
+}, null);
+check('an amendment-line activity is refused on an ordinary report', !amendLineOnOrdinary.ok, amendLineOnOrdinary.ok ? 'it was allowed' : '');
+
+const ordinaryLineOnAmendment = run('act_add_shift_report_resource', {
+  project_id: PROJECT, report_id: amendmentId, resource_id: welderId, quantity: '1',
+}, null);
+check('an ordinary line activity is refused on an amendment', !ordinaryLineOnAmendment.ok, ordinaryLineOnAmendment.ok ? 'it was allowed' : '');
+
+// reportRCId is still Draft (Reject then Cancel — Cancel only sets expired,
+// it does not submit or approve), so its standard-set-seeded lines are still
+// reachable through the ordinary activities — the case the two checks below
+// tell apart: the gate must refuse the WRONG activity, not Draft-only reports
+// generally.
+const rcLines = allOf('rt_shift_report_resource_usage', (f) => f.report_id === reportRCId);
+const rcWelderLine = rcLines.find((l) => l.customFields.resource_id === welderId);
+check('found the ordinary report\'s seeded welder line to test against', !!rcWelderLine);
+const adjustOrdinaryLineOrdinary = run('act_modify_shift_report_resource', { quantity: '99' }, rcWelderLine!.id);
+check('adjusting an ordinary line via the ordinary activity still works (unaffected by the new gates)', adjustOrdinaryLineOrdinary.ok, adjustOrdinaryLineOrdinary.ok ? '' : adjustOrdinaryLineOrdinary.why);
+
+const adjustOrdinaryLineOnAmendment = run('act_adjust_shift_report_amendment_line', { quantity: '-5' }, rcWelderLine!.id);
+check('the amendment-line Adjust activity is refused on an ordinary line', !adjustOrdinaryLineOnAmendment.ok, adjustOrdinaryLineOnAmendment.ok ? 'it was allowed' : '');
+
+const modifyOrdinaryReport = run('act_modify_shift_reports', { report_date: '2026-09-23', shift: 'Day', start_time: '06:00', end_time: '16:00', break_hours: '0' }, reportRCId);
+check('Modify Shift Report still works on an ordinary report (unaffected by the new gate)', modifyOrdinaryReport.ok, modifyOrdinaryReport.ok ? '' : modifyOrdinaryReport.why);
+const modifyAmendmentAsReport = run('act_modify_shift_reports', { report_date: '2026-09-23', shift: 'Day', start_time: '07:00', end_time: '15:00' }, amendmentId);
+check('Modify Shift Report is refused on an amendment (it would write date/times nothing asks for)', !modifyAmendmentAsReport.ok, modifyAmendmentAsReport.ok ? 'it was allowed' : '');
+
+const editNotesOnOrdinary = run('act_edit_shift_report_amendment_notes', { site_notes: 'should not land here' }, reportRCId);
+check('Edit Notes (amendment-only) is refused on an ordinary report', !editNotesOnOrdinary.ok, editNotesOnOrdinary.ok ? 'it was allowed' : '');
+
+// §5.4's body: "date, shift, times, work_hours, WBS hours rows, photos... is
+// simply not asked for." Add WBS Row is an ordinary-report activity same as
+// Modify Shift Report — an amendment has no WBS rows at all.
+const wbsRowOnAmendment = run('act_create_shift_wbs', { project_id: PROJECT, report_id: amendmentId, wbs_id: wbs34.id, hours: '4' }, null);
+check('Add WBS Row is refused on an amendment', !wbsRowOnAmendment.ok, wbsRowOnAmendment.ok ? 'it was allowed' : '');
+
+// §8's amendment page paragraph: "No Calculate, no WBS hours rows, no
+// photos, no defects."
+const defectOnAmendment = run('act_create_defects', {
+  project_id: PROJECT, report_id: amendmentId, wbs_id: wbs34.id,
+  raised_by: 'Test', location: 'x', def_description: 'x', severity: 'Minor',
+}, null);
+check('Raise Defect is refused on an amendment', !defectOnAmendment.ok, defectOnAmendment.ok ? 'it was allowed' : '');
+
+const calcOnAmendment = run('act_calculate_shift_reports', {}, amendmentId);
+check('Calculate is refused outright on an amendment', !calcOnAmendment.ok, calcOnAmendment.ok ? 'it was allowed' : '');
+check('...with a controlled message, not a raw round() type error', (calcOnAmendment.ok ? '' : calcOnAmendment.why).includes('WBS rows') && !(calcOnAmendment.ok ? '' : calcOnAmendment.why).includes('round()'));
+
+const amendSubmit = run('act_submit_shift_reports', {}, amendmentId);
+check('Submit the amendment — no WBS rows, no hours check to fail', amendSubmit.ok, amendSubmit.ok ? '' : amendSubmit.why);
+check('...and no hours warning either — an amendment has nothing to compare', (amendSubmit.result?.warnings ?? []).length === 0, JSON.stringify(amendSubmit.result?.warnings));
+const amendApprove = run('act_approve_shift_reports', {}, amendmentId);
+check('Approve the amendment — no shift_wbs rows, and none are needed', amendApprove.ok, amendApprove.ok ? '' : amendApprove.why);
+check('...and no hours warning on Approve either', (amendApprove.result?.warnings ?? []).length === 0, JSON.stringify(amendApprove.result?.warnings));
+
+const amendUsage = allOf('rt_wbs_resource_usage', (f) => f.report_id === amendmentId);
+check('exactly one ledger row, posted whole (not divided)', amendUsage.length === 1, `${amendUsage.length} rows`);
+check('it carries the sign through pricing: -4 qty, -380 cost, on 3.4', (() => {
+  const f = amendUsage[0]?.customFields;
+  return f?.wbs_id === wbs34.id && Number(f?.quantity) === -4 && Number(f?.tracked_cost) === -380;
+})(), JSON.stringify(amendUsage[0]?.customFields));
+
+console.log('\n── §6: amendments are not filings ───────────────────────────────────');
+const listWithAmendment = ask('act_list_shift_reports', { project_id: PROJECT }, PROJECT) as { id: string }[];
+check('the amendment does not appear in the project\'s shift-report list', !listWithAmendment.some((r) => r.id === amendmentId));
+const groupListWithAmendment = ask('act_list_work_group_reports', { wg_id: wgId }, PROJECT) as { id: string }[];
+check('nor in the work group\'s own list', !groupListWithAmendment.some((r) => r.id === amendmentId));
 
 console.log('\n── defects ───────────────────────────────────────────────────────────');
 const defectOnApproved = run('act_create_defects', {

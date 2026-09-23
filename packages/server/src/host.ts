@@ -14,6 +14,7 @@ import {
   MemoryAdapter,
   buildGeoModule,
   buildTimeModule,
+  buildMathModule,
   type ActivityDef,
   type ActivityHistoryEntry,
   type AttributeDef,
@@ -133,7 +134,7 @@ export async function loadOperationHost(db: Db, operationId: string, sink: Notif
   const engine = createEngine({
     store: adapter,
     config,
-    services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule()],
+    services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
     // context.user for gates/hooks; entries record user.id as author.
     user,
   });
@@ -777,7 +778,7 @@ async function validateConfigGraph(db: DbOrTx, solutionId: string, config: Solut
   const engine = createEngine({
     store: adapter,
     config,
-    services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule()],
+    services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
   });
   const errors = engine.validateConfig().filter((f) => f.diagnostic.severity === 'error');
   if (errors.length > 0) {

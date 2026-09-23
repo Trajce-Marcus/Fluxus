@@ -12,7 +12,7 @@
 // before rendering. There is no localStorage fallback by ruling: if the
 // server is down, boot fails loudly.
 
-import { createEngine, buildGeoModule, buildTimeModule } from '@fluxus/engine';
+import { createEngine, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import type { ContextUser } from '@fluxus/engine';
 import { FluxusClient, orgFromPath, type AuthSession, type HostAuth } from '@fluxus/client';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
@@ -97,7 +97,7 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   createEngine({
     store: client.adapter,
     config: client.config,
-    services: [buildNotifyModule(notificationLog), buildGeoModule(client.adapter), buildTimeModule()],
+    services: [buildNotifyModule(notificationLog), buildGeoModule(client.adapter), buildTimeModule(), buildMathModule()],
     user,
   }).reportConfigFindings();
 }

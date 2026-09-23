@@ -5,7 +5,7 @@
 import { fileURLToPath } from 'node:url';
 import { createDb, closeDb } from '../src/db/client';
 import { getSolutionConfig, listOrgs, listSolutions } from '../src/host';
-import { createEngine, MemoryAdapter, buildGeoModule, buildTimeModule } from '@fluxus/engine';
+import { createEngine, MemoryAdapter, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import { buildNotifyModule, consoleNotifySink } from '../src/services/notify';
 
 if (!process.env.DATABASE_URL) {
@@ -29,7 +29,7 @@ for (const org of orgs) {
     try {
       const adapter = new MemoryAdapter(config);
       for (const rt of config.recordTypes) adapter.getRecordTypeDef(rt.id);
-      const engine = createEngine({ store: adapter, config, services: [buildNotifyModule(consoleNotifySink), buildGeoModule(adapter), buildTimeModule()] });
+      const engine = createEngine({ store: adapter, config, services: [buildNotifyModule(consoleNotifySink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()] });
       const findings = engine.validateConfig();
       const errors = findings.filter((f) => f.diagnostic.severity === 'error');
       const warnings = findings.filter((f) => f.diagnostic.severity !== 'error');

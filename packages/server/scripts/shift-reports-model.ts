@@ -22,21 +22,31 @@
 // attributes — four, not six, proving the mechanism on real interactive
 // capture (`severity`) as well as literal small sets.
 //
+// **This build (2026-09-23, second pass) follows a design thread that reopened
+// after a cold-test found three real gaps — see SHIFT_REPORTS.md §1.1.**
+// Work groups may now split into children (§4.1a); Submit and Approve warn
+// rather than silently drift when the WBS hours no longer total work_hours
+// (§5.2); Reject and Cancel give a submitted report a way back (§5.3); and a
+// correction to an approved report is an amendment — the same record type,
+// its own activity set (§5.4). The largest-remainder split that Approve does
+// by hand is now `services.math.distribute` (packages/engine/docs/SPEC.md,
+// beside `services.time`) — a capability, not a recipe repeated in every hook
+// that divides.
+//
 // **The four defects §10a measured, and where each is guarded here:**
 //   1. blank fk_ref is not null → every emptiness test on a reference is
-//      `<> ''`, never `is not null` (standardResourceSet's parent lookup, the
-//      work-group leaf checks). The specific case that first surfaced this —
-//      a per-line "pin to one WBS node" exception on Approve — was designed,
-//      built, and then removed the same day (§5.1): it was never reachable
-//      through any activity, so every resource line now always divides by
-//      hours. The rule outlived the feature that taught it.
-//   2. float equality on hours → the Calculate gate compares `round(x, 6)`.
+//      `<> ''`, never `is not null` (standardResourceSet's own-set lookup,
+//      the work-group leaf/parent checks, and — back again, for a different
+//      reason — the per-line `wbs_id <> ''` branch in Approve that tells an
+//      amendment's whole-line posting from an ordinary report's divided one).
+//   2. float equality on hours → the Calculate/Submit/Approve gates compare
+//      `round(x, 6)`.
 //   3. a blank number turns a running total to text → every accumulation
 //      guards its own term with `iif(x = '' or x = null, 0, x)`, not just the
 //      final comparison.
-//   4. divided shares do not add up → Approve's split uses largest-remainder
-//      rounding (compute every share, track the largest remainder, give it
-//      the leftover cent) so the parts always sum to the whole.
+//   4. divided shares do not add up → Approve calls `services.math.distribute`,
+//      which floors every share and hands the leftover units to the largest
+//      remainders, so the parts always sum to the whole.
 //
 // Written through the config writers, dependency-ordered so a field's
 // `fk_record_type` and a GET's `returns` never name a type that is not yet in
@@ -128,6 +138,11 @@ const ATTRIBUTES = [
     key: 'report_photos', type: 'photo', label: 'Photos', description: 'Photos of the shift.',
     type_config: { multi: true, max_count: 6 },
   },
+  {
+    key: 'amended_report_id', type: 'reference', label: 'Amends report',
+    description: "The approved report this amendment corrects. Names the report's own field, so it is checked against shift reports — blank means an ordinary report, set means an amendment (§5.4). Not the pooled report_id, which makes a different claim.",
+    type_config: { field: 'rt_shift_reports.amended_report_id' },
+  },
 
   // WBS / usage picking, shared across several of the new types (§4.9)
   {
@@ -163,16 +178,10 @@ const ATTRIBUTES = [
 const STANDARD_RESOURCE_SET = {
   id: 'fn_standard_resource_set',
   name: 'standardResourceSet',
-  description: "A work group's standard resources: its own set if it has one, else its parent's (§4.1a) — the shared-plant/spread-owner case.",
+  description: "A work group's own standard resources (§4.1a) — never its parent's. A child with none of its own reads as empty rather than borrowing; the parent shares nothing downward.",
   body: [
     'function standardResourceSet(wgId) {',
-    "  let own = records.wg_resources.where(wg_id = wgId and expired <> 'true')",
-    '  if own.count > 0 { return own }',
-    '  let group = records.work_groups.where(id = wgId).first',
-    "  if group.parent_id <> '' {",
-    "    return records.wg_resources.where(wg_id = group.parent_id and expired <> 'true')",
-    '  }',
-    '  return own',
+    "  return records.wg_resources.where(wg_id = wgId and expired <> 'true')",
     '}',
   ].join('\n'),
 };
@@ -241,10 +250,14 @@ const rtShiftReports = {
     { key: 'report_no', type: 'text', label: 'Report no.', default: '' },
     { key: 'project_id', type: 'fk_ref', label: 'Project', default: '', indexed: true, required: true, fk_record_type: 'rt_projects', fk_display_field: 'project_no' },
     { key: 'wg_id', type: 'fk_ref', label: 'Work group', default: '', indexed: true, required: true, fk_record_type: 'rt_work_groups', fk_display_field: 'wg_code' },
-    { key: 'report_date', type: 'datetime', label: 'Date', default: '', required: true },
+    // Not required at the field level, deliberately (§4.9/§5.4): an amendment
+    // is never asked for date, shift or times, and required-ness lives on the
+    // activity — the ordinary Create/Modify usages below mark these required,
+    // the amendment's Create does not name them at all.
+    { key: 'report_date', type: 'datetime', label: 'Date', default: '' },
     { key: 'shift', type: 'text', label: 'Shift', default: 'Day' },
-    { key: 'start_time', type: 'time', label: 'Start time', default: '', required: true },
-    { key: 'end_time', type: 'time', label: 'End time', default: '', required: true },
+    { key: 'start_time', type: 'time', label: 'Start time', default: '' },
+    { key: 'end_time', type: 'time', label: 'End time', default: '' },
     { key: 'break_hours', type: 'decimal', label: 'Break hours', default: '' },
     { key: 'work_hours', type: 'decimal', label: 'Work hours', default: '' },
     { key: 'hours_lost', type: 'decimal', label: 'Hours lost', default: '' },
@@ -255,6 +268,9 @@ const rtShiftReports = {
     { key: 'status', type: 'text', label: 'Status', default: 'Draft', indexed: true },
     { key: 'approved_by', type: 'text', label: 'Approved by', default: '' },
     { key: 'approved_date', type: 'datetime', label: 'Approved date', default: '' },
+    // Blank on an ordinary report; set on an amendment — the approved report
+    // it corrects (§5.4). One field carries both the pointer and the fact.
+    { key: 'amended_report_id', type: 'fk_ref', label: 'Amends report', default: '', indexed: true, fk_record_type: 'rt_shift_reports', fk_display_field: 'report_no' },
     { key: 'expired', type: 'text', label: 'Expired', default: 'false', indexed: true },
   ],
 };
@@ -286,7 +302,13 @@ const rtShiftReportResourceUsage = {
     { key: 'report_id', type: 'fk_ref', label: 'Report', default: '', indexed: true, required: true, fk_record_type: 'rt_shift_reports', fk_display_field: 'report_no' },
     { key: 'resource_id', type: 'fk_ref', label: 'Resource', default: '', fk_record_type: 'rt_resources', fk_display_field: 'description' },
     { key: 'description', type: 'text', label: 'Description', default: '' },
+    { key: 'notes', type: 'text', label: 'Notes', default: '' },
     { key: 'quantity', type: 'decimal', label: 'Quantity', default: '' },
+    // Blank on an ordinary line, divided across the report's WBS rows by
+    // hours; set on an amendment's line, posted whole to that node (§5.1,
+    // §5.4). The test at Approve is `wbs_id <> ''` — a blank fk_ref is not
+    // null (§10a).
+    { key: 'wbs_id', type: 'fk_ref', label: 'WBS node', default: '', fk_record_type: 'rt_wbs_nodes', fk_display_field: 'code' },
     { key: 'calculated', type: 'text', label: 'Calculated', default: 'false' },
     { key: 'unit', type: 'text', label: 'Unit', default: '' },
     { key: 'rate', type: 'decimal', label: 'Rate', default: '' },
@@ -374,23 +396,84 @@ const DRAFT_REPORT_GATE = (reportIdExpr: string) => [
   '}',
 ].join('\n');
 
+// §5.4: each activity set refuses the other's records — a page naming an
+// activity is not a gate, and an activity reachable through one page is
+// reachable through any caller. Without this, an amendment's line (signed,
+// naming its own wbs_id, never Calculated) can be added to an ordinary
+// report, where Approve posts it whole and undivided — the "pin one resource
+// to one node" exception §5.1 removed, reachable again under another name.
+// Symmetric, no exemption, and the test is `<> ''`/`= ''`, never a null
+// check (§10a). `reportExpr` is whatever names the report from the calling
+// activity's own position — `attributes.report_id` on a CREATE, or
+// `context.record.report_id` (an fk_ref — `=` unwraps it to its raw id) on
+// an UPDATE anchored on the line itself.
+const AMENDMENT_ONLY_GATE = (reportExpr: string) => [
+  `for each r in records.shift_reports.where(id = ${reportExpr}) {`,
+  "  if r.amended_report_id = '' {",
+  "    fail('This activity is for an amendment — that report is an ordinary one.')",
+  '  }',
+  '}',
+].join('\n');
+
+const ORDINARY_ONLY_GATE = (reportExpr: string) => [
+  `for each r in records.shift_reports.where(id = ${reportExpr}) {`,
+  "  if r.amended_report_id <> '' {",
+  "    fail('This activity is for an ordinary report — use the amendment activities instead.')",
+  '  }',
+  '}',
+].join('\n');
+
+// §5.2: Submit and Approve re-check the WBS-hours-equals-work_hours invariant
+// that Calculate checked, and `warn()` rather than `fail()` — editing a
+// report's times or its WBS rows after Calculate does not clear any line's
+// `calculated` flag, so the invariant can go stale with no gate noticing.
+// Named both figures; acknowledging the warning is a legitimate answer.
+//
+// Skipped outright on an amendment (§5.4): it has no WBS rows and no
+// work_hours, so the comparison means nothing and would warn on every one of
+// them. Blank-guarded regardless (§10a): round() throws on '' rather than
+// treating it as zero, and an ordinary report's work_hours is never blank
+// only because Create/Modify always compute it — nothing here depends on that
+// staying true.
+const HOURS_WARN_CHECK = [
+  "if context.record.amended_report_id = '' {",
+  '  let wbsTotal = 0',
+  "  for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true') {",
+  "    wbsTotal = wbsTotal + iif(w.hours = '' or w.hours = null, 0, w.hours)",
+  '  }',
+  "  let workHours = iif(context.record.work_hours = '' or context.record.work_hours = null, 0, context.record.work_hours)",
+  '  if round(wbsTotal, 6) <> round(workHours, 6) {',
+  "    warn('The WBS hours total ' + wbsTotal + ', but the hours worked are ' + workHours + '.')",
+  '  }',
+  '}',
+].join('\n');
+
 const wfWorkGroups = {
   id: 'wf_work_groups',
   name: 'Work Groups',
   activities: [
     {
       id: 'act_create_work_groups', name: 'Create Work Group', record_map: 'CREATE', sort_order: 0,
-      description: 'Adds a crew, shared-plant group, or subcontractor to the project.',
+      description: 'Adds a crew, shared-plant group, or subcontractor to the project — optionally under a parent (§4.1a).',
       before_hook: [
         "if records.work_groups.where(project_id = attributes.project_id and expired <> 'true' and wg_code = attributes.wg_code).count > 0 {",
         "  fail('A work group with this code already exists on this project.')",
+        '}',
+        // One level only (§4.1a, §10): a group whose own parent is set cannot
+        // be chosen as a parent. The test is `<> ''`, not a null check — a
+        // blank fk_ref is not null (§10a).
+        "if attributes.wg_parent <> '' {",
+        '  let p = records.work_groups.where(id = attributes.wg_parent).first',
+        "  if p <> null and p.parent_id <> '' {",
+        "    fail('That group already sits under a parent — work groups nest one level only.')",
+        '  }',
         '}',
       ].join('\n'),
       after_hook: null,
       // wg_parent names rt_work_groups.parent_id, so it cannot exist until
       // the type does — safe here because the bare pass (see the write
       // section) strips every activity's `attributes` too, not just hooks.
-      attributes: attrs(sourced('project_id', 'context.page.record.id'), sourced('wg_parent', "''"), 'wg_code', 'name', 'manager', 'wg_type'),
+      attributes: attrs(sourced('project_id', 'context.page.record.id'), 'wg_parent', 'wg_code', 'name', 'manager', 'wg_type'),
     },
     {
       id: 'act_modify_work_groups', name: 'Modify Work Group', record_map: 'UPDATE', sort_order: 1,
@@ -405,8 +488,11 @@ const wfWorkGroups = {
     },
     {
       id: 'act_delete_work_groups', name: 'Delete Work Group', record_map: 'UPDATE', sort_order: 2,
-      description: 'Retires a childless work group.',
-      show_condition: "not (context.record.id in records.work_groups.values(parent_id))",
+      description: 'Retires a work group with no unexpired children.',
+      // Counts unexpired children only (§4.1a, §10) — an already-expired
+      // child is no obstacle. The naive childless check (`not (id in
+      // .values(parent_id))`) ignores `expired` and does not do this.
+      show_condition: "records.work_groups.where(parent_id = context.record.id and expired <> 'true').count = 0",
       before_hook: null, after_hook: null, attributes: attrs('expired'),
     },
     {
@@ -486,7 +572,7 @@ const wfWgResources = {
     },
     {
       id: 'act_list_wg_resources', name: 'List Standard Resources', record_map: 'GET', sort_order: 3,
-      description: "A work group's own standard set (not its parent's — see standardResourceSet for that).",
+      description: "A work group's own standard set — never its parent's (§4.1a).",
       returns: "records.wg_resources.where(wg_id = attributes.wg_id and expired <> 'true')"
         + '.select(id, resource_id, quantity, rate, cbs_id)',
       before_hook: null, after_hook: null, attributes: attrs('wg_id'),
@@ -523,19 +609,33 @@ const wfShiftReports = {
       attributes: attrs(
         sourced('project_id', 'context.page.record.project_id'),
         sourced('wg_id', 'context.page.record.id'),
-        'report_date', 'shift', 'start_time', 'end_time', 'break_hours', 'hours_lost', 'weather', 'work_summary', 'site_notes', 'report_photos',
+        { key: 'report_date', required: true }, 'shift', { key: 'start_time', required: true }, { key: 'end_time', required: true },
+        'break_hours', 'hours_lost', 'weather', 'work_summary', 'site_notes', 'report_photos',
       ),
     },
     {
       id: 'act_modify_shift_reports', name: 'Modify Shift Report', record_map: 'UPDATE', sort_order: 1,
       description: 'Changes times, weather, narrative or photos. Draft only.',
       show_condition: "context.record.status = 'Draft'",
-      before_hook: null, after_hook: workHoursCalc,
-      attributes: attrs('report_date', 'shift', 'start_time', 'end_time', 'break_hours', 'hours_lost', 'weather', 'work_summary', 'site_notes', 'report_photos'),
+      // §5.4: a report activity, refused on an amendment — otherwise it
+      // writes date/shift/times/work_hours onto a record §5.4 says nothing
+      // asks for and no gate looks at. Anchored on the report itself, so the
+      // field is read directly rather than through the ORDINARY_ONLY_GATE
+      // indirection the line activities need.
+      before_hook: [
+        "if context.record.amended_report_id <> '' {",
+        "  fail('This activity is for an ordinary report — use the amendment activities instead.')",
+        '}',
+      ].join('\n'),
+      after_hook: workHoursCalc,
+      attributes: attrs(
+        { key: 'report_date', required: true }, 'shift', { key: 'start_time', required: true }, { key: 'end_time', required: true },
+        'break_hours', 'hours_lost', 'weather', 'work_summary', 'site_notes', 'report_photos',
+      ),
     },
     {
-      id: 'act_delete_shift_reports', name: 'Delete Shift Report', record_map: 'UPDATE', sort_order: 2,
-      description: 'Discards a draft report filed in error.',
+      id: 'act_cancel_shift_reports', name: 'Cancel', record_map: 'UPDATE', sort_order: 2,
+      description: 'Withdraws a draft report that should not stand — expires it, and §6 then reads that group and day as nothing filed (§5.3).',
       show_condition: "context.record.status = 'Draft'",
       before_hook: null, after_hook: null, attributes: attrs('expired'),
     },
@@ -544,6 +644,13 @@ const wfShiftReports = {
       description: 'Checks the WBS hours total the shift, then prices every resource line at quantity × rate.',
       show_condition: "context.record.status = 'Draft'",
       before_hook: [
+        // Refused outright, not blank-guarded into working (§5.4): an
+        // amendment has no WBS rows and no work_hours, so there is nothing to
+        // calculate, and guarding the comparison below would paper over that
+        // rather than say so.
+        "if context.record.amended_report_id <> '' {",
+        "  fail('An amendment has no WBS rows or hours to calculate — its lines are entered by hand.')",
+        '}',
         'let total = 0',
         "for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true') {",
         "  total = total + iif(w.hours = '' or w.hours = null, 0, w.hours)",
@@ -563,12 +670,16 @@ const wfShiftReports = {
     },
     {
       id: 'act_submit_shift_reports', name: 'Submit', record_map: 'UPDATE', sort_order: 4,
-      description: 'Locks the report. Refused until Calculate has priced every current line.',
+      description: 'Locks the report for approval. Refused until every non-amendment line has been priced by Calculate; warns rather than refuses if the WBS hours have since drifted from work_hours (§5.2).',
       show_condition: "context.record.status = 'Draft'",
       before_hook: [
-        "if records.shift_report_resource_usage.where(report_id = context.record.id and expired <> 'true' and calculated <> 'true').count > 0 {",
+        // Amendment lines always name their own wbs_id and never run Calculate
+        // (§5.4), so the gate excludes them — it is asking whether the
+        // ORDINARY lines this report divides by hours have been priced.
+        "if records.shift_report_resource_usage.where(report_id = context.record.id and expired <> 'true' and wbs_id = '' and calculated <> 'true').count > 0 {",
         "  fail('Calculate this report before submitting it.')",
         '}',
+        HOURS_WARN_CHECK,
       ].join('\n'),
       // Captures nothing and writes status inside its own hook, for the same
       // reason Approve must (§5): a captured field-matching attribute
@@ -577,89 +688,132 @@ const wfShiftReports = {
       attributes: [],
     },
     {
-      id: 'act_approve_shift_reports', name: 'Approve', record_map: 'UPDATE', sort_order: 5,
-      description: "Signs off the report and divides its cost across the WBS rows it touched, in proportion to hours.",
+      id: 'act_reject_shift_reports', name: 'Reject', record_map: 'UPDATE', sort_order: 5,
+      description: 'Sends a submitted report back to Draft. Nothing has posted yet, so this costs nothing (§5.3).',
+      show_condition: "context.record.status = 'Submitted'",
+      before_hook: null,
+      after_hook: "context.record.update({ status: 'Draft' })",
+      attributes: [],
+    },
+    {
+      id: 'act_approve_shift_reports', name: 'Approve', record_map: 'UPDATE', sort_order: 6,
+      description: "Signs off the report. An ordinary line's cost divides across the WBS rows it touched, in proportion to hours; an amendment's line posts whole to the node it names (§5.1, §5.4).",
       show_condition: "context.record.status = 'Submitted'",
       before_hook: [
+        // Zero WBS hours only blocks approval when some line actually needs
+        // them to divide by — an amendment has no shift_wbs rows at all, and
+        // must not be refused on that account (every one of its lines names
+        // its own wbs_id, so none of them reaches the division).
         'let total = 0',
         "for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true') {",
         "  total = total + iif(w.hours = '' or w.hours = null, 0, w.hours)",
         '}',
-        'if round(total, 6) = 0 {',
+        "let needsDivision = records.shift_report_resource_usage.where(report_id = context.record.id and expired <> 'true' and wbs_id = '').count > 0",
+        'if needsDivision and round(total, 6) = 0 {',
         "  fail('This report has no WBS hours to divide cost across.')",
         '}',
+        HOURS_WARN_CHECK,
       ].join('\n'),
       after_hook: [
         "context.record.update({ status: 'Approved', approved_by: context.user.name, approved_date: now() })",
         '',
-        'let totalHours = 0',
-        "for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true') {",
-        "  totalHours = totalHours + iif(w.hours = '' or w.hours = null, 0, w.hours)",
-        '}',
+        // `.orderBy(id)` makes the two passes below (this one, and the for-each
+        // that spends the shares) walk the same rows in the same order — the
+        // one thing distribute()'s positional shares depend on.
+        "let weights = records.shift_wbs.where(report_id = context.record.id and expired <> 'true').orderBy(id).values(hours)",
         '',
-        // The per-line "pin to one node" exception was designed, built, and
-        // removed 2026-09-23 (§5.1) — never reachable through any activity,
-        // and the accuracy it bought was limited. Every line now always
-        // divides by hours, largest-remainder rounded so the parts sum
-        // exactly to the whole (§10a).
         "for each line in records.shift_report_resource_usage.where(report_id = context.record.id and expired <> 'true') {",
-        "  let lineCost = iif(line.tracked_cost = '' or line.tracked_cost = null, 0, line.tracked_cost)",
         "  let lineQty = iif(line.quantity = '' or line.quantity = null, 0, line.quantity)",
-        '  let sumCost = 0',
-        '  let sumQty = 0',
-        '  let bestCostRem = -1',
-        "  let bestCostId = ''",
-        '  let bestQtyRem = -1',
-        "  let bestQtyId = ''",
-        "  for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true') {",
-        "    let hrs = iif(w.hours = '' or w.hours = null, 0, w.hours)",
-        '    let share = hrs / totalHours',
-        '    let costRaw = lineCost * share',
-        '    let costRounded = round(costRaw, 2)',
-        '    sumCost = sumCost + costRounded',
-        '    let costRem = costRaw - costRounded',
-        '    if costRem > bestCostRem {',
-        '      bestCostRem = costRem',
-        '      bestCostId = w.id',
-        '    }',
-        '    let qtyRaw = lineQty * share',
-        '    let qtyRounded = round(qtyRaw, 2)',
-        '    sumQty = sumQty + qtyRounded',
-        '    let qtyRem = qtyRaw - qtyRounded',
-        '    if qtyRem > bestQtyRem {',
-        '      bestQtyRem = qtyRem',
-        '      bestQtyId = w.id',
-        '    }',
-        '  }',
-        '  let costRemainder = round(lineCost - sumCost, 2)',
-        '  let qtyRemainder = round(lineQty - sumQty, 2)',
-        '',
-        "  for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true') {",
-        "    let hrs = iif(w.hours = '' or w.hours = null, 0, w.hours)",
-        '    let share = hrs / totalHours',
-        '    let costShare = round(lineCost * share, 2) + iif(w.id = bestCostId, costRemainder, 0)',
-        '    let qtyShare = round(lineQty * share, 2) + iif(w.id = bestQtyId, qtyRemainder, 0)',
+        "  let lineCost = iif(line.tracked_cost = '' or line.tracked_cost = null, 0, line.tracked_cost)",
+        // The test is the LINE's own wbs_id, and nothing about the report —
+        // an amendment's negative quantities never reach the division below,
+        // because every one of its lines carries a wbs_id of its own (§5.1,
+        // §10a: a blank fk_ref is not null, so this is `<> ''`, never a null
+        // check).
+        "  if line.wbs_id <> '' {",
         '    records.wbs_resource_usage.create({',
         '      project_id: context.record.project_id, report_id: context.record.id, source_line_id: line.id,',
-        '      wbs_id: w.wbs_id, cbs_id: line.cbs_id, usage_date: context.record.report_date,',
-        '      quantity: qtyShare, tracked_cost: costShare',
+        '      wbs_id: line.wbs_id, cbs_id: line.cbs_id, usage_date: context.record.report_date,',
+        '      quantity: lineQty, tracked_cost: lineCost',
         '    })',
+        '  } else {',
+        '    let qtyShares = services.math.distribute(weights, lineQty, 2)',
+        '    let costShares = services.math.distribute(weights, lineCost, 2)',
+        '    let idx = 0',
+        "    for each w in records.shift_wbs.where(report_id = context.record.id and expired <> 'true').orderBy(id) {",
+        '      records.wbs_resource_usage.create({',
+        '        project_id: context.record.project_id, report_id: context.record.id, source_line_id: line.id,',
+        '        wbs_id: w.wbs_id, cbs_id: line.cbs_id, usage_date: context.record.report_date,',
+        '        quantity: qtyShares[idx], tracked_cost: costShares[idx]',
+        '      })',
+        '      idx = idx + 1',
+        '    }',
         '  }',
         '}',
       ].join('\n'),
       attributes: [],
     },
     {
-      id: 'act_list_shift_reports', name: 'List Shift Reports', record_map: 'GET', sort_order: 6,
-      description: "A project's shift reports, most recent first.",
-      returns: "records.shift_reports.where(project_id = attributes.project_id and expired <> 'true').orderBy(report_date desc)"
+      id: 'act_create_shift_report_amendments', name: 'Raise Amendment', record_map: 'CREATE', sort_order: 7,
+      description: 'Raises a correction against an approved report — the same record type, its own activity set (§5.4). Never asked for date, shift, times or a WBS split.',
+      before_hook: [
+        // Sourced, not asked (§4.9) — so `required` on the attribute usage
+        // would not help even if set: a hidden/sourced attribute is exempt
+        // from it (validateSubmission). Enforced here instead, for the same
+        // reason every other gate in this file is a hook and not a show
+        // condition — a page's own wiring is not something the model can
+        // trust a caller to have gone through.
+        //
+        // `attributes.*` and `context.record.*`/`records.*` disagree about
+        // blank: a stored field's blank is `''` (§10a's blank-fk-is-not-null),
+        // but a CAPTURED value's blank is coerced to `null` before a hook
+        // ever sees it (coerceCapturedValue: `raw === '' → null`). This is
+        // the one gate in this file testing a captured reference rather than
+        // a stored one, so it is the one gate that tests `= null`.
+        'if attributes.amended_report_id = null {',
+        "  fail('An amendment must name the report it corrects.')",
+        '}',
+        'let r = records.shift_reports.where(id = attributes.amended_report_id).first',
+        "if r <> null and r.status <> 'Approved' {",
+        "  fail('An amendment can only be raised against an approved report.')",
+        '}',
+      ].join('\n'),
+      // Numbering is shared with ordinary reports (§5.4); work_hours is not
+      // computed — there are no times to compute it from, and nothing reads
+      // it on an amendment.
+      after_hook: numberingHook('shift_reports', 'SR', 4),
+      attributes: attrs(
+        sourced('project_id', 'context.page.record.project_id'),
+        sourced('wg_id', 'context.page.record.wg_id'),
+        sourced('amended_report_id', 'context.page.record.id'),
+      ),
+    },
+    {
+      id: 'act_edit_shift_report_amendment_notes', name: 'Edit Notes', record_map: 'UPDATE', sort_order: 8,
+      description: 'Records why the correction is needed, while the amendment is a draft.',
+      show_condition: "context.record.status = 'Draft'",
+      // §5.4: an amendment-only activity, refused on an ordinary report —
+      // symmetric with its siblings (Raise Amendment, Add/Adjust Amendment
+      // Line), which already carry this gate.
+      before_hook: [
+        "if context.record.amended_report_id = '' {",
+        "  fail('This activity is for an amendment — that report is an ordinary one.')",
+        '}',
+      ].join('\n'),
+      after_hook: null,
+      attributes: attrs('site_notes'),
+    },
+    {
+      id: 'act_list_shift_reports', name: 'List Shift Reports', record_map: 'GET', sort_order: 9,
+      description: "A project's shift reports, most recent first. Amendments are not filings (§6) and are excluded.",
+      returns: "records.shift_reports.where(project_id = attributes.project_id and expired <> 'true' and amended_report_id = '').orderBy(report_date desc)"
         + '.select(id, report_no, report_date, shift, wg_id, work_hours, status)',
       before_hook: null, after_hook: null, attributes: attrs('project_id'),
     },
     {
-      id: 'act_list_work_group_reports', name: 'List Work Group Reports', record_map: 'GET', sort_order: 7,
-      description: "A work group's ten most recent shift reports.",
-      returns: "records.shift_reports.where(wg_id = attributes.wg_id and expired <> 'true').orderBy(report_date desc).top(10)"
+      id: 'act_list_work_group_reports', name: 'List Work Group Reports', record_map: 'GET', sort_order: 10,
+      description: "A work group's ten most recent shift reports. Amendments are not filings (§6) and are excluded.",
+      returns: "records.shift_reports.where(wg_id = attributes.wg_id and expired <> 'true' and amended_report_id = '').orderBy(report_date desc).top(10)"
         + '.select(id, report_no, report_date, shift, work_hours, status)',
       before_hook: null, after_hook: null, attributes: attrs('wg_id'),
     },
@@ -673,7 +827,9 @@ const wfShiftWbs = {
     {
       id: 'act_create_shift_wbs', name: 'Add WBS Row', record_map: 'CREATE', sort_order: 0,
       description: 'Records hours and quantity completed against one WBS node for this shift.',
-      before_hook: DRAFT_REPORT_GATE('attributes.report_id'), after_hook: null,
+      // §5.4: an amendment has no WBS rows.
+      before_hook: [DRAFT_REPORT_GATE('attributes.report_id'), ORDINARY_ONLY_GATE('attributes.report_id')].join('\n'),
+      after_hook: null,
       attributes: attrs(
         sourced('project_id', 'context.page.record.project_id'),
         sourced('report_id', 'context.page.record.id'),
@@ -684,13 +840,14 @@ const wfShiftWbs = {
       id: 'act_modify_shift_wbs', name: 'Modify WBS Row', record_map: 'UPDATE', sort_order: 1,
       description: 'Changes hours, quantity completed, or notes. Draft only.',
       show_condition: "context.record.report_id.status = 'Draft'",
-      before_hook: null, after_hook: null, attributes: attrs('hours', 'qty_completed', 'qty_unit', 'notes'),
+      before_hook: ORDINARY_ONLY_GATE('context.record.report_id'), after_hook: null,
+      attributes: attrs('hours', 'qty_completed', 'qty_unit', 'notes'),
     },
     {
       id: 'act_delete_shift_wbs', name: 'Remove WBS Row', record_map: 'UPDATE', sort_order: 2,
       description: 'Removes a WBS row from a draft report.',
       show_condition: "context.record.report_id.status = 'Draft'",
-      before_hook: null, after_hook: null, attributes: attrs('expired'),
+      before_hook: ORDINARY_ONLY_GATE('context.record.report_id'), after_hook: null, attributes: attrs('expired'),
     },
     {
       id: 'act_list_shift_wbs', name: 'List Shift WBS Rows', record_map: 'GET', sort_order: 3,
@@ -718,7 +875,7 @@ const wfShiftReportResourceUsage = {
     {
       id: 'act_add_shift_report_resource', name: 'Add Resource Line', record_map: 'CREATE', sort_order: 0,
       description: 'Adds a resource used this shift that was not in the standard set. Picking one from the catalogue fills description, unit, rate and cost code where left blank.',
-      before_hook: DRAFT_REPORT_GATE('attributes.report_id'),
+      before_hook: [DRAFT_REPORT_GATE('attributes.report_id'), ORDINARY_ONLY_GATE('attributes.report_id')].join('\n'),
       after_hook: [
         "if attributes.resource_id <> '' {",
         '  for each res in records.resources.where(id = attributes.resource_id) {',
@@ -734,16 +891,16 @@ const wfShiftReportResourceUsage = {
       attributes: attrs(
         sourced('project_id', 'context.page.record.project_id'),
         sourced('report_id', 'context.page.record.id'),
-        'resource_id', 'description', 'quantity', 'unit', 'rate', 'cbs_id',
+        'resource_id', 'description', 'quantity', 'unit', 'rate', 'cbs_id', 'notes',
       ),
     },
     {
       id: 'act_modify_shift_report_resource', name: 'Adjust Resource Line', record_map: 'UPDATE', sort_order: 1,
       description: "Confirms or adjusts a line's quantity, rate or cost code. Marks it uncalculated again.",
       show_condition: "context.record.report_id.status = 'Draft'",
-      before_hook: null,
+      before_hook: ORDINARY_ONLY_GATE('context.record.report_id'),
       after_hook: "context.record.update({ calculated: 'false' })",
-      attributes: attrs('quantity', 'rate', 'cbs_id'),
+      attributes: attrs('quantity', 'rate', 'cbs_id', 'notes'),
     },
     {
       id: 'act_remove_shift_report_resource', name: 'Remove Resource Line', record_map: 'UPDATE', sort_order: 2,
@@ -755,8 +912,47 @@ const wfShiftReportResourceUsage = {
       id: 'act_list_shift_report_resources', name: 'List Resource Lines', record_map: 'GET', sort_order: 3,
       description: "A shift report's resource lines.",
       returns: "records.shift_report_resource_usage.where(report_id = attributes.report_id and expired <> 'true')"
-        + '.select(id, resource_id, description, quantity, calculated, unit, rate, cbs_id, tracked_cost)',
+        + '.select(id, resource_id, description, quantity, wbs_id, notes, calculated, unit, rate, cbs_id, tracked_cost)',
       before_hook: null, after_hook: null, attributes: attrs('report_id'),
+    },
+    {
+      id: 'act_add_shift_report_amendment_line', name: 'Add Amendment Line', record_map: 'CREATE', sort_order: 4,
+      description: 'Adds a correction line to an amendment — signed quantity, posted whole to the WBS node it names (§5.1, §5.4). No standard set, no Calculate.',
+      before_hook: [DRAFT_REPORT_GATE('attributes.report_id'), AMENDMENT_ONLY_GATE('attributes.report_id')].join('\n'),
+      after_hook: [
+        "if attributes.resource_id <> '' {",
+        '  for each res in records.resources.where(id = attributes.resource_id) {',
+        '    context.record.update({',
+        "      description: iif(context.record.description = '', res.description, context.record.description),",
+        "      unit: iif(context.record.unit = '', res.unit, context.record.unit),",
+        "      rate: iif(context.record.rate = '' or context.record.rate = null, res.rate, context.record.rate),",
+        "      cbs_id: iif(context.record.cbs_id = '', res.cbs_id, context.record.cbs_id)",
+        '    })',
+        '  }',
+        '}',
+        // No Calculate for an amendment (§5.4) — the line prices itself.
+        "let qty = iif(context.record.quantity = '' or context.record.quantity = null, 0, context.record.quantity)",
+        "let rate = iif(context.record.rate = '' or context.record.rate = null, 0, context.record.rate)",
+        'context.record.update({ tracked_cost: round(qty * rate, 2) })',
+      ].join('\n'),
+      attributes: attrs(
+        sourced('project_id', 'context.page.record.project_id'),
+        sourced('report_id', 'context.page.record.id'),
+        'resource_id', 'description', 'quantity', 'unit', 'rate', 'cbs_id',
+        { key: 'wbs_id', required: true }, 'notes',
+      ),
+    },
+    {
+      id: 'act_adjust_shift_report_amendment_line', name: 'Adjust Amendment Line', record_map: 'UPDATE', sort_order: 5,
+      description: "Corrects an amendment line's quantity, rate, cost code, WBS node or notes while it is a draft.",
+      show_condition: "context.record.report_id.status = 'Draft'",
+      before_hook: AMENDMENT_ONLY_GATE('context.record.report_id'),
+      after_hook: [
+        "let qty = iif(context.record.quantity = '' or context.record.quantity = null, 0, context.record.quantity)",
+        "let rate = iif(context.record.rate = '' or context.record.rate = null, 0, context.record.rate)",
+        'context.record.update({ tracked_cost: round(qty * rate, 2) })',
+      ].join('\n'),
+      attributes: attrs('quantity', 'rate', 'cbs_id', { key: 'wbs_id', required: true }, 'notes'),
     },
   ],
 };
@@ -784,7 +980,8 @@ const wfDefects = {
     {
       id: 'act_create_defects', name: 'Raise Defect', record_map: 'CREATE', sort_order: 0,
       description: 'Raises a defect found while filing a shift report.',
-      before_hook: DRAFT_REPORT_GATE('attributes.report_id'),
+      // §8: an amendment gets no defects.
+      before_hook: [DRAFT_REPORT_GATE('attributes.report_id'), ORDINARY_ONLY_GATE('attributes.report_id')].join('\n'),
       after_hook: [
         "context.record.update({ raised_date: now() })",
         numberingHook('defects', 'DEF', 3),
@@ -875,11 +1072,13 @@ if (dry) {
   process.exit(0);
 }
 
-// `wg_parent` names `rt_work_groups.parent_id`, which does not exist until the
-// type lands — same ordering problem `wbs_parent` had. Every other attribute
-// lands now; `wg_parent` waits for the type (below).
+// `wg_parent` names `rt_work_groups.parent_id` and `amended_report_id` names
+// `rt_shift_reports.amended_report_id` — neither field exists until its type
+// lands, same ordering problem `wbs_parent` had. Every other attribute lands
+// now; these two wait for their types (below).
+const DEFERRED_ATTRIBUTES = new Set(['wg_parent', 'amended_report_id']);
 for (const attribute of ATTRIBUTES) {
-  if (attribute.key === 'wg_parent') continue;
+  if (DEFERRED_ATTRIBUTES.has(attribute.key)) continue;
   console.log(`attribute  + ${attribute.key}`);
   await putConfigEntity(db, SOLUTION, configCollections.attributes, attribute);
 }
@@ -935,9 +1134,11 @@ for (const [rt, flow] of FLOWS) {
   console.log(`  + ${(rt as { id: string }).id}`);
 }
 
-// Now the type exists: land `wg_parent`.
-console.log('attribute  + wg_parent');
-await putConfigEntity(db, SOLUTION, configCollections.attributes, ATTRIBUTES.find((a) => a.key === 'wg_parent')!);
+// Now both types exist: land the two field-naming attributes that wait on them.
+for (const key of DEFERRED_ATTRIBUTES) {
+  console.log(`attribute  + ${key}`);
+  await putConfigEntity(db, SOLUTION, configCollections.attributes, ATTRIBUTES.find((a) => a.key === key)!);
+}
 
 // standardResourceSet names records.wg_resources / records.work_groups —
 // both now exist, and it is needed by act_create_shift_reports below.
