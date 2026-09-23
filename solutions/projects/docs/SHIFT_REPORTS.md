@@ -43,11 +43,28 @@ spec and the diff) found three real gaps, since closed or corrected:
   go — a child with no resources reads as empty. §9's WG-SPREAD no longer
   holds the crew's resources; its three children carry their own.
 - **Submit's gate did not reverify the WBS-hours-equals-work_hours
-  invariant** — it checked only that resource lines were marked
-  `calculated`, which editing a report's times after Calculate does not
-  clear, so a report could reach Submit with resource lines still priced
-  against a WBS split that no longer matches `work_hours`. Not yet fixed;
-  next on the list.
+  invariant** — it checked only that resource lines were marked `calculated`,
+  which editing a report's times after Calculate does not clear. Working out
+  what should happen settled what Calculate *is* (2026-09-23): **a shortcut,
+  not a gate.** The resource usage is the thing being made accurate; the work
+  group's set plus the WBS split is a fast way to arrive at it, Recalculate is
+  available whenever the filer wants it, and lines may be adjusted by hand.
+  Nothing reaches back into a priced report. So a stale split is not a defect
+  to block — §5.2 has Submit and Approve **`warn()`** about it, naming both
+  figures, and acknowledging is a legitimate answer. Not yet built.
+
+  Three further decisions came out of the same thread, all now specified and
+  none built: **§5.3** fixes who submits and who approves (anyone submits; the
+  parent's manager approves a child's report; convention, since `manager` is
+  text and the engine cannot check it); **§5.4** rules out reopening a
+  submitted report in favour of an amending report carrying the difference,
+  negatives and all; and §4.6 gains a `notes` field per usage line, its
+  rate/cost-code wording corrected — those are copied once and never re-pulled
+  from the catalogue, but the filer may correct them while the report is
+  Draft. **Reject** and **Cancel** were added with §5.3: approval may not be
+  possible, so a submitted report goes back to `Draft` and is then either
+  resubmitted or cancelled, and a cancelled report reads as a hole in §6
+  rather than papering over one.
 
 One departure from this spec's own wording, made during the build and flagged
 here rather than silently taken: §10's "both status sets... enforced at
@@ -335,6 +352,7 @@ Every work group holds its own set — a child never draws on its parent's
 | `site_notes` | `text` (multiline) | |
 | `report_photos` | `photo` (`multi`, `max_count: 6`) | Photos of the shift. A defect's photos go on the defect. |
 | `status` | `text` | `Draft` → `Submitted` → `Approved`. |
+| `amends_report_id` | `fk_ref` → `rt_shift_reports` | Blank on an ordinary report. Set on an amendment, naming the approved report it corrects (§5.4). |
 | `approved_by` / `approved_date` | `text` / `datetime` | Written by the Approve activity, available to the parent group's manager (§4.1a). A group with no parent is approved by its own manager. |
 | `expired` | `text` | |
 
@@ -379,9 +397,10 @@ standard set, priced at `work_hours`. Confirm, adjust, or remove.
 | `report_id` | `fk_ref` → `rt_shift_reports` | |
 | `resource_id` | `fk_ref` → `rt_resources` | Blank for something added by hand that is not in the catalogue. |
 | `description` | `text` | Copied from the resource. |
+| `notes` | `text` (multiline) | The filer's note on this line — why a rate was overridden, why a quantity is not the standard one. Optional, and read by nothing. |
 | `quantity` | `decimal` | `work_hours` × the standard count, adjustable. |
 | `calculated` | `text` | `'true'` once Calculate has priced this line; cleared when it is run again. |
-| `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | Copied at the time and never changed afterwards. |
+| `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | Copied from the resource when the line is written, and **never re-pulled from it afterwards** — repricing the catalogue next year does not touch shifts already filed. The filer may correct any of them on the line itself while the report is still Draft; that is what Adjust is for, and `notes` is where the reason goes. |
 | `tracked_cost` | `decimal` | `quantity × rate`, written by a hook. Never typed, never written to `actual_cost`. |
 | `expired` | `text` | |
 
@@ -445,9 +464,17 @@ Two of the existing shared attributes cannot be reused:
 - **`description`** is single-line, which suits a resource and not a defect. A
   defect gets `def_description`.
 - **`status`** does not exist as an attribute at all today, only as a field on
-  `rt_projects`. Shift reports and defects both need one, with different value
-  sets, and the values live on the attribute — so they cannot share a key:
-  `sr_status` and `def_status`.
+  `rt_projects` — **and it stays that way. Neither `sr_status` nor `def_status`
+  was built.** They were specified here on the reasoning that two value sets
+  cannot share a key, which is true but beside the point: status is never
+  captured. Each transition writes it inside its own after hook
+  (`context.record.update({ status: 'Approved' })`), exactly as
+  `rt_projects.status` and `wbs_status` already do, so that the write lives or
+  dies with the rest of the transition (§5). A captured status would commit
+  outside the hook's boundary and survive a hook that failed.
+
+  `wg_type`, `res_type`, `shift` and `severity` did get real `list` attributes;
+  those are captured, and the list is doing its job.
 
 An attribute's use by an activity may override where its value comes from,
 whether it is shown, whether it is required, and its validation — but not the
@@ -475,10 +502,13 @@ one where you cannot.
    message if they do not, and then prices every line at quantity × rate. It
    may be run again as often as the report changes; each run clears what the
    last one wrote.
-7. Submit. The report is then read-only. **A report that has not been
-   calculated cannot be submitted.**
-8. The parent group's manager approves it. **On approval the cost is divided
-   across the WBS rows** and written to `rt_wbs_resource_usage`.
+7. Submit. The report is then read-only — there is no reopen, and a correction
+   is a new report that amends it (§5.4). **A report that has not been
+   calculated cannot be submitted** — that one is a refusal. If the WBS hours
+   no longer total `work_hours`, Submit **warns** rather than refuses (§5.2).
+8. It is approved — by the parent group's manager, or by the group's own where
+   there is no parent (§5.3). **On approval the cost is divided across the WBS
+   rows** and written to `rt_wbs_resource_usage`.
 
 **The Approve activity must capture nothing and write `status` inside its own
 hook**, the way `act_approve_wbs_projects` already does. A failing after hook
@@ -490,19 +520,20 @@ against it and, behind a show condition, no way to run it again. Writing the
 status inside the hook makes the whole thing succeed or fail together: the
 hook's own writes do roll back as one.
 
-**Calculate exists because pricing must not drift.** Lines priced as soon as
-the work group is chosen go stale the moment a finish time is corrected, and a
-report would show ten hours at the top and twelve hours of resources beneath
-it. An explicit step removes the window entirely rather than policing it, and
-it gives the hours check a natural home. The user's design, 2026-09-23.
+**Calculate is a shortcut, not a gate.** The work group's resource set and the
+WBS split are a fast way to arrive at resource usage; Calculate does the
+arithmetic. What matters is that the resource usage is right, and it is the
+filer's to get right — lines may be adjusted by hand, and in most reports they
+should not need to be. The user's design, 2026-09-23.
 
-**The division stays at approval** rather than moving into Calculate, so the
-cost table holds only approved money and every total over it is a plain sum
-with no "does this one count" filter.
+Two things follow, and they are not defects:
 
-Confirm-and-adjust rather than type-from-blank is the point of a standard set.
-The work group is chosen without checking who is filing; access is not enforced
-in this build.
+- **Nothing reaches back.** Changing the work group's standard set after
+  Calculate has run does not alter a report already priced. A report is a
+  record of a shift, not a live view of the crew.
+- **Recalculate is available whenever the filer wants it**, and each run
+  clears what the last one wrote. There is no window to police — the filer
+  re-runs it or edits the lines, whichever gets to the right answer.
 
 ### 5.1 How a shift's cost reaches the WBS
 
@@ -545,11 +576,107 @@ row and ignores `expired`. A line removed during filing is soft-deleted, as
 every record type here is, so without `where(expired <> 'true')` it would still
 be priced and still be divided across the WBS.
 
+### 5.2 The one thing that is warned about
+
+`work_hours` and the WBS rows' hours total are checked when Calculate runs. If
+the report's times are edited afterwards, or a WBS row is changed, the two can
+part company — and the only way that happens is a deliberate edit, quite
+possibly one where the filer simply forgot to recalculate.
+
+So it is **surfaced, not blocked**. Submit's before hook `warn()`s when the two
+disagree, naming both figures, and Approve does the same for the parent's
+manager. The filer either goes back and recalculates or acknowledges the
+warning and submits.
+
+`warn()` is an existing builtin: the engine returns a before hook's warnings
+and persists nothing, and the same run repeated with `acknowledgedWarnings`
+goes through. Nothing new is needed for this.
+
+**The division stays at approval** rather than moving into Calculate, so the
+cost table holds only approved money and every total over it is a plain sum
+with no "does this one count" filter.
+
+Confirm-and-adjust rather than type-from-blank is the point of a standard set.
+The work group is chosen without checking who is filing; access is not enforced
+in this build.
+
+### 5.3 Who submits, who approves
+
+**Every report is submitted and then approved.** Both steps, always — there is
+no shortcut when one person would do both.
+
+- **Anyone may compile and submit.** The group's manager usually, but whoever
+  was on site will do. Submit is not gated on a name.
+- **Who approves is fixed by the group, not by who filed.** A child group's
+  report is approved by the **parent** group's manager. A group with no parent
+  is approved by its own manager.
+- One person doing both steps is fine where the roles land on them — having
+  submitted does not disqualify the approver.
+- A child group's own `manager` gates nothing. It is the name §6 puts against
+  the hole when that group has not filed.
+
+**This is convention, not enforcement.** `manager` is a text field — a label,
+not a link to a user account — so nothing in the engine can check that the
+person pressing Approve is the one named. The pages follow the rule; the model
+does not police it. Tying work groups to real users is a later piece (§11).
+
+**Approval may not be possible, so a report can be rejected.** Reject sends a
+submitted report back to `Draft`. Nothing has posted at that point — cost is
+divided at approval and not before (§5.1) — so this costs nothing and no
+amendment is involved. From `Draft` the report takes one of two paths:
+
+- **Resubmitted**, once whatever was wrong is fixed. It is editable again in
+  the ordinary way while it sits in `Draft`.
+- **Cancelled**, if it should not stand at all. Cancelling sets `expired` and
+  the report stops counting as filed — **§6 then reads that group and that day
+  as missing**, exactly as though nothing had ever been entered. That is the
+  point of it: a report that should not exist must not paper over a hole.
+
+Cancelling is available on a `Draft` report only, which is where Reject leaves
+one. **An approved report is never rejected or cancelled** — its cost is in the
+ledger, and the way back is an amendment (§5.4).
+
+### 5.4 Correcting a submitted report
+
+**An approved report is never edited.** There is no reopen. A *submitted* one
+can still be sent back — that is Reject (§5.3), and it is free because nothing
+has posted yet. Once approved, that window is shut. The reason is the
+ledger: Approve divides cost into `rt_wbs_resource_usage` (§5.1), and editing
+the source of posted cost means un-posting and re-posting it.
+
+**A correction is a new shift report** for the same work group and the same
+shift, naming the report it amends. It carries only the difference, goes
+through Submit and Approve like any other report, and posts its own cost — so
+the ledger stays append-only and both the mistake and the fix survive in full.
+
+It is deliberately a little awkward. Getting the resources and the WBS split
+right the first time is the cheaper path, and it should feel that way.
+
+Three things follow:
+
+- **Negative quantities and hours are legal on an amendment.** Four excavator
+  hours overstated is corrected by posting −4. The hours check, the pricing and
+  the division at approval all have to carry negatives — which nothing else in
+  this model does, and which the build must not quietly reject.
+- **An amendment claims no worked time.** Its `work_hours` is zero; the
+  original carries the shift's hours and is not restated. A WBS split corrected
+  by moving two hours between nodes is `+2` on one and `−2` on the other, which
+  totals zero and satisfies the check unchanged.
+- **§6 counts the original.** A group that filed and then amended has filed
+  once, not twice — the who-has-not-filed grid ignores amendments.
+
+
 ## 6. Knowing who has not filed
 
 Who owes a report is a query over work group records: active, no children, type
 `Crew` or `Subcontractor`, for a project. Shared-plant groups file nothing and
 a split group's parent is covered by its children, so neither is expected.
+
+**Two kinds of report do not count here.** A cancelled one is `expired` and
+reads as nothing filed (§5.3) — that is what cancelling is for. An amendment
+does not count as a second filing either; the group filed once, and the report
+it amends is the one the grid sees (§5.4). Both mean this query filters
+`expired <> 'true'` and ignores any report whose `amends_report_id` is set.
 
 Because cost lands at approval, each expected group is in one of three states
 for a date, and they mean different things:
@@ -753,8 +880,13 @@ Things the model cannot express, handled in hooks or not at all:
   the type rather than within a project.
 - **WBS hours must total `work_hours`** — checked by a `fail()` in the before
   hook on **Calculate** (§5 step 6), not as rows are added, because a before
-  hook may only validate and there is no `sum`. Submit checks only that
-  Calculate has run.
+  hook may only validate and there is no `sum`.
+
+  **Submit and Approve check it again, and `warn()` rather than `fail()`**
+  (§5.2). Editing a report's times or its WBS rows after Calculate does not
+  clear any line's `calculated` flag, so the "has it been calculated" gate
+  cannot see a split that has since gone stale. The warning names both
+  figures; acknowledging it is a legitimate answer.
 - **`work_hours`** comes from `services.time.hoursBetween(start_time, end_time)`
   less `break_hours`. The DSL has no duration arithmetic of its own — a `time`
   field holds `'17:00'` as a string and subtracting two of them errors — so a
