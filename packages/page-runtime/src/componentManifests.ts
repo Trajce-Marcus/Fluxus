@@ -13,6 +13,7 @@ import { Contributions } from './components/Contributions';
 import { InventorList } from './components/InventorList';
 import { InventorProfile } from './components/InventorProfile';
 import { Map } from './components/Map';
+import { PageHeader } from './components/PageHeader';
 import { Photos } from './components/Photos';
 import { RecordActivities } from './components/RecordActivities';
 import { RecordList } from './components/RecordList';
@@ -28,6 +29,7 @@ export const componentManifests: Record<string, ComponentManifest> = {
   InventorList:    { name: 'InventorList',    version: '1.0.0', component: InventorList    as unknown as AnyComponent, schema: InventorList.schema,    css: InventorList.css },
   InventorProfile: { name: 'InventorProfile', version: '1.0.0', component: InventorProfile as unknown as AnyComponent, schema: InventorProfile.schema, css: InventorProfile.css },
   Map:             { name: 'Map',             version: '1.0.0', component: Map             as unknown as AnyComponent, schema: Map.schema ?? [],        css: Map.css },
+  PageHeader:      { name: 'PageHeader',      version: '1.0.0', component: PageHeader      as unknown as AnyComponent, schema: PageHeader.schema,    css: PageHeader.css },
   Photos:          { name: 'Photos',          version: '1.0.0', component: Photos          as unknown as AnyComponent, schema: Photos.schema,        css: Photos.css },
   OpenPage:        { name: 'OpenPage',        version: '1.0.0', component: OpenPage        as unknown as AnyComponent, schema: OpenPage.schema,        css: OpenPage.css },
   RecordActivities: { name: 'RecordActivities', version: '1.0.0', component: RecordActivities as unknown as AnyComponent, schema: RecordActivities.schema, css: RecordActivities.css },

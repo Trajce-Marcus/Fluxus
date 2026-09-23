@@ -56,6 +56,13 @@ export interface PageRuntime {
    * then fails loudly rather than swallowing the call.
    */
   readonly openPage?: (page: string, recordId: string | null) => void;
+  /**
+   * Back to the page before, and whether there is one (2026-09-23) — the
+   * host's history, as `openPage` is the host's navigating. Absent: a host
+   * with no history; the back arrow then stays greyed out.
+   */
+  readonly goBack?: () => void;
+  readonly canGoBack?: () => boolean;
   /** Read a page definition from the client's page snapshot. */
   getPage(path: string): PageDef | null;
   listPagePaths(): string[];
@@ -82,7 +89,12 @@ export interface PageRuntime {
 }
 
 export function createPageRuntime(
-  { client, openPage }: { client: FluxusClient; openPage?: (page: string, recordId: string | null) => void },
+  { client, openPage, goBack, canGoBack }: {
+    client: FluxusClient;
+    openPage?: (page: string, recordId: string | null) => void;
+    goBack?: () => void;
+    canGoBack?: () => boolean;
+  },
 ): PageRuntime {
   const store = client.adapter;
   const config = client.config;
@@ -133,6 +145,8 @@ export function createPageRuntime(
     config,
     captureHost,
     openPage,
+    goBack,
+    canGoBack,
     findActivity,
     findRecordType,
     getPage: (path) => (client.pages.get(path) as PageDef | undefined) ?? null,

@@ -48,6 +48,14 @@ function navigate(page: string, recordId: string | null): void {
   pageNavigator(page, recordId);
 }
 
+// How many pages deep this tab is inside the app (2026-09-23): each page
+// opened is a history entry carrying its depth, so PageHeader's back arrow can
+// tell a page with somewhere to go back to from the first one opened — the
+// browser will not say whether Back would leave the app.
+const DEPTH = 'fluxusDepth';
+export const historyDepth = (): number => Number((window.history.state as Record<string, unknown> | null)?.[DEPTH] ?? 0);
+export const depthState = (depth: number): Record<string, unknown> => ({ [DEPTH]: depth });
+
 export async function initHost(auth?: HostAuth): Promise<void> {
   // The signed-in identity: bearer token on every tRPC call, and the local
   // engine's context.user for UI-side expression parity (roles stubbed []
@@ -91,7 +99,12 @@ export async function initHost(auth?: HostAuth): Promise<void> {
       `This link says organisation '${urlOrg}', but operation '${client.operationId}' belongs to '${client.orgId}'.`,
     );
   }
-  pageRuntime = createPageRuntime({ client, openPage: navigate });
+  pageRuntime = createPageRuntime({
+    client,
+    openPage: navigate,
+    goBack: () => window.history.back(),
+    canGoBack: () => historyDepth() > 0,
+  });
   // The stored config was validated at config.put; re-reporting here is a
   // free safety net against server/client engine version drift.
   createEngine({

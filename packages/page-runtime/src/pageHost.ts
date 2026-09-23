@@ -113,6 +113,15 @@ export interface PageServiceHandlers {
    * page's script has no business minting file addresses.
    */
   resolveUrl(storageKey: string): Promise<string>;
+  /**
+   * Back to the page before, and whether there is one (2026-09-23, PageHeader).
+   * The host owns the history — the Runtime app's is the browser's, so this
+   * and the browser's Back are the same step; a host with none (the Console's
+   * preview) answers false and ignores the call. A **component** door, absent
+   * from `buildPageServices` like `listActivities`: no script asked for it.
+   */
+  goBack(): void;
+  canGoBack(): boolean;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -166,6 +175,8 @@ export const pageServicesStub = (): ServiceModuleDef[] =>
     // here only because the handler set is one interface.
     listActivities: async () => [],
     resolveUrl: async () => '',
+    goBack: () => {},
+    canGoBack: () => false,
   });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────

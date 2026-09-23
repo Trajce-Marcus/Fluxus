@@ -199,6 +199,11 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     // (COMPONENT_PHOTOS §2). Like `listActivities` it is on the handler set but
     // in no service module, so a component may call it and a script may not.
     resolveUrl: (storageKey: string) => runtime.client.uploads.resolveUrl(storageKey),
+    // The host's history (PageHeader's back arrow). No history, no back — a
+    // greyed arrow, not an error: unlike opening a page, going back is never
+    // something the author asked for that the host then failed to do.
+    goBack: () => runtime.goBack?.(),
+    canGoBack: () => runtime.canGoBack?.() ?? false,
   }), [onContextChange, launchActivity, openPage, listActivities, runtime]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or

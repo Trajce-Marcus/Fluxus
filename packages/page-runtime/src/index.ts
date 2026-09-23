@@ -47,6 +47,7 @@ export { Map } from './components/Map';
 export { RecordActivities } from './components/RecordActivities';
 export { RecordList } from './components/RecordList';
 export { Text } from './components/Text';
+export { PageHeader } from './components/PageHeader';
 export { WorkOrderList } from './components/WorkOrderList';
 export {
   packCallbackData,

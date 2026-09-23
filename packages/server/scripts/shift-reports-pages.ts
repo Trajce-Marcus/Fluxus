@@ -80,13 +80,6 @@ const row = (id: string, pad: number, children: unknown[]) => ({
   padding: { top: pad, right: 16, bottom: pad, left: 16 },
 });
 
-const text = (body: string, style: string) => ({
-  componentName: 'Text',
-  staticConfig: { text: body, style, align: 'left', verticalAlign: 'middle' },
-  dynamicProps: {},
-  callbacks: {},
-});
-
 /** A button standing on its own, about the page's own record. */
 const button = (label: string, target: string, attribute?: string) => ({
   componentName: 'RunActivity',
@@ -114,6 +107,15 @@ const day = (key: string, label: string) =>
   ({ key, label, type: 'datetime', format: 'dd/MM/yyyy', width: 100 });
 const num = (key: string, label: string, width = 90) =>
   ({ key, label, type: 'decimal', width });
+
+// A back arrow, the title and a subtitle, in one slot (2026-09-23) — it took
+// the place of the two Text blocks every page here opened with.
+const pageHeader = (title: string, subtitle: string) => ({
+  componentName: 'PageHeader',
+  staticConfig: { title, subtitle },
+  dynamicProps: {},
+  callbacks: {},
+});
 
 const recordActivities = (emptyMessage: string) => ({
   componentName: 'RecordActivities',
@@ -272,8 +274,7 @@ const SHIFT_REPORT_DETAILS_ROWS = [
 
 function shiftReportPage() {
   const slotConfigs: Record<string, unknown> = {
-    'slot-title': text('Shift Report {{ context.record.report_no }}', 'title'),
-    'slot-subtitle': text('{{ context.record.report_date }} · {{ context.record.shift }} · {{ context.record.status }}', 'subheading'),
+    'slot-title': pageHeader('Shift Report {{ context.record.report_no }}', '{{ context.record.report_date }} · {{ context.record.shift }} · {{ context.record.status }}'),
     'slot-activities': recordActivities('Nothing can be done to this report right now.'),
     // Always shown; the model refuses it against a report that is not
     // Approved (§5.4) — the same "placed, model-gated" pattern every other
@@ -363,7 +364,6 @@ function shiftReportPage() {
       children: [
         auto('panel-header', 0, [
           { ...auto('slot-title', 0), padding: { top: 14, right: 16, bottom: 0, left: 16 } },
-          auto('slot-subtitle', 1),
           { ...auto('slot-activities', 0), padding: { top: 10, right: 16, bottom: 4, left: 16 } },
           auto('slot-amendment-btn', 0),
         ]),
@@ -395,7 +395,7 @@ function shiftReportPage() {
       { name: 'RecordList', version: '1.0.0' },
       { name: 'RunActivity', version: '1.0.0' },
       { name: 'OpenPage', version: '1.0.0' },
-      { name: 'Text', version: '1.0.0' },
+      { name: 'PageHeader', version: '1.0.0' },
       { name: 'Photos', version: '1.0.0' },
     ],
   };
@@ -411,8 +411,7 @@ const AMENDMENT_DETAILS_ROWS = [
 
 function shiftReportAmendmentPage() {
   const slotConfigs: Record<string, unknown> = {
-    'slot-title': text('Amendment {{ context.record.report_no }}', 'title'),
-    'slot-subtitle': text('{{ context.record.status }}', 'subheading'),
+    'slot-title': pageHeader('Amendment {{ context.record.report_no }}', '{{ context.record.status }}'),
     // RecordActivities lists this record's own wf_shift_reports activities:
     // Edit Notes, Submit, Reject, Cancel, Approve. Raise Amendment (CREATE)
     // and the line activities (anchored on the line, a different record type)
@@ -449,7 +448,6 @@ function shiftReportAmendmentPage() {
       children: [
         auto('panel-header', 0, [
           { ...auto('slot-title', 0), padding: { top: 14, right: 16, bottom: 0, left: 16 } },
-          auto('slot-subtitle', 1),
           { ...auto('slot-activities', 0), padding: { top: 10, right: 16, bottom: 4, left: 16 } },
           auto('slot-open-original', 0),
         ]),
@@ -475,7 +473,7 @@ function shiftReportAmendmentPage() {
       { name: 'RecordList', version: '1.0.0' },
       { name: 'RunActivity', version: '1.0.0' },
       { name: 'OpenPage', version: '1.0.0' },
-      { name: 'Text', version: '1.0.0' },
+      { name: 'PageHeader', version: '1.0.0' },
     ],
   };
 }
@@ -484,8 +482,7 @@ function shiftReportAmendmentPage() {
 
 function workGroupPage() {
   const slotConfigs: Record<string, unknown> = {
-    'slot-title': text('{{ context.record.wg_code }}', 'title'),
-    'slot-subtitle': text('{{ context.record.name }} · {{ context.record.manager }} · {{ context.record.wg_type }}', 'subheading'),
+    'slot-title': pageHeader('{{ context.record.wg_code }}', '{{ context.record.name }} · {{ context.record.manager }} · {{ context.record.wg_type }}'),
     'slot-activities': recordActivities('Nothing can be done to this work group right now.'),
     'slot-new-report-btn': button('New shift report', 'act_create_shift_reports'),
 
@@ -531,7 +528,6 @@ function workGroupPage() {
       children: [
         auto('panel-header', 0, [
           { ...auto('slot-title', 0), padding: { top: 14, right: 16, bottom: 0, left: 16 } },
-          auto('slot-subtitle', 1),
           { ...auto('slot-activities', 0), padding: { top: 10, right: 16, bottom: 4, left: 16 } },
           auto('slot-new-report-btn', 0),
         ]),
@@ -557,7 +553,7 @@ function workGroupPage() {
       { name: 'RecordList', version: '1.0.0' },
       { name: 'RunActivity', version: '1.0.0' },
       { name: 'OpenPage', version: '1.0.0' },
-      { name: 'Text', version: '1.0.0' },
+      { name: 'PageHeader', version: '1.0.0' },
     ],
   };
 }
@@ -579,8 +575,7 @@ const DEFECT_DETAILS_ROWS = [
 
 function defectPage() {
   const slotConfigs: Record<string, unknown> = {
-    'slot-title': text('{{ context.record.defect_no }}', 'title'),
-    'slot-subtitle': text('{{ context.record.severity }} · {{ context.record.status }}', 'subheading'),
+    'slot-title': pageHeader('{{ context.record.defect_no }}', '{{ context.record.severity }} · {{ context.record.status }}'),
     'slot-activities': recordActivities('Nothing can be done to this defect right now.'),
     'slot-open-report': openButton('View report', 'pages/shift-report', 'context.record.report_id'),
 
@@ -594,7 +589,6 @@ function defectPage() {
       children: [
         auto('panel-header', 0, [
           { ...auto('slot-title', 0), padding: { top: 14, right: 16, bottom: 0, left: 16 } },
-          auto('slot-subtitle', 1),
           { ...auto('slot-activities', 0), padding: { top: 10, right: 16, bottom: 4, left: 16 } },
           auto('slot-open-report', 0),
         ]),
@@ -619,7 +613,7 @@ function defectPage() {
       { name: 'RecordList', version: '1.0.0' },
       { name: 'RunActivity', version: '1.0.0' },
       { name: 'OpenPage', version: '1.0.0' },
-      { name: 'Text', version: '1.0.0' },
+      { name: 'PageHeader', version: '1.0.0' },
       { name: 'Photos', version: '1.0.0' },
     ],
   };
@@ -629,8 +623,7 @@ function defectPage() {
 
 function resourcesPage() {
   const slotConfigs: Record<string, unknown> = {
-    'slot-title': text('Resources', 'title'),
-    'slot-subtitle': text('{{ context.record.project_no }} · {{ context.record.name }}', 'subheading'),
+    'slot-title': pageHeader('Resources', '{{ context.record.project_no }} · {{ context.record.name }}'),
     'slot-new': button('New resource', 'act_create_resources'),
     'slot-list': {
       componentName: 'RecordList',
@@ -659,7 +652,6 @@ function resourcesPage() {
       children: [
         auto('panel-header', 0, [
           { ...auto('slot-title', 0), padding: { top: 14, right: 16, bottom: 0, left: 16 } },
-          auto('slot-subtitle', 1),
         ]),
         {
           ...panel('panel-body', 1, false, [
@@ -680,7 +672,7 @@ function resourcesPage() {
     componentDependencies: [
       { name: 'RecordList', version: '1.0.0' },
       { name: 'RunActivity', version: '1.0.0' },
-      { name: 'Text', version: '1.0.0' },
+      { name: 'PageHeader', version: '1.0.0' },
     ],
   };
 }
@@ -689,8 +681,7 @@ function resourcesPage() {
 
 function shiftReportsDashboardPage() {
   const slotConfigs: Record<string, unknown> = {
-    'slot-title': text('Shift Reports', 'title'),
-    'slot-subtitle': text('{{ context.record.project_no }} · {{ context.record.name }}', 'subheading'),
+    'slot-title': pageHeader('Shift Reports', '{{ context.record.project_no }} · {{ context.record.name }}'),
 
     'slot-contributions': {
       componentName: 'Contributions',
@@ -759,7 +750,6 @@ function shiftReportsDashboardPage() {
       children: [
         auto('panel-header', 0, [
           { ...auto('slot-title', 0), padding: { top: 14, right: 16, bottom: 0, left: 16 } },
-          auto('slot-subtitle', 1),
         ]),
         {
           ...panel('panel-body', 1, false, [
@@ -782,7 +772,7 @@ function shiftReportsDashboardPage() {
       { name: 'Contributions', version: '1.0.0' },
       { name: 'RecordList', version: '1.0.0' },
       { name: 'OpenPage', version: '1.0.0' },
-      { name: 'Text', version: '1.0.0' },
+      { name: 'PageHeader', version: '1.0.0' },
     ],
   };
 }

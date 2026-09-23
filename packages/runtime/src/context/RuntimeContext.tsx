@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { client, currentSession, hostAuth, pageRuntime, setPageNavigator } from '../host';
+import { client, currentSession, depthState, historyDepth, hostAuth, pageRuntime, setPageNavigator } from '../host';
 import type { AuthSession, HostAuth } from '@fluxus/client';
 
 // The Runtime app's shell state (CONSOLE_RUNTIME_SPEC §4, M15): who is signed
@@ -46,7 +46,7 @@ function addressBar(path: string | null, recordId: string | null = null): void {
   // Back returns to the page before — it replaced the entry, which left Back
   // nothing to go to inside the app. Re-opening what is already open adds none.
   const url = `${window.location.pathname}?${next}`;
-  if (url !== `${window.location.pathname}${window.location.search}`) window.history.pushState(null, '', url);
+  if (url !== `${window.location.pathname}${window.location.search}`) window.history.pushState(depthState(historyDepth() + 1), '', url);
 }
 
 const Ctx = createContext<RuntimeContextValue | null>(null);
