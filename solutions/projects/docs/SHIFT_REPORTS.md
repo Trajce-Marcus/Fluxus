@@ -64,12 +64,25 @@ spec and the diff) found three real gaps, since closed or corrected:
   Draft. **Reject** and **Cancel** were added with §5.3: approval may not be
   possible, so a submitted report goes back to `Draft` and is then either
   resubmitted or cancelled, and a cancelled report reads as a hole in §6
-  rather than papering over one. **Amendments became their own record type**
-  (§4.8a/§4.8b) rather than a shift report with a zero `work_hours` and an
-  `amends_report_id`: as its own record an amendment restates nothing, needs no
-  Calculate and no hours check, and §6 needs no rule to exclude it. Its lines
-  carry a signed quantity and name their own WBS node, so approval posts them
-  to the ledger with no division. Ten record types now, not eight.
+  rather than papering over one.
+
+  **An amendment is a shift report with `is_amendment` set** (§5.4), raised by
+  a button on the approved report it corrects. Two designs were tried and
+  dropped on the way: a second shift report carrying the difference with a zero
+  `work_hours` (which restated times and WBS rows for no reason), and a pair of
+  record types of its own (which duplicated the lifecycle). What settled it:
+  **one record type, two sets of activities.** The lifecycle — statuses,
+  `approved_by`, the approver rule, the numbering — is genuinely shared and
+  should stay shared; the filing differs, and filing lives on activities, which
+  the amendment page names for itself. Still eight record types.
+
+  An amendment asks for notes and hand-entered resource usage lines and nothing
+  else: no Calculate, no hours check, no WBS rows, no photos. Its lines carry a
+  **signed** quantity and a `wbs_id` naming where the correction lands, so
+  approval posts them to the ledger undivided — which brings `wbs_id` back onto
+  `rt_shift_report_resource_usage`, this time with something that writes it.
+  §8's contributions grid folds a day's amendments into that day's colour: green
+  only when the report and every amendment against it are approved.
 
 One departure from this spec's own wording, made during the build and flagged
 here rather than silently taken: §10's "both status sets... enforced at
@@ -357,6 +370,8 @@ Every work group holds its own set — a child never draws on its parent's
 | `site_notes` | `text` (multiline) | |
 | `report_photos` | `photo` (`multi`, `max_count: 6`) | Photos of the shift. A defect's photos go on the defect. |
 | `status` | `text` | `Draft` → `Submitted` → `Approved`. |
+| `is_amendment` | `text` | `'true'` / `'false'`. An amendment is a shift report with this set, raised from the report it corrects and filled through its own activities (§5.4). |
+| `report_id` | `fk_ref` → `rt_shift_reports` | Blank on an ordinary report. On an amendment, the approved report it corrects — sourced from the page that raised it. |
 | `approved_by` / `approved_date` | `text` / `datetime` | Written by the Approve activity, available to the parent group's manager (§4.1a). A group with no parent is approved by its own manager. |
 | `expired` | `text` | |
 
@@ -402,7 +417,8 @@ standard set, priced at `work_hours`. Confirm, adjust, or remove.
 | `resource_id` | `fk_ref` → `rt_resources` | Blank for something added by hand that is not in the catalogue. |
 | `description` | `text` | Copied from the resource. |
 | `notes` | `text` (multiline) | The filer's note on this line — why a rate was overridden, why a quantity is not the standard one. Optional, and read by nothing. |
-| `quantity` | `decimal` | `work_hours` × the standard count, adjustable. |
+| `quantity` | `decimal` | `work_hours` × the standard count, adjustable. **Signed on an amendment's lines** — four excavator hours overstated is `-4`. |
+| `wbs_id` | `fk_ref` → `rt_wbs_nodes` | Blank on an ordinary line, whose cost is divided across the report's WBS rows by hours (§5.1). **Set on an amendment's lines**, which name where the correction lands and are not divided. |
 | `calculated` | `text` | `'true'` once Calculate has priced this line; cleared when it is run again. |
 | `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | Copied from the resource when the line is written, and **never re-pulled from it afterwards** — repricing the catalogue next year does not touch shifts already filed. The filer may correct any of them on the line itself while the report is still Draft; that is what Adjust is for, and `notes` is where the reason goes. |
 | `tracked_cost` | `decimal` | `quantity × rate`, written by a hook. Never typed, never written to `actual_cost`. |
@@ -447,49 +463,6 @@ approved figures, so it can be added up without qualification.
 | `verified_date` / `verified_by` | `datetime` / `text` | |
 | `status` | `text` | `Open` → `Rectified` → `Closed`. |
 | `expired` | `text` | |
-
-### 4.8a `rt_shift_report_amendments` — correcting an approved report
-
-An approved report is never reopened (§5.4). A correction is an amendment: its
-own record, raised from the report it corrects, carrying only the lines that
-change. It has no times, no WBS hours rows and no Calculate — there is nothing
-to divide, because each line names the node its cost lands on.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `amendment_no` | `text` | `AMD-0001`. Written by a hook, so neither `required` nor `immutable` — same rules as `report_no` (§10). |
-| `report_id` | `fk_ref` → `rt_shift_reports` | The approved report being corrected. Taken from the page — an amendment is raised by a button on that report, never by picking one out of a list. |
-| `project_id` | `fk_ref` → `rt_projects` | Taken from the page. Numbering counts within it. |
-| `reason` | `text` (multiline) | Why the correction is needed. |
-| `status` | `text` | `Draft` → `Submitted` → `Approved`. |
-| `approved_by` / `approved_date` | `text` / `datetime` | As on a report: the parent group's manager, or the group's own where there is no parent (§5.3). |
-| `expired` | `text` | |
-
-The work group, the date and the shift are not restated — they are the
-report's, and `report_id` reaches them.
-
-### 4.8b `rt_amendment_lines` — what the correction moves
-
-One row per correction. The same shape as a usage line (§4.6) with two
-differences: **`quantity` may be negative**, and **`wbs_id` is carried on the
-line**, because an amendment is not divided across WBS rows by hours — it says
-where each correction lands.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `amendment_id` | `fk_ref` → `rt_shift_report_amendments` | Taken from the page. |
-| `resource_id` | `fk_ref` → `rt_resources` | Blank for something not in the catalogue. |
-| `description` | `text` | Copied from the resource. |
-| `wbs_id` | `fk_ref` → `rt_wbs_nodes` | **Where this correction lands.** Always set. |
-| `quantity` | `decimal` | **Signed.** Four excavator hours overstated is `-4`. |
-| `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | As on a usage line: copied when written, correctable while the amendment is Draft. |
-| `notes` | `text` (multiline) | Why this line. |
-| `tracked_cost` | `decimal` | `quantity × rate`, written by a hook. Signed, like the quantity. |
-| `expired` | `text` | |
-
-**On approval each line is written straight to `rt_wbs_resource_usage`** — one
-row per line, no division, carrying the sign. The ledger stays append-only and
-a corrected shift reads as the original plus its amendments.
 
 ### 4.9 Attribute keys
 
@@ -691,24 +664,49 @@ has posted yet. Once approved, that window is shut. The reason is the ledger:
 Approve divides cost into `rt_wbs_resource_usage` (§5.1), and editing the
 source of posted cost means un-posting and re-posting it.
 
-**A correction is an amendment** (§4.8a): its own record, raised by a button on
-the approved report, carrying only the lines that change. It is submitted and
-approved like a report, and on approval its lines post to the ledger — so the
-ledger stays append-only and both the mistake and the fix survive in full.
+**A correction is an amendment: a shift report with `is_amendment` set**,
+raised by a button on the approved report, which sources `report_id`. It is
+submitted and approved like any report, and on approval its lines post to the
+ledger — so the ledger stays append-only and both the mistake and the fix
+survive in full.
 
 It is deliberately a little awkward. Getting the resources and the WBS split
 right the first time is the cheaper path, and it should feel that way.
 
-Three things follow:
+**One record type, two sets of activities.** An amendment shares the table and
+the lifecycle — `Draft` → `Submitted` → `Approved`, `approved_by`, the
+approver rule (§5.3), the numbering — because those are genuinely the same and
+should stay the same. What differs is the filing, and filing lives on
+activities, not on the record: the amendment page names its own set and simply
+does not name the rest. Separate record types were considered and rejected;
+they would have duplicated the lifecycle, which is the half most likely to
+change.
 
-- **Quantities are signed on an amendment line.** Four excavator hours
-  overstated is corrected by posting `-4`. Pricing and the write to the ledger
-  both carry the sign — which nothing else in this model does, and which the
-  build must not quietly reject.
-- **An amendment restates nothing.** No times, no work hours, no WBS hours
-  rows, no Calculate. The shift's hours stand as filed; only cost moves.
-- **An amendment is not a filing.** §6 never sees it — it is not a shift
-  report — so a group that filed and then amended has filed once.
+**What an amendment asks for** — and it is the whole of it:
+
+- **Notes.** Why the correction is needed.
+- **Resource usage lines, added entirely by hand.** Resource, quantity, rate,
+  cost code, and the WBS node the correction lands on. Nothing is seeded from
+  the work group's standard set, and **there is no Calculate** — no division,
+  no hours check, no `calculated` flag. The filer states the correction.
+
+Everything a report needs and an amendment does not — date, shift, times,
+`work_hours`, WBS hours rows, photos — is simply not asked for, because
+required-ness lives on the activity rather than the field (§4.9). The fields
+sit blank and no gate looks at them.
+
+Two things follow:
+
+- **Quantities are signed.** Four excavator hours overstated is `-4`. Pricing
+  and the write to the ledger both carry the sign, which nothing else in this
+  model does and which the build must not quietly reject.
+- **An amendment is not a filing.** §6 counts ordinary reports only, and the
+  §8 grid folds a day's amendments into that day's colour rather than showing
+  them as extra filings.
+
+**The amendment page owns its activity set, and it is listed in §8.** A later
+session extending the shift-report page is not extending this one — if an
+amendment should gain something, it is added here deliberately.
 
 **Variations are the same shape and are not this.** Additional scope agreed
 mid-project is its own thing, and it is not built here (§11).
@@ -719,10 +717,11 @@ Who owes a report is a query over work group records: active, no children, type
 `Crew` or `Subcontractor`, for a project. Shared-plant groups file nothing and
 a split group's parent is covered by its children, so neither is expected.
 
-**A cancelled report does not count here.** It is `expired` and reads as
-nothing filed (§5.3) — that is what cancelling is for, so this query filters
-`expired <> 'true'`. Amendments need no rule at all: they are not shift
-reports (§4.8a), so the grid never sees them.
+**Two exclusions.** A cancelled report is `expired` and reads as nothing filed
+(§5.3) — that is what cancelling is for — so this query filters
+`expired <> 'true'`. And **amendments are not filings**: who-owes-a-report
+counts ordinary reports only, `is_amendment <> 'true'`, or a group that
+corrected a mistake would read as having filed twice.
 
 Because cost lands at approval, each expected group is in one of three states
 for a date, and they mean different things:
@@ -798,7 +797,19 @@ lying flat.
 **`pages/shift-report`** — anchored on `rt_shift_reports`. Header (work group,
 date, shift, manager), times and hours, photos, WBS rows with hours and
 quantity, the shift's resource lines with tracked cost, the shift total, and
-defects raised.
+defects raised. Once approved it gains a **Raise amendment** button, which
+creates an amendment against it (§5.4).
+
+**`pages/shift-report-amendment`** — anchored on `rt_shift_reports` as well,
+and reached only for a record with `is_amendment` set. It shows the report it
+corrects, the notes, and the correction lines — resource, quantity (signed),
+rate, cost code, WBS node — added by hand, with the amendment's total.
+
+**This page names its own activities, and they are the whole set an amendment
+has**: create (from the report, sourcing `report_id` and setting the flag),
+add a line, adjust a line, remove a line, edit the notes, Submit, Reject,
+Cancel, Approve. **No Calculate**, no WBS hours rows, no photos, no defects.
+Adding to `pages/shift-report` does not add to this page (§5.4).
 
 **`pages/work-group`** — anchored on `rt_work_groups`. Its standard resources,
 its recent shift reports, and a **New shift report** button.
@@ -809,9 +820,21 @@ activities, and a link back to the report that raised it.
 **`pages/resources`** — a plain list of the project's catalogue. Nothing more.
 
 **`pages/shift-reports`** — a dashboard. Its centrepiece is the `Contributions`
-component, one row per work group and one column per date, green approved,
-amber filed but not approved, red nothing filed — so a gap is a hole in a row with
-the manager's name beside it. Alongside it: what is submitted and awaiting
+component, one row per work group and one column per date — so a gap is a hole
+in a row with the manager's name beside it.
+
+**A cell's colour covers the day's whole set — the report and any amendments
+against it.** The states the page names:
+
+- **green** — everything for that group and date is approved;
+- **amber** — something exists but is not all approved, whether that is a
+  report awaiting approval or an approved report with an amendment still in
+  flight;
+- **red** — nothing filed at all. A cancelled report leaves red behind (§5.3).
+
+Amber rather than two shades: what the grid answers is "is this day settled",
+and an unapproved amendment means it is not. The component decides none of
+this — it draws the state and colour the page gives it. Alongside it: what is submitted and awaiting
 approval, what was recently approved, and a way into a report. Three or four
 panels; it is expected to change once it is seen.
 
