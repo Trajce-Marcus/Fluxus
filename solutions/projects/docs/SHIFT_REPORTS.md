@@ -808,7 +808,9 @@ amendment should gain something, it is added here deliberately.
 **Each set refuses the other's records, in a hook.** A page naming an activity
 is not a gate: an activity reachable through one page is reachable through any
 caller, so the model has to say which records it accepts. The rule is
-symmetric and there is no exemption:
+symmetric, with **one exemption — Remove**, which both pages share: taking a
+line off a draft report is the same act whichever kind of report it is, and it
+cannot plant anything. Everything that *writes* a line is gated:
 
 - **An amendment's activities refuse a record with `amended_report_id = ''`.**
   Without this, an amendment's line — signed, naming its own `wbs_id`, never
