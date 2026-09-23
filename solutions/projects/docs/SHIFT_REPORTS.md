@@ -27,10 +27,21 @@ spec and the diff) found three real gaps, since closed or corrected:
   blank-fk-is-not-null is kept as the general lesson (still load-bearing
   elsewhere — the work-group leaf checks, `standardResourceSet`'s parent
   lookup), decoupled from the feature that originally surfaced it.
-- **§4.1a's split work groups had no re-parenting path** — `wg_parent` was
-  sourced as the literal `''` on create, always, with no "Move" activity —
-  so a WG-TRENCH could never actually be created under a WG-SPREAD. Not yet
-  fixed; next on the list.
+- **§4.1a's split work groups could not be created at all** — `wg_parent` was
+  sourced as the literal `''` on create, always, so a WG-TRENCH could never be
+  put under a WG-SPREAD. Resolving it settled what splitting actually is
+  (2026-09-23), and §4.1a is rewritten: **one level only, the parent chosen at
+  create and never changed, and no sharing downward.** A child is an ordinary
+  work group — its own resources, its own manager, renamed, modified and
+  expired exactly as a standalone group is — and the umbrella buys approval by
+  the owner and roll-up, nothing else. The WBS's `act_move_wbs_nodes` is
+  **not** the pattern here and no move activity is built; a group put in the
+  wrong place is expired and made again. What follows from that, and is not
+  yet built: create must ask for the parent rather than source it blank, the
+  one-level cap and the expire-children-first rule need the hooks §10 now
+  specifies, and `standardResourceSet`'s fall back to the parent's set must
+  go — a child with no resources reads as empty. §9's WG-SPREAD no longer
+  holds the crew's resources; its three children carry their own.
 - **Submit's gate did not reverify the WBS-hours-equals-work_hours
   invariant** — it checked only that resource lines were marked
   `calculated`, which editing a report's times after Calculate does not
@@ -200,7 +211,7 @@ precedent: `rt_projects.target_start` is already a script-written `datetime`.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `wg_code` | `text` | `WG-WELD`. Typed. Unique per project — checked in a hook, not by the field (§10). Not `immutable`: see §10. |
-| `parent_id` | `fk_ref` → `rt_work_groups` | Optional. Sub-groups, each with its own manager (§4.1a). Reports are filed against the ones with no children; the parent's manager approves them. |
+| `parent_id` | `fk_ref` → `rt_work_groups` | Optional. Child groups, each with its own manager and resources (§4.1a). One level only, set at create and never changed. Reports are filed against the groups with no children; the parent's manager approves them. |
 | `name` | `text` | `Mainline welding crew`. |
 | `project_id` | `fk_ref` → `rt_projects` | Taken from the page, never asked for. |
 | `manager` | `text` | The person who owes the shift report. |
@@ -210,27 +221,52 @@ precedent: `rt_projects.target_start` is already a script-written `datetime`.
 
 ### 4.1a Splitting a work group
 
-A work group may hold **sub-groups**: `parent_id` points at the parent, and
-shift reports are always filed against a group with no children. The parent's
-manager approves what its children file.
+A work group may hold **child work groups**: `parent_id` points at the parent,
+and shift reports are always filed against a group with no children. The
+parent's manager approves what its children file.
 
-The case it is for: one person owns a crew and a complete set of resources, and
-that crew works several fronts at once — welding, coating, trenching. Each
-front gets its own manager who files its report; the owner oversees and
-approves.
+The case it is for: one person owns a crew that works several fronts at once —
+welding, coating, trenching. Each front gets its own manager who files its
+report; the owner oversees and approves.
 
-Three things the nesting gives that a flat list cannot:
+**One level only.** A child may not itself hold children. A group whose
+`parent_id` is set cannot be chosen as a parent, and the create activity
+refuses it (§10).
 
-- **One set of resources.** The standard set is held on the parent and drawn on
-  by the children. Duplicating it across flat groups lets the same excavator be
-  claimed twice.
+**A child is an ordinary work group.** It holds its own resources, its own
+manager, files its own reports, and is renamed, modified and expired exactly as
+a standalone group is. Nothing about being a child locks any of it.
+
+**The parent shares nothing downward.** It is an umbrella, not a pool: a child
+never draws on its parent's resource set, and a child with no resources of its
+own reads as empty rather than borrowing. A parent holds a resource set only in
+its own right, as any work group does.
+
+Two things the umbrella gives that a flat list cannot:
+
+- **Approval by the owner.** The parent's manager approves what its children
+  file, so oversight follows the real line of responsibility without a second
+  document.
 - **Roll-up.** Cost, hours and who-has-filed aggregate to the parent, so "what
   did this crew cost last week" is a query rather than a new mechanism.
-- **One set to maintain**, rather than several that drift apart.
+
+**The parent is chosen when the child is created, and never changes.** Two ways
+in, both landing on the same create activity: pick the parent in the form, or
+open a parent and create a child under it, which seeds the picker. **There is
+no re-parenting** — no move activity, and `wg_parent` is absent from Modify, so
+a group's place is settled at birth. A group put in the wrong place is expired
+and made again.
+
+**Expiring, not deleting.** A work group is never removed — shift reports,
+usage rows and defects carry its id — so retiring one sets `expired` and
+nothing else. **A parent cannot be expired while it still has unexpired
+children:** they are expired first, and the check counts live children only, an
+already-expired child being no obstacle (§10).
 
 **A `delegate` column on a flat group was considered and rejected.** It is the
-same idea spelled smaller — a sub-group's manager *is* the delegate — and it
-gives neither sharing nor roll-up, while capping at one delegate per group.
+same idea spelled smaller — a child's manager *is* the delegate — and it gives
+neither roll-up nor a manager who files a report of their own, while capping at
+one delegate per group.
 
 **Granularity is the implementer's dial, not a rule.** On a pipeline, a group
 per activity — trenching, welding, coating, tie-ins — maps close to one WBS
@@ -248,6 +284,7 @@ same oversight without a second lifecycle.
 **One resource may be claimed only once per shift.** This is a rule with no
 field and no check behind it in this build, by decision. It is stated so the
 demonstration data obeys it.
+
 
 ### 4.2 `rt_resources` — the catalogue
 
@@ -267,13 +304,13 @@ allowed. Not enforced in this build; it belongs with resource management later.
 
 ### 4.3 `rt_wg_resources` — a work group's standard set
 
-A selection from the catalogue with counts, held on whichever group owns them.
-A parent's resources are drawn on by its children (§4.1a), as the shared-plant
-group's are.
+A selection from the catalogue with counts, held on the group that owns them.
+Every work group holds its own set — a child never draws on its parent's
+(§4.1a).
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `wg_id` | `fk_ref` → `rt_work_groups` | Taken from the page. The owner — a group with no children, or a parent whose children draw on it. |
+| `wg_id` | `fk_ref` → `rt_work_groups` | Taken from the page. The group that owns the set, parent or child alike. |
 | `resource_id` | `fk_ref` → `rt_resources` | |
 | `quantity` | `decimal` | Standard count per shift — 6 welders, 2 sidebooms. |
 | `rate` | `decimal` | Optional. Blank means the resource's rate. To be used sparingly — a subcontractor at a negotiated figure. |
@@ -655,8 +692,9 @@ supervisors against `1200`, fuel against `3100`, the NDT subcontractor against
 Work groups cut per pipeline activity, which is the cut that makes the split of
 cost nearly exact:
 
-- `WG-SPREAD` — the mainline spread, manager Hughie. **Parent**, holds the
-  crew's standard resources, files nothing, approves what its children file.
+- `WG-SPREAD` — the mainline spread, manager Hughie. **Parent**, files nothing,
+  approves what its three children file. Holds no resources of its own: each
+  child carries the set it works with (§4.1a).
   - `WG-TRENCH` — trenching and excavation.
   - `WG-WELD` — mainline welding.
   - `WG-COAT` — field joint coating.
@@ -736,6 +774,23 @@ Things the model cannot express, handled in hooks or not at all:
 
   Nothing constrains the stored field either way, so demonstration data written
   straight to the records must be correct by construction.
+- **Work-group nesting is one level deep** — checked by a `fail()` in Create's
+  before hook: if the chosen parent itself has a parent, the create is refused.
+  A field cannot express a depth cap, and there is no re-parenting activity to
+  check a second time, so this one hook is the whole of it.
+
+  The test is `p.parent_id <> ''`, **not** a null test. A blank `fk_ref` is not
+  null (§10a), so `is not null` is true for every group and the cap never
+  fires.
+- **A parent is expired only after its children** — checked by a `fail()` in
+  Expire's before hook, or by the activity's `show_condition`, counting
+  **unexpired** children only: `records.work_groups.where(parent_id =
+  context.record.id and expired <> 'true').count = 0`. A group that has already
+  been expired is no obstacle to expiring its parent. The existing childless
+  check written as `not (id in records.work_groups.values(parent_id))` does not
+  do this — it ignores `expired` — and must be replaced wherever it gates
+  expiry. §6's "who owes a report" leaf check is a different question and stays
+  as it is.
 - **One resource claimed once per shift** — not enforced (§4.1a).
 - **A resource's `unit` never changes** — not enforced (§4.2).
 
