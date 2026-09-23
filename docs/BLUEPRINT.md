@@ -315,18 +315,19 @@ other's activities, never by reading each other's records.**
 **Built:** `PageHeader`, a component an author places — a back arrow (the
 host's history; in the Runtime, the browser's Back), a title and a subtitle.
 
-**Direction: every page gets the header automatically.** A page's definition
-states its **title**, **subtitle** and **status**, and the page host draws the
-header above the layout — no slot to add, so every page looks the same and part
-of page authoring does itself. Status is written the way the title is, with
-`{{ }}` (`{{ context.record.status }}`), and is drawn as a label whose **colour
-follows its value** (Draft grey, Approved green) from a small value-to-colour
-list on the page. Open when it is built: a switch for the pages that want no
-header (a landing page, a dashboard with its own top); the page builder's page
-settings and preview; and whether the actions row joins the header, as SAP's
-object page does — left out of the first revision. Today's `PageHeader` slots
-convert mechanically. **Deferred** — to be built once more use has shown what
-else a header needs.
+**Direction: the page draws its own header, actions, tabs and errors;
+everything else is content** (agreed 2026-09-23; spec
+[AUTO_PAGE_COMPONENTS](../packages/page-runtime/docs/AUTO_PAGE_COMPONENTS.md)).
+A page's definition states its **title**, **subtitle** and **status** (`{{ }}`
+holes; the status drawn as a label whose **colour follows its value**, from a
+small fixed set). Under the header, the record's **actions** — the model's list,
+as `RecordActivities` gives it — and then a **tab strip**, drawn when more than
+one layout panel carries a `tabName`, that scrolls to its section (SAP's object
+page anchor bar). The **error list** stays automatic, reworded for end users.
+**Every page has a header** — the switch to turn it off, left open earlier the
+same day, was dropped. **The actions row is in the first revision**, reversing
+the earlier "left out"; the page's own control over its actions is deferred, to
+be specified separately. Not yet built.
 
 ## Components over their own backend — *Direction* (agreed 2026-08-04)
 
