@@ -42,7 +42,11 @@ function addressBar(path: string | null, recordId: string | null = null): void {
   // *about* a record says so here, which is what makes it a sendable link.
   if (recordId) next.set('record', recordId);
   else next.delete('record');
-  window.history.replaceState(null, '', `${window.location.pathname}?${next}`);
+  // Each page opened is its own history entry (2026-09-23), so the browser's
+  // Back returns to the page before — it replaced the entry, which left Back
+  // nothing to go to inside the app. Re-opening what is already open adds none.
+  const url = `${window.location.pathname}?${next}`;
+  if (url !== `${window.location.pathname}${window.location.search}`) window.history.pushState(null, '', url);
 }
 
 const Ctx = createContext<RuntimeContextValue | null>(null);
@@ -69,6 +73,16 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
     setSelectedPage(path);
     setSelectedRecordId(recordId);
     addressBar(path, recordId);
+  }, []);
+
+  // Back and Forward: the URL has already moved, so the open page follows it.
+  useEffect(() => {
+    const onPop = () => {
+      setSelectedPage(params().get('page'));
+      setSelectedRecordId(params().get('record'));
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   // The page runtime is a module singleton created before React exists, so the

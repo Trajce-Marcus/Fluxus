@@ -194,8 +194,30 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   // records any component's GET may be reading, so the page is the honest
   // blast radius. Every component's dynamic props re-evaluate, which for a
   // GET-backed prop is one round trip each.
+  //
+  // The page's own record is re-read first (2026-09-23): the tick re-evaluated
+  // every prop, but against the record as it was when the page opened, so a
+  // photo added by Modify — or any field it changed — showed only after a
+  // reload. The fresh record and the tick land in one render, so each prop
+  // re-evaluates once, against the new record. If the re-read fails (the run
+  // removed the record, say) the page keeps what it had and still refreshes.
   const [refreshTick, setRefreshTick] = useState(0);
-  const handleActivityRun = useCallback(() => setRefreshTick((t) => t + 1), []);
+  const handleActivityRun = useCallback(() => {
+    const current = resolved && resolved.pageKey === pageKey && resolved.anchor.status === 'ready' ? resolved.anchor.record : null;
+    if (!current) {
+      setRefreshTick((t) => t + 1);
+      return;
+    }
+    void (async () => {
+      try {
+        const record = await runtime.client.fetchRecord(current.id);
+        setAnchor((prev) => (prev && prev.pageKey === pageKey ? { pageKey, anchor: { status: 'ready', record } } : prev));
+      } catch {
+        // keep the record the page has
+      }
+      setRefreshTick((t) => t + 1);
+    })();
+  }, [runtime, pageKey, resolved]);
 
   if (!layout) {
     return <div className="pr-empty">No layout defined for this page.</div>;
