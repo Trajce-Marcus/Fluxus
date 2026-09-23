@@ -5,6 +5,9 @@
 // PageHeader from now on. Any other Text on a page — the project page's caption
 // line, its budget total — is left as it is.
 //
+// pages/projects had no title at all, so it is given one — "Projects", no
+// subtitle — in a slot above its list (added the same day, the user's ask).
+//
 // Writes drafts only — publish each page in the Console. `--dry` reports and
 // writes nothing.
 
@@ -27,6 +30,21 @@ const without = (panel: Panel, id: string): Panel => ({
 
 for (const row of await db.select().from(pages).where(eq(pages.solutionId, SOLUTION))) {
   const def = row.def as Def;
+  if (row.path === 'pages/projects' && !def.slotConfigs['slot-title']) {
+    def.slotConfigs['slot-title'] = { componentName: 'PageHeader', staticConfig: { title: 'Projects' }, dynamicProps: {}, callbacks: {} };
+    def.layout.root.children = [
+      { id: 'slot-title', size: { type: 'auto' }, children: [], direction: 'vertical', padding: { top: 14, right: 16, bottom: 0, left: 16 } } as Panel,
+      ...(def.layout.root.children ?? []),
+    ];
+    def.componentDependencies.push({ name: 'PageHeader', version: '1.0.0' });
+    console.log(`${row.path.padEnd(30)} Projects  /  —  (new slot)`);
+    if (!dry) {
+      await db.update(pages).set({ def, updatedAt: new Date() })
+        .where(and(eq(pages.solutionId, SOLUTION), eq(pages.path, row.path)));
+    }
+    continue;
+  }
+
   const title = def.slotConfigs?.['slot-title'];
   const subtitle = def.slotConfigs?.['slot-subtitle'];
   if (title?.componentName !== 'Text' || title.staticConfig.style !== 'title') continue;
