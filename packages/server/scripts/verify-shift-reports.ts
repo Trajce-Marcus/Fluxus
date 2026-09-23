@@ -1,9 +1,13 @@
 // Read-only in effect, 2026-09-23. Drives the shift-reports model through the
 // real engine against the real config and P26-011's real WBS/CBS — and never
 // calls `writeBack`, so nothing persists. Answers the questions the pages are
-// about to be built on, and re-checks the four defects §10a measured against
-// an earlier draft of these same hooks: blank-fk-is-not-null, float equality
-// on hours, a blank number poisoning a total, and shares that do not add up.
+// about to be built on, and re-checks the defects §10a measured against an
+// earlier draft of these same hooks: float equality on hours, a blank number
+// poisoning a total, and shares that do not add up. The fourth
+// (blank-fk-is-not-null) was found in the per-line "pin to one WBS node"
+// exception, since removed (§5.1) — the rule it taught still guards
+// `standardResourceSet`'s parent lookup and the work-group leaf checks, but
+// there is no longer a dedicated section demonstrating it directly.
 //
 // Sourcing (`context.page.record.*`) is a page-runtime/form concern, not the
 // engine's — `runActivity` takes already-resolved values. So every value a
@@ -159,11 +163,11 @@ check("the divided shares sum back to the two lines' total exactly (largest-rema
 const sumQty = usageRows.reduce((a, r) => a + Number(r.customFields.quantity), 0);
 check("the divided quantities sum back to the two lines' total exactly", Math.abs(sumQty - (61 + 20)) < 1e-9, `sum=${sumQty}`);
 
-console.log('\n── the blank-fk-is-not-null defect, exercised directly ──────────────');
-// A second shift, with one line pinned whole to a single WBS node (§5.1's
-// per-line exception) alongside one line still split by hours — the exact
-// shape §10a's defect hid in: `<> ''` must tell the two apart; `is not null`
-// would not (a blank fk_ref stores '', not null).
+console.log('\n── a second report: midnight crossing, and an even split ───────────');
+// The per-line "pin to one node" exception (§5.1) was designed, built, and
+// then removed 2026-09-23 — it was never reachable through any activity, so
+// every line always divides by hours now. This report checks that plainly: a
+// night shift crossing midnight, split evenly 6h/6h across two WBS nodes.
 const report2 = run('act_create_shift_reports', {
   project_id: PROJECT, wg_id: wgId,
   report_date: '2026-09-23', shift: 'Night', start_time: '18:00', end_time: '06:00', break_hours: '0',
@@ -176,23 +180,14 @@ run('act_create_shift_wbs', { project_id: PROJECT, report_id: report2Id, wbs_id:
 run('act_create_shift_wbs', { project_id: PROJECT, report_id: report2Id, wbs_id: wbs35.id, hours: '6' }, null);
 const calc2 = run('act_calculate_shift_reports', {}, report2Id);
 check('Calculate on the second report', calc2.ok, calc2.ok ? '' : calc2.why);
-const lines2 = ask('act_list_shift_report_resources', { report_id: report2Id }, report2Id) as { id: string; resource_id: string }[];
-const welderLine2 = lines2.find((l) => l.resource_id === welderId)!;
-
-// wbs_id is not one of act_modify_shift_report_resource's captured
-// attributes (only quantity/rate/cbs_id, per the model) — the model has no
-// activity that sets it, by design (§4.6 calls it a rare, deliberate
-// exception). Set it directly on the staged record to exercise the branch.
-const rec2 = host.adapter.getRecord(welderLine2.id)!;
-(rec2.customFields as Record<string, unknown>).wbs_id = wbs34.id;
-
 run('act_submit_shift_reports', {}, report2Id);
 const approved2 = run('act_approve_shift_reports', {}, report2Id);
-check('Approve runs with one pinned line and one split line', approved2.ok, approved2.ok ? '' : approved2.why);
+check('Approve runs', approved2.ok, approved2.ok ? '' : approved2.why);
 const usage2 = allOf('rt_wbs_resource_usage', (f) => f.report_id === report2Id);
-const pinnedRows = usage2.filter((r) => r.customFields.source_line_id === welderLine2.id);
-check('the pinned line produced exactly ONE usage row (whole to 3.4), not split', pinnedRows.length === 1, `${pinnedRows.length} rows`);
-check('  …and it landed on 3.4, not blank', pinnedRows[0]?.customFields.wbs_id === wbs34.id, String(pinnedRows[0]?.customFields.wbs_id));
+check('every line split across both nodes (no per-line pinning left in the model)', usage2.length === 4, `${usage2.length} rows`);
+const cost34 = usage2.filter((r) => r.customFields.wbs_id === wbs34.id).reduce((a, r) => a + Number(r.customFields.tracked_cost), 0);
+const cost35 = usage2.filter((r) => r.customFields.wbs_id === wbs35.id).reduce((a, r) => a + Number(r.customFields.tracked_cost), 0);
+check('an even 6h/6h split lands the cost evenly, 50/50', Math.abs(cost34 - cost35) < 0.01, `3.4=${cost34}, 3.5=${cost35}`);
 
 console.log('\n── defects ───────────────────────────────────────────────────────────');
 const defectOnApproved = run('act_create_defects', {

@@ -9,11 +9,34 @@ dev through `packages/server/scripts/shift-reports-model.ts` and pass
 `check-model.ts` clean. `packages/server/scripts/verify-shift-reports.ts`
 drives the whole lifecycle — work group → resources → standard set → shift
 report → WBS rows → Calculate → Submit → Approve → defect lifecycle — through
-the real engine with no `writeBack`, and re-checks the four defects §10a
-measured (blank-fk-is-not-null, float equality on hours, a blank number
-poisoning a total, shares that do not sum to the whole); all pass. **The
-pages (§8) and the demonstration data (§9) are still to be built** — a
-separate session for each, per the standing instruction.
+the real engine with no `writeBack`, and re-checks the defects §10a measured
+(float equality on hours, a blank number poisoning a total, shares that do
+not sum to the whole; the fourth, blank-fk-is-not-null, is discussed below);
+all pass. **The pages (§8) and the demonstration data (§9) are still to be
+built** — a separate session for each, per the standing instruction.
+
+A cold-test pass against this build (§10a's own method, run cold against the
+spec and the diff) found three real gaps, since closed or corrected:
+
+- **§5.1's per-line "pin to one WBS node" exception was reachable by no
+  activity.** The field existed and Approve's hook handled both branches
+  correctly, but nothing ever let a person set it. Rather than build the
+  missing activity, the exception itself was removed (2026-09-23) — it was
+  judged to buy limited accuracy for the complexity of a mechanism nobody
+  could reach. §5.1 and §4.6 reflect the removal; §10a's write-up on
+  blank-fk-is-not-null is kept as the general lesson (still load-bearing
+  elsewhere — the work-group leaf checks, `standardResourceSet`'s parent
+  lookup), decoupled from the feature that originally surfaced it.
+- **§4.1a's split work groups had no re-parenting path** — `wg_parent` was
+  sourced as the literal `''` on create, always, with no "Move" activity —
+  so a WG-TRENCH could never actually be created under a WG-SPREAD. Not yet
+  fixed; next on the list.
+- **Submit's gate did not reverify the WBS-hours-equals-work_hours
+  invariant** — it checked only that resource lines were marked
+  `calculated`, which editing a report's times after Calculate does not
+  clear, so a report could reach Submit with resource lines still priced
+  against a WBS split that no longer matches `work_hours`. Not yet fixed;
+  next on the list.
 
 One departure from this spec's own wording, made during the build and flagged
 here rather than silently taken: §10's "both status sets... enforced at
@@ -322,7 +345,6 @@ standard set, priced at `work_hours`. Confirm, adjust, or remove.
 | `quantity` | `decimal` | `work_hours` × the standard count, adjustable. |
 | `calculated` | `text` | `'true'` once Calculate has priced this line; cleared when it is run again. |
 | `unit` / `rate` / `cbs_id` | `text` / `decimal` / `fk_ref` | Copied at the time and never changed afterwards. |
-| `wbs_id` | `fk_ref` → `rt_wbs_nodes` | **Normally blank.** Set only to say this one resource sat on one node all shift, in which case its cost is not split (§5.1). |
 | `tracked_cost` | `decimal` | `quantity × rate`, written by a hook. Never typed, never written to `actual_cost`. |
 | `expired` | `text` | |
 
@@ -378,7 +400,7 @@ Two of the existing shared attributes cannot be reused:
   **Only `parent_id` needs that spelling.** An attribute naming a field names
   exactly one record type and one field, so applying it everywhere would mean
   roughly thirteen reference attributes instead of five — `cbs_id` appears on
-  four of the new record types, `wbs_id` on four, `report_id` on three. Where
+  four of the new record types, `wbs_id` on three, `report_id` on three. Where
   every type spells the field the same way and points at the same place, one
   shared attribute serves them all, which is how `project_id` already works
   across two record types. The field-naming spelling is for the case it was
@@ -457,9 +479,13 @@ Specialized Lifting & Access. The shift consumed
 $11,900. Node `3.4` receives $7,140 of it and `3.5` receives $4,760 — and the
 cost codes are unaffected by the split, because each line carried its own.
 
-**A per-line exception**: where one resource genuinely sat on one node all
-shift while the rest moved, `wbs_id` is set on that line and its cost goes
-whole to that node instead of being divided.
+**A per-line "pin to one node" exception was designed, built, then removed**
+(2026-09-23, after the model landed). Every resource line always divides by
+hours — no exception. The idea was a way for one resource that genuinely sat
+on one node all shift to skip the split, but the accuracy it bought was
+limited and it was never actually reachable — no activity in the built model
+ever offered a way to set it — so the field and the branch it fed are gone
+rather than finished. `rt_shift_report_resource_usage` carries no `wbs_id`.
 
 **A grid of every resource against every WBS node was designed and dropped.**
 It is accurate in principle and unusable in practice: a manager filing at the
@@ -726,12 +752,15 @@ an after hook and a `returns` expression provided it declares itself as a read.
 **Four things bite, none of them obvious, all of them measured.**
 
 **A blank reference is not null.** A blank `fk_ref` stores `''` and reaches a
-script as a pointer with an empty id, so `line.wbs_id is not null` is **true for
-every line**. Written that way, the per-line exception (§5.1) took the
-whole-to-one-node branch for all twelve lines and wrote twelve rows with a blank
-node instead of thirty-six — no error, no warning. **`<> ''` is the only test
-that separates a blank reference from a set one**, and the same applies
-anywhere else a reference is tested for emptiness.
+script as a pointer with an empty id, so `line.wbs_id is not null` was **true
+for every line**. Written that way, the per-line exception §5.1 described at
+the time (since removed — see §5.1) took the whole-to-one-node branch for all
+twelve lines and wrote twelve rows with a blank node instead of thirty-six —
+no error, no warning. **`<> ''` is the only test that separates a blank
+reference from a set one**, and the same applies anywhere else a reference is
+tested for emptiness — the lesson outlived the feature that surfaced it, and
+the model still relies on it elsewhere (the leaf checks in §6/§7, the
+work-group uniqueness check).
 
 **Float equality cannot be used on hours.** Hours of 0.1, 8.2 and 1.7 total
 9.999999999999998, so `total <> work_hours` rejects a correct report. The check
