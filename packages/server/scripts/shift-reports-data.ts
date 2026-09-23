@@ -174,7 +174,7 @@ const THEME_POOL: Record<string, string[]> = {
 const UA = 'FluxusDemoDataLoader/1.0 (internal tooling; contact: trajce.toshevski@gmail.com)';
 
 interface PhotoDescriptor {
-  storage_key: string; name: string; mime: string; size: number; hash: string;
+  storage_key: string; thumb_key: string; name: string; mime: string; size: number; hash: string;
   width: number; height: number;
 }
 
@@ -388,7 +388,7 @@ for (const [key, src] of Object.entries(PHOTO_SOURCES)) {
   const { width, height } = jpegDimensions(buf);
   const { storageKey } = makeStorageKey(src.title, now);
   console.log(`   ${key.padEnd(30)} ${width}x${height}  ${(buf.length / 1024).toFixed(0)}KB  ${src.licence}, ${src.author}`);
-  photoDescriptors[key] = { storage_key: storageKey, name: src.title, mime: 'image/jpeg', size: buf.length, hash, width, height };
+  photoDescriptors[key] = { storage_key: storageKey, thumb_key: storageKey, name: src.title, mime: 'image/jpeg', size: buf.length, hash, width, height };
   attachmentRows.push({ storageKey, size: buf.length, mime: 'image/jpeg', hash, width, height, status: 'committed' });
   if (!dry) {
     const uploadUrl = await blobStore.presignUpload(storageKey, 'image/jpeg');

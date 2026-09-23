@@ -1228,8 +1228,11 @@ inventory — not correcting each day's entry.
 
 **Photographs.** R2 is configured. A loader must build the descriptor itself:
 SHA-256 from `node:crypto`, dimensions from the JPEG header, and a row in the
-attachments ledger per photo. `thumb_key` is left out — display falls back to
-the full image. Images from Unsplash or Wikimedia Commons, with source and
+attachments ledger per photo. There is no separate thumbnail, so `thumb_key` is
+set to the `storage_key` — the full image. It cannot be left out: it is a
+required part of a photo, and although display never checks, Modify re-submits
+a report's photos and the server refused them (corrected 2026-09-23, after the
+first load did leave it out; shift-reports-photo-thumbs.ts patched those). Images from Unsplash or Wikimedia Commons, with source and
 licence recorded in the loader's header.
 
 **A module, later.** Work groups, resources, shift reports, resource usage and
