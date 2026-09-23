@@ -7,7 +7,7 @@
 
 **A page is drawn in two parts: the parts every page has, which the page draws
 itself, and content, which the author lays out.** The auto parts are the
-**header**, the **tabs**, the **actions** and the **errors**. Everything else —
+**header**, the **actions**, the **tabs** and the **errors**. Everything else —
 lists, text, photos, buttons — is content, placed in slots exactly as today.
 
 The author never places an auto part. They give the page what the part needs —
@@ -18,9 +18,10 @@ looks the same at the top, and that part of authoring does itself.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ ←  Shift Report SR-0042   [Submitted]        [Approve] [Reject] │  header + actions
-│    12/09/2026 · Day                                      │
-│  Details   WBS Rows   Resources Used   Defects   Photos  │  tabs
+│ ←  Shift Report SR-0042   [Submitted]                     │  header
+│    12/09/2026 · Day                                       │
+│    [Modify] [Calculate] [Submit]                          │  actions
+│  Details   WBS Rows   Resources Used   Defects   Photos   │  tabs
 ├───────────────────────────────────────────────────────────┤
 │                                                           │
 │   content — the page's layout, scrolling                  │
@@ -30,7 +31,8 @@ looks the same at the top, and that part of authoring does itself.
 └───────────────────────────────────────────────────────────┘
 ```
 
-- `PageRenderer` draws the header, actions and tabs **above** the layout, and
+- `PageRenderer` draws the header, then the actions, then the tabs **above**
+  the layout (actions before tabs, ruled 2026-09-23), and
   the errors **below** it. They are outside the layout, so they stay put while
   the content scrolls under them.
 - The layout is unchanged: it is the content, and its scrolling panel scrolls
@@ -40,7 +42,7 @@ looks the same at the top, and that part of authoring does itself.
 
 ## 3. Header
 
-**What the page states** (new page-definition fields; names proposed, see §8):
+**What the page states** (new page-definition fields; §8):
 
 | Field | What it is | Example |
 |---|---|---|
@@ -48,15 +50,14 @@ looks the same at the top, and that part of authoring does itself.
 | `subtitle` | Optional line under the title. Holes as above. | `{{ context.record.report_date }} · {{ context.record.shift }}` |
 | `status` | Optional. A value shown as a label beside the title. Holes as above. | `{{ context.record.status }}` |
 | `statusColours` | Optional. Which colour each status value is drawn in. | `{ Draft: grey, Submitted: blue, Approved: green, Rejected: red }` |
-| `header` | Optional, default on. `false` draws no header, and so no actions. | a landing page or a dashboard with its own top |
 
-**What it draws:** ← , the title, the status label, and the subtitle beneath,
+**Every page has a header** — there is no switch to turn it off (ruled
+2026-09-23). **What it draws:** ← , the title, the status label, and the subtitle beneath,
 the same as today's `PageHeader` plus the status.
 
 - **Back** works as `PageHeader`'s does today: the host's history, greyed on the
   first page opened (page-runtime SPEC § PageHeader).
-- **Status colours come from a fixed set** (proposed: grey, blue, green, amber,
-  red), not free CSS colours. That is the rule `Text` already follows ("two
+- **Status colours come from a fixed set** (grey, blue, green, amber, red), not free CSS colours. That is the rule `Text` already follows ("two
   fixed sets, no CSS"): once an author can write their own red, screens stop
   matching each other. A value missing from the list is drawn grey.
 - **A blank status draws no label.** A page with no record, or a record with no
@@ -65,14 +66,37 @@ the same as today's `PageHeader` plus the status.
   `validatePage` warns, since a page with no title is almost certainly an
   oversight. It does not fail.
 
-## 4. Tabs
+## 4. Actions
+
+**What it draws:** the record's actions, in a row under the header and above
+the tabs.
+
+- **They are exactly what `RecordActivities` shows today**: the workflow's
+  actions on the page's record, minus those whose `show_condition` rules them
+  out, re-asked after every run. The mechanism moves under the header; it is
+  not changed.
+- **A page with no record has no actions.**
+- A page that places a `RecordActivities` slot keeps working. It then shows the
+  same buttons twice, and `validatePage` warns.
+- **Creates stay content.** `RecordActivities` leaves out CREATE activities by
+  design, so *Raise amendment*, *Add WBS row*, *Raise defect* remain
+  hand-placed `RunActivity` buttons.
+
+**Deferred: the page's own control over its actions.** By default the model
+decides which actions appear, through their show conditions. Giving the page a
+say as well (which to show, which not, creates hanging off the record, order)
+is wanted, but it is its own piece of design and the user will specify it
+separately (2026-09-23). Until then the actions are the model's list, as
+`RecordActivities` gives it today.
+
+## 5. Tabs
 
 **What the author states:** a `tabName` on a layout panel (the user's name and
 design, 2026-09-23). A panel that has one is a section, and its `tabName` is
 the tab's label. It is a property of the **panel**, beside `padding` and
 `overflow`, not of the component in it.
 
-**What it draws:** a tab strip under the header.
+**What it draws:** a tab strip under the actions.
 
 - **The strip shows only when more than one panel has a `tabName`** (ruled
   2026-09-23). One tab does nothing.
@@ -87,39 +111,6 @@ the tab's label. It is a property of the **panel**, beside `padding` and
   scrolling area.
 - `tabName` is not `Panel.name`. `name` is the layout editor's own label for a
   panel and never reaches the reader; `tabName` is what the reader sees.
-
-## 5. Actions
-
-**What it draws:** the record's actions, in the header on the right, where
-SAP's object page puts them.
-
-- **The actions are what `RecordActivities` shows today**: the workflow's
-  actions on the page's record, minus those whose `show_condition` rules them
-  out, re-asked after every run. The mechanism moves into the header; it is not
-  rewritten.
-- **A page with no record has no actions**, and a page with `header: false` has
-  none either.
-- A page that places a `RecordActivities` slot keeps working. It then shows the
-  same buttons twice, and `validatePage` warns.
-
-**Open: creates.** `RecordActivities` leaves out CREATE activities by design (a
-CREATE belongs to a collection and has no record to act on). But many "create"
-buttons on today's pages hang off the page's record: *Raise amendment*, *Add
-WBS row*, *Raise defect*, *Add child*. They are hand-placed `RunActivity`
-buttons, some of which fill in a field with the record's id. Three ways:
-
-1. **They stay content.** The author places them as today. Simplest; the header
-   only ever shows the record's own actions.
-2. **The page lists them.** A page field names the creates to show in the
-   header, each with the field to fill from the record, the same shape
-   `RunActivity` already takes (`target`, `attribute`).
-3. **The model works them out.** Every CREATE whose record type has a field
-   pointing at this record type. Automatic, but it guesses: it would offer
-   creates a page never wanted, and a record type pointing at another twice
-   (two fields) is ambiguous.
-
-Recommended: **1 for the first build**, then 2 once real pages show which
-creates belong up top. 3 guesses, and the model is not the page.
 
 ## 6. Errors
 
@@ -159,19 +150,17 @@ Mechanical, one script, drafts only (the pattern of `projects-page-headers.ts`):
 - The `PageHeader` component stays registered until no page uses it, then is
   retired.
 
-## 8. Names needing sign-off
+## 8. Names
 
-Per the naming rule, none of these is used until endorsed:
-
-- `tabName` — **endorsed** (the user's, 2026-09-23).
-- Page-definition fields: `title`, `subtitle`, `status`, `statusColours`, `header`.
-- The colour set: grey, blue, green, amber, red.
+All endorsed 2026-09-23: `tabName` (the user's own), the page-definition fields
+`title`, `subtitle`, `status` and `statusColours`, and the colour set grey,
+blue, green, amber, red.
 
 ## 9. The Console
 
 - **Page settings** — the Page Access section's neighbour in `PageEditor`
   gains Title, Subtitle, Status (each an expression field with `{{ }}`, as the
-  Text component's text box is), the status-colour list, and the header switch.
+  Text component's text box is) and the status-colour list.
 - **Layout editor** — a panel gains a Tab name box beside its padding.
 - **Palette** — `PageHeader` leaves the palette when it is retired (§7).
 
@@ -180,4 +169,4 @@ Per the naming rule, none of these is used until endorsed:
 - Restoring the scroll position on Back (raised 2026-09-23, left for later).
 - A trail of the pages behind this one; it needs a readable name for each
   record, which nothing resolves yet.
-- Header actions for creates (§5, option 2).
+- The page's own control over its actions (§4) — to be specified separately.
