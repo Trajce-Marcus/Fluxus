@@ -1,5 +1,10 @@
 # Shift Reports & Work Groups — spec
 
+**Status: model and pages built** (2026-09-23, branch `feat/console-users-ui`).
+The pages (§8) are the latest pass — see the note at the end of this section
+and §8's own. **The demonstration data (§9) is still to be built** — a
+separate session, per the standing instruction.
+
 **Status: model built, second pass** (2026-09-23, branch `feat/console-users-ui`).
 The first pass (below) built the eight record types against the design as it
 stood before the cold review in §1.1; this pass rebuilds the pieces that
@@ -33,8 +38,7 @@ expire-children-first order, the Submit/Approve warning (needs-confirmation,
 then `acknowledgedWarnings`), Reject, Cancel, and an amendment posting a
 negative quantity and cost undivided — through the real engine with no
 `writeBack`; every check passes, including the whole first pass's suite
-unchanged. **The pages (§8) and the demonstration data (§9) are still to be
-built** — a separate session for each, per the standing instruction.
+unchanged.
 
 A cold test on the second pass found the amendment/ordinary activity-set split
 (§5.4) was a page's choice, not a gate — an amendment's line could be added to
@@ -138,6 +142,45 @@ get real `list` attributes — proving the mechanism on real interactive capture
 Previously: two things had happened ahead of this build — the cost codes were
 rebuilt in the database (§8a), and the design was reworked in discussion on
 2026-09-22/23 (§1.1 records what moved and why).
+
+**The pages (§8) were built in a following session** (2026-09-23), through
+`packages/server/scripts/shift-reports-pages.ts`. Five GET activities landed
+alongside them, beyond the model's own build — none of them a redesign, all
+of them a page reading something no existing GET returned:
+
+- **`act_list_shift_report_contributions`** — nothing returned the
+  per-work-group-per-date state the Contributions grid draws (§8's colour
+  rule: green only when the report and every amendment against it are
+  approved). The fold-in is a correlated count that has to go through a named
+  function (`amendmentsAllApproved`, §7's own rule — a query written inline
+  inside `select` binds to the wrong row) called from the GET's own `select`,
+  verified directly against the real engine before it was trusted: an
+  approved report with no amendment reads `approved`, one with a still-open
+  amendment reads `inflight`.
+- **`act_list_shift_report_amendments`** — `act_list_shift_reports`
+  deliberately excludes amendments (§6), so a report had no way to list what
+  was raised against it, which the shift-report page needs.
+- **`act_list_contribution_rows`**, **`act_list_reports_awaiting_approval`**,
+  **`act_list_recently_approved_reports`** — found only once the pages were
+  written and run through the real `validatePage`: `invoke(...).where(...)`
+  and `.select(...)` chains work at the DSL evaluator (the chain methods are
+  generic over any array, not only a live `records.X` query — verified
+  directly), but the *static* validator cannot resolve a bare field name
+  against an `invoke()` result, whose shape it cannot see. Each is a narrower
+  cut of an existing GET, the same shape `act_list_work_group_reports`
+  already is beside `act_list_shift_reports` — not a chain on the page.
+
+**A known rough edge, raised and deliberately left as-is, the user's own
+call:** `RecordList` has no way to turn a stored reference id into a readable
+label — that lives only in the capture form's resolver, which a page's read
+side does not have. Every existing GET the pages reuse
+(`act_list_shift_reports`, `act_list_defects`, `act_list_shift_wbs`,
+`act_list_shift_report_resources`) returns a raw id for a work group, WBS node
+or cost code, so a column meant to read "work group" or "WBS" shows the id
+until a person opens the record's own page. Touching those GETs was weighed
+against "the model is built, don't redesign it" and set aside; every list
+carries an **Open** action to the record's own page, where the real fields
+are.
 
 Started as a site diary for the demo. The discussion changed what is being
 built, so the name changed with it: the record is a **shift report**, filed by a
@@ -862,6 +905,15 @@ arrived. Showing tracked against actual, with actual blank, is the
 demonstration.
 
 ## 8. Pages
+
+**Built** (2026-09-23), through `packages/server/scripts/shift-reports-pages.ts`
+— see the intro's note on the five GET activities that landed with it and the
+raw-id rough edge left open. Drafts only; publishing each is a person's act in
+the Console. Not built: the "Raise amendment" button is always shown rather
+than hidden until approval — the page-runtime has no way to condition a
+placed button's visibility on the record's own state (only `RecordActivities`
+computes a live `show_condition`, and it structurally excludes CREATE
+activities); the model's own gate refuses the click cleanly instead.
 
 **Project page** gains three sections: **Work Groups** (with manager and active
 state), **Shift Reports** (report no, date, shift, work group, hours, status,
