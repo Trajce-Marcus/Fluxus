@@ -275,6 +275,29 @@ An app-triggered run and a workbench run are then the same run.
   every caller multiplies it by a rate and ten minutes is otherwise 0.1666….
   No dependency: the module is itself the boundary, so a date library slots in
   behind it if this ever grows into parsing, formatting or time zones.
+- **`services.math`** — engine-owned, pure: `distribute(weights, total,
+  precision)` splits `total` across `weights` so the parts, at `precision`
+  decimal places, sum to exactly `total`. It normalises the weights, applies
+  them, floors each share, and hands the leftover units to the largest
+  remainders — so `distribute([3.5, 4.0, 2.5], 81, 0)` is `[28, 33, 20]` and
+  `distribute([1, 1, 1], 100, 2)` is `[33.34, 33.33, 33.33]` rather than
+  99.99. `precision: 0` is an ordinary case: whole units that still add up.
+
+  It exists because dividing money or quantity and having the parts equal the
+  whole is not something the language can express — there is no `sum`, no
+  sort, and rounding each share independently loses or invents the last unit.
+  Hand-rolling it in a hook is possible and was done once, in the projects
+  solution's cost division; it is the kind of thing that is written correctly
+  once and subtly wrongly afterwards, which is what makes it capability rather
+  than a recipe. Same reasoning as `services.time`: **operators are language,
+  calculations are capability.**
+
+  `kind: 'read'`, callable from a before hook, an after hook and a `returns`
+  alike. **Signed totals are carried**: a negative total distributes to
+  negative parts that still sum to it, because a correction is as ordinary as
+  an allocation. Degenerate input answers rather than failing, as `time` does
+  — weights that sum to zero, or an empty list, give back zeros.
+
 - **Entry append order** — the entry is appended *after* the after hook runs
   (one write carrying user input + hook-written attributes + system log), but
   a failing after hook still appends the entry before the error propagates —

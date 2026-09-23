@@ -570,12 +570,18 @@ $11,900. Node `3.4` receives $7,140 of it and `3.5` receives $4,760 — and the
 cost codes are unaffected by the split, because each line carried its own.
 
 **A per-line "pin to one node" exception was designed, built, then removed**
-(2026-09-23, after the model landed). Every resource line always divides by
-hours — no exception. The idea was a way for one resource that genuinely sat
-on one node all shift to skip the split, but the accuracy it bought was
-limited and it was never actually reachable — no activity in the built model
-ever offered a way to set it — so the field and the branch it fed are gone
-rather than finished. `rt_shift_report_resource_usage` carries no `wbs_id`.
+(2026-09-23, after the model landed). On an ordinary report every resource line
+divides by hours — no exception. The idea was a way for one resource that
+genuinely sat on one node all shift to skip the split; the accuracy it bought
+was limited and it was never reachable — no activity in the built model ever
+offered a way to set it — so it went rather than being finished.
+
+**`wbs_id` is back on the line, for a different reason** (§5.4). An
+amendment's lines name the node their correction lands on and are posted
+whole; an ordinary report's leave it blank and divide. So the branch the pin
+once fed is live again, but this time something writes it. **The test is the
+line's own `wbs_id <> ''`** — not anything about the report, and not a null
+test (§10a).
 
 **A grid of every resource against every WBS node was designed and dropped.**
 It is accurate in principle and unusable in practice: a manager filing at the
@@ -591,6 +597,15 @@ else.
 **A division by zero is possible** — a report whose WBS hours total nothing —
 and the DSL throws rather than returning zero. The approval hook must not
 attempt the split when there are no hours.
+
+**The split is `services.math.distribute`, not arithmetic in the hook.** Given
+the WBS rows' hours as weights, the line's cost as the total and a precision,
+it returns shares that sum to exactly the total — the largest-remainder rule,
+which §10a found this model needed and got wrong on its own first attempt. It
+is an engine service (`packages/engine/docs/SPEC.md`) rather than a recipe
+repeated in every hook that divides, for the reason `hoursBetween` is one:
+operators are language, calculations are capability. Approve's hook names it
+and does no rounding of its own.
 
 **Removed lines must be filtered explicitly.** Reaching a report's children
 through the record — its WBS rows, its resource lines — returns every incoming
@@ -1041,7 +1056,9 @@ nothing reconciles the two and the gap is silent.
 **The rule: largest remainder.** Every share is rounded, and the difference
 between their sum and the line's total is given to the largest share. The parts
 then always equal the whole, which is the property that matters when the two
-tables are compared.
+tables are compared. *(Since recorded here, this became
+`services.math.distribute` in the engine rather than DSL repeated in every hook
+that divides — see §5.1.)*
 
 **Two smaller facts worth holding.** A failed after hook still leaves a history
 entry, so a failed approval is visible rather than silent. And the binding
