@@ -1,9 +1,14 @@
 # Shift Reports & Work Groups — spec
 
-**Status: model and pages built** (2026-09-23, branch `feat/console-users-ui`).
-The pages (§8) are the latest pass — see the note at the end of this section
-and §8's own. **The demonstration data (§9) is still to be built** — a
-separate session, per the standing instruction.
+**Status: model, pages and demonstration data built** (2026-09-23, branch
+`feat/console-users-ui`). §9 landed last, through
+`packages/server/scripts/shift-reports-data.ts` — written straight to the
+records, per this section's own standing ruling. Four weeks, six days a week:
+95 ordinary shift reports (86 Approved, 6 Submitted, 4 Draft), WG-COAT's one
+deliberate gap on 2026-10-27, one amendment (§5.4) left Submitted against an
+Approved report, three defects in three states, and real photos (Wikimedia
+Commons, source and licence recorded in the loader) uploaded to R2. Cold-tested
+clean against §9 and this doc.
 
 **Status: model built, second pass** (2026-09-23, branch `feat/console-users-ui`).
 The first pass (below) built the eight record types against the design as it
