@@ -88,9 +88,9 @@ describe('numbers', () => {
 describe('currency', () => {
   it('takes a fixed code off the column', () => {
     expect(resolveCurrency('aud', {})).toBe('AUD');
-    // The symbol is the reader's locale's business, not the column's — an
-    // Australian dollar is 'A$' to an American and '$' to an Australian.
-    expect(draw(1234.5, 'decimal', 'C2', 'AUD')).toMatch(/^A?\$1,234\.50$/);
+    // The narrow symbol, whatever the reader's locale: an Australian dollar is
+    // '$', never 'A$' (2026-09-23).
+    expect(draw(1234.5, 'decimal', 'C2', 'AUD')).toBe('$1,234.50');
     expect(draw(1234.5, 'decimal', 'C0', 'JPY')).toMatch(/1,23[45]$/);
   });
 

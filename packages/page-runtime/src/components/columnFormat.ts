@@ -79,9 +79,11 @@ function drawNumber(value: unknown, type: ColumnType, format: string | undefined
   const fraction = { minimumFractionDigits: digits, maximumFractionDigits: digits };
 
   if (letter === 'C') {
-    // No code to spend: a plain number beats a wrong symbol.
+    // No code to spend: a plain number beats a wrong symbol. `narrowSymbol`
+    // draws AUD as `$`, not `A$`, whatever the browser's locale (2026-09-23,
+    // user ruling) — the cost is that AUD and USD then look alike.
     return currency
-      ? n.toLocaleString(undefined, { style: 'currency', currency, ...fraction })
+      ? n.toLocaleString(undefined, { style: 'currency', currency, currencyDisplay: 'narrowSymbol', ...fraction })
       : n.toLocaleString(undefined, fraction);
   }
   if (letter === 'P') return (n * 100).toLocaleString(undefined, fraction) + '%';

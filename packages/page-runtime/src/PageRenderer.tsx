@@ -129,11 +129,20 @@ interface Props {
 
 export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, recordId, debug }: Props) {
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
-  const [errors, setErrors] = useState<{ componentName: string; message: string }[]>([]);
+  // Which page, about which record. The anchor and the errors are each held
+  // against the key they belong to (2026-09-23): the renderer is not remounted
+  // when one page opens another, so for one frame the new page's slots were
+  // drawn against the *old* page's record — every `context.record.<field>` of
+  // a shift report evaluated against a project — and the errors that produced,
+  // like any the old page raised, stayed on the list after the page changed.
+  const pageKey = `${pagePath}\u0000${recordId ?? ''}`;
+  const [errors, setErrors] = useState<{ pageKey: string; componentName: string; message: string }[]>([]);
   // The page's own record, resolved before the first frame: a run's history
   // entry has to land somewhere, so a page that acts must know what it is
   // about before anything on it can act (CLIENT_TRUST_BOUNDARY §7).
-  const [anchor, setAnchor] = useState<{ status: 'resolving' } | { status: 'ready'; record: RecordInstance | null } | { status: 'failed'; message: string }>({ status: 'resolving' });
+  const [resolved, setAnchor] = useState<{ pageKey: string; anchor: { status: 'ready'; record: RecordInstance | null } | { status: 'failed'; message: string } } | null>(null);
+  const anchor = resolved && resolved.pageKey === pageKey ? resolved.anchor : { status: 'resolving' as const };
+  const pageErrors = errors.filter((e) => e.pageKey === pageKey);
 
   const def = runtime.getPage(pagePath);
   const layout = def?.layout ?? null;
@@ -149,17 +158,18 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
 
   useEffect(() => {
     let cancelled = false;
-    setAnchor({ status: 'resolving' });
+    setAnchor(null);
+    setErrors((prev) => prev.filter((e) => e.pageKey === pageKey));
     void (async () => {
       try {
         const record = await resolvePageAnchor(runtime, { record: declaredRecord }, recordId);
-        if (!cancelled) setAnchor({ status: 'ready', record });
+        if (!cancelled) setAnchor({ pageKey, anchor: { status: 'ready', record } });
       } catch (err) {
-        if (!cancelled) setAnchor({ status: 'failed', message: err instanceof Error ? err.message : String(err) });
+        if (!cancelled) setAnchor({ pageKey, anchor: { status: 'failed', message: err instanceof Error ? err.message : String(err) } });
       }
     })();
     return () => { cancelled = true; };
-  }, [runtime, pagePath, recordId, declaredRecord?.type, declaredRecord?.instances]);
+  }, [runtime, pageKey, recordId, declaredRecord?.type, declaredRecord?.instances]);
 
   const anchorRecord = anchor.status === 'ready' ? anchor.record : null;
   const pageCtx = useMemo<PageContext>(
@@ -172,8 +182,8 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   }, []);
 
   const handleError = useCallback((error: Error, componentName: string) => {
-    setErrors((prev) => [...prev, { componentName, message: error.message }]);
-  }, []);
+    setErrors((prev) => [...prev, { pageKey, componentName, message: error.message }]);
+  }, [pageKey]);
 
   // An activity run refreshes the WHOLE page, not the component that launched
   // it (2026-09-18). The tick lived in `ComponentContainer`, so a run only
@@ -228,12 +238,12 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
         />
       </div>
 
-      {errors.length > 0 && (
+      {pageErrors.length > 0 && (
         <div className="pr-errors">
-          {errors.map((e, i) => (
+          {pageErrors.map((e, i) => (
             <div key={i} className="pr-error-item">
               <strong>{e.componentName}:</strong> {e.message}
-              <button onClick={() => setErrors((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+              <button onClick={() => setErrors((prev) => prev.filter((x) => x !== e))}>✕</button>
             </div>
           ))}
         </div>

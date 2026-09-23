@@ -222,17 +222,26 @@ function buildProjectPageAdditions(existingDef: {
   // pushed directly (not through `auto()`, which would nest it as its own
   // vertical stack when it is already the horizontal `row()` panel it needs
   // to be).
+  //
+  // Adding is idempotent (2026-09-23): the first build ran this twice and the
+  // published project page carried every new section, and the links row, twice.
+  // Anything already placed is left where it is rather than added again.
+  const placed = (children: unknown[]) => new Set(children.map((c) => (c as { id: string }).id));
+  const addMissing = (children: unknown[], additions: unknown[]) => {
+    const have = placed(children);
+    return [...children, ...additions.filter((a) => !have.has((a as { id: string }).id))];
+  };
+
   const header = existingDef.layout.root.children[0] as { children: unknown[] };
-  header.children = [...header.children, projectLinksPanel];
+  header.children = addMissing(header.children, [projectLinksPanel]);
 
   const bodyPanel = existingDef.layout.root.children[1] as { children: unknown[] };
-  bodyPanel.children = [
-    ...bodyPanel.children,
+  bodyPanel.children = addMissing(bodyPanel.children, [
     auto('slot-work-groups-new', 6),
     auto('slot-work-groups', 4),
     auto('slot-shift-reports', 10),
     auto('slot-defects', 10),
-  ];
+  ]);
 
   const componentDependencies = [...existingDef.componentDependencies];
   for (const name of ['OpenPage']) {
@@ -248,6 +257,7 @@ const SHIFT_REPORT_DETAILS_ROWS = [
   "[ { id: 'wg',       property: 'Work group',    value: context.record.wg_id },",
   "  { id: 'date',     property: 'Date',          value: context.record.report_date },",
   "  { id: 'shift',    property: 'Shift',         value: context.record.shift },",
+  "  { id: 'status',   property: 'Status',        value: context.record.status },",
   "  { id: 'start',    property: 'Start time',    value: context.record.start_time },",
   "  { id: 'end',      property: 'End time',      value: context.record.end_time },",
   "  { id: 'breaks',   property: 'Break hours',   value: context.record.break_hours },",
