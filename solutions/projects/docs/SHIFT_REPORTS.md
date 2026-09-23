@@ -66,10 +66,11 @@ spec and the diff) found three real gaps, since closed or corrected:
   resubmitted or cancelled, and a cancelled report reads as a hole in §6
   rather than papering over one.
 
-  **An amendment is a shift report whose `report_id` names the report it
+  **An amendment is a shift report whose `amended_report_id` names the report it
   corrects** (§5.4), raised by a button on that report. No separate flag: the
-  pointer and the fact are one field, and the test is `report_id <> ''` — the
-  blank-fk idiom, not a null check (§10a). Two designs were tried and
+  pointer and the fact are one field, and the test is `amended_report_id <> ''`
+  — the blank-fk idiom, not a null check (§10a). It is deliberately not the
+  pooled `report_id`, which makes a different claim (§4.9). Two designs were tried and
   dropped on the way: a second shift report carrying the difference with a zero
   `work_hours` (which restated times and WBS rows for no reason), and a pair of
   record types of its own (which duplicated the lifecycle). What settled it:
@@ -372,7 +373,7 @@ Every work group holds its own set — a child never draws on its parent's
 | `site_notes` | `text` (multiline) | |
 | `report_photos` | `photo` (`multi`, `max_count: 6`) | Photos of the shift. A defect's photos go on the defect. |
 | `status` | `text` | `Draft` → `Submitted` → `Approved`. |
-| `report_id` | `fk_ref` → `rt_shift_reports` | Blank on an ordinary report. **Set on an amendment** — the approved report it corrects, sourced from the page that raised it. One field does both jobs: a report with a parent report *is* an amendment (§5.4). |
+| `amended_report_id` | `fk_ref` → `rt_shift_reports` | Blank on an ordinary report. **Set on an amendment** — the approved report it corrects, sourced from the page that raised it. One field does both jobs: a report that amends another *is* an amendment (§5.4). Not the pooled `report_id`, which means "the report this record belongs to" (§4.9) and would be a different claim here. |
 | `approved_by` / `approved_date` | `text` / `datetime` | Written by the Approve activity, available to the parent group's manager (§4.1a). A group with no parent is approved by its own manager. |
 | `expired` | `text` | |
 
@@ -665,8 +666,8 @@ has posted yet. Once approved, that window is shut. The reason is the ledger:
 Approve divides cost into `rt_wbs_resource_usage` (§5.1), and editing the
 source of posted cost means un-posting and re-posting it.
 
-**A correction is an amendment: a shift report whose `report_id` names the
-report it corrects**, raised by a button on that report, which sources it.
+**A correction is an amendment: a shift report whose `amended_report_id` names
+the report it corrects**, raised by a button on that report, which sources it.
 There is no separate flag — a report with a parent report is an amendment, and
 one without is not. It is
 submitted and approved like any report, and on approval its lines post to the
@@ -723,7 +724,7 @@ a split group's parent is covered by its children, so neither is expected.
 **Two exclusions.** A cancelled report is `expired` and reads as nothing filed
 (§5.3) — that is what cancelling is for — so this query filters
 `expired <> 'true'`. And **amendments are not filings**: who-owes-a-report
-counts ordinary reports only, `report_id = ''`, or a group that corrected a
+counts ordinary reports only, `amended_report_id = ''`, or a group that corrected a
 mistake would read as having filed twice.
 
 Because cost lands at approval, each expected group is in one of three states
@@ -804,12 +805,12 @@ defects raised. Once approved it gains a **Raise amendment** button, which
 creates an amendment against it (§5.4).
 
 **`pages/shift-report-amendment`** — anchored on `rt_shift_reports` as well,
-and reached only for a record whose `report_id` is set. It shows the report it
+and reached only for a record whose `amended_report_id` is set. It shows the report it
 corrects, the notes, and the correction lines — resource, quantity (signed),
 rate, cost code, WBS node — added by hand, with the amendment's total.
 
 **This page names its own activities, and they are the whole set an amendment
-has**: create (from the report, sourcing `report_id`), add a line, adjust a line, remove a line, edit the notes, Submit, Reject,
+has**: create (from the report, sourcing `amended_report_id`), add a line, adjust a line, remove a line, edit the notes, Submit, Reject,
 Cancel, Approve. **No Calculate**, no WBS hours rows, no photos, no defects.
 Adding to `pages/shift-report` does not add to this page (§5.4).
 
