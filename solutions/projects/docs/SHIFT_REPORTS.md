@@ -36,6 +36,20 @@ negative quantity and cost undivided — through the real engine with no
 unchanged. **The pages (§8) and the demonstration data (§9) are still to be
 built** — a separate session for each, per the standing instruction.
 
+A cold test on the second pass found the amendment/ordinary activity-set split
+(§5.4) was a page's choice, not a gate — an amendment's line could be added to
+an ordinary report and vice versa, and Calculate threw a raw error on an
+amendment. Three cold-test passes over the fix, each re-deriving every
+activity's classification from scratch rather than trusting the last pass's
+tally, closed it fully: every amendment-only and ordinary-only activity in
+`wf_shift_reports` and `wf_shift_report_resource_usage` now carries a
+`before_hook` gate, symmetric, no exemption — see §5.4's own "Each set refuses
+the other's records" and §10a's new note on `attributes.*` vs `records.*`
+blank semantics, which the third pass's fix surfaced and which also fixed a
+pre-existing, unrelated bug in `act_list_defects` (the "no report filter"
+branch never fired, so the GET always returned zero defects for a whole
+project). All now built and covered by `verify-shift-reports.ts`.
+
 A cold-test pass against this build (§10a's own method, run cold against the
 spec and the diff) found three real gaps, since closed or corrected:
 
@@ -57,12 +71,12 @@ spec and the diff) found three real gaps, since closed or corrected:
   expired exactly as a standalone group is — and the umbrella buys approval by
   the owner and roll-up, nothing else. The WBS's `act_move_wbs_nodes` is
   **not** the pattern here and no move activity is built; a group put in the
-  wrong place is expired and made again. What follows from that, and is not
-  yet built: create must ask for the parent rather than source it blank, the
-  one-level cap and the expire-children-first rule need the hooks §10 now
-  specifies, and `standardResourceSet`'s fall back to the parent's set must
-  go — a child with no resources reads as empty. §9's WG-SPREAD no longer
-  holds the crew's resources; its three children carry their own.
+  wrong place is expired and made again. What follows from that, now built:
+  create asks for the parent rather than sourcing it blank, the one-level cap
+  and the expire-children-first rule use the hooks §10 specifies, and
+  `standardResourceSet`'s fall back to the parent's set is gone — a child with
+  no resources reads as empty. §9's WG-SPREAD no longer holds the crew's
+  resources; its three children carry their own.
 - **Submit's gate did not reverify the WBS-hours-equals-work_hours
   invariant** — it checked only that resource lines were marked `calculated`,
   which editing a report's times after Calculate does not clear. Working out
@@ -72,10 +86,10 @@ spec and the diff) found three real gaps, since closed or corrected:
   available whenever the filer wants it, and lines may be adjusted by hand.
   Nothing reaches back into a priced report. So a stale split is not a defect
   to block — §5.2 has Submit and Approve **`warn()`** about it, naming both
-  figures, and acknowledging is a legitimate answer. Not yet built.
+  figures, and acknowledging is a legitimate answer. Built in the second pass.
 
   Three further decisions came out of the same thread, all now specified and
-  none built: **§5.3** fixes who submits and who approves (anyone submits; the
+  built: **§5.3** fixes who submits and who approves (anyone submits; the
   parent's manager approves a child's report; convention, since `manager` is
   text and the engine cannot check it); **§5.4** rules out reopening a
   submitted report in favour of an amending report carrying the difference,
@@ -1077,6 +1091,22 @@ reference from a set one**, and the same applies anywhere else a reference is
 tested for emptiness — the lesson outlived the feature that surfaced it, and
 the model still relies on it elsewhere (the leaf checks in §6/§7, the
 work-group uniqueness check).
+
+**A captured value's blank is the opposite: `null`, not `''`.** The rule above
+is about a **stored** field, read through `records`/`context.record`. A
+**captured** value, read through `attributes` inside a hook, goes the other
+way: `coerceCapturedValue` maps an empty string to `null` before the hook ever
+sees it. Two amendment-symmetry gates (2026-09-23, closing the gap §5.4
+records) were first written `attributes.x <> ''` and silently never matched a
+genuinely blank `x` — `Raise Amendment`'s own `amended_report_id` requirement,
+and `act_list_defects`'s `report_id` "no filter" branch, which always came
+back empty for a report-less call until this was found and fixed the same way.
+Three more instances of the identical miscoding (`act_create_work_groups`'s
+`wg_parent` check, both resource-autofill checks) tested the wrong thing but
+stayed harmless because the query underneath resolved to nothing regardless —
+fixed anyway, since a comment claiming the wrong test is worse than no comment.
+**Test a captured value with `= null`/`<> null`; test a stored one with `=
+''`/`<> ''`. Never guess which root you are reading from the punctuation.**
 
 **Float equality cannot be used on hours.** Hours of 0.1, 8.2 and 1.7 total
 9.999999999999998, so `total <> work_hours` rejects a correct report. The check

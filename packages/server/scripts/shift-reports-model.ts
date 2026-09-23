@@ -460,9 +460,12 @@ const wfWorkGroups = {
         "  fail('A work group with this code already exists on this project.')",
         '}',
         // One level only (§4.1a, §10): a group whose own parent is set cannot
-        // be chosen as a parent. The test is `<> ''`, not a null check — a
-        // blank fk_ref is not null (§10a).
-        "if attributes.wg_parent <> '' {",
+        // be chosen as a parent. `wg_parent` here is a CAPTURED value, not a
+        // stored field, so its blank is `null` (coerceCapturedValue: `'' →
+        // null`) rather than `''` (§10a's blank-fk-is-not-null is about
+        // stored fields, read through `records`/`context.record` — `p` below
+        // is exactly that, so `p.parent_id <> ''` stays a `<> ''` test).
+        'if attributes.wg_parent <> null {',
         '  let p = records.work_groups.where(id = attributes.wg_parent).first',
         "  if p <> null and p.parent_id <> '' {",
         "    fail('That group already sits under a parent — work groups nest one level only.')",
@@ -877,7 +880,11 @@ const wfShiftReportResourceUsage = {
       description: 'Adds a resource used this shift that was not in the standard set. Picking one from the catalogue fills description, unit, rate and cost code where left blank.',
       before_hook: [DRAFT_REPORT_GATE('attributes.report_id'), ORDINARY_ONLY_GATE('attributes.report_id')].join('\n'),
       after_hook: [
-        "if attributes.resource_id <> '' {",
+        // `resource_id` is a CAPTURED value here (optional — "blank for
+        // something added by hand"), so blank is `null`, not `''` (§10a's
+        // blank-fk lesson, the other way round — see the nesting check on
+        // act_create_work_groups above).
+        'if attributes.resource_id <> null {',
         '  for each res in records.resources.where(id = attributes.resource_id) {',
         '    context.record.update({',
         "      description: iif(context.record.description = '', res.description, context.record.description),",
@@ -920,7 +927,11 @@ const wfShiftReportResourceUsage = {
       description: 'Adds a correction line to an amendment — signed quantity, posted whole to the WBS node it names (§5.1, §5.4). No standard set, no Calculate.',
       before_hook: [DRAFT_REPORT_GATE('attributes.report_id'), AMENDMENT_ONLY_GATE('attributes.report_id')].join('\n'),
       after_hook: [
-        "if attributes.resource_id <> '' {",
+        // `resource_id` is a CAPTURED value here (optional — "blank for
+        // something added by hand"), so blank is `null`, not `''` (§10a's
+        // blank-fk lesson, the other way round — see the nesting check on
+        // act_create_work_groups above).
+        'if attributes.resource_id <> null {',
         '  for each res in records.resources.where(id = attributes.resource_id) {',
         '    context.record.update({',
         "      description: iif(context.record.description = '', res.description, context.record.description),",
@@ -1018,8 +1029,18 @@ const wfDefects = {
     {
       id: 'act_list_defects', name: 'List Defects', record_map: 'GET', sort_order: 4,
       description: "A project's defects, or one report's when report_id is given.",
+      // `report_id` is `sourced('')` for "no filter" — but a GET's attributes
+      // are never resolved through AttributesForm (that only runs for a
+      // CREATE/UPDATE capture form), so `source` here is intent for whoever
+      // calls this GET, not something the engine evaluates. Whatever the
+      // caller passes (or omits) reaches the hook already coerced, and a
+      // blank captured value is `null`, not `''` (§10a's blank-fk lesson,
+      // the other way round: a STORED field's blank is `''`, but a CAPTURED
+      // one is coerced to `null` before a hook ever sees it). Testing `= ''`
+      // here meant the "no filter" branch could never fire — confirmed live,
+      // this always returned zero rows for a report-less call.
       returns: "records.defects.where(project_id = attributes.project_id and expired <> 'true'"
-        + " and (attributes.report_id = '' or report_id = attributes.report_id)).orderBy(raised_date desc)"
+        + " and (attributes.report_id = null or report_id = attributes.report_id)).orderBy(raised_date desc)"
         + '.select(id, defect_no, wbs_id, report_id, raised_date, location, def_description, severity, status)',
       before_hook: null, after_hook: null, attributes: attrs('project_id', sourced('report_id', "''")),
     },

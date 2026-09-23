@@ -428,6 +428,18 @@ const verified = run('act_verify_defects', { verified_date: '2026-09-25', verifi
 check('verify (close) the defect', verified.ok, verified.ok ? '' : verified.why);
 check('status is Closed', fields(defectId)?.status === 'Closed');
 
+// §8's project-page Defects panel lists the whole project, no report filter —
+// report_id is sourced('') for "no filter". A cold test found this always
+// came back empty: `report_id` is a CAPTURED value, coerced to null when
+// blank, so testing it against '' never matched. Confirmed live before the
+// fix (0 rows either way); the fix tests `= null`.
+const allProjectDefects = ask('act_list_defects', { project_id: PROJECT }, PROJECT) as { id: string }[];
+check('List Defects with no report_id returns the whole project\'s defects, not zero',
+  allProjectDefects.some((d) => d.id === defectId), `${allProjectDefects.length} rows`);
+const reportOnlyDefects = ask('act_list_defects', { project_id: PROJECT, report_id: report3Id }, PROJECT) as { id: string }[];
+check('List Defects scoped to a report still returns only that report\'s defect',
+  reportOnlyDefects.length === 1 && reportOnlyDefects[0].id === defectId, `${reportOnlyDefects.length} rows`);
+
 console.log('\n── who owes a report / leaf checks ───────────────────────────────────');
 const expected = ask('act_list_expected_work_groups', { project_id: PROJECT }, PROJECT) as { wg_code: string }[];
 check('WG-TEST appears in "expected" (active, no children, Crew)', expected.some((w) => w.wg_code === 'WG-TEST'));
