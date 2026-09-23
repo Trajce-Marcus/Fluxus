@@ -315,19 +315,28 @@ other's activities, never by reading each other's records.**
 **Built:** `PageHeader`, a component an author places — a back arrow (the
 host's history; in the Runtime, the browser's Back), a title and a subtitle.
 
-**Direction: the page draws its own header, actions, tabs and errors;
-everything else is content** (agreed 2026-09-23; spec
+**Direction: header, actions and tabs are placed components, and a new page
+starts with them already laid out** (agreed 2026-09-24; spec
 [AUTO_PAGE_COMPONENTS](../packages/page-runtime/docs/AUTO_PAGE_COMPONENTS.md)).
-A page's definition states its **title**, **subtitle** and **status** (`{{ }}`
-holes; the status drawn as a label whose **colour follows its value**, from a
-small fixed set). Under the header, the record's **actions** — the model's list,
-as `RecordActivities` gives it — and then a **tab strip**, drawn when more than
-one layout panel carries a `tabName`, that scrolls to its section (SAP's object
-page anchor bar). The **error list** stays automatic, reworded for end users.
-**Every page has a header** — the switch to turn it off, left open earlier the
-same day, was dropped. **The actions row is in the first revision**, reversing
-the earlier "left out"; the page's own control over its actions is deferred, to
-be specified separately. Not yet built.
+`PageHeader` gains a **status** label whose **colour follows its value** (the
+platform's one set of colour words); `RecordActivities` is the actions,
+unchanged; a new tab strip lists the layout panels that carry a `tabName`,
+shows when more than one does, and scrolls to them (SAP's object page anchor
+bar). A new page's layout is a top panel holding those three and a scrolling
+bottom panel for content. **Errors are a page feature**, drawn at the foot of
+every page and never placed or removed, reworded for end users: a refused
+action is always shown in full. The page's own control over its actions is
+deferred, to be specified separately. Not yet built.
+
+**Reversed 2026-09-24: the page drawing these itself.** Agreed the day before
+(the page draws header, actions and tabs above its layout, from title/status
+fields on the page definition, with no switch to turn the header off). Dropped
+after the spec's cold review: a component drawn outside a slot loses what its
+container gives every placed component (action runs, `{{ }}` filling, refresh,
+error reporting), and each would have had to be rebuilt. Placed components plus
+a standard starting layout give the same consistency for a fraction of the
+work, and if the page ever draws them automatically, it draws these same
+components.
 
 ## Components over their own backend — *Direction* (agreed 2026-08-04)
 

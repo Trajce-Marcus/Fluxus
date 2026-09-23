@@ -1,172 +1,238 @@
 # Auto page components — spec
 
-**Status:** draft for cold review, 2026-09-23. Not built. Direction recorded in
-[BLUEPRINT.md](../../../docs/BLUEPRINT.md) § The page header.
+**Status:** draft, revision 2 (2026-09-24), for a second cold review. Not built.
+Revision 1 had the page draw its header, actions and tabs itself; the user
+chose **placed components** instead (§1), so this revision replaces it.
 
 ## 1. The rule
 
-**A page is drawn in two parts: the parts every page has, which the page draws
-itself, and content, which the author lays out.** The auto parts are the
-**header**, the **actions**, the **tabs** and the **errors**. Everything else —
-lists, text, photos, buttons — is content, placed in slots exactly as today.
+**Nothing changes from today except two things: a new tab strip component, and
+a new page starts with the standard top already laid out.**
 
-The author never places an auto part. They give the page what the part needs —
-a title, a status, a section's tab name — and the page draws it. So every page
-looks the same at the top, and that part of authoring does itself.
+- **Header, actions and tabs are ordinary placed components.** `PageHeader`
+  (exists; gains a status label, §3), `RecordActivities` (exists, unchanged,
+  §4) and a new tab strip, `PageTabs` (§5). An author may move or remove them
+  like any component.
+- **Errors are a page feature, not a component** (§6). The page draws them at
+  its foot, always; nothing to place, nothing to remove, exactly as today.
+- **A new page starts with them placed** (§7), which is what gives every page
+  the same top without the page drawing it.
+- **Everything else is content**, laid out as today.
 
-## 2. Where the auto parts sit
+"Auto parts" is fine as the group name where one is needed.
+
+Why placed and not drawn by the page: a placed component gets action runs,
+`{{ }}` filling, refresh after a run and error reporting from its container.
+Drawn by the page, each of those would have had to be rebuilt outside a slot.
+If the page ever draws them automatically, it would draw these same
+components.
+
+## 2. The standard page
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│ ←  Shift Report SR-0042   [Submitted]                     │  header
-│    12/09/2026 · Day                                       │
-│    [Modify] [Calculate] [Submit]                          │  actions
-│  Details   WBS Rows   Resources Used   Defects   Photos   │  tabs
-├───────────────────────────────────────────────────────────┤
-│                                                           │
-│   content — the page's layout, scrolling                  │
-│                                                           │
-├───────────────────────────────────────────────────────────┤
-│ errors (only when there are any)                          │
+┌─ root (vertical) ─────────────────────────────────────────┐
+│ ┌─ top panel (auto: as tall as its content) ────────────┐ │
+│ │ ←  Shift Report SR-0042   [Submitted]                 │ │  PageHeader
+│ │    12/09/2026 · Day                                   │ │
+│ │    [Modify] [Calculate] [Submit]                      │ │  RecordActivities
+│ │  Details   WBS Rows   Resources Used   Defects        │ │  PageTabs
+│ └───────────────────────────────────────────────────────┘ │
+│ ┌─ bottom panel (flex 1, scrolls) ──────────────────────┐ │
+│ │   content                                             │ │
+│ └───────────────────────────────────────────────────────┘ │
+│  errors, drawn by the page (only when there are any)      │
 └───────────────────────────────────────────────────────────┘
 ```
 
-- `PageRenderer` draws the header, then the actions, then the tabs **above**
-  the layout (actions before tabs, ruled 2026-09-23), and
-  the errors **below** it. They are outside the layout, so they stay put while
-  the content scrolls under them.
-- The layout is unchanged: it is the content, and its scrolling panel scrolls
-  as today.
-- The Console's page preview uses `PageRenderer` too, so the preview shows the
-  auto parts with no work of its own.
+The top panel stays put; the bottom panel scrolls under it. Tabs scroll the
+bottom panel (§5).
 
-## 3. Header
+## 3. PageHeader — gains a status label
 
-**What the page states** (new page-definition fields; §8):
+Today: ←, a title, an optional subtitle (page-runtime SPEC § PageHeader). Added:
 
-| Field | What it is | Example |
+| Prop | Kind | What it is |
 |---|---|---|
-| `title` | The page's title. `{{ }}` holes, as `Text` takes them. | `Shift Report {{ context.record.report_no }}` |
-| `subtitle` | Optional line under the title. Holes as above. | `{{ context.record.report_date }} · {{ context.record.shift }}` |
-| `status` | Optional. A value shown as a label beside the title. Holes as above. | `{{ context.record.status }}` |
-| `statusColours` | Optional. Which colour each status value is drawn in. | `{ Draft: grey, Submitted: blue, Approved: green, Rejected: red }` |
+| `status` | static config, `{{ }}` holes | A value drawn as a label on the title line, e.g. `{{ context.record.status }}`. |
+| `statusColours` | static config, array | Which colour each status is drawn in: items `{ state, colour }`. |
 
-**Every page has a header** — there is no switch to turn it off (ruled
-2026-09-23). **What it draws:** ← , the title, the status label, and the subtitle beneath,
-the same as today's `PageHeader` plus the status.
+- **Holes are filled by the container**, as for every static string today
+  (`ComponentContainer.tsx` fills any static value with `{{ }}`), so `status`
+  refreshes after a run like the title does.
+- **`statusColours` is an array with a declared item shape**, so the Console's
+  existing row editor (`ArrayPropertyEditor`, via `PropSchema.items`) edits it
+  with no new editor. Item shape: `state` (string), `colour` (string, one of
+  the choices below).
+- **The colour words are Contributions' own**: green, amber, orange, red, blue,
+  purple, grey. One vocabulary on the platform, so "Approved" can't be green in
+  one component and a different green in another. The word-to-hex map moves out
+  of `Contributions.tsx` into a shared module both import. **Named words only in
+  the header**: no free CSS colour, the rule `Text` holds to (it has no colours
+  at all).
+- **Matching:** the status is trimmed and compared case-insensitively with
+  `state`. No match → grey. Blank status → no label.
+- **Where the label sits:** on the title line, after the title. New css; today's
+  `PageHeader` has nowhere for it.
 
-- **Back** works as `PageHeader`'s does today: the host's history, greyed on the
-  first page opened (page-runtime SPEC § PageHeader).
-- **Status colours come from a fixed set** (grey, blue, green, amber, red), not free CSS colours. That is the rule `Text` already follows ("two
-  fixed sets, no CSS"): once an author can write their own red, screens stop
-  matching each other. A value missing from the list is drawn grey.
-- **A blank status draws no label.** A page with no record, or a record with no
-  status, simply has none.
-- **A page with no `title`** draws its header with no title: ← on its own.
-  `validatePage` warns, since a page with no title is almost certainly an
-  oversight. It does not fail.
+## 4. Actions — `RecordActivities`, unchanged
 
-## 4. Actions
+No change to the component. The page's own control over its actions is the
+user's, to be specified separately (2026-09-23). Creates stay hand-placed
+`RunActivity` buttons.
 
-**What it draws:** the record's actions, in a row under the header and above
-the tabs.
+One correction to page-runtime SPEC § RecordActivities: it says the list
+re-asks after a run "because the container re-evaluates props". The real
+reason is that the container swaps every component for "Loading…" while it
+re-evaluates, which remounts it (`ComponentContainer.tsx` loading branch), and
+the remount re-asks. It works, but the SPEC should say so, because anything
+that removes the loading swap breaks it.
 
-- **They are exactly what `RecordActivities` shows today**: the workflow's
-  actions on the page's record, minus those whose `show_condition` rules them
-  out, re-asked after every run. The mechanism moves under the header; it is
-  not changed.
-- **A page with no record has no actions.**
-- A page that places a `RecordActivities` slot keeps working. It then shows the
-  same buttons twice, and `validatePage` warns.
-- **Creates stay content.** `RecordActivities` leaves out CREATE activities by
-  design, so *Raise amendment*, *Add WBS row*, *Raise defect* remain
-  hand-placed `RunActivity` buttons.
+## 5. PageTabs — the tab strip
 
-**Deferred: the page's own control over its actions.** By default the model
-decides which actions appear, through their show conditions. Giving the page a
-say as well (which to show, which not, creates hanging off the record, order)
-is wanted, but it is its own piece of design and the user will specify it
-separately (2026-09-23). Until then the actions are the model's list, as
-`RecordActivities` gives it today.
+**What the author states:** a `tabName` on a layout panel. It marks where that
+tab scrolls to; the panel is whatever should sit at the top of the view when
+the tab is clicked. It is a property of the **panel** (`layout.ts` `Panel`),
+beside `padding` and `overflow`. It is not `Panel.name`, which is the layout
+editor's own label and never reaches the reader.
 
-## 5. Tabs
+**What it draws:**
+- **Nothing unless more than one panel has a `tabName`** (ruled 2026-09-23).
+- Otherwise one tab per named panel, **in layout order**: depth-first, the
+  order the panels appear in the layout definition.
+- **Click → the panel's nearest scrolling ancestor scrolls** until the panel's
+  top meets its top. Nothing is hidden; it's SAP's object page anchor bar.
+- **The tab whose panel is at, or last passed, the top of that scrolling panel
+  is highlighted**, updated as the reader scrolls.
 
-**What the author states:** a `tabName` on a layout panel (the user's name and
-design, 2026-09-23). A panel that has one is a section, and its `tabName` is
-the tab's label. It is a property of the **panel**, beside `padding` and
-`overflow`, not of the component in it.
+**How it reaches the layout** (new host doors, component-only, absent from every
+service module like `listActivities`):
+- `services.listTabs()` → `{ panelId, tabName }[]`, read by `PageRenderer`
+  from the page's layout.
+- `services.scrollToTab(panelId)`. `PanelNode` renders each panel as an
+  anonymous div today, so named panels gain a `data-panel-id` attribute, and
+  the lookup runs **inside the page's own root element**, never `document`: the
+  Console renders the page in a shadow root that a document query can't see
+  into.
+- Highlighting listens to the scrolling ancestor of the first named panel.
 
-**What it draws:** a tab strip under the actions.
+**When named panels sit in different scrolling panels** (a side-by-side
+layout), each click still scrolls the right one, but the highlight follows only
+the first's. `validatePage` warns (§8). On a standard page (§2) there is one
+scrolling panel, so this does not arise.
 
-- **The strip shows only when more than one panel has a `tabName`** (ruled
-  2026-09-23). One tab does nothing.
-- **Tab order is layout order**, top to bottom as the layout lists the panels.
-- **A named panel can be anywhere inside the scrolling area**, not only at the
-  top level. So a section can be a panel wrapping its own "New" button and its
-  list.
-- **Clicking a tab scrolls the content to that panel.** The whole page is still
-  there; nothing is hidden. This is SAP's object page anchor bar.
-- **The tab of the section in view is highlighted** as the reader scrolls.
-  Proposed rule: the last section whose top has passed the top of the
-  scrolling area.
-- `tabName` is not `Panel.name`. `name` is the layout editor's own label for a
-  panel and never reaches the reader; `tabName` is what the reader sees.
+## 6. Errors — a page feature, at the foot
 
-## 6. Errors
+**Stays as today:** `PageRenderer` draws the list at the page's foot, it can't
+be placed or removed, and since 2026-09-23 it's held against the page and
+record it came from.
 
-**Already automatic.** `PageRenderer` draws a list of errors at the foot of
-every page, and components cannot opt out. Since 2026-09-23 it is held against
-the page and record it came from, so it does not follow the reader to the next
-page. What reaches it: a component's dynamic props or `{{ }}` holes failing to
-evaluate, an action failing to run, and a page that cannot be opened. A gate's
-`fail()` message is **not** here; it shows in the activity form.
+**What reaches it:** a component's dynamic props or `{{ }}` holes failing to
+evaluate, and an action failing when it is launched from a component. **Not**
+a page that fails to open (that is drawn in place of the page), and **not** a
+gate's `fail()` on an activity with a form (the form shows it).
 
-**What changes:** only how the list reads to someone who is not the author.
-Today every entry is the raw message (`'projects' has no field 'wg_id' (line 1,
-col 70)`). That is right for the author and useless to the person using the
-page, who can do nothing about it.
+**What changes: how it reads.**
+1. **A refused action is shown as its own plain message, never hidden.** An
+   activity with no form (Submit, Calculate) has no form to show its gate's
+   `fail()`, so the refusal lands here today, e.g. *"Submit: the report has not
+   been calculated."* It is the one message the user can act on, so it is shown
+   in full.
+2. **Anything else is one plain line naming what failed:** *"Part of this page
+   could not be shown: Resources Used."* The raw message sits under it, hidden
+   until clicked, for whoever reports the fault. The name is the `tabName` of
+   the nearest named panel holding the component, else the component's
+   `title` config, else its component type.
+3. **A repeat replaces, it doesn't pile up.** Each refresh that fails again
+   today appends another copy.
+4. **The Console preview shows raw messages**, as today; the author needs them.
 
-- **In the Runtime:** one line per failing component, in plain words: *"Part of
-  this page could not be shown: Details."* The raw message is under it, folded
-  away, for whoever reports the fault. (Which name to show — the section's
-  `tabName`, the component's title, or the component's type — is part of the
-  review.)
-- **In the Console preview:** the raw messages, as today. The author needs
-  them.
-- **Position:** stays at the foot. Proposed rather than ruled: the header is
-  about the record, and an error is about the page.
+**What the build must add for this:**
+- Error entries carry the **slot id** as well as the component name (today
+  only `manifest.name` reaches `handleError`), which is what finds the tab name
+  or title and what makes "a repeat replaces" possible.
+- A way to tell a refusal from a failure. `fail()` throws, and
+  `launchActivity` catches it (`ComponentContainer.tsx`). **The build checks
+  whether a gate refusal is distinguishable from any other error thrown during
+  a run. If it isn't, every error from a launched action counts as a refusal**
+  and is shown in full, which errs on the side of showing.
+- A `PageRenderer` prop telling it which way to draw (plain for the Runtime,
+  raw for the preview). The preview's existing `debug` prop is dev-only and is
+  not it. The prop's name needs sign-off.
 
-## 7. Moving existing pages over
+## 7. A new page starts with the standard top
 
-Mechanical, one script, drafts only (the pattern of `projects-page-headers.ts`):
+The Console creates a new page as an empty definition
+([PageExplorer.tsx](../../console/src/platform-components/page-builder/PageExplorer.tsx),
+`savePage(path, {})`). It instead creates the §2 layout:
 
-- A `PageHeader` slot becomes the page's `title` and `subtitle`; the slot and
-  its panel go.
-- A `RecordActivities` slot in a page's header panel goes; the header's
-  actions replace it.
-- The projects solution's pages gain `status` where their record has one, and
-  `tabName` on their sections (shift report: Details, Photos, WBS Rows,
-  Resources Used, Defects, Amendments; project: its lists).
-- The `PageHeader` component stays registered until no page uses it, then is
-  retired.
+- `root`, vertical:
+  - **top panel**, `auto` size, vertical, holding three slots: header
+    (`PageHeader`, title = the page's name), actions (`RecordActivities`,
+    `record` bound to `context.record.id`) and tabs (`PageTabs`);
+  - **bottom panel**, `flex 1`, `overflow: 'scroll'`, empty.
+- The three components in `componentDependencies`.
+- A page with no record still works: `RecordActivities` with no record and a
+  blank `emptyMessage` draws nothing, and `PageTabs` draws nothing until
+  panels are named.
 
-## 8. Names
+Existing pages are not touched by this; see §9.
 
-All endorsed 2026-09-23: `tabName` (the user's own), the page-definition fields
-`title`, `subtitle`, `status` and `statusColours`, and the colour set grey,
-blue, green, amber, red.
+## 8. Save-time checks (`validatePage`)
 
-## 9. The Console
+Warnings, never errors:
+- The page has no `PageHeader`.
+- Two panels share a `tabName`.
+- Named panels do not all sit inside one scrolling panel (§5).
+- A `statusColours` colour is not one of the words.
 
-- **Page settings** — the Page Access section's neighbour in `PageEditor`
-  gains Title, Subtitle, Status (each an expression field with `{{ }}`, as the
-  Text component's text box is) and the status-colour list.
-- **Layout editor** — a panel gains a Tab name box beside its padding.
-- **Palette** — `PageHeader` leaves the palette when it is retired (§7).
+`validatePage` walks `slotConfigs` today, so the `status` holes are checked
+with no new code; the `tabName` checks walk the layout, which is new.
 
-## 10. Not in this build
+## 9. Moving the projects pages over
 
-- Restoring the scroll position on Back (raised 2026-09-23, left for later).
-- A trail of the pages behind this one; it needs a readable name for each
-  record, which nothing resolves yet.
-- The page's own control over its actions (§4) — to be specified separately.
+User's call (2026-09-24): **add it to every page, remove it where it isn't
+wanted, then republish.**
+
+- Every projects page gains a `PageTabs` slot in its header panel, after its
+  `RecordActivities` if it has one, and `tabName` on the panels that start its
+  sections (shift report: Details, Photos, WBS Rows, Resources Used, Defects,
+  Amendments; the project page: its lists; and so on).
+- `PageHeader` gains `status` wherever its subtitle ends in the status. The
+  status comes **out** of the subtitle so it isn't shown twice (today: shift
+  report, amendment, defect).
+- One script, drafts only (the pattern of `projects-page-headers.ts`), **and
+  the page-building scripts change to match** (`shift-reports-pages.ts`), so a
+  re-run doesn't undo it.
+- Then the user removes what isn't wanted, and republishes.
+
+## 10. The Console
+
+- **Layout editor:** a panel gains a Tab name box beside its padding.
+- **Palette:** `PageTabs` added (`componentSchemas.ts`, `sessionComponents.ts`).
+- **New page:** the starter layout (§7).
+- `PageHeader`'s `statusColours` uses the existing row editor (§3).
+
+## 11. Names
+
+Endorsed: `tabName`, `status`, `statusColours`, and the colour words (now
+Contributions' seven, §3), plus "auto parts" as the group name.
+
+**Needing sign-off:** `PageTabs` (the component), `listTabs` / `scrollToTab`
+(the host doors), `data-panel-id`, and the `PageRenderer` prop for plain vs raw
+errors (§6).
+
+## 12. SPEC updates the build makes
+
+page-runtime SPEC: PageHeader (status), a PageTabs section, the error list
+(§6), the RecordActivities correction (§4), `Panel.tabName` in the layout
+section. Console LAYOUT_EDITOR_SPEC: the Tab name box. Console SPEC: the new
+page's starter layout.
+
+## 13. Not in this build
+
+- The page drawing the auto parts itself (revision 1); these components are
+  what it would draw.
+- The page's own control over its actions (§4).
+- Restoring the scroll position on Back.
+- A trail of the pages behind this one.
+- Wrapping existing panels into a new panel in the layout editor.
