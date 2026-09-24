@@ -36,7 +36,7 @@ function PanelView({
   const CONTAINER_TITLE_ROOM = 16;
 
   const sizeStyle: CSSProperties = isRoot
-    ? { flex: 1, minWidth: 0, minHeight: 0, margin: 6 } // room for the root's own outline to show (2026-09-24)
+    ? { flex: 1, minWidth: 0, minHeight: 0, margin: 12 } // room for the root's own outline to show (2026-09-24)
     : panel.size.type === 'flex'
     ? { flex: panel.size.value, minWidth: 0, minHeight: 0, margin: CANVAS_MARGIN }
     : panel.size.type === 'auto'
@@ -93,7 +93,9 @@ function PanelView({
     // Every panel shows a faint dashed guide, so the layout can be seen before
     // anything is selected (2026-09-24) — the old white-at-8% outline vanished
     // on the white panels pages use. Dashed so it never reads as a real border.
-    outline: isSelected ? '2px solid var(--color-accent)' : '1px dashed rgba(100,116,139,0.45)',
+    // The root's edge is solid and darker, so it reads as the page's edge
+    // against the white frame around it.
+    outline: isSelected ? '2px solid var(--color-accent)' : isRoot ? '1px solid #94a3b8' : '1px dashed rgba(100,116,139,0.45)',
     outlineOffset: isSelected ? '-2px' : '-1px',
     cursor: 'pointer',
   };
