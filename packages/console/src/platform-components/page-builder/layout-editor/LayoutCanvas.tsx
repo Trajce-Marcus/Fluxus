@@ -283,10 +283,11 @@ export const css = `
     z-index: 1;
     pointer-events: none;
   }
+  /* Same size, weight and colour as a named slot's title (2026-09-24). */
   .le-container-name-text {
-    font-size: 10px;
-    color: var(--color-text-muted);
-    opacity: 0.7;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text);
     pointer-events: all;
     cursor: text;
     padding: 1px 4px;
