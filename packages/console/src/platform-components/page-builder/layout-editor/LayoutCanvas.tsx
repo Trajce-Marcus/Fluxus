@@ -36,7 +36,7 @@ function PanelView({
   const CONTAINER_TITLE_ROOM = 16;
 
   const sizeStyle: CSSProperties = isRoot
-    ? { flex: 1, minWidth: 0, minHeight: 0 }
+    ? { flex: 1, minWidth: 0, minHeight: 0, margin: 6 } // room for the root's own outline to show (2026-09-24)
     : panel.size.type === 'flex'
     ? { flex: panel.size.value, minWidth: 0, minHeight: 0, margin: CANVAS_MARGIN }
     : panel.size.type === 'auto'
