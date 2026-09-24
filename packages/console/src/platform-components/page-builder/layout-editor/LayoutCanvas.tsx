@@ -209,7 +209,7 @@ export const css = `
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 24px;
+    padding: 8px;
     background: #141414;
   }
   .le-canvas-frame {
