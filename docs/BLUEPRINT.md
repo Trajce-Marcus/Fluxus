@@ -326,7 +326,7 @@ bar). A new page's layout is a top panel holding those three and a scrolling
 bottom panel for content. **Errors are a page feature**, drawn at the foot of
 every page and never placed or removed, reworded for end users: a refused
 action is always shown in full. The page's own control over its actions is
-deferred, to be specified separately. Not yet built.
+deferred, to be specified separately. **Progressively, 2026-09-24:** the spec is parked and the pieces are built one at a time — the `Tabs` strip first (built); the header's status, and a new page starting with the standard top, are not yet built.
 
 **Reversed 2026-09-24: the page drawing these itself.** Agreed the day before
 (the page draws header, actions and tabs above its layout, from title/status

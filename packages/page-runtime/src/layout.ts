@@ -52,6 +52,13 @@ export interface Panel {
     left?: BorderSide;
   };
   borderRadius?: number;
+  /**
+   * Where a tab scrolls to (2026-09-24). A panel with one is listed by the
+   * `Tabs` component, and its element carries the name as `data-tab-name`.
+   * Not `name`, which is the layout editor's own label and never reaches the
+   * reader.
+   */
+  tabName?: string;
   splitter?: 'top' | 'bottom' | 'left' | 'right';
   children: Panel[];
 }

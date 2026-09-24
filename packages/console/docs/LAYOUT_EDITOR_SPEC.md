@@ -46,6 +46,7 @@ Properties apply to the currently selected panel.
 
 | Property | Type | Notes |
 |---|---|---|
+| Tab name | text | Where a `Tabs` strip scrolls to (2026-09-24): the panel's tab label, seen by the reader. Blank = no tab. Not *Name*, which is the editor's own label |
 | Direction | vertical / horizontal | How child panels are arranged |
 | Size type | Flex, Fixed or Auto | Mutually exclusive |
 | — Flex number | integer ≥ 0 | Default: 1. Controls proportion of available space |

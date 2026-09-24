@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { RecordInstance } from '@fluxus/engine';
 import type { Panel } from './layout';
 import type { SlotConfig, ContextKeyDef } from './pageDef';
@@ -7,6 +7,7 @@ import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
 import type { PageContext } from './pageHost';
 import { resolvePageAnchor } from './pageAnchor';
+import { collectTabNames, scrollToTab, type PageTabs } from './pageTabs';
 
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
@@ -62,12 +63,15 @@ interface PanelNodeProps {
   /** Bumped when any component's activity run lands — see PageRenderer. */
   refreshTick: number;
   onActivityRun: () => void;
+  tabs: PageTabs;
 }
 
-function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun }: PanelNodeProps) {
+function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs }: PanelNodeProps) {
+  // A named panel says so on its element — what a tab click scrolls to.
+  const tabName = panel.tabName?.trim() || undefined;
   if (panel.children.length > 0) {
     return (
-      <div style={panelStyle(panel)}>
+      <div style={panelStyle(panel)} data-tab-name={tabName}>
         {panel.children.map((child) => (
           <PanelNode
             key={child.id}
@@ -79,6 +83,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
             onError={onError}
             refreshTick={refreshTick}
             onActivityRun={onActivityRun}
+            tabs={tabs}
           />
         ))}
       </div>
@@ -89,7 +94,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
   const manifest = config ? componentManifests[config.componentName] : null;
 
   return (
-    <div style={{ ...panelStyle(panel), position: 'relative' }}>
+    <div style={{ ...panelStyle(panel), position: 'relative' }} data-tab-name={tabName}>
       {manifest && config ? (
         <ComponentContainer
           runtime={runtime}
@@ -100,6 +105,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
           onError={onError}
           refreshTick={refreshTick}
           onActivityRun={onActivityRun}
+          tabs={tabs}
         />
       ) : (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '0.75rem', fontStyle: 'italic' }}>
@@ -147,6 +153,15 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   const def = runtime.getPage(pagePath);
   const layout = def?.layout ?? null;
   const declaredRecord = def?.record;
+
+  // The page's tabs: its panels' `tabName`s, and a click scrolling to one
+  // inside this page's own element (pageTabs.ts).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const tabNames = useMemo(() => collectTabNames(layout?.root), [layout]);
+  const tabs = useMemo<PageTabs>(
+    () => ({ names: tabNames, select: (name) => scrollToTab(rootRef.current, name) }),
+    [tabNames],
+  );
 
   useEffect(() => {
     const pageDefaults: Record<string, unknown> = {};
@@ -234,7 +249,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   }
 
   return (
-    <div className="pr-root">
+    <div className="pr-root" ref={rootRef}>
       {/*
         `display: flex` is load-bearing, not decoration. The root panel asks for
         `flex: 1`, and flex is only meaningful inside a flex container — in a
@@ -257,6 +272,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
           onError={handleError}
           refreshTick={refreshTick}
           onActivityRun={handleActivityRun}
+          tabs={tabs}
         />
       </div>
 

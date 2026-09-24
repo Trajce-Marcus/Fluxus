@@ -122,6 +122,13 @@ export interface PageServiceHandlers {
    */
   goBack(): void;
   canGoBack(): boolean;
+  /**
+   * The page's tab names, in layout order, and the call that scrolls to one
+   * (2026-09-24, the `Tabs` component). The page reads them off its layout's
+   * `tabName`s. A **component** door, absent from `buildPageServices`.
+   */
+  tabs: readonly string[];
+  selectTab(tabName: string): void;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -177,6 +184,8 @@ export const pageServicesStub = (): ServiceModuleDef[] =>
     resolveUrl: async () => '',
     goBack: () => {},
     canGoBack: () => false,
+    tabs: [],
+    selectTab: () => {},
   });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import {
   RecordList,
   Text,
   RunActivity,
+  Tabs,
   WorkOrderList,
   type PropSchema,
 } from '@fluxus/page-runtime';
@@ -32,5 +33,6 @@ export const componentSchemas: Record<string, PropSchema[]> = {
   RecordList: RecordList.schema ?? [],
   Text: Text.schema ?? [],
   RunActivity: RunActivity.schema ?? [],
+  Tabs: Tabs.schema ?? [],
   WorkOrderList: WorkOrderList.schema ?? [],
 };

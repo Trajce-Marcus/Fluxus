@@ -6,6 +6,7 @@ import type { PageRuntime } from './runtime';
 import { ActivityFormModal } from './ActivityFormModal';
 import { fill, hasHoles, holes } from './interpolate';
 import { availableActivities } from './availableActivities';
+import { NO_TABS, type PageTabs } from './pageTabs';
 import {
   packCallbackData,
   type AttributeSeed,
@@ -27,6 +28,8 @@ interface Props {
    * which is why "New node" never refreshed the table beside it.
    */
   refreshTick: number;
+  /** The page's tab names and the scroll to one (pageTabs.ts). */
+  tabs?: PageTabs;
   /** Tell the page a run landed. */
   onActivityRun: () => void;
 }
@@ -48,7 +51,7 @@ interface PendingForm {
   loading?: boolean;
 }
 
-export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError, refreshTick, onActivityRun }: Props) {
+export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs = NO_TABS }: Props) {
   const [dynamicData, setDynamicData] = useState<Record<string, unknown>>({});
   // Typed-in text with `{{ }}` holes in it, filled. Kept apart from the static
   // config it came from so the author's own words are never overwritten.
@@ -204,7 +207,9 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     // something the author asked for that the host then failed to do.
     goBack: () => runtime.goBack?.(),
     canGoBack: () => runtime.canGoBack?.() ?? false,
-  }), [onContextChange, launchActivity, openPage, listActivities, runtime]);
+    tabs: tabs.names,
+    selectTab: tabs.select,
+  }), [onContextChange, launchActivity, openPage, listActivities, runtime, tabs]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is

@@ -1,6 +1,8 @@
 # Auto page components — spec
 
-**Status:** draft, revision 2 (2026-09-24), for a second cold review. Not built.
+**Status: parked 2026-09-24.** After its second cold review the user set this spec aside and chose to build progressively instead; the first piece, the `Tabs` component, is built as its own design (page-runtime SPEC § Tabs). Kept for reference, not a plan.
+
+*Previously:* draft, revision 2 (2026-09-24), for a second cold review. Not built.
 Revision 1 had the page draw its header, actions and tabs itself; the user
 chose **placed components** instead (§1), so this revision replaces it.
 
