@@ -49,7 +49,7 @@ function PanelView({
   // it, so an `auto` panel came out as tall as its padding. Editor-only: the
   // page renderer never reads these, and a panel's own min size still wins.
   const EDITOR_MIN_HEIGHT = 24;
-  const EDITOR_MIN_WIDTH = 30;
+  const EDITOR_MIN_WIDTH = 60;
   const minMaxStyle: CSSProperties = isRoot ? {} : { minHeight: EDITOR_MIN_HEIGHT, minWidth: EDITOR_MIN_WIDTH };
   if (!isRoot && panel.minSize !== undefined) {
     if (parentIsVertical) minMaxStyle.minHeight = `${Math.max(panel.minSize, EDITOR_MIN_HEIGHT)}px`;
