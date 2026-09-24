@@ -62,7 +62,9 @@ columns exist today; the install path doesn't).
 1. **All change goes through activities.** Records are never edited directly;
    every mutation, from any surface, lands in the append-only activity history.
    That history is the audit trail, the only log, and the source the reporting
-   layer is projected from — so reporting can never miss a change.
+   layer is projected from — so reporting can never miss a change. ("The only
+   log" is about **working data**. Performance logging is a different thing,
+   entirely disconnected from it — see *Performance logging*.)
 2. **One language everywhere.** A query written for a page binding is the same
    language as a hook or a headless call.
 3. **Scripts are scope-blind.** A script never names its org or operation;
@@ -337,6 +339,31 @@ error reporting), and each would have had to be rebuilt. Placed components plus
 a standard starting layout give the same consistency for a fraction of the
 work, and if the page ever draws them automatically, it draws these same
 components.
+
+## Performance logging — *Direction* (agreed 2026-09-24)
+
+**The platform times what it does, so it can be interrogated, and so standards
+and publish checks can be set from real numbers.** One row per thing done —
+an activity run and its steps, a GET and the database queries behind it,
+config and snapshot loads, a page opening until every list on it has loaded,
+the database connection itself — saying what it was, who and where (org,
+operation, user), when and how long, how it ended, and what it touched
+(records read / created / changed / deleted, rows returned, queries made).
+Each row links to what it was part of (page open → its GETs → their queries),
+in OpenTelemetry's trace/span shape so the data could later move to an
+established tool. Measured at both ends: the server for time actually spent,
+the browser for what the user feels.
+
+- **Entirely disconnected from working data.** Never in a record's history,
+  never audit, never projected to reporting; its own table, deleted after a
+  retention period (30 days to start), and could be wiped without loss.
+- **Switchable down to the operation**, whole or in parts — the platform
+  plane's performance dashboard is where.
+- **Viewed in the Platform app** (ours, above every org).
+- **Publish checks, two kinds:** static ones possible now (GETs per page,
+  unbounded lists), and measured ones once there is real traffic.
+- **MVP first:** timing into one table, a simple dashboard usable immediately;
+  budgets, checks and fuller screens once the numbers have been seen.
 
 ## Components over their own backend — *Direction* (agreed 2026-08-04)
 
