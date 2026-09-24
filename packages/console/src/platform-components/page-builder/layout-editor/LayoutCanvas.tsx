@@ -44,10 +44,16 @@ function PanelView({
     ? { height: `${panel.size.value}px`, flexShrink: 0, margin: CANVAS_MARGIN }
     : { width: `${panel.size.value}px`, flexShrink: 0, margin: CANVAS_MARGIN };
 
-  const minMaxStyle: CSSProperties = {};
+  // The canvas never draws a panel too small to see or to read its label
+  // (2026-09-24). The label floats over the panel rather than taking room in
+  // it, so an `auto` panel came out as tall as its padding. Editor-only: the
+  // page renderer never reads these, and a panel's own min size still wins.
+  const EDITOR_MIN_HEIGHT = 24;
+  const EDITOR_MIN_WIDTH = 30;
+  const minMaxStyle: CSSProperties = isRoot ? {} : { minHeight: EDITOR_MIN_HEIGHT, minWidth: EDITOR_MIN_WIDTH };
   if (!isRoot && panel.minSize !== undefined) {
-    if (parentIsVertical) minMaxStyle.minHeight = `${panel.minSize}px`;
-    else minMaxStyle.minWidth = `${panel.minSize}px`;
+    if (parentIsVertical) minMaxStyle.minHeight = `${Math.max(panel.minSize, EDITOR_MIN_HEIGHT)}px`;
+    else minMaxStyle.minWidth = `${Math.max(panel.minSize, EDITOR_MIN_WIDTH)}px`;
   }
   if (!isRoot && panel.maxSize !== undefined) {
     if (parentIsVertical) minMaxStyle.maxHeight = `${panel.maxSize}px`;
