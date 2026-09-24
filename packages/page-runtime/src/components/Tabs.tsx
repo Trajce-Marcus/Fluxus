@@ -7,24 +7,36 @@
 // a single named panel draws no strip (ruled 2026-09-23). The tab lit is the
 // one clicked, or the one whose section last came into view as the reader
 // scrolled (2026-09-24) — see `watchTabs`.
+//
+// **`tabMode`** (2026-09-24, the user's name): `scroll`, the default, is all of the above.
+// `switch` is the traditional kind — only the chosen tab's section shows, and
+// the page hides the rest (`hiddenBySwitch`), so there is nothing to scroll to
+// and nothing to watch.
 
 import { useEffect, useState } from 'react';
 import type { PropSchema } from '../manifest';
 import type { PageServiceHandlers } from '../pageHost';
 
+const MODES: readonly string[] = ['scroll', 'switch'];
+
 interface TabsProps {
+  /** scroll (the default): a click scrolls to the section. switch: only the
+   *  chosen section shows. */
+  tabMode?: string;
   /** Supplied by the host: the page's tab names and the scroll to one. */
   services?: PageServiceHandlers;
 }
 
-function TabsComponent({ services }: TabsProps) {
+function TabsComponent({ tabMode, services }: TabsProps) {
+  const switching = tabMode === 'switch';
   const [selected, setSelected] = useState<string | null>(null);
   const names = services?.tabs ?? [];
-  const watch = services?.watchTabs;
+  const watch = switching ? undefined : services?.watchTabs;
   useEffect(() => watch?.(setSelected), [watch]);
   if (names.length < 2) return null;
 
-  const current = selected !== null && names.includes(selected) ? selected : names[0];
+  const lit = switching ? services?.activeTab ?? null : selected;
+  const current = lit !== null && names.includes(lit) ? lit : names[0];
   return (
     <div className="tb-root" role="tablist">
       {names.map((name) => (
@@ -45,7 +57,9 @@ const css = `
   .tb-tab--on { color: #2563eb; border-bottom-color: #2563eb; }
 `;
 
-// No properties: the tabs come from the page's panels, not from here.
-const schema: PropSchema[] = [];
+// The tabs themselves come from the page's slots, not from here.
+const schema: PropSchema[] = [
+  { name: 'tabMode', kind: 'static-config', type: 'string', required: false, description: 'scroll (default): a tab scrolls to its section; switch: only the chosen section shows', choices: MODES },
+];
 
 export const Tabs = Object.assign(TabsComponent, { css, schema });

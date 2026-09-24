@@ -128,6 +128,8 @@ export interface PageServiceHandlers {
    * `tabName`s. A **component** door, absent from `buildPageServices`.
    */
   tabs: readonly string[];
+  /** The section a "switch" strip is showing; null when the strip scrolls. */
+  activeTab: string | null;
   selectTab(tabName: string): void;
   /** Word of a tab's section coming into view as the reader scrolls; returns
    *  the call that stops watching. */
@@ -188,6 +190,7 @@ export const pageServicesStub = (): ServiceModuleDef[] =>
     goBack: () => {},
     canGoBack: () => false,
     tabs: [],
+    activeTab: null,
     selectTab: () => {},
     watchTabs: () => () => {},
   });

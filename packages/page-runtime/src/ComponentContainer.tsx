@@ -208,6 +208,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     goBack: () => runtime.goBack?.(),
     canGoBack: () => runtime.canGoBack?.() ?? false,
     tabs: tabs.names,
+    activeTab: tabs.active,
     selectTab: tabs.select,
     watchTabs: tabs.watch,
   }), [onContextChange, launchActivity, openPage, listActivities, runtime, tabs]);

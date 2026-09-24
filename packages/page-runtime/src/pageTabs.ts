@@ -9,13 +9,15 @@ import type { SlotConfig } from './pageDef';
  *  word of a tab's section coming into view as the reader scrolls. */
 export interface PageTabs {
   names: readonly string[];
+  /** The tab a "switch" strip shows; null when the page's strip scrolls. */
+  active: string | null;
   select: (tabName: string) => void;
   /** Calls `onEnter` with a tab's name whenever its section comes into view;
    *  returns the call that stops watching. */
   watch: (onEnter: (tabName: string) => void) => () => void;
 }
 
-export const NO_TABS: PageTabs = { names: [], select: () => {}, watch: () => () => {} };
+export const NO_TABS: PageTabs = { names: [], active: null, select: () => {}, watch: () => () => {} };
 
 /**
  * Every slot's `tabName`, in layout order — depth-first, the order the slots'
@@ -34,6 +36,41 @@ export function collectTabNames(
   };
   if (root) walk(root);
   return out;
+}
+
+/**
+ * The panels a "switch" Tabs strip hides when `activeTab` is chosen
+ * (2026-09-24). A tab marks where its section **starts**, so a section runs
+ * from its slot to the next named slot in layout order; slots before the first
+ * tab (the header, the strip itself) belong to none and always show. A panel
+ * holding other panels is hidden once everything in it is.
+ */
+export function hiddenBySwitch(
+  root: Panel | null | undefined,
+  slotConfigs: Record<string, SlotConfig | null>,
+  activeTab: string,
+): Set<string> {
+  const hidden = new Set<string>();
+  let section: string | null = null;
+  const walk = (panel: Panel): boolean => {
+    const children = panel.children ?? [];
+    if (children.length === 0) {
+      const name = slotConfigs[panel.id]?.tabName?.trim();
+      if (name) section = name;
+      const hide = section !== null && section !== activeTab;
+      if (hide) hidden.add(panel.id);
+      return hide;
+    }
+    const results = children.map(walk);
+    const hide = results.every(Boolean);
+    if (hide) hidden.add(panel.id);
+    return hide;
+  };
+  if (root) {
+    walk(root);
+    hidden.delete(root.id);
+  }
+  return hidden;
 }
 
 const tabElements = (pageRoot: HTMLElement): HTMLElement[] =>

@@ -7,7 +7,7 @@ import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
 import type { PageContext } from './pageHost';
 import { resolvePageAnchor } from './pageAnchor';
-import { collectTabNames, scrollToTab, watchTabs, type PageTabs } from './pageTabs';
+import { collectTabNames, hiddenBySwitch, scrollToTab, watchTabs, type PageTabs } from './pageTabs';
 
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
@@ -64,9 +64,12 @@ interface PanelNodeProps {
   refreshTick: number;
   onActivityRun: () => void;
   tabs: PageTabs;
+  /** Panels a "switch" Tabs strip is hiding — not drawn, so not loaded. */
+  hidden: Set<string>;
 }
 
-function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs }: PanelNodeProps) {
+function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs, hidden }: PanelNodeProps) {
+  if (hidden.has(panel.id)) return null;
   if (panel.children.length > 0) {
     return (
       <div style={panelStyle(panel)}>
@@ -82,6 +85,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
             refreshTick={refreshTick}
             onActivityRun={onActivityRun}
             tabs={tabs}
+            hidden={hidden}
           />
         ))}
       </div>
@@ -162,10 +166,28 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   // the target may come into view at the bottom — so sections coming into view
   // are ignored until it settles, and the clicked tab stays the one lit.
   const clickScrollUntil = useRef(0);
+  // A strip set to "switch" (2026-09-24) shows one section at a time instead
+  // of scrolling: the page hides the rest (`hiddenBySwitch`). The page reads
+  // the setting off the strip's slot so the first frame is already right.
+  const switching = useMemo(
+    () => Object.values(slotConfigs).some((c) => c?.componentName === 'Tabs' && c.staticConfig.tabMode === 'switch'),
+    [slotConfigs],
+  );
+  const [chosenTab, setChosenTab] = useState<string | null>(null);
+  useEffect(() => setChosenTab(null), [pageKey]);
+  const activeTab = switching && tabNames.length > 1
+    ? (chosenTab !== null && tabNames.includes(chosenTab) ? chosenTab : tabNames[0])
+    : null;
+  const hidden = useMemo(
+    () => (activeTab === null ? new Set<string>() : hiddenBySwitch(layout?.root, slotConfigs, activeTab)),
+    [layout, slotConfigs, activeTab],
+  );
   const tabs = useMemo<PageTabs>(
     () => ({
       names: tabNames,
+      active: activeTab,
       select: (name) => {
+        if (switching) { setChosenTab(name); return; }
         clickScrollUntil.current = Date.now() + 1000;
         scrollToTab(rootRef.current, name);
       },
@@ -173,7 +195,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
         if (Date.now() >= clickScrollUntil.current) onEnter(name);
       }),
     }),
-    [tabNames],
+    [tabNames, activeTab, switching],
   );
 
   useEffect(() => {
@@ -286,6 +308,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
           refreshTick={refreshTick}
           onActivityRun={handleActivityRun}
           tabs={tabs}
+          hidden={hidden}
         />
       </div>
 

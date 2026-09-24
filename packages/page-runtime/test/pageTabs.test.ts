@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Panel } from '../src/layout';
 import type { SlotConfig } from '../src/pageDef';
-import { collectTabNames } from '../src/pageTabs';
+import { collectTabNames, hiddenBySwitch } from '../src/pageTabs';
 
 const panel = (id: string, children: Panel[] = []): Panel =>
   ({ id, direction: 'vertical', size: { type: 'auto' }, children });
@@ -26,6 +26,41 @@ describe('collectTabNames', () => {
 
   it('has no tabs without a layout', () => {
     expect(collectTabNames(undefined, {})).toEqual([]);
+  });
+});
+
+describe('hiddenBySwitch', () => {
+  const root = panel('root', [
+    panel('top', [panel('slot-title'), panel('slot-tabs')]),
+    panel('body', [
+      panel('slot-details'),
+      panel('wbs-group', [panel('slot-wbs-new'), panel('slot-wbs')]),
+      panel('slot-resources'),
+      panel('slot-photos'),
+    ]),
+  ]);
+  const slots = {
+    'slot-title': slot(), 'slot-tabs': slot(),
+    'slot-details': slot('Details'), 'slot-wbs-new': slot('WBS'), 'slot-wbs': slot(),
+    'slot-resources': slot('Resources'), 'slot-photos': slot(),
+  };
+
+  it('shows the slots before the first tab, and the chosen section only', () => {
+    const hidden = hiddenBySwitch(root, slots, 'Resources');
+    expect([...hidden].sort()).toEqual(['slot-details', 'slot-wbs', 'slot-wbs-new', 'wbs-group'].sort());
+  });
+
+  it("runs a section to the next tab's slot — a slot with no tab belongs to the one above", () => {
+    const hidden = hiddenBySwitch(root, slots, 'WBS');
+    expect(hidden.has('slot-wbs')).toBe(false);
+    expect([...hidden].sort()).toEqual(['slot-details', 'slot-photos', 'slot-resources'].sort());
+  });
+
+  it('never hides the header or the root', () => {
+    const hidden = hiddenBySwitch(root, slots, 'Details');
+    expect(hidden.has('top')).toBe(false);
+    expect(hidden.has('root')).toBe(false);
+    expect(hidden.has('body')).toBe(false);
   });
 });
 
