@@ -33,6 +33,7 @@ function PanelView({
 
   const CANVAS_MARGIN = 2;
   const CANVAS_PADDING = 2;
+  const CONTAINER_TITLE_ROOM = 16;
 
   const sizeStyle: CSSProperties = isRoot
     ? { flex: 1, minWidth: 0, minHeight: 0 }
@@ -76,10 +77,11 @@ function PanelView({
     ...minMaxStyle,
     gap: panel.gap !== undefined ? `${panel.gap}px` : undefined,
     padding: (() => {
-      const p = panel.padding;
-      return p
-        ? `${p.top + CANVAS_PADDING}px ${p.right + CANVAS_PADDING}px ${p.bottom + CANVAS_PADDING}px ${p.left + CANVAS_PADDING}px`
-        : `${CANVAS_PADDING}px`;
+      const p = panel.padding ?? { top: 0, right: 0, bottom: 0, left: 0 };
+      // A named container's title sits centred on its top edge; this much
+      // extra room keeps its children below it, so the two never overlap.
+      const titleRoom = !isLeaf && !isRoot && panel.name ? CONTAINER_TITLE_ROOM : 0;
+      return `${p.top + CANVAS_PADDING + titleRoom}px ${p.right + CANVAS_PADDING}px ${p.bottom + CANVAS_PADDING}px ${p.left + CANVAS_PADDING}px`;
     })(),
     overflow: 'hidden',
     background: panel.background ?? (isLeaf ? 'rgba(255,255,255,0.04)' : undefined),
@@ -260,10 +262,17 @@ export const css = `
     min-width: 80px;
     text-align: center;
   }
+  /* Centred on the container's top edge, whatever its children are doing
+     (2026-09-24) — in the middle it would sit on its middle child's title. */
   .le-container-name {
     position: absolute;
-    top: 4px;
-    left: 6px;
+    top: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - 8px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     z-index: 1;
     pointer-events: none;
   }
