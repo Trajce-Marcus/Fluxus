@@ -79,7 +79,10 @@ function PanelView({
     background: panel.background ?? (isLeaf ? 'rgba(255,255,255,0.04)' : undefined),
     ...borderStyle,
     borderRadius: panel.borderRadius !== undefined ? `${panel.borderRadius}px` : undefined,
-    outline: isSelected ? '2px solid var(--color-accent)' : '1px solid rgba(255,255,255,0.08)',
+    // Every panel shows a faint dashed guide, so the layout can be seen before
+    // anything is selected (2026-09-24) — the old white-at-8% outline vanished
+    // on the white panels pages use. Dashed so it never reads as a real border.
+    outline: isSelected ? '2px solid var(--color-accent)' : '1px dashed rgba(100,116,139,0.45)',
     outlineOffset: isSelected ? '-2px' : '-1px',
     cursor: 'pointer',
   };
