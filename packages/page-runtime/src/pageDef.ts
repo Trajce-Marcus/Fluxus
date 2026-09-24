@@ -41,6 +41,13 @@ export interface SlotConfig {
   dynamicProps: Record<string, string>;
   /** callbackName → FluxScript script source. */
   callbacks: Record<string, string>;
+  /**
+   * Where a tab scrolls to (2026-09-24): this slot's label in the `Tabs`
+   * strip. On the slot, not the layout panel, so the layout stays about
+   * arrangement (the user's call) — and so only a slot holding a component can
+   * be a tab. The slot's element carries it as `data-tab-name`.
+   */
+  tabName?: string;
 }
 
 /**

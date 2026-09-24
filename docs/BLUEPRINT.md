@@ -320,7 +320,7 @@ starts with them already laid out** (agreed 2026-09-24; spec
 [AUTO_PAGE_COMPONENTS](../packages/page-runtime/docs/AUTO_PAGE_COMPONENTS.md)).
 `PageHeader` gains a **status** label whose **colour follows its value** (the
 platform's one set of colour words); `RecordActivities` is the actions,
-unchanged; a new tab strip lists the layout panels that carry a `tabName`,
+unchanged; a new tab strip lists the slots that carry a `tabName`,
 shows when more than one does, and scrolls to them (SAP's object page anchor
 bar). A new page's layout is a top panel holding those three and a scrolling
 bottom panel for content. **Errors are a page feature**, drawn at the foot of

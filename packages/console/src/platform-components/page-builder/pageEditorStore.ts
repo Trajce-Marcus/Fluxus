@@ -161,6 +161,23 @@ export function setStaticConfig(pagePath: string, slotId: string, propName: stri
   });
 }
 
+/**
+ * Set (or clear, with blank) the slot's tab name — its label in a `Tabs` strip
+ * (2026-09-24). On the slot, beside the component name, not in the
+ * component's own settings: it is about where the slot sits on the page.
+ */
+export function setTabName(pagePath: string, slotId: string, tabName: string): void {
+  getStore(pagePath).set((prev) => {
+    const slot = prev.slotConfigs[slotId];
+    if (!slot) return prev;
+    const { tabName: _old, ...rest } = slot;
+    const next = tabName === '' ? rest : { ...rest, tabName };
+    const slotConfigs = { ...prev.slotConfigs, [slotId]: next };
+    saveSlotConfigs(pagePath, slotConfigs);
+    return { ...prev, slotConfigs };
+  });
+}
+
 /** Set (or clear, with null/blank) a dynamic prop's FluxScript expression. */
 export function setDynamicProp(pagePath: string, slotId: string, propName: string, source: string | null): void {
   getStore(pagePath).set((prev) => {

@@ -1,8 +1,9 @@
-// The page's tabs (2026-09-24): the `tabName`s on its layout's panels, and the
-// scroll to one. The page owns both, since only the page holds the layout and
+// The page's tabs (2026-09-24): the `tabName`s on its slots, and the scroll to
+// one. The page owns both, since only the page holds the layout and
 // its own element; the `Tabs` component draws the names and asks for a scroll.
 
 import type { Panel } from './layout';
+import type { SlotConfig } from './pageDef';
 
 /** What the page hands every component: its tab names and the scroll to one. */
 export interface PageTabs {
@@ -13,14 +14,17 @@ export interface PageTabs {
 export const NO_TABS: PageTabs = { names: [], select: () => {} };
 
 /**
- * Every `tabName` in the layout, in layout order — depth-first, the order the
+ * Every slot's `tabName`, in layout order — depth-first, the order the slots'
  * panels appear in the definition. Blank names are skipped; a name used twice
  * is listed once, since a click can only land on one of them (the first).
  */
-export function collectTabNames(root: Panel | null | undefined): string[] {
+export function collectTabNames(
+  root: Panel | null | undefined,
+  slotConfigs: Record<string, SlotConfig | null>,
+): string[] {
   const out: string[] = [];
   const walk = (panel: Panel) => {
-    const name = panel.tabName?.trim();
+    const name = slotConfigs[panel.id]?.tabName?.trim();
     if (name && !out.includes(name)) out.push(name);
     for (const child of panel.children ?? []) walk(child);
   };
@@ -34,7 +38,7 @@ const scrolls = (el: HTMLElement): boolean => {
 };
 
 /**
- * Scroll the panel named `tabName` to the top of the panel that scrolls it.
+ * Scroll the slot named `tabName` to the top of the panel that scrolls it.
  * The lookup runs inside the page's own element, never `document`: the Console
  * draws the page in a shadow root a document query cannot see into. Only the
  * nearest scrolling ancestor moves — `scrollIntoView` would also shift the

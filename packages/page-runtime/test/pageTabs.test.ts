@@ -1,35 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import type { Panel } from '../src/layout';
+import type { SlotConfig } from '../src/pageDef';
 import { collectTabNames } from '../src/pageTabs';
 
-const panel = (id: string, tabName?: string, children: Panel[] = []): Panel =>
-  ({ id, direction: 'vertical', size: { type: 'auto' }, children, ...(tabName !== undefined ? { tabName } : {}) });
+const panel = (id: string, children: Panel[] = []): Panel =>
+  ({ id, direction: 'vertical', size: { type: 'auto' }, children });
+const slot = (tabName?: string): SlotConfig =>
+  ({ componentName: 'RecordList', staticConfig: {}, dynamicProps: {}, callbacks: {}, ...(tabName !== undefined ? { tabName } : {}) });
 
 describe('collectTabNames', () => {
-  it('lists named panels in layout order, depth-first', () => {
-    const root = panel('root', undefined, [
-      panel('top'),
-      panel('body', undefined, [
-        panel('details', 'Details'),
-        panel('group', 'WBS Rows', [panel('wbs-new'), panel('wbs')]),
-        panel('resources', 'Resources Used'),
-      ]),
-    ]);
-    expect(collectTabNames(root)).toEqual(['Details', 'WBS Rows', 'Resources Used']);
+  const root = panel('root', [
+    panel('top', [panel('slot-title'), panel('slot-tabs')]),
+    panel('body', [panel('slot-details'), panel('slot-wbs-new'), panel('slot-wbs'), panel('slot-resources')]),
+  ]);
+
+  it("lists the slots' tab names in layout order, depth-first", () => {
+    const slots = { 'slot-title': slot(), 'slot-details': slot('Details'), 'slot-wbs-new': slot('WBS Rows'), 'slot-wbs': slot(), 'slot-resources': slot('Resources Used') };
+    expect(collectTabNames(root, slots)).toEqual(['Details', 'WBS Rows', 'Resources Used']);
   });
 
-  it('reaches a named panel inside another named one', () => {
-    const root = panel('root', 'Outer', [panel('inner', 'Inner')]);
-    expect(collectTabNames(root)).toEqual(['Outer', 'Inner']);
-  });
-
-  it('skips blank names and lists a repeated name once', () => {
-    const root = panel('root', undefined, [panel('a', '  '), panel('b', 'Photos'), panel('c', ' Photos ')]);
-    expect(collectTabNames(root)).toEqual(['Photos']);
+  it('skips blank names, empty slots, and lists a repeated name once', () => {
+    const slots = { 'slot-details': slot('  '), 'slot-wbs-new': null, 'slot-wbs': slot('Photos'), 'slot-resources': slot(' Photos ') };
+    expect(collectTabNames(root, slots)).toEqual(['Photos']);
   });
 
   it('has no tabs without a layout', () => {
-    expect(collectTabNames(undefined)).toEqual([]);
+    expect(collectTabNames(undefined, {})).toEqual([]);
   });
 });
 

@@ -338,19 +338,6 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
           />
         </PropRow>
 
-        {/* Tab name — where a Tabs strip scrolls to (2026-09-24). Unlike Name,
-            the reader sees it, as the tab's label. */}
-        <PropRow label="Tab name">
-          <input
-            className="le-input le-input-name"
-            type="text"
-            placeholder="No tab"
-            title="Shown as a tab by the Tabs component; clicking it scrolls here"
-            value={selected.tabName ?? ''}
-            onChange={(e) => updatePanel({ tabName: e.target.value || undefined })}
-          />
-        </PropRow>
-
         {/* Direction */}
         <PropRow label="Direction">
           <div className="le-dir-toggle">

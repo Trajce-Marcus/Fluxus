@@ -19,6 +19,7 @@ import {
   setStaticConfig,
   setDynamicProp,
   setCallback,
+  setTabName,
   usePageEditorStore,
   type PageComponentEntry,
   type ContextKeyDef,
@@ -570,6 +571,15 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, 
             <div className="pe-config-section pe-config-divider">
               <p className="pe-config-label">Component</p>
               <p className="pe-config-value">{config.componentName}</p>
+            </div>
+            {/* Tab name — this slot's label in a Tabs strip, and where
+                clicking it scrolls to (2026-09-24). */}
+            <div className="pe-config-section">
+              <p className="pe-config-label">Tab name</p>
+              <input className="pe-binding-input" placeholder="No tab"
+                title="Shown as a tab by the Tabs component; clicking it scrolls here"
+                value={config.tabName ?? ''}
+                onChange={(e) => setTabName(pagePath, selectedSlotId, e.target.value)} />
             </div>
             <StaticConfigSection slotId={selectedSlotId} config={config} pagePath={pagePath} />
             <DynamicDataSection slotId={selectedSlotId} config={config} pagePath={pagePath} />

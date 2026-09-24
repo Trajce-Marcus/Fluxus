@@ -67,11 +67,9 @@ interface PanelNodeProps {
 }
 
 function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs }: PanelNodeProps) {
-  // A named panel says so on its element — what a tab click scrolls to.
-  const tabName = panel.tabName?.trim() || undefined;
   if (panel.children.length > 0) {
     return (
-      <div style={panelStyle(panel)} data-tab-name={tabName}>
+      <div style={panelStyle(panel)}>
         {panel.children.map((child) => (
           <PanelNode
             key={child.id}
@@ -92,6 +90,8 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
 
   const config = slotConfigs[panel.id] ?? null;
   const manifest = config ? componentManifests[config.componentName] : null;
+  // A named slot says so on its element — what a tab click scrolls to.
+  const tabName = config?.tabName?.trim() || undefined;
 
   return (
     <div style={{ ...panelStyle(panel), position: 'relative' }} data-tab-name={tabName}>
@@ -154,10 +154,10 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   const layout = def?.layout ?? null;
   const declaredRecord = def?.record;
 
-  // The page's tabs: its panels' `tabName`s, and a click scrolling to one
+  // The page's tabs: its slots' `tabName`s, and a click scrolling to one
   // inside this page's own element (pageTabs.ts).
   const rootRef = useRef<HTMLDivElement>(null);
-  const tabNames = useMemo(() => collectTabNames(layout?.root), [layout]);
+  const tabNames = useMemo(() => collectTabNames(layout?.root, slotConfigs), [layout, slotConfigs]);
   const tabs = useMemo<PageTabs>(
     () => ({ names: tabNames, select: (name) => scrollToTab(rootRef.current, name) }),
     [tabNames],
