@@ -84,7 +84,10 @@ function PanelView({
       return `${p.top + CANVAS_PADDING + titleRoom}px ${p.right + CANVAS_PADDING}px ${p.bottom + CANVAS_PADDING}px ${p.left + CANVAS_PADDING}px`;
     })(),
     overflow: 'hidden',
-    background: panel.background ?? (isLeaf ? 'rgba(255,255,255,0.04)' : undefined),
+    // A root with no background of its own draws as a light page rather than
+    // the editor's dark canvas (2026-09-24): the 2px gaps between panels let it
+    // through, and on a page of white panels it read as a thick black line.
+    background: panel.background ?? (isRoot ? '#f1f5f9' : isLeaf ? 'rgba(255,255,255,0.04)' : undefined),
     ...borderStyle,
     borderRadius: panel.borderRadius !== undefined ? `${panel.borderRadius}px` : undefined,
     // Every panel shows a faint dashed guide, so the layout can be seen before
