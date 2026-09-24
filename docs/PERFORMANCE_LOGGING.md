@@ -1,6 +1,6 @@
 # Performance logging — MVP spec
 
-**Status:** draft for review, 2026-09-24. Not built. Direction:
+**Status:** ready to build, 2026-09-24 (names endorsed; checked against the code, §10a). Not built. Direction:
 [BLUEPRINT.md](BLUEPRINT.md) § Performance logging.
 
 ## 1. What this is
@@ -137,6 +137,41 @@ Tables `perf_spans` and `perf_settings`; the columns in §2; the kinds in §3;
 the tRPC routes `perf.record` (the browser sending spans), `perf.settings`,
 `perf.setSettings` and `perf.report` (the dashboard's queries); the header
 `x-fluxus-trace`.
+
+## 10a. Checked against the code (2026-09-24)
+
+The cold review stalled twice, so these points were checked by hand:
+
+- **Where to hook in:** every request goes through `createApp`'s tRPC
+  `fetchRequestHandler` (`server/src/app.ts`), on every entry: local, Vercel
+  and Lambda. So a tRPC middleware on the one procedure builder (`t` in
+  `trpc.ts`) covers them all. The browser client uses `httpBatchLink`
+  (`client/src/index.ts:43`), so one HTTP request can carry several
+  procedures. The middleware runs once per procedure, so each still gets its
+  own `request` span. The trace header is per HTTP request, which is fine,
+  because a batch comes from one page. The link already builds its headers in
+  an async function (`:48`), which is where the trace header goes.
+- **Serverless:** the span insert is awaited inside the middleware, before the
+  reply, so Vercel cannot freeze the function with it unwritten.
+  `AsyncLocalStorage` is plain Node and works on both.
+- **Database counts only on real Postgres.** The pool wrapper is
+  node-postgres's (`db/client.ts`). Under PGlite (tests, no `DATABASE_URL`),
+  `db_queries`/`db_ms` and `db_connect` are simply absent.
+- **Write-back counts come free.** `writeBack` (`host.ts:270`) already works
+  out the changed records, split into those with no baseline (created) and
+  those with one (changed), plus `deletes`. It returns the three counts.
+- **"Ready" does not exist yet.** Each `ComponentContainer` has its own
+  `loading` state; `PageRenderer` gains a count of containers still loading
+  and records `page_open` when it reaches zero after the anchor has resolved.
+- **Migrations are hand-written** SQL plus a `meta/_journal.json` entry (as
+  0019/0020 were; drizzle snapshots stop at 0005). The tables also go in
+  `schema.ts`.
+- **A likely finding before anything is measured:** every run and GET loads
+  the **whole operation**, all records with their histories, into memory
+  (`loadOperationHost`), and `writeBack` compares each one afterwards.
+  `projects-dev` holds 1,429 records, and a page with eight GETs loads them
+  eight times. `host_load` and `write_back` are timed separately for exactly
+  this reason.
 
 ## 11. Things to know
 
