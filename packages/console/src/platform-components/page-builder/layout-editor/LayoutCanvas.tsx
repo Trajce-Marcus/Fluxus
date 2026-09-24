@@ -134,7 +134,7 @@ function PanelView({
             />
           ) : (
             <span
-              className={`le-slot-name-text${panel.name ? ' le-slot-name-text--named' : ''}`}
+              className={`le-slot-name-text${panel.name ? ' le-slot-name-text--named' : ''}${isSelected ? ' le-name--selected' : ''}`}
               onDoubleClick={startEditing}
               title="Double-click to rename"
             >
@@ -146,7 +146,7 @@ function PanelView({
       {!isLeaf && !isRoot && panel.name && (
         <div className="le-container-name" onClick={(e) => e.stopPropagation()}>
           <span
-            className="le-container-name-text"
+            className={`le-container-name-text${isSelected ? ' le-name--selected' : ''}`}
             onDoubleClick={startEditing}
             title="Double-click to rename"
           >
@@ -276,6 +276,8 @@ export const css = `
     padding: 1px 4px;
     border-radius: 2px;
   }
+  /* The selected panel's title matches its border (2026-09-24). */
+  .le-name--selected { color: var(--color-accent); font-weight: 700; opacity: 1; }
   .le-container-name-text:hover {
     opacity: 1;
     background: rgba(255,255,255,0.06);
