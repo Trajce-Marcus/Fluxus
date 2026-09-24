@@ -76,25 +76,38 @@ export function scrollToTab(pageRoot: HTMLElement | null, tabName: string): void
 }
 
 /**
- * Report each tab's section as it comes into view (2026-09-24, the user's
- * rule): scrolling down, a section entering from the bottom; scrolling up, one
- * entering from the top — either way it is the one the reader has just reached.
- * The first report, of what is already in view, is not news and is skipped.
- * Nothing scrolls, nothing is watched.
+ * Report which tab's section the reader is in, as they scroll (2026-09-24):
+ * the last one whose start has reached the top of the scrolling panel. The
+ * last section is often too short ever to reach the top, so once the panel is
+ * scrolled to the bottom it is the last section whose start is in view. (The
+ * first rule tried — whichever section last came into view — lit the next
+ * section as soon as its start showed at the bottom, and felt odd.)
  */
 export function watchTabs(pageRoot: HTMLElement | null, onEnter: (tabName: string) => void): () => void {
-  if (!pageRoot || typeof IntersectionObserver === 'undefined') return () => {};
+  if (!pageRoot) return () => {};
   const elements = tabElements(pageRoot);
   const scroller = elements.length > 0 ? scrollerOf(pageRoot, elements[0], false) : null;
   if (!scroller) return () => {};
-  let first = true;
-  const observer = new IntersectionObserver((entries) => {
-    if (first) { first = false; return; }
-    for (const entry of entries) {
-      const name = (entry.target as HTMLElement).dataset.tabName;
-      if (entry.isIntersecting && name) onEnter(name);
-    }
-  }, { root: scroller });
-  for (const el of elements) observer.observe(el);
-  return () => observer.disconnect();
+
+  const SLACK = 8; // a click lands a section's top exactly at the panel's top
+  let last: string | null = null;
+  let frame = 0;
+  const check = () => {
+    frame = 0;
+    const box = scroller.getBoundingClientRect();
+    const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+    const reached = (el: HTMLElement) => {
+      const top = el.getBoundingClientRect().top;
+      return atBottom ? top < box.bottom : top - box.top <= SLACK;
+    };
+    const current = [...elements].reverse().find(reached) ?? elements[0];
+    const name = current.dataset.tabName;
+    if (name && name !== last) { last = name; onEnter(name); }
+  };
+  const onScroll = () => { if (!frame) frame = requestAnimationFrame(check); };
+  scroller.addEventListener('scroll', onScroll, { passive: true });
+  return () => {
+    scroller.removeEventListener('scroll', onScroll);
+    if (frame) cancelAnimationFrame(frame);
+  };
 }
