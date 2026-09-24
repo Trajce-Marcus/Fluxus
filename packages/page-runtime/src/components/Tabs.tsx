@@ -4,11 +4,11 @@
 // draws the names the page hands it and, on a click, asks the page to scroll.
 //
 // **More than one or nothing** — one tab has nowhere else to go, so a page with
-// a single named panel draws no strip (ruled 2026-09-23). The tab clicked is
-// the one highlighted; following the reader's scrolling to highlight the
-// section in view is left for later.
+// a single named panel draws no strip (ruled 2026-09-23). The tab lit is the
+// one clicked, or the one whose section last came into view as the reader
+// scrolled (2026-09-24) — see `watchTabs`.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PropSchema } from '../manifest';
 import type { PageServiceHandlers } from '../pageHost';
 
@@ -20,6 +20,8 @@ interface TabsProps {
 function TabsComponent({ services }: TabsProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const names = services?.tabs ?? [];
+  const watch = services?.watchTabs;
+  useEffect(() => watch?.(setSelected), [watch]);
   if (names.length < 2) return null;
 
   const current = selected !== null && names.includes(selected) ? selected : names[0];

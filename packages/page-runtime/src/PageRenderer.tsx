@@ -7,7 +7,7 @@ import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
 import type { PageContext } from './pageHost';
 import { resolvePageAnchor } from './pageAnchor';
-import { collectTabNames, scrollToTab, type PageTabs } from './pageTabs';
+import { collectTabNames, scrollToTab, watchTabs, type PageTabs } from './pageTabs';
 
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
@@ -158,8 +158,21 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   // inside this page's own element (pageTabs.ts).
   const rootRef = useRef<HTMLDivElement>(null);
   const tabNames = useMemo(() => collectTabNames(layout?.root, slotConfigs), [layout, slotConfigs]);
+  // While a click's scroll runs it passes other sections, and the one after
+  // the target may come into view at the bottom — so sections coming into view
+  // are ignored until it settles, and the clicked tab stays the one lit.
+  const clickScrollUntil = useRef(0);
   const tabs = useMemo<PageTabs>(
-    () => ({ names: tabNames, select: (name) => scrollToTab(rootRef.current, name) }),
+    () => ({
+      names: tabNames,
+      select: (name) => {
+        clickScrollUntil.current = Date.now() + 1000;
+        scrollToTab(rootRef.current, name);
+      },
+      watch: (onEnter) => watchTabs(rootRef.current, (name) => {
+        if (Date.now() >= clickScrollUntil.current) onEnter(name);
+      }),
+    }),
     [tabNames],
   );
 

@@ -129,6 +129,9 @@ export interface PageServiceHandlers {
    */
   tabs: readonly string[];
   selectTab(tabName: string): void;
+  /** Word of a tab's section coming into view as the reader scrolls; returns
+   *  the call that stops watching. */
+  watchTabs(onEnter: (tabName: string) => void): () => void;
 }
 
 export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleDef[] {
@@ -186,6 +189,7 @@ export const pageServicesStub = (): ServiceModuleDef[] =>
     canGoBack: () => false,
     tabs: [],
     selectTab: () => {},
+    watchTabs: () => () => {},
   });
 
 // ── Evaluation ────────────────────────────────────────────────────────────────

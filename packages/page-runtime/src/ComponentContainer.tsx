@@ -209,6 +209,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     canGoBack: () => runtime.canGoBack?.() ?? false,
     tabs: tabs.names,
     selectTab: tabs.select,
+    watchTabs: tabs.watch,
   }), [onContextChange, launchActivity, openPage, listActivities, runtime, tabs]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
