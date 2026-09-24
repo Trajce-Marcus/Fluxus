@@ -218,7 +218,9 @@ export const css = `
     border-radius: 4px;
     overflow: hidden;
     position: relative;
-    background: var(--color-bg);
+    /* Light, a shade darker than an unstyled root (2026-09-24): the root's
+       margin shows this, and dark it hid the root's outline. */
+    background: #e2e8f0;
   }
   .le-slot-label {
     position: absolute;
