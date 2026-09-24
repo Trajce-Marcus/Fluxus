@@ -46,7 +46,9 @@ src/db/schema.ts       — Drizzle schema: orgs + solutions + operations (the ti
                          page_versions (append-only published snapshots, §3),
                          records (transactional, operation-keyed),
                          rpt_activities + rpt_attributes (reporting,
-                         operation-keyed), attachments (blob ledger)
+                         operation-keyed), attachments (blob ledger),
+                         perf_spans + perf_settings (the performance log —
+                         disconnected from working data, see below)
 src/db/client.ts       — driver selection (DATABASE_URL → node-postgres/Neon;
                          else PGlite) + boot-time idempotent DDL
 src/auth.ts            — bearer-JWT verification against Neon Auth's JWKS
@@ -86,11 +88,18 @@ src/router.ts          — the tRPC router: orgs.get/putProfile,
                          config.get/getForOperation/put
                          + the per-entity model writes (putAttribute…
                          putDefaultMenu), pages.*, records.*, activities.run,
-                         files.*;
+                         files.*, perf.* (routers/perf.ts);
                          DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
 src/services/blob.ts   — the blob-store seam (R2): the ONLY module touching the
                          S3 client; presign helpers, key generation, cost
                          constants. Unconfigured when FLUXUS_R2_* is unset
+src/perf/              — performance logging (below): context.ts (the
+                         AsyncLocalStorage trace + `withSpan`), settings.ts
+                         (the switches, 30s cache), store.ts (insert +
+                         30-day sweep), report.ts (the dashboard's queries),
+                         dbWrap.ts (node-postgres query/connect timing),
+                         outcome.ts (ok / refused / error)
+src/routers/perf.ts    — perf.record / settings / setSettings / report
 src/app.ts             — Hono app; tRPC mounted via the fetch adapter
 src/index.ts           — local entry (Node, @hono/node-server, PGlite at .data/)
 src/lambda.ts          — raw-AWS entry (hono/aws-lambda) — the kept-warm exit
@@ -1083,3 +1092,64 @@ Hook and `returns` source text is included in the projection. The Console is the
 gate (the user's ruling, 2026-09-22, the same one that set this endpoint's
 access): operation users have no Console access. The wider-door caveat already
 recorded for this endpoint applies to model content too.
+
+## Performance logging (BUILT 2026-09-25, [docs/PERFORMANCE_LOGGING.md](../../../docs/PERFORMANCE_LOGGING.md))
+
+Timing about the platform, **entirely disconnected from working data**: never in
+a record's history, never audit, never projected to reporting. Migration
+`0021_performance_logging` (a pure addition) adds two tables.
+
+- **`perf_spans`** — one row per span: `trace_id`, `span_id`, `parent_id`, `side`
+  (`server`|`browser`), `kind`, `name`, `org_id` (always null so far),
+  `operation_id`, `user_email`, `started_at`, `duration_ms`, `outcome`
+  (`ok`|`refused`|`error`), `message`, `counts` (jsonb). Indexed on `started_at`,
+  `(kind, name, started_at)` and `trace_id`. Spans older than 30 days are deleted
+  by `flushSpans`, at most once an hour.
+- **`perf_settings`** — one row per scope (`'platform'` or an operation id):
+  `enabled`, `server`, `browser`, `db_counts`, each `on`/`off`/`follow` (the
+  platform row is on/off only). No row = the default: on. The first write to an
+  operation leaves the parts it does not name on `follow`.
+
+**The hook is one middleware on the procedure builder** (`trpc.ts`: `t` is
+`{ ...baseT, procedure: baseT.procedure.use(perfMiddleware) }`), so every
+procedure in every runtime is covered with nothing at the call sites. `perf.*`
+is skipped. It opens the `request` span, runs the handler inside an
+`AsyncLocalStorage` context, and in `finally` — **after** the handler, and awaited
+before the reply so a serverless function cannot be frozen with it unwritten —
+resolves the switches for the operation the handler turned out to be about and
+writes the whole request's spans in **one insert**. `flushRequest` is its own
+function on purpose: a `return` in the `finally` would replace the procedure's
+result. Logging is never allowed to fail a request.
+
+**Spans nested under `request`**, opened with `withSpan(kind, name, fn, countsOf?)`:
+`host_load` (in `loadOperationHost`; name = operation id; `records`), `validate`
+(name = activity id), `engine` (activity id; `rows` on a GET), `write_back`
+(activity id, or `script` for `scripts.query`; `created`/`changed`/`deleted` —
+`writeBack` returns them). `db_connect` is pushed by the pool hook. `request`
+carries `db_queries`/`db_ms` when the request made any.
+
+**Scope is learned in `resolveUser`** (`setScope`), which every operation-scoped
+call passes through. A procedure with no operation is governed by the platform
+switches alone. The switches are read with a 30-second cache **keyed on the `Db`
+instance**, so a test's fresh database never sees the last one's answer.
+
+**Real Postgres only.** `createDb` calls `timeClientConnects(pg.Client)` (patches
+`Client.prototype.connect` once) and wraps each pool client's `query` on the
+pool's `connect` event, so transaction queries are counted too. Under PGlite
+(tests, no `DATABASE_URL`) `db_queries`, `db_ms` and `db_connect` are absent.
+
+**The trace joins** through the `x-fluxus-trace` header (`traceId:spanId`, read
+into `AppContext.traceHeader` by `createApp`); absent or malformed starts a new
+trace. CORS needs nothing: hono's `cors()` reflects the requested headers.
+
+**Routes** (`routers/perf.ts`): `perf.record` (the browser's batch — bounded
+fields, dropped when the operation's browser switch is off), `perf.settings`
+(operation named → `{ effective }`; none named and a platform admin → also the
+raw rows), `perf.setSettings` (platform admin; `follow` refused on the platform
+row), `perf.report` (platform admin; the panels, or with `traceId` one trace's
+spans). Aggregates are raw SQL (`percentile_cont`), which drizzle hands back
+undecoded, so `report.ts` coerces every number and timestamp.
+
+Tests: `test/perf.test.ts` (31) — spans and their joins, the header, refused vs
+error, every switch combination, browser intake, retention, the dashboard and its
+gate.

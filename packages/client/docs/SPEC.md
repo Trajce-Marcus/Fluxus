@@ -220,3 +220,33 @@ Two things about its posture:
 
 `ScriptQueryResult` is re-exported from `@fluxus/server`, where the procedure
 defines it.
+
+## Browser performance logging (BUILT 2026-09-25, [docs/PERFORMANCE_LOGGING.md](../../../docs/PERFORMANCE_LOGGING.md))
+
+`src/perf.ts`. One `BrowserPerf` per tRPC client (kept in a `WeakMap` beside it,
+so the client's inferred type stays the plain one). **Inert until told**:
+`FluxusClient.connect` / `connectSolution` call `perf.settings` in the same HTTP
+batch as the rest of connect and `configure(operationId, enabled && browser)`; a
+failure or an older server leaves it off. `ConsoleClient` and `PlatformClient`
+never enable it — they name no operation.
+
+- **`perfLink`** — a tRPC link ahead of `httpBatchLink` that times every call as
+  the browser saw it, network included, as a `call` span named
+  `procedure` or `procedure · activityId`. It stamps `op.context.fluxusTrace`
+  (`traceId:spanId`), which the transport's `headers` function turns into the
+  `x-fluxus-trace` header — taken from the **first** call in the batch that has
+  one, so a batch's server spans hang under that call. `perf.*` is never timed.
+  `refused` (FORBIDDEN, BAD_REQUEST, …) is told from `error`.
+- **`pageOpen(path)`** on `FluxusClient` → a `PageOpenHandle` (`end({components})`,
+  `fail(message)`, `cancel()`), or null when logging is off. While a page is
+  opening every call carries the page's trace and is a child of its span; `calls`
+  is counted. A page superseded before it is ready is never recorded. A call
+  outside a page open is its own trace.
+- **Sending** — batched every 10 s and when the tab is hidden; at most 500 buffered
+  (oldest dropped); a failed send drops the batch. Nothing here may break the app.
+- **`PlatformClient`** gains `listOperations`, `perfSwitches`, `setPerfSwitches`,
+  `perfReport(range)` and `perfTrace(traceId)` for the dashboard, with the
+  `PerfReport` / `PerfSpan` / `PerfSwitches` types. `@trpc/server` is now a declared
+  dependency (the link's `observable`); `@trpc/client` already required it.
+
+Tests: `test/perf.test.ts` (16) against a fake `next()`.

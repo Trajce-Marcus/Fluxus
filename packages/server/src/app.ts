@@ -39,6 +39,7 @@ export function createApp(options: AppOptions): Hono {
       // missing/invalid — tRPC turns a createContext failure into an error
       // response for every call in the batch.
       createContext: async (): Promise<AppContext> => {
+        const traceHeader = c.req.header('x-fluxus-trace');
         const user = await auth.authenticate(c.req.header('authorization'));
         // First sign-in binds the caller to their invited pool row (email is
         // the invite key; the auth id only exists once they authenticate) and
@@ -50,7 +51,7 @@ export function createApp(options: AppOptions): Hono {
         if (auth.configured && user.email) {
           await bindAuthUser(base.db, { email: user.email, authUserId: user.id }).catch(() => {});
         }
-        return { ...base, roles, authConfigured: auth.configured, user };
+        return { ...base, roles, authConfigured: auth.configured, user, traceHeader };
       },
     }),
   );

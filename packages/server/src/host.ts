@@ -31,6 +31,7 @@ import type { Db, DbOrTx } from './db/client';
 import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
+import { withSpan } from './perf';
 
 /**
  * A loaded operation: its data partition (operationId) hydrated into an engine
@@ -122,28 +123,32 @@ export async function getOperation(db: Db, operationId: string): Promise<Operati
  * solution's config and the operation's record partition into one engine.
  */
 export async function loadOperationHost(db: Db, operationId: string, sink: NotifySink = consoleNotifySink, user?: ContextUser): Promise<OperationHost> {
-  const op = await getOperation(db, operationId);
-  const config = await getSolutionConfig(db, op.solutionId);
-  const rows = await db.select().from(records).where(eq(records.operationId, operationId));
+  let recordCount = 0;
+  return withSpan('host_load', operationId, async () => {
+    const op = await getOperation(db, operationId);
+    const config = await getSolutionConfig(db, op.solutionId);
+    const rows = await db.select().from(records).where(eq(records.operationId, operationId));
+    recordCount = rows.length;
 
-  const initial: [string, RecordInstance][] = rows.map((r) => [
-    r.id,
-    { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory },
-  ]);
-  const adapter = new MemoryAdapter(config, { initialRecords: initial });
-  const engine = createEngine({
-    store: adapter,
-    config,
-    services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
-    // context.user for gates/hooks; entries record user.id as author.
-    user,
-  });
+    const initial: [string, RecordInstance][] = rows.map((r) => [
+      r.id,
+      { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory },
+    ]);
+    const adapter = new MemoryAdapter(config, { initialRecords: initial });
+    const engine = createEngine({
+      store: adapter,
+      config,
+      services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
+      // context.user for gates/hooks; entries record user.id as author.
+      user,
+    });
 
-  const baseline = new Map(
-    initial.map(([id, rec]) => [id, { json: JSON.stringify(rec), historyLen: rec.activityHistory.length }]),
-  );
+    const baseline = new Map(
+      initial.map(([id, rec]) => [id, { json: JSON.stringify(rec), historyLen: rec.activityHistory.length }]),
+    );
 
-  return { operationId, solutionId: op.solutionId, config, adapter, engine, baseline };
+    return { operationId, solutionId: op.solutionId, config, adapter, engine, baseline };
+  }, () => ({ records: recordCount }));
 }
 
 /** Find an activity by id across the solution's workflows. */
@@ -267,23 +272,31 @@ export async function insertPendingAttachment(
  * (ARCHITECTURE.md "Hosting options"); the outbox/async upgrade replaces this
  * call body, not its callers.
  */
-export async function writeBack(db: Db, host: OperationHost): Promise<void> {
+export async function writeBack(db: Db, host: OperationHost): Promise<{ created: number; changed: number; deleted: number }> {
   const current = host.adapter.allRecords();
   const currentIds = new Set(current.map((r) => r.id));
 
   const upserts: RecordInstance[] = [];
   const newEntries: { record: RecordInstance; entry: ActivityHistoryEntry }[] = [];
+  let created = 0;
+  let changed = 0;
   for (const record of current) {
     const base = host.baseline.get(record.id);
     if (base && base.json === JSON.stringify(record)) continue;
     upserts.push(record);
+    // No baseline ⇒ the run brought it into being; a baseline that no longer
+    // matches ⇒ the run changed it. The two counts feed the perf log's
+    // `write_back` span (PERFORMANCE_LOGGING.md §4) — worked out here because
+    // this loop is where the answer already exists.
+    if (base) changed++; else created++;
     for (const entry of record.activityHistory.slice(base?.historyLen ?? 0)) {
       newEntries.push({ record, entry });
     }
   }
   const deletes = [...host.baseline.keys()].filter((id) => !currentIds.has(id));
+  const counts = { created, changed, deleted: deletes.length };
 
-  if (upserts.length === 0 && deletes.length === 0 && newEntries.length === 0) return;
+  if (upserts.length === 0 && deletes.length === 0 && newEntries.length === 0) return counts;
 
   await db.transaction(async (tx) => {
     for (const record of upserts) {
@@ -340,6 +353,7 @@ export async function writeBack(db: Db, host: OperationHost): Promise<void> {
         .where(and(eq(attachments.status, 'pending'), inArray(attachments.storageKey, [...referenced])));
     }
   });
+  return counts;
 }
 
 // ── Page storage ──────────────────────────────────────────────────────────────

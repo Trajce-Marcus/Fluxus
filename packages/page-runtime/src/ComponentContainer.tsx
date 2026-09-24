@@ -32,6 +32,12 @@ interface Props {
   tabs?: PageTabs;
   /** Tell the page a run landed. */
   onActivityRun: () => void;
+  /**
+   * This slot, and the page's way of hearing that it started or finished
+   * loading — how the page knows when it is "ready" (PERFORMANCE_LOGGING.md §3).
+   */
+  slotId?: string;
+  onLoadingChange?: (slotId: string, loading: boolean) => void;
 }
 
 interface PendingForm {
@@ -51,7 +57,7 @@ interface PendingForm {
   loading?: boolean;
 }
 
-export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs = NO_TABS }: Props) {
+export function ComponentContainer({ runtime, manifest, config, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs = NO_TABS, slotId = '', onLoadingChange }: Props) {
   const [dynamicData, setDynamicData] = useState<Record<string, unknown>>({});
   // Typed-in text with `{{ }}` holes in it, filled. Kept apart from the static
   // config it came from so the author's own words are never overwritten.
@@ -59,6 +65,15 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
   const [pendingForm, setPendingForm] = useState<PendingForm | null>(null);
+
+  // Tell the page when this component is loading. The callback is stable (the
+  // page holds it in a ref), and a component that goes away stops counting.
+  useEffect(() => {
+    onLoadingChange?.(slotId, loading);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  useEffect(() => () => onLoadingChange?.(slotId, false), // eslint-disable-line react-hooks/exhaustive-deps
+  []);
 
   // Runs the pipeline server-side (the client refreshes the snapshot after).
   // A run that lands tells the page, which bumps the tick every component

@@ -9,9 +9,11 @@ plane an org builds in, `@fluxus/runtime` is what that org's people sign into,
 and this is ours. It is a separate app rather than a Console section so that no
 customer-facing deploy ships the code that can read across tenants.
 
-**Status: first cut (2026-08-03).** Two things work — list every org, and
-register one with its owner. Nothing else is stubbed in: usage and billing wait
-on the unified log rather than growing a counter table early.
+**Status: first cut (2026-08-03), plus the Performance screen (2026-09-25).**
+Three things work — list every org, register one with its owner, and read the
+platform's own timing (switches, slowest things, page opens, database wake-ups,
+slow actions). Nothing else is stubbed in: usage and billing wait on the unified
+log rather than growing a counter table early.
 
 ## Run
 

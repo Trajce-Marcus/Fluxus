@@ -122,11 +122,36 @@ exposed holes that were invisible while `'default'` was the only org
   resolving it from the solution where the input does not carry it
   (`getSolutionOrg`).
 
-## 6. Deliberately not here yet
+## 6. The Performance screen (BUILT 2026-09-25)
+
+The app's second screen, behind a two-item nav (Organisations · Performance) — no
+router, one piece of state. Design: root
+[docs/PERFORMANCE_LOGGING.md](../../../docs/PERFORMANCE_LOGGING.md) §8; data from
+`perf.*` on the server, all gated by `requirePlatformAdmin` like everything here.
+`Performance.tsx`, plain tables and no charts:
+
+- **Switches** — the platform row, then every operation (`PlatformClient.listOperations`),
+  each with logging and its three parts. An operation with no row shows `follow
+  platform`; the platform row offers on/off only. A change is written through
+  immediately and reaches the server within 30 seconds.
+- **Time range** — last hour, 24 hours, 7 days — and a Refresh.
+- **Slowest things** — per kind and name: count, typical (median), slow end (95th
+  percentile), worst. Sortable by any column; defaults to slow end.
+- **Page opens** — per page: opens, typical, slow end.
+- **Database wake-ups** — `db_connect`: how many, typical, longest.
+- **Recent slow actions** — traces over 2 seconds, newest first; a click opens the
+  trace's spans as an indented tree (page open → its calls → the server's steps),
+  a span whose parent is missing shown at the top rather than lost.
+
+Not tested: the app has no test setup, and nothing here has been driven in a
+browser — the server queries behind it are tested, the rendering is not.
+
+## 7. Deliberately not here yet
 
 - **Usage and billing.** They belong to this plane, but usage should fall out of
   the unified log (pipeline-as-log, per-class retention) as a query, not a
-  parallel counter table. `orgs.plan` records the tier and nothing meters yet.
+  parallel counter table. The performance log is **not** that log — it is timing,
+  disposable after 30 days, and not a source for metering. `orgs.plan` records the tier and nothing meters yet.
 - **Plan and status writes.** The columns exist and are ours to set, not the
   org's; no screen writes them yet.
 - **Solution publishing and entitlement.** Cross-org solution distribution is

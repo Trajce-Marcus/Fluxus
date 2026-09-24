@@ -22,6 +22,7 @@ import type {
 } from '@fluxus/engine';
 import type { AppRouter, ScriptQueryResult } from '@fluxus/server';
 import { runUpload, type Descriptor, type PresignRequest, type Presigned, type UploadService } from './upload';
+import { BrowserPerf, perfLink, type PageOpenHandle } from './perf';
 
 export type {
   Descriptor,
@@ -34,26 +35,56 @@ export type {
 } from './upload';
 export { sha256Hex, readExif, dmsToDecimal, runUpload } from './upload';
 export type { ScriptQueryResult } from '@fluxus/server';
+export type { PageOpenHandle } from './perf';
 export { createHostAuth } from './auth';
 export type { AuthSession, HostAuth } from './auth';
 
+// One BrowserPerf per client, kept beside it rather than on it so the client's
+// inferred type stays the plain tRPC one every class here already depends on.
+const perfOf = new WeakMap<object, BrowserPerf>();
+
 function createTrpc(url: string, getToken?: () => Promise<string | null>) {
-  return createTRPCClient<AppRouter>({
+  const perf = new BrowserPerf();
+  const client = createTRPCClient<AppRouter>({
     links: [
+      perfLink(perf),
       httpBatchLink({
         url,
         // Bearer JWT on every call (RBAC_DESIGN §0.1) — resolved per request
         // because session tokens are short-lived. No token → no header; the
         // unconfigured server ignores it, the configured one rejects.
-        headers: async () => {
+        //
+        // The trace rides along (PERFORMANCE_LOGGING.md §5): one header per
+        // HTTP request, taken from the first call in the batch that carries
+        // one — a batch comes from one page, and the server's spans for every
+        // procedure in it hang under that call.
+        headers: async ({ opList }) => {
           const token = await getToken?.();
-          return token ? { authorization: `Bearer ${token}` } : {};
+          const trace = opList.map((o) => o.context?.fluxusTrace).find((t): t is string => typeof t === 'string');
+          return {
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+            ...(trace ? { 'x-fluxus-trace': trace } : {}),
+          };
         },
       }),
     ],
   });
+  perf.setSender((spans) => client.perf.record.mutate({ spans }));
+  perfOf.set(client, perf);
+  return client;
 }
 type Trpc = ReturnType<typeof createTrpc>;
+
+/** Ask the server what is switched on for this operation (PERFORMANCE_LOGGING.md
+ *  §6) and tell the client's collector. Never throws. */
+async function learnPerfSwitches(trpc: Trpc, operationId: string): Promise<void> {
+  try {
+    const { effective } = await trpc.perf.settings.query({ operationId });
+    perfOf.get(trpc)?.configure(operationId, effective.enabled && effective.browser);
+  } catch {
+    perfOf.get(trpc)?.configure(operationId, false);
+  }
+}
 
 export interface ConnectOptions {
   /** tRPC endpoint, e.g. http://localhost:8787/trpc (the dev server default). */
@@ -448,6 +479,72 @@ export class PlatformClient {
   registerOrg(input: { id: string; name: string; ownerEmail: string; ownerName?: string | null }): Promise<{ ok: true }> {
     return this.trpc.platform.registerOrg.mutate(input);
   }
+
+  /** Every operation, for the Switches panel — each can override the platform's. */
+  listOperations(): Promise<OperationRow[]> {
+    return this.trpc.operations.list.query() as Promise<OperationRow[]>;
+  }
+
+  // Performance logging (docs/PERFORMANCE_LOGGING.md §8) — the dashboard's
+  // three calls. Platform admins only, server-side.
+
+  /** The platform-wide switches and every operation's override, raw — what the
+   *  Switches panel edits. */
+  async perfSwitches(): Promise<PerfSwitches> {
+    const r = await this.trpc.perf.settings.query();
+    // The raw rows come back to platform admins only; anyone else gets the
+    // resolved answer, which is no use to an editor.
+    if (!('platform' in r)) throw new Error('The switches are for platform admins');
+    return { platform: r.platform, operations: r.operations };
+  }
+  /** Change only the switches named. `scope` is `'platform'` or an operation id. */
+  setPerfSwitches(input: { scope: string; enabled?: SwitchValue; server?: SwitchValue; browser?: SwitchValue; dbCounts?: SwitchValue }): Promise<{ ok: true }> {
+    return this.trpc.perf.setSettings.mutate(input);
+  }
+  /** The dashboard's panels for a time range. */
+  perfReport(range: PerfRange): Promise<PerfReport> {
+    return this.trpc.perf.report.query({ range }) as Promise<PerfReport>;
+  }
+  /** One trace's spans, for the drill-in from a slow action. */
+  async perfTrace(traceId: string, range: PerfRange = '7d'): Promise<PerfSpan[]> {
+    const r = (await this.trpc.perf.report.query({ range, traceId })) as { traceSpans?: PerfSpan[] };
+    return r.traceSpans ?? [];
+  }
+}
+
+export type SwitchValue = 'on' | 'off' | 'follow';
+export type PerfRange = '1h' | '24h' | '7d';
+/** One scope's switches — 'platform', or an operation id. The platform row's
+ *  are on/off only. */
+export interface PerfSwitchRow {
+  scope: string;
+  enabled: SwitchValue;
+  server: SwitchValue;
+  browser: SwitchValue;
+  dbCounts: SwitchValue;
+}
+export interface PerfSwitches {
+  platform: PerfSwitchRow;
+  /** Only operations with an override — any other follows the platform. */
+  operations: PerfSwitchRow[];
+}
+export interface PerfSpan {
+  spanId: string;
+  parentId: string | null;
+  side: 'server' | 'browser';
+  kind: string;
+  name: string;
+  startedAt: string;
+  durationMs: number;
+  outcome: 'ok' | 'refused' | 'error';
+  message: string | null;
+  counts: Record<string, number> | null;
+}
+export interface PerfReport {
+  slowest: { kind: string; name: string; count: number; medianMs: number; p95Ms: number; maxMs: number }[];
+  pageOpens: { name: string; count: number; medianMs: number; p95Ms: number }[];
+  dbWakeups: { count: number; medianMs: number; maxMs: number } | null;
+  recentSlowTraces: { traceId: string; startedAt: string; durationMs: number }[];
 }
 
 /**
@@ -591,6 +688,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       operationId
         ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
         : Promise.resolve([] as RecordInstance[]),
+      operationId ? learnPerfSwitches(trpc, operationId) : Promise.resolve(),
     ]);
     const adapter = new MemoryAdapter(config, {
       initialRecords: partition.map((r) => [r.id, r] as const),
@@ -713,6 +811,9 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       // caller (page access control, §6).
       trpc.pages.list.query({ solutionId, operationId, published }),
       trpc.me.query({ operationId }),
+      // Rides the same HTTP batch. A server that predates the switches (or a
+      // failure) leaves browser logging off — never an error at connect.
+      learnPerfSwitches(trpc, operationId),
     ]);
     const adapter = new MemoryAdapter(config, {
       initialRecords: partition.map((r) => [r.id, r] as const),
@@ -777,6 +878,16 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       resolveUrl: async (storageKey) =>
         (await this.trpc.files.presignGet.query({ solutionId: this.solutionId, key: storageKey })).url,
     };
+  }
+
+  /**
+   * A page is being asked for (PERFORMANCE_LOGGING.md §3): times it until the
+   * page says every component on it has finished loading, and makes the calls
+   * it makes in the meantime part of that one trace. Null when browser logging
+   * is off for this operation — callers just skip the timing.
+   */
+  pageOpen(pagePath: string): PageOpenHandle | null {
+    return perfOf.get(this.trpc)?.beginPage(pagePath) ?? null;
   }
 
   /**

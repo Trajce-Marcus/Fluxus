@@ -87,6 +87,16 @@ DSL Editor endpoint. Everywhere else it is an ordinary name, so a field keyed
 - **Activity spine** — the property that data + behaviour + audit share one backbone because every surface mutates only via activities.
 - **Page runtime** — the run-a-page half of the page machinery (named 2026-07-19): PageRenderer + ComponentContainer + the component registry + the page expression host + the standard capture form (see **Capture form**, which lives here and which the workbench imports since 2026-08-16) — everything a host embeds to turn a stored page definition into working UI against live records. Distinct from page *editing* (editor, palette, Monaco), which stays Console-side. Extracted as `@fluxus/page-runtime`; the Console app embeds it for preview, the Runtime app as its main surface.
 
+## Performance logging (BUILT 2026-09-25)
+
+Design: [PERFORMANCE_LOGGING.md](PERFORMANCE_LOGGING.md). Entirely disconnected
+from working data — never in a record's history, never audit, never reporting.
+
+- **Span** — one timed thing the platform did: a request, a `host_load`, an `engine` run, a `page_open`. One row of `perf_spans`. OpenTelemetry's word, kept so the data could move to an established tool.
+- **Trace** — every span belonging to one action of the user's (opening a page, pressing Submit). Joined across browser and server by the `x-fluxus-trace` header.
+- **Kind** — what sort of span it is: `request`, `host_load`, `validate`, `engine`, `write_back`, `db_connect` (server); `page_open`, `call` (browser).
+- **Perf switches** — on/off for logging, platform-wide with a per-operation override (on, off, or follow the platform), in three parts: server spans, browser spans, database counts. Held in `perf_settings`.
+
 ## Client trust boundary (designed 2026-08-08; the role trim BUILT 2026-08-09)
 
 Terms endorsed 2026-08-08; the design is [CLIENT_TRUST_BOUNDARY.md](CLIENT_TRUST_BOUNDARY.md).

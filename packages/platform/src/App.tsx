@@ -7,6 +7,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import type { PlatformClient, PlatformOrg } from '@fluxus/client';
+import { Performance } from './Performance';
 
 const CONSOLE_URL = import.meta.env.VITE_FLUXUS_CONSOLE_URL ?? 'http://localhost:5174';
 
@@ -45,6 +46,7 @@ export default function App({ client, who, onSignOut }: {
 }) {
   const [orgs, setOrgs] = useState<PlatformOrg[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [screen, setScreen] = useState<'orgs' | 'performance'>('orgs');
 
   const refresh = async () => {
     try {
@@ -72,6 +74,17 @@ export default function App({ client, who, onSignOut }: {
         }}
       >
         <strong>Fluxus Platform</strong>
+        <nav style={{ display: 'flex', gap: 16, marginRight: 'auto', marginLeft: 32 }}>
+          {([['orgs', 'Organisations'], ['performance', 'Performance']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setScreen(id)}
+              style={{ border: 'none', background: 'none', font: 'inherit', cursor: 'pointer', padding: '4px 0', color: screen === id ? '#0f172a' : '#64748b', fontWeight: screen === id ? 600 : 400, borderBottom: screen === id ? '2px solid #0f172a' : '2px solid transparent' }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
         <span style={{ color: '#64748b', fontSize: 14 }}>
           {who}
           <button
@@ -84,6 +97,7 @@ export default function App({ client, who, onSignOut }: {
       </header>
 
       <main style={{ maxWidth: 960, margin: '0 auto', padding: '28px 20px', display: 'grid', gap: 24 }}>
+        {screen === 'performance' ? <Performance client={client} /> : (<>
         {error && (
           <div style={{ ...card, borderColor: '#fecaca', background: '#fef2f2', color: '#b91c1c' }}>{error}</div>
         )}
@@ -134,6 +148,7 @@ export default function App({ client, who, onSignOut }: {
         </section>
 
         <RegisterOrg client={client} onRegistered={refresh} />
+        </>)}
       </main>
     </div>
   );

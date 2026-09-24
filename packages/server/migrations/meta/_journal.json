@@ -148,6 +148,13 @@
       "when": 1785201200000,
       "tag": "0020_drop_sdm_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785201300000,
+      "tag": "0021_performance_logging",
+      "breakpoints": true
     }
   ]
 }

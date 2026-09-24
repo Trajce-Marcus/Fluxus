@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle as drizzlePglite, type PgliteDatabase } from 'drizzle-orm/pglite';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
+import { countClientQueries, timeClientConnects } from '../perf/dbWrap';
 
 // Both drivers expose the same query-builder surface over this schema; the
 // PGlite type is the nominal one and the node-postgres instance is cast to it
@@ -44,7 +45,11 @@ export async function createDb(options: CreateDbOptions = {}): Promise<Db> {
   const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
   if (databaseUrl) {
     const { default: pg } = await import('pg');
+    // Query counts and connection timing for the perf log (PERFORMANCE_LOGGING.md
+    // §5) — real Postgres only; PGlite has no connections to time.
+    timeClientConnects(pg.Client);
     const pool = new pg.Pool({ connectionString: databaseUrl });
+    pool.on('connect', (client) => countClientQueries(client as unknown as { query: (...a: unknown[]) => unknown }));
     // Neon closes idle connections server-side; the dropped socket surfaces as
     // an 'error' on the idle client, which without a listener crashes the
     // process. Handling it lets pg-pool discard the dead client and open a

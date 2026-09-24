@@ -12,7 +12,8 @@
   "dependencies": {
     "@fluxus/engine": "0.1.0",
     "@neondatabase/neon-js": "^0.6.2-beta",
-    "@trpc/client": "^11.4.3"
+    "@trpc/client": "^11.4.3",
+    "@trpc/server": "^11.4.3"
   },
   "devDependencies": {
     "@fluxus/server": "0.1.0",

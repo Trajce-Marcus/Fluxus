@@ -499,6 +499,47 @@ export const attachments = pgTable('attachments', {
   index('attachments_storage_key').on(t.storageKey),
 ]);
 
+// Performance logging (docs/PERFORMANCE_LOGGING.md) — entirely disconnected
+// from working data: never in a record's history, never audit, never
+// projected to reporting. One row per timed span; deleted after 30 days
+// (§7), so nothing here is depended on surviving.
+export const perfSpans = pgTable('perf_spans', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  traceId: text('trace_id').notNull(),
+  spanId: text('span_id').notNull(),
+  parentId: text('parent_id'),
+  side: text('side').$type<'server' | 'browser'>().notNull(),
+  kind: text('kind').notNull(),
+  name: text('name').notNull(),
+  orgId: text('org_id'),
+  operationId: text('operation_id'),
+  userEmail: text('user_email'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  durationMs: integer('duration_ms').notNull(),
+  outcome: text('outcome').$type<'ok' | 'refused' | 'error'>().notNull(),
+  message: text('message'),
+  // Only the counts that apply per kind (§4) — never queried by key alone.
+  counts: jsonb('counts').$type<Record<string, number>>(),
+}, (t) => [
+  index('perf_spans_started').on(t.startedAt),
+  index('perf_spans_kind_name_started').on(t.kind, t.name, t.startedAt),
+  index('perf_spans_trace').on(t.traceId),
+]);
+
+/** One row per scope — 'platform' or an operation id (§6). Each switch is
+ *  independently on/off; an operation row's may additionally be 'follow',
+ *  meaning defer to the platform row. The platform row's own switches are
+ *  read as on/off only — 'follow' on it would have nothing above it to defer
+ *  to, so `setSettings` never writes one there. */
+export const perfSettings = pgTable('perf_settings', {
+  scope: text('scope').primaryKey(),
+  enabled: text('enabled').$type<'on' | 'off' | 'follow'>().notNull().default('on'),
+  server: text('server').$type<'on' | 'off' | 'follow'>().notNull().default('on'),
+  browser: text('browser').$type<'on' | 'off' | 'follow'>().notNull().default('on'),
+  dbCounts: text('db_counts').$type<'on' | 'off' | 'follow'>().notNull().default('on'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const rptAttributes = pgTable('rpt_attributes', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   activityRowId: bigint('activity_row_id', { mode: 'number' }).notNull().references(() => rptActivities.id),

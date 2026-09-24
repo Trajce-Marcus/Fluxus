@@ -340,7 +340,7 @@ a standard starting layout give the same consistency for a fraction of the
 work, and if the page ever draws them automatically, it draws these same
 components.
 
-## Performance logging — *Direction* (agreed 2026-09-24)
+## Performance logging — *Built (MVP 2026-09-25) and Direction* (agreed 2026-09-24)
 
 **The platform times what it does, so it can be interrogated, and so standards
 and publish checks can be set from real numbers.** One row per thing done —
@@ -364,6 +364,14 @@ the browser for what the user feels.
   unbounded lists), and measured ones once there is real traffic.
 - **MVP first:** timing into one table, a simple dashboard usable immediately;
   budgets, checks and fuller screens once the numbers have been seen.
+
+**Built 2026-09-25** ([PERFORMANCE_LOGGING.md](PERFORMANCE_LOGGING.md)): `perf_spans`
+and `perf_settings`; a span for every request, and under it `host_load`,
+`validate`, `engine`, `write_back` and `db_connect`; the browser's `page_open`
+and `call`; switches platform-wide and per operation, in three parts; 30-day
+retention; and one Performance screen in the Platform app. Still direction:
+budgets and publish checks, timing *inside* the engine (gate, hooks, mapping),
+a span per database query, sampling, charts and alerts.
 
 ## Components over their own backend — *Direction* (agreed 2026-08-04)
 

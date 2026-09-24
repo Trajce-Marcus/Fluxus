@@ -1,6 +1,7 @@
 # Performance logging — MVP spec
 
-**Status:** ready to build, 2026-09-24 (names endorsed; checked against the code, §10a). Not built. Direction:
+**Status:** **built 2026-09-25** — the MVP as specified below; where the build differs or chose, §12 says
+so. Names endorsed and checked against the code 2026-09-24 (§10a). Direction:
 [BLUEPRINT.md](BLUEPRINT.md) § Performance logging.
 
 ## 1. What this is
@@ -181,3 +182,56 @@ The cold review stalled twice, so these points were checked by hand:
 - **Overhead.** One extra insert per request, done after the work, and a small
   wrapper round each database query. The switches exist for when it's not
   wanted.
+
+## 12. As built (2026-09-25)
+
+What the build chose, or did differently from the text above. Package detail is
+in each package's SPEC (`server`, `client`, `page-runtime`, `platform`).
+
+- **Decide late, not early.** Every non-`perf.*` procedure runs inside a request
+  context and its spans are collected in memory; whether they are *written* is
+  decided once, after the handler returns, by resolving the switches against
+  the operation the handler turned out to be about. That is what lets an
+  operation's own override apply although the operation is not known until the
+  handler runs. The operation is learned in `resolveUser`, which every
+  operation-scoped call passes through; a procedure with no operation
+  (`platform.*`, `orgs.*`, `solutions.*`, `me` without one, `config.get`,
+  `pages.*`, `operations.*`) is governed by the platform-wide switches alone.
+  With logging off, the cost is the in-memory timing, not the insert.
+- **`org_id` is left null** on every span. Populating it needs a lookup per
+  request that the log must not add; `operation_id` says where, and an
+  operation's org is one join away.
+- **`write_back` and `engine` names.** `write_back` also wraps
+  `scripts.query` (the DSL Editor's read-only run), under the name `script`,
+  since that call writes back too; it has no activity id to be named for.
+  `writeBack` now returns `{ created, changed, deleted }` — the counts came
+  free from the loop that already decides what to write.
+- **Database timing.** Two hooks, real Postgres only. `pg.Client.prototype.connect`
+  is patched once per process (to time each new physical connection), and each
+  pool client's `query` is wrapped when it connects, so queries inside a
+  transaction (which never go through `pool.query`) are counted too. `db_connect`
+  spans are governed by the **database counts** switch, not by server spans.
+- **A batch has one trace.** The link takes the trace from the first call in an
+  HTTP batch that carries one, so the server spans of every procedure in that
+  batch hang under that call's span. While a page is opening every call carries
+  the page's trace; a call outside a page open is its own trace.
+- **The browser is inert until told.** `FluxusClient.connect` /
+  `connectSolution` ask `perf.settings` in the same HTTP batch as the rest of
+  connect; until the answer arrives nothing is recorded, so connect's own calls
+  are never timed. `ConsoleClient` and `PlatformClient` name no operation and
+  never record browser spans.
+- **`perf.settings` serves two callers.** Named with an operation it answers
+  what applies to it (the browser); named with none, a platform admin also gets
+  the raw rows (the dashboard). `perf.report` given a `traceId` answers that
+  trace's spans instead of the panels.
+- **A first edit leaves the rest neutral.** Writing one switch of an operation
+  that has no row creates it with the others on `follow` (the platform row:
+  `on`), so editing one part never pins the others.
+- **Readiness** is a small pure module in page-runtime (`pageReady.ts`): the
+  page counts components still loading and records the open when that reaches
+  zero after its record has resolved. Only the first ready counts — a reload
+  after an activity run is not the page opening again.
+- **Not verified live.** The pool wrapper and the `connect` patch are exercised
+  only by reading the node-postgres API, not against a real Postgres/Neon, and
+  the React readiness wiring has no DOM test (its logic is tested). Both are
+  worth one look on a real deployment before the numbers are trusted.

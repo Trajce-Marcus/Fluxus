@@ -70,6 +70,8 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
+import { perfRouter } from './routers/perf';
+import { setScope, withSpan } from './perf';
 import {
   hasConsoleAccess,
   isOpAdmin,
@@ -109,6 +111,10 @@ import type { OperationConfig } from './db/schema';
  */
 async function resolveUser(ctx: AppContext, operationId: string) {
   const user = ctx.user ?? DEMO_USER;
+  // Every operation-scoped call passes through here first, so this is where
+  // the perf log learns which operation the request is about — its own
+  // override (PERFORMANCE_LOGGING.md §6) is looked up by it at flush time.
+  setScope(operationId, user.email);
   await requireOpUser(ctx, operationId, user);
   const roles = ctx.roles ?? stubRolesResolver;
   // Roles resolve on the EMAIL (0015), like every other grant — the auth id
@@ -850,19 +856,21 @@ export const appRouter = t.router({
             }
           }
 
-          const issues = validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {});
+          const issues = await withSpan('validate', activity.id, async () =>
+            validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {}));
           if (issues.length > 0) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
           }
 
           try {
-            const result = host.engine.runActivity(activity, input.attributes, anchorRecord, {
-              acknowledgedWarnings: input.acknowledgedWarnings,
-              waived: input.waived,
-            });
+            const result = await withSpan('engine', activity.id, async () =>
+              host.engine.runActivity(activity, input.attributes, anchorRecord, {
+                acknowledgedWarnings: input.acknowledgedWarnings,
+                waived: input.waived,
+              }));
             // needs-confirmation persists nothing by doctrine — the diff is
             // empty and write-back is a no-op, but skip it explicitly.
-            if (result.status === 'done') await writeBack(ctx.db, host);
+            if (result.status === 'done') await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
             return result;
           } catch (err) {
             // A failing after hook throws AFTER the entry was appended and the
@@ -870,7 +878,7 @@ export const appRouter = t.router({
             // those must persist, so write the diff back even on error. A
             // failing before hook / availability gate left the store untouched
             // and this is a no-op.
-            await writeBack(ctx.db, host);
+            await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
             throw err;
           }
         } catch (err) {
@@ -928,19 +936,25 @@ export const appRouter = t.router({
             }
           }
 
-          const issues = validateSubmission(host.engine, activity, input.attributes, anchorRecord, {});
+          const issues = await withSpan('validate', activity.id, async () =>
+            validateSubmission(host.engine, activity, input.attributes, anchorRecord, {}));
           if (issues.length > 0) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
           }
 
           try {
-            const result = host.engine.runQuery(activity, input.attributes, anchorRecord);
-            await writeBack(ctx.db, host);
+            const result = await withSpan(
+              'engine',
+              activity.id,
+              async () => host.engine.runQuery(activity, input.attributes, anchorRecord),
+              (r) => (Array.isArray(r.data) ? { rows: r.data.length } : undefined),
+            );
+            await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
             return result;
           } catch (err) {
             // A `returns` that threw still recorded the attempt; a gate that
             // rejected recorded nothing, and write-back is then a no-op.
-            await writeBack(ctx.db, host);
+            await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
             throw err;
           }
         } catch (err) {
@@ -1022,14 +1036,14 @@ export const appRouter = t.router({
             // A GET reached through `invoke` records a light history entry, so
             // the run has to be written back even though the script itself
             // cannot mutate.
-            await writeBack(ctx.db, host);
+            await withSpan('write_back', 'script', () => writeBack(ctx.db, host), (counts) => counts);
             return {
               value: forWire(value),
               rowCount: Array.isArray(value) ? value.length : undefined,
               elapsedMs: Date.now() - started,
             };
           } catch (err) {
-            await writeBack(ctx.db, host);
+            await withSpan('write_back', 'script', () => writeBack(ctx.db, host), (counts) => counts);
             return {
               value: null,
               elapsedMs: Date.now() - started,
@@ -1041,6 +1055,10 @@ export const appRouter = t.router({
         }
       }),
   }),
+
+  // Performance logging (docs/PERFORMANCE_LOGGING.md) — the browser's span
+  // intake, the switches, and the Platform app's dashboard queries.
+  perf: perfRouter,
 });
 
 export type AppRouter = typeof appRouter;

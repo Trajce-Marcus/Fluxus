@@ -8,6 +8,7 @@ import { ComponentContainer } from './ComponentContainer';
 import type { PageContext } from './pageHost';
 import { resolvePageAnchor } from './pageAnchor';
 import { collectTabNames, hiddenBySwitch, scrollToTab, watchTabs, type PageTabs } from './pageTabs';
+import { createPageReadiness, type PageReadiness } from './pageReady';
 
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
@@ -66,9 +67,11 @@ interface PanelNodeProps {
   tabs: PageTabs;
   /** Panels a "switch" Tabs strip is hiding — not drawn, so not loaded. */
   hidden: Set<string>;
+  /** A slot's component started or finished loading — how the page knows it is ready. */
+  onLoadingChange: (slotId: string, loading: boolean) => void;
 }
 
-function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs, hidden }: PanelNodeProps) {
+function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs, hidden, onLoadingChange }: PanelNodeProps) {
   if (hidden.has(panel.id)) return null;
   if (panel.children.length > 0) {
     return (
@@ -86,6 +89,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
             onActivityRun={onActivityRun}
             tabs={tabs}
             hidden={hidden}
+            onLoadingChange={onLoadingChange}
           />
         ))}
       </div>
@@ -110,6 +114,8 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
           refreshTick={refreshTick}
           onActivityRun={onActivityRun}
           tabs={tabs}
+          slotId={panel.id}
+          onLoadingChange={onLoadingChange}
         />
       ) : (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '0.75rem', fontStyle: 'italic' }}>
@@ -153,6 +159,12 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   const [resolved, setAnchor] = useState<{ pageKey: string; anchor: { status: 'ready'; record: RecordInstance | null } | { status: 'failed'; message: string } } | null>(null);
   const anchor = resolved && resolved.pageKey === pageKey ? resolved.anchor : { status: 'resolving' as const };
   const pageErrors = errors.filter((e) => e.pageKey === pageKey);
+
+  // When the page is "ready" — its record resolved and every component on it
+  // done loading — is what `page_open` times (PERFORMANCE_LOGGING.md §3).
+  // Held in a ref so the callback the components get never changes identity.
+  const readiness = useRef<PageReadiness | null>(null);
+  const reportLoading = useCallback((slot: string, loading: boolean) => readiness.current?.loading(slot, loading), []);
 
   const def = runtime.getPage(pagePath);
   const layout = def?.layout ?? null;
@@ -210,16 +222,35 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
     let cancelled = false;
     setAnchor(null);
     setErrors((prev) => prev.filter((e) => e.pageKey === pageKey));
+    // The page is being asked for: from here until it is ready, the calls it
+    // makes carry its trace. Null when browser logging is off.
+    const ready = createPageReadiness(runtime.client.pageOpen(pagePath));
+    readiness.current = ready;
     void (async () => {
       try {
         const record = await resolvePageAnchor(runtime, { record: declaredRecord }, recordId);
         if (!cancelled) setAnchor({ pageKey, anchor: { status: 'ready', record } });
       } catch (err) {
-        if (!cancelled) setAnchor({ pageKey, anchor: { status: 'failed', message: err instanceof Error ? err.message : String(err) } });
+        const message = err instanceof Error ? err.message : String(err);
+        if (!cancelled) {
+          setAnchor({ pageKey, anchor: { status: 'failed', message } });
+          ready.failed(message);
+        }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      ready.cancel(); // a page that went away before it was ready is not a slow page
+      if (readiness.current === ready) readiness.current = null;
+    };
   }, [runtime, pageKey, recordId, declaredRecord?.type, declaredRecord?.instances]);
+
+  // After the commit that mounts the components, so their first "loading"
+  // reports (child effects run before this one) are already counted.
+  const anchorStatus = anchor.status;
+  useEffect(() => {
+    if (anchorStatus === 'ready') readiness.current?.anchorReady();
+  }, [anchorStatus, pageKey]);
 
   const anchorRecord = anchor.status === 'ready' ? anchor.record : null;
   const pageCtx = useMemo<PageContext>(
@@ -309,6 +340,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
           onActivityRun={handleActivityRun}
           tabs={tabs}
           hidden={hidden}
+          onLoadingChange={reportLoading}
         />
       </div>
 
