@@ -206,6 +206,57 @@ export function createLayoutActions(store: ContextStore<LayoutPageState>) {
       });
     },
 
+    /**
+     * Move the selected panel (2026-09-24), mirroring Navigate's arrows:
+     * ← / → swap it with the previous / next sibling; ↑ takes it out of its
+     * parent, to just after the parent; ↓ puts it into the previous sibling,
+     * as that sibling's last child. The panel's id is unchanged, so its slot's
+     * component and settings go with it. The sidebar greys out the moves that
+     * do not apply; each is a no-op here too.
+     */
+    move(dir: 'up' | 'down' | 'left' | 'right') {
+      store.set((prev) => {
+        const root = prev.current.root;
+        const sel = prev.selectedPanelId;
+        const parent = findParent(root, sel);
+        const panel = findPanel(root, sel);
+        if (!parent || !panel) return prev;
+        const idx = parent.children.findIndex((c) => c.id === sel);
+        let next: Panel | null = null;
+
+        if (dir === 'left' || dir === 'right') {
+          const other = dir === 'left' ? idx - 1 : idx + 1;
+          if (other < 0 || other >= parent.children.length) return prev;
+          next = updateInTree(root, parent.id, (p) => {
+            const children = [...p.children];
+            [children[idx], children[other]] = [children[other], children[idx]];
+            return { ...p, children };
+          });
+        }
+
+        if (dir === 'up') {
+          const grand = findParent(root, parent.id);
+          if (!grand) return prev;
+          const without = updateInTree(root, parent.id, (p) => ({ ...p, children: p.children.filter((c) => c.id !== sel) }));
+          next = updateInTree(without, grand.id, (g) => {
+            const at = g.children.findIndex((c) => c.id === parent.id);
+            const children = [...g.children];
+            children.splice(at + 1, 0, panel);
+            return { ...g, children };
+          });
+        }
+
+        if (dir === 'down') {
+          const into = parent.children[idx - 1];
+          if (!into) return prev;
+          const without = updateInTree(root, parent.id, (p) => ({ ...p, children: p.children.filter((c) => c.id !== sel) }));
+          next = updateInTree(without, into.id, (t) => ({ ...t, children: [...t.children, panel] }));
+        }
+
+        return next ? { ...pushHistory(prev), current: { root: next } } : prev;
+      });
+    },
+
     importLayout(layout: LayoutDefinition) {
       store.set((prev) => ({
         ...pushHistory(prev),

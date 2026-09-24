@@ -77,6 +77,9 @@ Structural operations that modify the panel tree.
 | Undo | Steps back one change in history |
 | Redo | Steps forward one change in history |
 | Import Layout | Opens an existing saved layout and loads it into the editor |
+| Move ← / → | Swaps the selected panel with its previous / next sibling (2026-09-24). Mirrors Navigate's arrows |
+| Move ↑ | Takes the panel out of its parent, to just after the parent. Off for the root's children |
+| Move ↓ | Puts the panel into its previous sibling, as that sibling's last child. Off when that sibling holds a component — it would become a container and cut its component loose. A parent left with no children becomes an empty slot. The panel keeps its id, so its component and settings go with it; every move is undoable |
 
 ---
 

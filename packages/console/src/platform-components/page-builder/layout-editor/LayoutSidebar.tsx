@@ -192,9 +192,11 @@ interface Props {
   canUndo: boolean;
   canRedo: boolean;
   actions: Actions;
+  /** Whether a panel holds a component (Move ↓ may not go into one). */
+  holdsComponent: (panelId: string) => boolean;
 }
 
-export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actions }: Props) {
+export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actions, holdsComponent }: Props) {
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState('');
@@ -211,6 +213,11 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
   const siblingIdx = parent ? parent.children.findIndex((c) => c.id === selected.id) : -1;
   const hasPrev = siblingIdx > 0;
   const hasNext = parent !== null && siblingIdx < parent.children.length - 1;
+  // Move (2026-09-24): ↑ needs a grandparent to land in; ↓ needs a previous
+  // sibling that does not hold a component.
+  const canMoveOut = parent !== null && findParent(layout.root, parent.id) !== null;
+  const prevSibling = parent && siblingIdx > 0 ? parent.children[siblingIdx - 1] : null;
+  const canMoveIn = prevSibling !== null && !holdsComponent(prevSibling.id);
 
   const splitterOptions = getSplitterOptions(selected, parent);
   const isFixed = selected.size.type === 'fixed';
@@ -302,6 +309,23 @@ export function LayoutSidebar({ layout, selectedPanelId, canUndo, canRedo, actio
             </div>
             <div className="le-nav-col">
               <button className="le-nav-btn" disabled={!hasNext} title="Next sibling (→)" onClick={() => actions.navigate('right')}>→</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Move — the same pad, moving the panel instead of the selection */}
+        <div className="le-nav-wrap">
+          <span className="le-nav-label">Move</span>
+          <div className="le-nav-pad">
+            <div className="le-nav-col">
+              <button className="le-nav-btn" disabled={!hasPrev} title="Swap with previous sibling" onClick={() => actions.move('left')}>←</button>
+            </div>
+            <div className="le-nav-mid">
+              <button className="le-nav-btn" disabled={!canMoveOut} title="Move out of its parent, to just after it" onClick={() => actions.move('up')}>↑</button>
+              <button className="le-nav-btn" disabled={!canMoveIn} title="Move into the previous sibling, as its last child" onClick={() => actions.move('down')}>↓</button>
+            </div>
+            <div className="le-nav-col">
+              <button className="le-nav-btn" disabled={!hasNext} title="Swap with next sibling" onClick={() => actions.move('right')}>→</button>
             </div>
           </div>
         </div>
