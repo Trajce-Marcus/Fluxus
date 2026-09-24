@@ -36,7 +36,10 @@ function PanelView({
   const CONTAINER_TITLE_ROOM = 16;
 
   const sizeStyle: CSSProperties = isRoot
-    ? { flex: 1, minWidth: 0, minHeight: 0, margin: 6 } // room for the root's own outline to show (2026-09-24)
+    // Grows to fill the frame but never shrinks below its content, so a
+    // layout taller than the screen scrolls in the frame instead of being
+    // squeezed (2026-09-24). The margin is room for the root's outline.
+    ? { flex: '1 0 auto', minWidth: 0, margin: 6 }
     : panel.size.type === 'flex'
     ? { flex: panel.size.value, minWidth: 0, minHeight: 0, margin: CANVAS_MARGIN }
     : panel.size.type === 'auto'
@@ -214,11 +217,12 @@ export const css = `
   }
   .le-canvas-frame {
     flex: 1;
+    min-height: 0; /* may be shorter than the layout — it scrolls instead */
     display: flex;
     flex-direction: column;
     border: 1px solid var(--color-border);
     border-radius: 4px;
-    overflow: hidden;
+    overflow: auto;
     position: relative;
     /* White (2026-09-24): the root's margin shows this, and dark it hid the
        root's outline. */
