@@ -190,9 +190,52 @@ Three things it must not break:
   at all.
 - **Leanness of the transactional layer depends on it.** Retention is not only
   a compliance feature: partition-fetch queries are viable only on small
-  partitions, so this is what keeps the runtime fast.
+  partitions, so this is what keeps the runtime fast. *(Reversed 2026-09-25 as
+  the runtime's speed guarantee — see* Loading only what a request needs *below:
+  the server stops fetching partitions, so speed no longer rests on retention.
+  Retention still stands for its legal and compliance purpose.)*
 
 Not built — no window, no policy storage, no admin tool.
+
+## Loading only what a request needs — *Direction* (agreed 2026-09-25)
+
+**The rule, the platform's first: every client gets only the data it needs** —
+a GET, an activity, anything — **and so does the server**: it reads from the
+database only what a request touches. It must hold at millions of records per
+operation. Spec: [SERVER_DATA_LOADING.md](SERVER_DATA_LOADING.md).
+
+**Reversed: partition-fetch + filter, and the synchronous Store** (Phase 4,
+2026-07-12). The server loaded an operation's every record, with full
+histories, into memory for each run and each GET, ran the engine over that
+copy, and wrote back whatever differed. It was chosen so the evaluator could
+stay synchronous, on the premise that retention would keep partitions small.
+It failed at 1,429 records: a project page with eight lists did the whole load
+eight times. Dropped because the cost grows with the operation rather than
+with the request, and no retention policy bounds an operation holding millions
+of live records. Keeping loaded operations in memory between requests was
+offered as a remedy and rejected — no caching of data; later, the definitions
+and the model are the caching candidates.
+
+**What replaces it:** the engine runs against a store that asks the database
+for each thing when a script needs it, and writes each change as it happens,
+inside one transaction per run — so the database itself shows a run its own
+changes, and a record query means what the database does. The evaluator can wait for the database on the server and
+still answers immediately from memory in the browser. Record queries run as
+SQL. A query filter may not call a service or one of the implementer's DSL
+functions on the record's fields — anything that would run once per record and
+cannot become SQL (banned for now; exceptions may come later). Built-ins with an
+exact SQL equivalent stay allowed. A filter that cannot become SQL is refused
+when it runs; the server never reads a whole record type to filter it.
+
+**The wider picture, not yet specified** (the user's, 2026-09-25): all DSL runs
+on the server, which knows what each request is for and asks each store —
+Postgres, S3, other endpoints — for exactly what it needs. DSL runs on a client
+only over `context.`, the data the page already holds; how a page mixes its
+first GETs with data already in context, and when a lookup reuses what it has,
+is still to be worked out. Clients may later ask for operations by opaque
+strings only the server understands, to hide what is behind them — an idea,
+parked. The Console keeps its own app for now: page definitions cannot build
+the tool that builds page definitions.
 
 ## Solutions working together — *Direction*
 
