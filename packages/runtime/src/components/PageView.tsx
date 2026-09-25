@@ -4,7 +4,7 @@
 // <style> tag — the Runtime app renders in the light DOM, no shadow root.
 
 import { PageRenderer, pageRendererCss } from '@fluxus/page-runtime';
-import { pageRuntime } from '../host';
+import { historyScroll, pageRuntime, saveScroll } from '../host';
 
 export function PageView({ path, recordId }: { path: string; recordId?: string }) {
   const def = pageRuntime.getPage(path);
@@ -24,6 +24,8 @@ export function PageView({ path, recordId }: { path: string; recordId?: string }
           slotConfigs={def.slotConfigs ?? {}}
           contextSchema={def.contextSchema ?? []}
           recordId={recordId}
+          savedScroll={historyScroll()}
+          onScroll={saveScroll}
         />
       ) : (
         <div className="page-view-message">

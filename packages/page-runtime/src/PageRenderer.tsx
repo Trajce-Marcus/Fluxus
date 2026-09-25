@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import type { RecordInstance } from '@fluxus/engine';
 import type { Panel } from './layout';
 import type { SlotConfig, ContextKeyDef } from './pageDef';
@@ -9,6 +9,7 @@ import type { PageContext } from './pageHost';
 import { resolvePageAnchor } from './pageAnchor';
 import { collectTabNames, hiddenBySwitch, scrollToTab, watchTabs, type PageTabs } from './pageTabs';
 import { createPageReadiness, type PageReadiness } from './pageReady';
+import { readScroll, restoreScroll, type PageScroll } from './pageScroll';
 
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
@@ -69,13 +70,16 @@ interface PanelNodeProps {
   hidden: Set<string>;
   /** A slot's component started or finished loading — how the page knows it is ready. */
   onLoadingChange: (slotId: string, loading: boolean) => void;
+  /** Each panel's element, by id — what a scroll position is read from and restored to. */
+  registerPanel: (panelId: string, el: HTMLDivElement | null) => void;
 }
 
-function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs, hidden, onLoadingChange }: PanelNodeProps) {
+function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onError, refreshTick, onActivityRun, tabs, hidden, onLoadingChange, registerPanel }: PanelNodeProps) {
+  const ref = useCallback((el: HTMLDivElement | null) => registerPanel(panel.id, el), [registerPanel, panel.id]);
   if (hidden.has(panel.id)) return null;
   if (panel.children.length > 0) {
     return (
-      <div style={panelStyle(panel)}>
+      <div style={panelStyle(panel)} ref={ref}>
         {panel.children.map((child) => (
           <PanelNode
             key={child.id}
@@ -90,6 +94,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
             tabs={tabs}
             hidden={hidden}
             onLoadingChange={onLoadingChange}
+            registerPanel={registerPanel}
           />
         ))}
       </div>
@@ -102,7 +107,7 @@ function PanelNode({ runtime, panel, slotConfigs, pageCtx, onContextChange, onEr
   const tabName = config?.tabName?.trim() || undefined;
 
   return (
-    <div style={{ ...panelStyle(panel), position: 'relative' }} data-tab-name={tabName}>
+    <div style={{ ...panelStyle(panel), position: 'relative' }} data-tab-name={tabName} ref={ref}>
       {manifest && config ? (
         <ComponentContainer
           runtime={runtime}
@@ -141,9 +146,17 @@ interface Props {
   recordId?: string;
   /** Show the collapsible context.page debug strip (the editor preview turns this on). */
   debug?: boolean;
+  /**
+   * Where the reader was when they last left this page, to put them back
+   * (2026-09-26) — the Runtime app keeps it in the history entry, so Back and
+   * Forward return to the same place. Read once, when the page opens.
+   */
+  savedScroll?: PageScroll | null;
+  /** The reader scrolled, or switched tab: where they are now, for the host to keep. */
+  onScroll?: (place: PageScroll) => void;
 }
 
-export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, recordId, debug }: Props) {
+export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, recordId, debug, savedScroll, onScroll }: Props) {
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
   // Which page, about which record. The anchor and the errors are each held
   // against the key they belong to (2026-09-23): the renderer is not remounted
@@ -164,7 +177,19 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   // done loading — is what `page_open` times (PERFORMANCE_LOGGING.md §3).
   // Held in a ref so the callback the components get never changes identity.
   const readiness = useRef<PageReadiness | null>(null);
-  const reportLoading = useCallback((slot: string, loading: boolean) => readiness.current?.loading(slot, loading), []);
+  // Also counted here, for a scroll restore to know when the page has filled
+  // in — readiness only counts when browser logging is on.
+  const stillLoading = useRef(new Set<string>());
+  const reportLoading = useCallback((slot: string, loading: boolean) => {
+    if (loading) stillLoading.current.add(slot);
+    else stillLoading.current.delete(slot);
+    readiness.current?.loading(slot, loading);
+  }, []);
+  const panelEls = useRef(new Map<string, HTMLDivElement>());
+  const registerPanel = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) panelEls.current.set(id, el);
+    else panelEls.current.delete(id);
+  }, []);
 
   const def = runtime.getPage(pagePath);
   const layout = def?.layout ?? null;
@@ -186,7 +211,12 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
     [slotConfigs],
   );
   const [chosenTab, setChosenTab] = useState<string | null>(null);
-  useEffect(() => setChosenTab(null), [pageKey]);
+  // A page returned to by Back or Forward reopens on the tab it was left on —
+  // set before its record resolves, so the panels drawn are that tab's and
+  // their scroll has somewhere to land.
+  const savedRef = useRef(savedScroll);
+  savedRef.current = savedScroll;
+  useEffect(() => setChosenTab(savedRef.current?.tab ?? null), [pageKey]);
   const activeTab = switching && tabNames.length > 1
     ? (chosenTab !== null && tabNames.includes(chosenTab) ? chosenTab : tabNames[0])
     : null;
@@ -221,6 +251,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   useEffect(() => {
     let cancelled = false;
     setAnchor(null);
+    stillLoading.current.clear();
     setErrors((prev) => prev.filter((e) => e.pageKey === pageKey));
     // The page is being asked for: from here until it is ready, the calls it
     // makes carry its trace. Null when browser logging is off.
@@ -251,6 +282,55 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
   useEffect(() => {
     if (anchorStatus === 'ready') readiness.current?.anchorReady();
   }, [anchorStatus, pageKey]);
+
+  // Back to where the reader was (pageScroll.ts), once the page's panels are
+  // drawn and before the first paint, so a page whose lists are already there
+  // never flashes its top. What is restored is what the host held when the
+  // page opened; the reader's own scrolling goes back to the host, but not
+  // while a restore is still placing them.
+  const restoring = useRef(false);
+  useLayoutEffect(() => {
+    const saved = savedRef.current?.panels;
+    const root = rootRef.current;
+    if (anchorStatus !== 'ready' || !root || !saved || Object.keys(saved).length === 0) return;
+    restoring.current = true;
+    return restoreScroll(root, panelEls.current, saved, () => stillLoading.current.size === 0, () => {
+      restoring.current = false;
+    });
+  }, [anchorStatus, pageKey]);
+
+  const onScrollRef = useRef(onScroll);
+  onScrollRef.current = onScroll;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const reportPlace = useCallback(() => {
+    if (restoring.current) return;
+    const tab = activeTabRef.current;
+    onScrollRef.current?.({ panels: readScroll(panelEls.current), ...(tab !== null ? { tab } : {}) });
+  }, []);
+  // A tab switch is a move too, with or without a scroll after it. Not on the
+  // page's first frame: the tab it opens on is not the reader's choice.
+  const tabReported = useRef<string | null>(null);
+  useEffect(() => {
+    if (anchorStatus === 'ready' && activeTab !== tabReported.current && tabReported.current !== null) reportPlace();
+    tabReported.current = activeTab;
+  }, [activeTab, anchorStatus, reportPlace]);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (anchorStatus !== 'ready' || !root) return;
+    let frame = 0;
+    const report = () => {
+      frame = 0;
+      reportPlace();
+    };
+    // A panel's scroll does not bubble, so the page listens on the way down.
+    const onAnyScroll = () => { if (!frame) frame = requestAnimationFrame(report); };
+    root.addEventListener('scroll', onAnyScroll, { capture: true, passive: true });
+    return () => {
+      root.removeEventListener('scroll', onAnyScroll, true);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [anchorStatus, pageKey, reportPlace]);
 
   const anchorRecord = anchor.status === 'ready' ? anchor.record : null;
   const pageCtx = useMemo<PageContext>(
@@ -341,6 +421,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
           tabs={tabs}
           hidden={hidden}
           onLoadingChange={reportLoading}
+          registerPanel={registerPanel}
         />
       </div>
 

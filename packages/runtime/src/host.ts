@@ -15,7 +15,7 @@
 import { createEngine, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import type { ContextUser } from '@fluxus/engine';
 import { FluxusClient, orgFromPath, type AuthSession, type HostAuth } from '@fluxus/client';
-import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
+import { createPageRuntime, type PageRuntime, type PageScroll } from '@fluxus/page-runtime';
 import { NotificationLog } from './store/NotificationLog';
 import { buildNotifyModule } from './services/notify';
 
@@ -55,6 +55,40 @@ function navigate(page: string, recordId: string | null): void {
 const DEPTH = 'fluxusDepth';
 export const historyDepth = (): number => Number((window.history.state as Record<string, unknown> | null)?.[DEPTH] ?? 0);
 export const depthState = (depth: number): Record<string, unknown> => ({ [DEPTH]: depth });
+
+// Where the reader was on each page (2026-09-26): the open page's panel scroll
+// rides its own history entry, so Back and Forward put them back where they
+// were. Written to the entry a moment after scrolling stops — browsers limit
+// how often an entry may be rewritten — and at once before another page is
+// opened, since after that the entry is no longer the current one.
+const SCROLL = 'fluxusScroll';
+const SCROLL_SAVE_MS = 200;
+let pendingScroll: PageScroll | null = null;
+let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+
+export const historyScroll = (): PageScroll | null =>
+  ((window.history.state as Record<string, unknown> | null)?.[SCROLL] as PageScroll | undefined) ?? null;
+
+export function saveScroll(positions: PageScroll): void {
+  pendingScroll = positions;
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(flushScroll, SCROLL_SAVE_MS);
+}
+
+/** Write what is waiting into the current entry, now. */
+export function flushScroll(): void {
+  clearTimeout(scrollTimer);
+  if (!pendingScroll) return;
+  window.history.replaceState({ ...(window.history.state ?? {}), [SCROLL]: pendingScroll }, '');
+  pendingScroll = null;
+}
+
+/** Back or Forward has already moved the entry: what was waiting belonged to
+ *  the page just left, and must not land on the one arrived at. */
+export function dropScroll(): void {
+  clearTimeout(scrollTimer);
+  pendingScroll = null;
+}
 
 export async function initHost(auth?: HostAuth): Promise<void> {
   // The signed-in identity: bearer token on every tRPC call, and the local
