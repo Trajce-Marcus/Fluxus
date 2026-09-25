@@ -203,6 +203,10 @@ Not built — no window, no policy storage, no admin tool.
 a GET, an activity, anything — **and so does the server**: it reads from the
 database only what a request touches. It must hold at millions of records per
 operation. Spec: [SERVER_DATA_LOADING.md](SERVER_DATA_LOADING.md).
+*Built 2026-09-25: steps 1 and 2 — no history read, and the server's database
+store reads on demand and writes through, one transaction per run. Not built:
+step 3, record queries as SQL — until then a record query still reads its whole
+type.*
 
 **Reversed: partition-fetch + filter, and the synchronous Store** (Phase 4,
 2026-07-12). The server loaded an operation's every record, with full

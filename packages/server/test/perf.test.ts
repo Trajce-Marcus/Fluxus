@@ -70,21 +70,20 @@ describe('what a run records', () => {
     expect(rows.find((r) => r.kind === 'write_back')!.counts).toEqual({ created: 1, changed: 0, deleted: 0 });
   });
 
-  it('counts the records a host_load brought into memory', async () => {
-    // The records table outlives each case, so count what is really there.
-    const before = (await db.select().from(records).where(eq(records.operationId, DEFAULT_OPERATION))).length;
+  it('a host_load counts nothing — it loads the model, and no record (SERVER_DATA_LOADING ruling 23)', async () => {
     await createJob();
     const load = (await spans()).find((r) => r.kind === 'host_load')!;
-    expect(load.counts).toEqual({ records: before });
+    expect(load.counts).toBeNull();
   });
 
-  it('counts the rows a GET returned, and reports a GET as a write_back of nothing', async () => {
+  it('counts the rows a GET returned; a GET has no write_back — its entry is one statement in the engine span', async () => {
     await createJob();
     await db.delete(perfSpans);
     await caller().activities.query({ activityId: 'act_get_work_orders', attributes: { status: 'Raised' } });
     const rows = await spans();
     expect(rows.find((r) => r.kind === 'request')!.name).toBe('activities.query');
     expect(rows.find((r) => r.kind === 'engine')!.counts).toEqual({ rows: 0 });
+    expect(rows.find((r) => r.kind === 'write_back')).toBeUndefined();
   });
 
   it("joins the browser's trace when the request carries x-fluxus-trace", async () => {

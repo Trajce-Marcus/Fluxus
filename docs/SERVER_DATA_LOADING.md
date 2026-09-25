@@ -1,8 +1,10 @@
 # Server data loading — spec
 
 **Status:** 2026-09-25 — revised twice after two cold reviews; every decision
-the reviews raised is answered (§2). **Step 1 built** the same day
-(`packages/server/test/writeBack.test.ts`); steps 2 and 3 next. Direction:
+the reviews raised is answered (§2). **Steps 1 and 2 built** the same day
+(`packages/server/test/writeBack.test.ts`, `packages/server/test/databaseStore.test.ts`,
+`packages/dsl/test/waiting.test.ts`; the DSL evaluator and script suites run
+through both drivers); step 3 next. What the build of step 2 chose is in §12. Direction:
 [BLUEPRINT.md](BLUEPRINT.md) § Loading only what a request needs. Spans
 `@fluxus/dsl`, `@fluxus/engine` and `@fluxus/server`, so it lives in root
 `docs/`.
@@ -605,3 +607,61 @@ None. Every decision both reviews raised is answered in §2.
   it slows noticeably, it comes back to the user.
 - **Before and after:** the performance log's `host_load` and `write_back`
   spans (built 2026-09-25) are the measure.
+
+## 12. As built — step 2 (2026-09-25)
+
+What the build chose where §4 left it open, or did differently. Package detail
+is in the DSL SPEC (§7, §10), the engine SPEC (*The Engine object*, *The Store
+contract*) and the server SPEC (*The request model*).
+
+- **Names.** Waiting forms: `evaluateExpressionAsync`, `evaluateAstAsync`,
+  `executeScriptAsync`; on the engine `evaluateAsync`,
+  `activityAvailabilityAsync`, `isActivityAvailableAsync`. The store contracts:
+  `ModelStore`, `Store` (the browser's, immediate) and `WaitingStore`. The
+  declared-fields method is `RecordsHost.declaredFields(type)` (optional on the
+  interface); nothing reads it yet — rulings 12 and 13 are step 3's.
+- **How a host declares write-through.** On the DSL side, a mutation host with
+  `writesThrough: true` and `begin` / `create` / `update` / `delete` / `finish`
+  / `undo` / `afterCommit`. On the engine side, a `WaitingStore` with
+  `savepoint()` and `afterCommit(fn)`; the bridge builds the first from the
+  second. The savepoint opens at the hook's **first write**, so a hook that
+  writes nothing costs no round trip.
+- **Plain answers are not yielded.** Only a promise goes to the driver, and
+  literals, names, member access and operators over them are evaluated without
+  a generator (in the immediate driver, member access reads the host directly).
+  Measured before and after, over memory: a 50,000-row `where` with operators
+  at parity (20 → 19 ms), with calls at parity (63 → 64 ms), with a reference
+  followed per row faster (16 → 13 ms); a 20,000-iteration script loop slower
+  (8 → 9.5 ms, ~15%).
+- **`AfterHookFailedError`** (engine) marks the one failure that commits, so the
+  router can tell it from every other; the message is unchanged.
+- **`store.fault`.** A database error, or a record deleted meanwhile, is kept on
+  the store; `commit()` refuses while one is set. That is how a database error
+  inside a hook fails the whole run (§4.2) even though the hook's savepoint has
+  already rolled back and the engine has appended the entry.
+- **The entry append is one statement** — the append, the reporting rows and the
+  ledger flip, as data-modifying CTEs — for a GET (no transaction) and inside a
+  run alike.
+- **`write_back` stays the span name for the commit**, with the same counts,
+  now counted as the store writes. A GET and `scripts.query` have no
+  `write_back`.
+- **A type's records are read `ORDER BY id`**, so step 2's order is already the
+  one §5.3 promises without `orderby`.
+- **PGlite serialises transactions**: a query waits for an open one. In dev a
+  run holds other requests until it ends; the step-1 test of two overlapping
+  runs now overlaps them by reading first and writing after the other request
+  commits.
+- **Scripts.** Of the eight in §4.3, six were one-offs that had served their
+  purpose and were **deleted** (the user's call, 2026-09-25; git history keeps
+  them): the loaders `load-projects-sample`, `load-pipeline-project`,
+  `load-cbs-detail` — which also addressed records by code, ended by the
+  2026-09-18 id ruling — and the page writers `project-page`,
+  `project-page-location`, `shift-reports-pages`. The two verifiers moved to the
+  waiting API and hold their checks in a transaction they roll back, since
+  every run now writes as it happens. Neither was run against a database at
+  the build.
+- **A create failing two checks at once** — one field required and blank,
+  another unique and clashing — now reports the required one first, whatever
+  the field order (shaping and uniqueness were split so both stores share the
+  shaping).
+

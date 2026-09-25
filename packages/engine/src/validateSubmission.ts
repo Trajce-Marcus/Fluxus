@@ -21,6 +21,7 @@
 
 import { attributeFieldRef } from './attributeTypes';
 import type { Engine } from './engine';
+import type { WaitingStore } from './store';
 import type { ActivityDef, AttributeDef, RecordInstance } from './types';
 import { coerceCaptured, coerceCapturedValue, compositeSubs, flattenCaptured, fullId, isBlank, shortName } from './bridge';
 import { descriptorShapeIssues, isDescriptorType } from './attributeTypes';
@@ -42,13 +43,18 @@ function optionValue(item: unknown, keyField: string): string {
   return String(item ?? '');
 }
 
-export function validateSubmission(
-  engine: Engine,
+/**
+ * Waiting (SERVER_DATA_LOADING §4.2): the datasources, show conditions and
+ * validation rules it evaluates may read the store, and on the server the
+ * store is the database.
+ */
+export async function validateSubmission(
+  engine: Engine<WaitingStore>,
   activity: ActivityDef,
   captured: Record<string, unknown>,
   anchorRecord: RecordInstance | null,
   waived: Record<string, string> = {},
-): SubmissionIssue[] {
+): Promise<SubmissionIssue[]> {
   const issues: SubmissionIssue[] = [];
   const byKey = new Map(activity.attributes.map(a => [a.key, a]));
 
@@ -95,18 +101,18 @@ export function validateSubmission(
       engine.invoke(activityId, params, anchorRecord),
   };
 
-  const isVisible = (attr: AttributeDef): boolean => {
+  const isVisible = async (attr: AttributeDef): Promise<boolean> => {
     if (!attr.show_condition) return true;
     try {
-      return engine.evaluate(attr.show_condition, scriptBase) === true;
+      return (await engine.evaluateAsync(attr.show_condition, scriptBase)) === true;
     } catch {
       return true; // fail open — mirrors the form
     }
   };
 
-  const checkListMembership = (label: string, key: string, datasource: string, keyField: string, submitted: string[]) => {
+  const checkListMembership = async (label: string, key: string, datasource: string, keyField: string, submitted: string[]) => {
     try {
-      const result = engine.evaluate(datasource, scriptBase);
+      const result = await engine.evaluateAsync(datasource, scriptBase);
       if (!Array.isArray(result)) {
         issues.push({ attribute: key, message: `'${key}' datasource did not return a list` });
         return;
@@ -127,7 +133,7 @@ export function validateSubmission(
     // Composite: the same required / waive / validation semantics, per cell.
     const subs = compositeSubs(attr);
     if (subs) {
-      if (!isVisible(attr)) {
+      if (!(await isVisible(attr))) {
         for (const k of Object.keys(flat)) {
           if (k.startsWith(`${attr.key}.`) && !isBlank(flat[k])) {
             issues.push({ attribute: k, message: `'${k}' is not applicable for this submission` });
@@ -144,7 +150,7 @@ export function validateSubmission(
         const cellVal = flat[path];
         const cellFilled = !isBlank(cellVal);
         const cellStr = typeof cellVal === 'string' ? cellVal.trim() : '';
-        if (!isVisible(sub)) {
+        if (!(await isVisible(sub))) {
           if (cellFilled) issues.push({ attribute: path, message: `'${path}' is not applicable for this submission` });
           if (path in waived) issues.push({ attribute: path, message: `'${path}' is not applicable and cannot be waived` });
           continue;
@@ -165,7 +171,7 @@ export function validateSubmission(
         for (const m of descriptorShapeIssues(sub.type, cellVal, cellLabel)) issues.push({ attribute: path, message: m });
         if (sub.validation) {
           try {
-            const ok = engine.evaluate(sub.validation, { ...scriptBase, extras: { value: coerceCapturedValue(sub.type, cellVal) } });
+            const ok = await engine.evaluateAsync(sub.validation, { ...scriptBase, extras: { value: coerceCapturedValue(sub.type, cellVal) } });
             if (ok !== true) issues.push({ attribute: path, message: sub.validation_message ?? `${cellLabel} is invalid` });
           } catch (err) {
             issues.push({ attribute: path, message: `${cellLabel}: ${err instanceof Error ? err.message : String(err)}` });
@@ -174,7 +180,7 @@ export function validateSubmission(
         if (sub.type === 'list') {
           const datasource = sub.type_config?.datasource;
           if (!datasource) issues.push({ attribute: path, message: `'${path}' has no datasource` });
-          else checkListMembership(cellLabel, path, datasource, sub.type_config?.key_field ?? 'id', [cellStr]);
+          else await checkListMembership(cellLabel, path, datasource, sub.type_config?.key_field ?? 'id', [cellStr]);
         }
       }
       continue;
@@ -185,7 +191,7 @@ export function validateSubmission(
     const raw = typeof value === 'string' ? value.trim() : '';
     const isWaived = attr.key in waived;
 
-    if (!isVisible(attr)) {
+    if (!(await isVisible(attr))) {
       // A **sourced** attribute is filled from context rather than asked for,
       // so a value arriving for one is expected, not a caller overstepping —
       // the form hides it and submits it just the same (2026-09-15). Everything
@@ -240,7 +246,7 @@ export function validateSubmission(
     // Attribute-level validation rule (FluxScript; the captured value is `value`)
     if (attr.validation) {
       try {
-        const ok = engine.evaluate(attr.validation, { ...scriptBase, extras: { value: typed[attr.key] } });
+        const ok = await engine.evaluateAsync(attr.validation, { ...scriptBase, extras: { value: typed[attr.key] } });
         if (ok !== true) issues.push({ attribute: attr.key, message: attr.validation_message ?? `${attr.label} is invalid` });
       } catch (err) {
         issues.push({ attribute: attr.key, message: `${attr.label}: ${err instanceof Error ? err.message : String(err)}` });
@@ -256,7 +262,7 @@ export function validateSubmission(
         continue;
       }
       try {
-        const result = engine.evaluate(datasource, scriptBase);
+        const result = await engine.evaluateAsync(datasource, scriptBase);
         if (!Array.isArray(result)) {
           issues.push({ attribute: attr.key, message: `'${attr.key}' datasource did not return a list` });
           continue;
@@ -285,7 +291,7 @@ export function validateSubmission(
       if (fkType) {
         let found: RecordInstance | null = null;
         try {
-          found = engine.store.getRecord(raw);
+          found = await engine.store.getRecord(raw);
         } catch {
           found = null;
         }

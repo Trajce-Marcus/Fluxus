@@ -5,10 +5,11 @@
 // Named exports only (no wildcard barrels) — conventions.md tree-shaking rules.
 
 export { createEngine } from './engine';
+export { AfterHookFailedError } from './engine';
 export type { Engine, EngineOptions, ActivityAvailability, RunActivityOptions } from './engine';
 
-export type { Store } from './store';
-export { MemoryAdapter } from './memoryAdapter';
+export type { ModelStore, Savepoint, Store, WaitingStore } from './store';
+export { MemoryAdapter, coerceFieldValues, shapeNewRecord, uniqueValues } from './memoryAdapter';
 export type { MemoryAdapterOptions } from './memoryAdapter';
 
 export { buildGeoModule } from './services/geo';
@@ -22,6 +23,7 @@ export type { SubmissionIssue } from './validateSubmission';
 
 export {
   activityHooks,
+  blockingReferences,
   buildDslSchema,
   buildEvalHost,
   buildRecordsHost,

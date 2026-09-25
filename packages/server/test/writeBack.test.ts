@@ -1,15 +1,19 @@
-// Write-back sends only what a run changed (SERVER_DATA_LOADING §3, step 1).
+// A run writes only what it changed (SERVER_DATA_LOADING §3, step 1; kept
+// through step 2's write-through store).
 //
-// No record's history is loaded any more, and a changed record is patched —
-// the fields that differ, merged in; new entries, appended — never rewritten
-// whole. What that buys shows only when two requests overlap, so these tests
-// overlap them: two GETs logging on one anchor, two runs changing different
-// fields of one record, and a run changing a record another request deleted.
+// No record's history is loaded, and a changed record is patched — the fields
+// it changes, merged in; new entries, appended — never rewritten whole. What
+// that buys shows only when two requests overlap, so these tests overlap them:
+// two GETs logging on one anchor, a run changing a record whose other field
+// another request changed after the run read it, and a run changing a record
+// another request deleted. (PGlite serialises transactions, so the overlap is
+// arranged by reading before the other request writes, as a real Postgres
+// interleaving would.)
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, findActivity, loadOperationHost, putConfig, RecordDeletedMeanwhileError, writeBack, type OperationHost } from '../src/host';
+import { ensureOperation, ensureSolution, findActivity, loadOperationHost, putConfig, RecordDeletedMeanwhileError, type OperationHost } from '../src/host';
 import { appRouter } from '../src/router';
 import { records, rptActivities } from '../src/db/schema';
 import type { ActivityHistoryEntry, SolutionConfig } from '@fluxus/engine';
@@ -59,11 +63,18 @@ async function row(id: string) {
   return r as { customFields: Record<string, unknown>; activityHistory: ActivityHistoryEntry[] } | undefined;
 }
 
-/** Run an activity inside an already-loaded host, as the router does — the way
- *  to hold two requests open at once and choose the order they write in. */
-function runIn(host: OperationHost, activityId: string, attributes: Record<string, unknown>, recordId: string) {
+/** Run an activity on a record the host already read, in its own transaction —
+ *  the way to let another request write between a run's read and its write. */
+async function runOn(host: OperationHost, activityId: string, attributes: Record<string, unknown>, anchor: Awaited<ReturnType<OperationHost['store']['getRecord']>>) {
   const activity = findActivity(host, activityId)!;
-  return host.engine.runActivity(activity, attributes, host.adapter.getRecord(recordId));
+  await host.store.begin();
+  try {
+    await host.engine.runActivity(activity, attributes, anchor);
+  } catch (err) {
+    await host.store.rollback();
+    throw err;
+  }
+  return host.store.commit();
 }
 
 beforeAll(async () => {
@@ -86,41 +97,41 @@ describe('write-back sends only what changed', () => {
     expect(history[0].activityId).toBe('act_create_items');
   });
 
-  it('two runs changing different fields of one record keep both changes and both entries', async () => {
+  it('a run changing one field keeps the field another request changed after the run read it', async () => {
     const id = await create('Widget', '3');
     const first = await loadOperationHost(db, OP);
-    const second = await loadOperationHost(db, OP);
+    const anchor = await first.store.getRecord(id); // holds qty 3
 
-    runIn(first, 'act_rename_items', { name: 'Gadget' }, id);
-    runIn(second, 'act_recount_items', { qty: '7' }, id);
-    await writeBack(db, first);
-    // The second run loaded the old name; a whole-record write would put it back.
-    await writeBack(db, second);
+    await caller().activities.run({ operationId: OP, activityId: 'act_recount_items', recordId: id, attributes: { qty: '7' } });
+    // The first run still holds the old qty; a whole-record write would put it back.
+    await runOn(first, 'act_rename_items', { name: 'Gadget' }, anchor);
 
     const saved = (await row(id))!;
     expect(saved.customFields.name).toBe('Gadget');
     expect(saved.customFields.qty).toBe(7);
     expect(saved.activityHistory.map((e) => e.activityId)).toEqual([
-      'act_create_items', 'act_rename_items', 'act_recount_items',
+      'act_create_items', 'act_recount_items', 'act_rename_items',
     ]);
   });
 
-  it('writes nothing for a record the run did not change', async () => {
+  it('writes nothing for a run that changed nothing', async () => {
     const id = await create('Untouched', '1');
     const host = await loadOperationHost(db, OP);
-    expect(await writeBack(db, host)).toEqual({ created: 0, changed: 0, deleted: 0 });
+    await host.store.getRecord(id);
+    await host.store.begin();
+    expect(await host.store.commit()).toEqual({ created: 0, changed: 0, deleted: 0 });
     expect((await row(id))!.activityHistory).toHaveLength(1);
   });
 
   it('a run changing a record another request deleted fails and writes nothing', async () => {
     const id = await create('Doomed', '1');
     const late = await loadOperationHost(db, OP);
+    const anchor = await late.store.getRecord(id);
 
     await caller().activities.run({ operationId: OP, activityId: 'act_delete_items', recordId: id, attributes: {}, acknowledgedWarnings: true });
     expect(await row(id)).toBeUndefined();
 
-    runIn(late, 'act_rename_items', { name: 'Revived' }, id);
-    await expect(writeBack(db, late)).rejects.toBeInstanceOf(RecordDeletedMeanwhileError);
+    await expect(runOn(late, 'act_rename_items', { name: 'Revived' }, anchor)).rejects.toBeInstanceOf(RecordDeletedMeanwhileError);
 
     // Not brought back to life, and no reporting row for the run that failed.
     expect(await row(id)).toBeUndefined();

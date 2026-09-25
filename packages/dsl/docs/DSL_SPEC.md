@@ -121,7 +121,7 @@ for each r in attributes.wo_resources {
 
   **The audit lives on the actor.** The deleted record's history goes with it, so what survives is the entry on the record the deleting activity was anchored to — the ids it named and, if the author asked for one, the reason. A delete activity must therefore be anchored on something that outlives the run; anchoring it on what it deletes destroys its own audit trail.
 
-  **A delete is refused while something still points at the record.** The check runs over the whole staged set at commit — so a subtree deleted in one statement is allowed, because the children holding the reference are themselves going — and the error names the holders. Records come out from the bottom up.
+  **A delete is refused while something still points at the record.** The check runs over the whole set the script deleted, once, at its end — at commit for a staging host, when the script finishes for a write-through host (§7) — so a subtree deleted in one statement is allowed, because the children holding the reference are themselves going — and the error names the holders. Records come out from the bottom up.
 
   **One thing deliberately left open:** reporting rows projected from a deleted record's history are not purged (deferred). There is no environment gate and none planned — "no deletes in production", gated by an operation lifecycle state, was ruled and reversed the same day (2026-09-21): publishing governs the SDM and pages, data does not, and a solution ships the tools to manage its own data. Delete is guarded by being an activity (availability, roles, hooks) and by the referential check.
 
@@ -172,7 +172,7 @@ The read path (settled July 2026). Alongside CREATE/UPDATE/DELETE, a **GET** act
 
 - **Everything is an activity** — user capture, commands, and data gets share one authoring concept, one pipeline, and one invoke surface (`invoke(name, params)`). Apps call GET activities instead of ad-hoc APIs.
 - **GET never mutates**: the validator enforces purity (no mutations, no `queue`). Responses are cacheable.
-- **GET is logged like every activity** — parameters, caller, duration, outcome — giving out-of-the-box observability and an AI-legible uniform stream. Built 2026-08-11 as one ordinary history entry on the anchor record (`system_outcome` / `system_duration_ms` beside the parameters), which means the append is **synchronous** in the current build, inside the same write-back a run uses; the asynchronous append, the per-activity logging level and the retention/archiving module are all still ahead. A read with no anchor record has nowhere to land and is not logged.
+- **GET is logged like every activity** — parameters, caller, duration, outcome — giving out-of-the-box observability and an AI-legible uniform stream. Built 2026-08-11 as one ordinary history entry on the anchor record (`system_outcome` / `system_duration_ms` beside the parameters), which means the append is **synchronous** in the current build — since 2026-09-25 one statement at the end of the GET, which holds no transaction (SERVER_DATA_LOADING §4.3); the asynchronous append, the per-activity logging level and the retention/archiving module are all still ahead. A read with no anchor record has nowhere to land and is not logged.
 - Null `record_map` remains "log only": the activity and its captured attributes are recorded; any behaviour comes from hooks.
 - Named functions (§8) are script-level helpers for reuse inside expressions and hooks — they are **not** an app-facing surface; GET activities are.
 
@@ -209,13 +209,16 @@ Failure semantics: a runtime error in a before hook blocks the activity exactly 
 
 ## 7. Transactions and `queue`
 
-After-hook record mutations are **staged and committed atomically** when the hook completes. If the hook fails midway, no mutations apply. Constraint checks (`required`, `unique`, `immutable`) run at staging time, so a violating mutation fails at its statement — before anything has persisted.
+After-hook record mutations are **atomic**: if the hook fails midway, none of its mutations apply. Constraint checks (`required`, `unique`, `immutable`) run at the mutation's statement, so a violating mutation fails there — before anything of the hook persists.
 
-Within the running script, **reads see staged writes**: a query, `context.record`, or FK deref reflects the script's own uncommitted mutations; snapshots taken earlier keep their values (D11). A record returned by `create` carries its final committed id, usable immediately for FKs.
+Within the running script, **reads see its own writes**: a query, `context.record`, or FK deref reflects the script's own mutations; snapshots taken earlier keep their values (D11). A record returned by `create` carries its final committed id, usable immediately for FKs.
 
-`queue`d service calls are held in the same staging area and **dispatched only if the commit succeeds** (outbox pattern) — eventually to a separate queue/process; arguments are evaluated at the `queue` statement (snapshot), the call itself runs after commit. Hook fails → no records changed, no messages sent. Business users get transactional behaviour without learning the word. A queued call that itself fails at dispatch becomes a warning, never an error (the commit already happened).
+How a host gets there is one of two ways (SERVER_DATA_LOADING ruling 10):
 
-Waiting service calls with side effects inside after hooks are the documented non-transactional exception — prefer `queue` for anything with effects.
+- **Staged** — the browser's `MemoryAdapter`, and every host that does not say otherwise. Mutations are held by the evaluator and committed together when the script completes; reads lay the staged writes over what the host answers. A staged delete is not hidden from the script's later reads.
+- **Write-through** — a host that declares it (`WriteThroughMutationHost`; the server's database store). Each mutation goes to the database as it happens, inside an undo point the host opens at the script's first write (a savepoint in the run's transaction); the evaluator stages nothing, and the script's reads see its writes because the database does — its deletes included. At the end the host checks references across everything deleted and keeps the writes; a failing script is undone by the host.
+
+`queue`d service calls are **dispatched only if the writes commit** (outbox pattern) — eventually to a separate queue/process; arguments are evaluated at the `queue` statement (snapshot), the call itself runs after commit. On a staging host that is when the script completes. On a write-through host it is later: after the **request's** transaction commits, and never if it rolls back. Hook fails → no records changed, no messages sent. Business users get transactional behaviour without learning the word. A queued call that itself fails at dispatch becomes a warning (staging host) or reaches the host's `onQueuedFailure` (write-through host, where the script has long returned) — never an error: the commit already happened.
 
 ## 7a. Services registry (Phase 3)
 
@@ -226,7 +229,7 @@ The `services` root is backed by a **registry of modules**, not an untyped bag. 
 
 The manifest feeds the validator: `DslSchema.services` (derived via `servicesSchema(modules)`) makes unknown modules, unknown functions, and wrong arity **config-save-time errors**, and enforces the purity rules above. A schema without a registry keeps the old behaviour — `services.*` passes through untyped (for hosts that haven't adopted the registry).
 
-**Async posture (decided July 2026, deferred implementation):** service functions may return Promises — the registry API is async-shaped from day one. The current sync evaluator handles that only on `queue` dispatch (fire-and-forget; a rejection lands on the host's `onQueuedFailure` hook, since the script has already returned). A *waiting* call that returns a Promise is a runtime error pointing at `queue`. The "interpreter awaits internally" promise (§4) is honoured when the evaluator goes async with the backend phase — no script, manifest, or module signature changes then; only evaluator internals.
+**Async posture (decided July 2026, built 2026-09-25):** service functions may return Promises — the registry API was async-shaped from day one. The **waiting** evaluator (the server's, §10) awaits them: the "interpreter awaits internally" promise of §4 is kept, with no script, manifest, or module signature changed. The **immediate** evaluator (the browser's) handles a Promise only on `queue` dispatch (fire-and-forget; a rejection lands on the host's `onQueuedFailure` hook, since the script has already returned); a *waiting* call that returns one there is a runtime error pointing at `queue`.
 
 First two modules live in the sdm workbench (see its SPEC): `notify` (effect — in-app notification centre, stub email) and `geo` (read — suburbs lookup backing the suburb datasource).
 
@@ -264,7 +267,7 @@ The division of labour with the expressions tier: **expressions ask, functions t
 ## 9. Validation and safety
 
 - **Schema-aware static validation at config-save time** — the defining feature. Every script parses and checks against the SDM: unknown record types/fields, type mismatches in comparisons, `queue` return-value misuse, service module/function existence + arity + purity (§7a), and (once manifests carry shape contracts) query projections checked against page-builder port shapes. Errors surface when the config is saved, not when a user runs the activity.
-- **Runaway protection from day one**: max loop iterations, max rows per query, execution timeout — quotas enforced by the interpreter.
+- **Runaway protection from day one**: max loop iterations, max rows per query, execution timeout — quotas enforced by the interpreter. The timeout (`timeoutMs`) counts **evaluation only** since 2026-09-25: time the waiting evaluator spends waiting on the host — the database, a service — does not count (SERVER_DATA_LOADING ruling 20). It exists to stop runaway scripts, not slow databases.
 
 ### Scale strategy (large result sets)
 
@@ -277,7 +280,16 @@ Fetch-all-then-filter does not survive production data volumes. The measures, la
 
 ## 10. Implementation
 
-Own grammar, hand-rolled or Chevrotain-based parser, **tree-walking interpreter in TypeScript** — one implementation running in the browser (datasources, show conditions, page bindings, POC hooks) and on the server (hooks, headless) once the backend lands. All host functions are async under the hood; the interpreter awaits internally so the language surface stays synchronous.
+Own grammar, hand-rolled parser, **tree-walking interpreter in TypeScript** — one implementation running in the browser (datasources, show conditions, page bindings) and on the server (hooks, headless, GET `returns`).
+
+**One evaluator, two drivers (built 2026-09-25, SERVER_DATA_LOADING §4.1).** The interpreter's internals are generator functions: every records read, mutation, service call and `invoke` passes its answer through a `yield` when that answer is a promise, and a driver resumes the interpreter:
+
+- the **immediate** driver — `evaluateExpression`, `evaluateAst`, `executeScript`, signatures unchanged — is never handed a promise: one arriving is a runtime error naming what answered asynchronously. The browser runs this, over memory, exactly as before;
+- the **waiting** driver — `evaluateExpressionAsync`, `evaluateAstAsync`, `executeScriptAsync`, each returning a promise — awaits it. The server runs this, over the database.
+
+A plain answer is never yielded, and literals, names, member access and operators over them are answered without a generator at all, so evaluation over memory costs what it did (measured at the build: a 50,000-row `where` at parity or faster; a 20,000-iteration script loop ~15% slower). The language surface stays synchronous. Babel's `gensync` uses the same technique; no dependency was added.
+
+Hosts integrate by implementing the root providers (`RecordsHost` — whose reads and mutations may answer with a promise, and which reports each type's declared fields and their types through `declaredFields`, for record queries — context, service registry) and calling the entry points above.
 
 Hosts integrate by implementing the root providers (record store adapter, context, service registry) and calling `evaluate(script, roots)` / `validate(script, sdm)`.
 
@@ -286,7 +298,7 @@ Hosts integrate by implementing the root providers (record store adapter, contex
 1. **Phase 1 — expressions + queries.** ✅ Done. Grammar, interpreter, validator. Proven in the sdm workbench: `show_condition` and `List` datasources with `attributes.` dependencies (city → suburb is the acceptance test). Entirely client-side.
 2. **Phase 2 — scripts.** ✅ Done (July 2026). Statements, `fail`/`warn`, `records` mutations, transactional after hooks, `queue`, named functions — built and wired into the sdm hook slots (Complete Work Order is the acceptance case: before gate + after-hook status move). The `run activity` page-builder callback (payload as `event` root) was re-scoped out to the **Extraction** milestone (root ROADMAP): it is blocked on the page builder hosting the SDM store, not on any language work.
 3. **Phase 3 — services registry.** ✅ Done (July 2026). Module manifests (`params`/`description`/`kind`) behind the `services` root, read/effect purity enforced statically and at run time, registry-strict validation (existence, arity), async-shaped API with the sync-evaluator posture of §7a. Two live modules in the sdm workbench: `notify` (queued from Complete Work Order into the notification centre) and `geo` (service-backed suburb datasource). Async evaluator deliberately deferred to the backend phase.
-4. **Phase 4 — headless invocation.** ✅ Done (2026-07-12), with **zero language change**: activities as the API surface live in `@fluxus/server` (tRPC → engine `validateSubmission` → the one pipeline → Postgres). The deferred async evaluator turned out unnecessary — the backend snapshots the scope's lean partition into an in-memory Store per request and runs the sync evaluator against it; the §7a async-shaped API remains the seam if a remote-Store host ever appears. GET activities (§5a) were deliberately not in this cut (their logging posture awaited the unified-log design); they **landed 2026-08-09** with one language addition, the `invoke` built-in, and were **logged from 2026-08-11**.
+4. **Phase 4 — headless invocation.** ✅ Done (2026-07-12), with **zero language change**: activities as the API surface live in `@fluxus/server` (tRPC → engine `validateSubmission` → the one pipeline → Postgres). The deferred async evaluator turned out unnecessary *then* — the backend snapshotted the scope's partition into an in-memory Store per request and ran the sync evaluator against it. **Reversed 2026-09-25** (SERVER_DATA_LOADING): that load grew with the operation, so the evaluator gained its waiting driver (§10) and the server reads on demand. GET activities (§5a) were deliberately not in this cut (their logging posture awaited the unified-log design); they **landed 2026-08-09** with one language addition, the `invoke` built-in, and were **logged from 2026-08-11**.
 
 ## 12. Open items
 

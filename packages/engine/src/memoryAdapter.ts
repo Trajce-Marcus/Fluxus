@@ -3,12 +3,12 @@ import type { Store } from './store';
 import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
 import { activityHooks, coerceValue, joinScript } from './bridge';
 
-// THE Store: all reference-Store behaviour (workflow resolution, constraint
-// checks, staged mutation halves) with no storage attached. Every host runs
-// one — browser hosts fill it from @fluxus/client's snapshot; the server host
-// loads a scope's partition into one per request, runs the sync engine against
-// it, and writes the diff back to Postgres (partition-fetch + filter made
-// literal). Storage-backed subclasses may override persist().
+// THE Store in memory: all reference-Store behaviour (workflow resolution,
+// constraint checks, staged mutation halves) with no storage attached. Browser
+// hosts fill one from @fluxus/client's snapshot and evaluate against it
+// immediately. The server does not hold records in one any more
+// (SERVER_DATA_LOADING step 2): its database store uses one, empty, for the
+// model, and shapes new records with `shapeNewRecord` below.
 export interface MemoryAdapterOptions {
   initialRecords?: Iterable<readonly [string, RecordInstance]>;
 }
@@ -159,92 +159,33 @@ export class MemoryAdapter implements Store {
     return r;
   }
 
-  /**
-   * Numbers are stored as numbers (2026-09-22, correcting a defect).
-   *
-   * `runActivity` wrote the raw captured bag straight into the record, so a
-   * `decimal` field kept whatever the form's `<input>` handed over — the CBS
-   * budgets read `"2400000"`, a string. The coercion existed the whole time and
-   * ran on the way to the hooks; it simply never reached storage. The cost was
-   * paid downstream: `+` concatenated instead of adding, so no script could
-   * total anything, and sorting a money column compared text.
-   *
-   * Every write into a record field passes through here — activity writes and
-   * hook writes both land in `buildRecord`/`updateRecord`, which is why this is
-   * the one place it belongs.
-   *
-   * Two values are deliberately left alone: a blank stays `''` rather than
-   * becoming null, because blank already means blank everywhere; and a string
-   * that is not a number (`"2,400,000"`, a typo) stays as typed, so a bad value
-   * stays visible instead of silently becoming null.
-   */
-  private coerceFieldValues(typeId: string, fields: Record<string, unknown>): Record<string, unknown> {
-    const rt = this.recordTypes.find(r => r.id === typeId);
-    if (!rt) return fields;
-    const numeric = new Set(rt.custom_fields.filter(cf => cf.type === 'int' || cf.type === 'decimal').map(cf => cf.key));
-    if (numeric.size === 0) return fields;
-    const out: Record<string, unknown> = { ...fields };
-    for (const key of Object.keys(out)) {
-      if (!numeric.has(key)) continue;
-      const value = out[key];
-      if (typeof value !== 'string' || value.trim() === '') continue;
-      const coerced = coerceValue('decimal', value.trim());
-      if (typeof coerced === 'number') out[key] = coerced;
-    }
-    return out;
-  }
-
   // Validate + shape a create without persisting — the staging half of createRecord.
   // Hooks build records while their script runs and insert only on commit.
   buildRecord(typeId: string, customFields: Record<string, unknown>): RecordInstance {
     const rt = this.recordTypes.find(r => r.id === typeId);
     if (!rt) throw new Error(`RecordType not found: ${typeId}`);
+    const record = shapeNewRecord(rt, customFields);
 
-    const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default ?? '']));
-    const merged = this.coerceFieldValues(typeId, { ...defaults, ...customFields });
-
-    // Enforce field constraints
-    for (const cf of rt.custom_fields) {
-      const val = String(merged[cf.key] ?? '').trim();
-      if (cf.required && !val) throw new Error(`"${cf.key}" is required`);
-      if (cf.unique && val) {
-        const clash = [...this.records.values()].find(
-          r => r.typeRef === typeId && String(r.customFields[cf.key] ?? '') === val
-        );
-        if (clash) throw new Error(`"${cf.key}" must be unique — "${val}" already exists`);
-      }
+    for (const { key, value } of uniqueValues(rt, record.customFields)) {
+      const clash = [...this.records.values()].find(
+        r => r.typeRef === typeId && String(r.customFields[key] ?? '') === value
+      );
+      if (clash) throw new Error(`"${key}" must be unique — "${value}" already exists`);
     }
-
-    // **Every record gets its own id** (ruled 2026-09-18). A record type could
-    // nominate a field to key on (`id_field`), and the WBS keyed on its code —
-    // which made the code load-bearing in three ways it was never meant to be:
-    // deleting a node reserved its code forever against the reporting rows that
-    // outlive it, renaming one left the id saying the old code, and two
-    // solutions picking the same short code collided across types. The code is
-    // a value; identity is the platform's to issue.
-    //
-    // UUIDv7, not v4: it leads with a timestamp, so ids sort by creation and
-    // inserts land at the end of the index instead of scattering across it.
-    const id = uuidv7();
 
     // Record identity is (scope, id): an id must be unique across ALL record
     // types in the scope, not just its own type — storage keys on it. Kept as a
     // guard rather than dropped with the natural keys: it is one map lookup,
     // and it fails loudly rather than silently overwriting a record of another
-    // type if an id ever arrives from somewhere other than the line above.
-    const clashingId = this.records.get(id);
+    // type if an id ever arrives from somewhere other than shapeNewRecord.
+    const clashingId = this.records.get(record.id);
     if (clashingId) {
       throw new Error(
-        `Record id "${id}" already exists as ${clashingId.typeRef} — ids must be unique across all record types`,
+        `Record id "${record.id}" already exists as ${clashingId.typeRef} — ids must be unique across all record types`,
       );
     }
 
-    return {
-      id,
-      typeRef: typeId,
-      customFields: merged,
-      activityHistory: [],
-    };
+    return record;
   }
 
   insertRecord(record: RecordInstance): void {
@@ -281,7 +222,8 @@ export class MemoryAdapter implements Store {
   updateRecord(recordId: string, fields: Record<string, unknown>): void {
     this.validateUpdate(recordId, fields);
     const r = this.records.get(recordId)!;
-    r.customFields = { ...r.customFields, ...this.coerceFieldValues(r.typeRef, fields) };
+    const rt = this.recordTypes.find(t => t.id === r.typeRef);
+    r.customFields = { ...r.customFields, ...(rt ? coerceFieldValues(rt, fields) : fields) };
     this.persist();
     this.notify();
   }
@@ -340,4 +282,75 @@ export class MemoryAdapter implements Store {
     if (!cf || cf.type !== 'fk_ref') return undefined;
     return cf.fk_display_field;
   }
+}
+
+/**
+ * Numbers are stored as numbers (2026-09-22, correcting a defect).
+ *
+ * `runActivity` wrote the raw captured bag straight into the record, so a
+ * `decimal` field kept whatever the form's `<input>` handed over — the CBS
+ * budgets read `"2400000"`, a string. The coercion existed the whole time and
+ * ran on the way to the hooks; it simply never reached storage. The cost was
+ * paid downstream: `+` concatenated instead of adding, so no script could
+ * total anything, and sorting a money column compared text.
+ *
+ * Every write into a record field passes through here — activity writes and
+ * hook writes both land in `buildRecord`/`updateRecord` of whichever store,
+ * which is why this is the one place it belongs.
+ *
+ * Two values are deliberately left alone: a blank stays `''` rather than
+ * becoming null, because blank already means blank everywhere; and a string
+ * that is not a number (`"2,400,000"`, a typo) stays as typed, so a bad value
+ * stays visible instead of silently becoming null.
+ */
+export function coerceFieldValues(rt: RecordTypeDef, fields: Record<string, unknown>): Record<string, unknown> {
+  const numeric = new Set(rt.custom_fields.filter(cf => cf.type === 'int' || cf.type === 'decimal').map(cf => cf.key));
+  if (numeric.size === 0) return fields;
+  const out: Record<string, unknown> = { ...fields };
+  for (const key of Object.keys(out)) {
+    if (!numeric.has(key)) continue;
+    const value = out[key];
+    if (typeof value !== 'string' || value.trim() === '') continue;
+    const coerced = coerceValue('decimal', value.trim());
+    if (typeof coerced === 'number') out[key] = coerced;
+  }
+  return out;
+}
+
+/**
+ * A new record of a type — defaults merged, numbers coerced, required fields
+ * checked, its own id issued — before any store has checked uniqueness, which
+ * needs the other records and so is each store's own.
+ */
+export function shapeNewRecord(rt: RecordTypeDef, customFields: Record<string, unknown>): RecordInstance {
+  const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default ?? '']));
+  const merged = coerceFieldValues(rt, { ...defaults, ...customFields });
+
+  for (const cf of rt.custom_fields) {
+    const val = String(merged[cf.key] ?? '').trim();
+    if (cf.required && !val) throw new Error(`"${cf.key}" is required`);
+  }
+
+  // **Every record gets its own id** (ruled 2026-09-18). A record type could
+  // nominate a field to key on (`id_field`), and the WBS keyed on its code —
+  // which made the code load-bearing in three ways it was never meant to be:
+  // deleting a node reserved its code forever against the reporting rows that
+  // outlive it, renaming one left the id saying the old code, and two
+  // solutions picking the same short code collided across types. The code is
+  // a value; identity is the platform's to issue.
+  //
+  // UUIDv7, not v4: it leads with a timestamp, so ids sort by creation and
+  // inserts land at the end of the index instead of scattering across it.
+  return { id: uuidv7(), typeRef: rt.id, customFields: merged, activityHistory: [] };
+}
+
+/** The values a record would hold in its type's unique fields — what each store checks for a clash. */
+export function uniqueValues(rt: RecordTypeDef, fields: Record<string, unknown>): { key: string; value: string }[] {
+  const out: { key: string; value: string }[] = [];
+  for (const cf of rt.custom_fields) {
+    if (!cf.unique || !(cf.key in fields)) continue;
+    const value = String(fields[cf.key] ?? '').trim();
+    if (value) out.push({ key: cf.key, value });
+  }
+  return out;
 }

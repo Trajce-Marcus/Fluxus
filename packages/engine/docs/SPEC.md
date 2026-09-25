@@ -83,13 +83,30 @@ const engine = createEngine({ store, config, services? });
 ```
 
 One engine per host per SDM — a platform singleton created at bootstrap
-(fork 2), *not* inside any UI framework's state.
+(fork 2), *not* inside any UI framework's state. **On the server, one engine
+per request, never shared** (SERVER_DATA_LOADING §4.2): it holds per-run state —
+the system log, the `invoke` in-flight set — that relies on runs not
+interleaving.
+
+**Two kinds of function (2026-09-25, SERVER_DATA_LOADING step 2).** The
+**immediate** ones — `activityAvailability`, `isActivityAvailable`,
+`evaluate` — are the browser's, and need a store that answers immediately (a
+`MemoryAdapter`). The **waiting** ones return promises and take either store:
+`runActivity`, `runQuery`, `invoke`, `validateSubmission`, and the waiting forms
+`activityAvailabilityAsync`, `isActivityAvailableAsync`, `evaluateAsync`. Only
+the server, its scripts and tests call the waiting ones; the gate inside
+`runActivity`/`runQuery` uses the waiting form. `createEngine` is generic over
+the store (`Engine<S>`), so `engine.store` keeps its type — a browser host's
+`MemoryAdapter`, the server's `DatabaseStore`.
 
 - `engine.runActivity(activity, captured, anchorRecord, options?)` — the
   write pipeline: availability gate → before hook (read-only gate; warn = soft
   stop returning `needs-confirmation`) → record_map mapping (CREATE/UPDATE/
-  DELETE/append) → history append → after hook (staged, atomic commit).
-  `options`: `acknowledgedWarnings`, `waived`. Refuses a GET.
+  DELETE/append) → after hook → history append. `options`:
+  `acknowledgedWarnings`, `waived`. Refuses a GET. A failing after hook throws
+  `AfterHookFailedError` ("recorded, but no changes were applied") after the
+  entry is appended, so a caller holding the writes in a transaction knows to
+  commit them (the server does).
 - `engine.runQuery(activity, captured, anchorRecord)` — the read pipeline; see
   "GET activities" below. Refuses anything that is not a GET. Records the run
   on the anchor, logged light.
@@ -377,24 +394,53 @@ stays the existing `show_condition`/availability check, which already reads
 
 ## The Store contract
 
-`src/store.ts` — unchanged from the sdm original: type/def/data reads, staged
-mutation halves (`buildRecord`/`insertRecord`, `validateUpdate`/apply),
-`appendActivity`, `subscribe`, FK display/reverse-ref resolution. It is the
-persistence seam — and it is deliberately **synchronous**: the backend host
-(@fluxus/server, DSL Phase 4) does not implement an async Store; it loads the
-scope's partition into a `MemoryAdapter` per request, runs the sync engine,
-and writes the diff back transactionally (root ARCHITECTURE.md
-"partition-fetch + filter"). The DSL's async-shaped API remains the seam if a
-truly async evaluator is ever needed.
+`src/store.ts`, **split three ways since 2026-09-25** (SERVER_DATA_LOADING
+§4.2):
 
-`MemoryAdapter` (extracted at DSL Phase 4) is THE Store: workflow/attribute
+- **the model, immediate** (`ModelStore`): `listRecordTypes`,
+  `getRecordTypeDef`, `listWorkflows?`, `resolveAttributeDisplayField`,
+  `resolveAttributeTarget`, `getReverseRefs`;
+- **the records, may wait**: `getRecordTypeData`, `getRecord`,
+  `getRecordsByField`, `buildRecord`, `insertRecord`, `createRecord`,
+  `validateUpdate`, `updateRecord`, `deleteRecord`, `appendActivity`,
+  `resolveDisplayLabel`;
+- **browser only**: `subscribe` (the workbench re-renders on it).
+
+Two contracts are built from them. **`Store`** is the browser's: every record
+method answers immediately, plus `subscribe`, so nothing in the browser handles
+a promise. **`WaitingStore`** is what the waiting functions take: its record
+methods may answer with a promise. `MemoryAdapter` satisfies both. A
+`WaitingStore` may also declare that it **writes through** — `savepoint()` and
+`afterCommit(fn)`: each change goes to storage as it happens inside one
+transaction, and a hook runs inside a savepoint so a failing hook undoes only
+its own writes. The bridge then gives the evaluator a write-through mutation
+host instead of the staged one (see *A hook may delete* and the DSL SPEC §7).
+The server's `DatabaseStore` (@fluxus/server) is the one write-through store.
+
+Code that runs over either store is written once as a generator that yields
+each store answer, and resumed by `settle` (`src/maybe.ts`): synchronously for
+as long as the answers are plain, asynchronously from the first promise. So
+over a `MemoryAdapter` the result is plain, over the database a promise —
+`buildRecordsHost`, `blockingReferences`, the staged `apply` and the `geo`
+service all work both ways.
+
+*Reversed 2026-09-25: the synchronous Store* (ruled at DSL Phase 4). The server
+did not implement a Store against Postgres; it loaded the scope's partition
+into a `MemoryAdapter` per request, ran the sync engine, and wrote the diff back
+(root ARCHITECTURE.md "partition-fetch + filter"). Dropped with that model —
+its cost grew with the operation, not the request.
+
+`MemoryAdapter` (extracted at DSL Phase 4) is the Store in memory: workflow/attribute
 resolution, constraint checks, staged mutation halves, **record identity** —
 with a protected `persist()` no-op hook (for storage-backed subclasses, none
-currently live) and `allRecords()` for diffing hosts. Every host runs one:
-browser hosts fill it from `@fluxus/client`'s snapshot; the server host loads
-a scope's partition per request. `LocalStorageAdapter` (the
-localStorage-persisting subclass both browser hosts ran before backend stage 2)
-was deleted at backend stage 3 — the hard cutover left it without a host.
+currently live) and `allRecords()`. Browser hosts fill one from
+`@fluxus/client`'s snapshot; the server's `DatabaseStore` uses an empty one for
+the model. Record shaping is shared rather than copied: `shapeNewRecord`
+(defaults, numbers, required, the id), `uniqueValues` and `coerceFieldValues`
+are exported, and each store checks uniqueness against its own records.
+`LocalStorageAdapter` (the localStorage-persisting subclass both browser hosts
+ran before backend stage 2) was deleted at backend stage 3 — the hard cutover
+left it without a host.
 
 **No config seeding (2026-08-05).** `SolutionConfig.seeds`, the `SeedGroup` type and
 the adapter's `{ seed: true }` option are gone. Config carried sample records
@@ -405,7 +451,9 @@ them.
 
 ### validateSubmission (DSL Phase 4)
 
-`validateSubmission(engine, activity, captured, anchorRecord, waived)` — the
+`validateSubmission(engine, activity, captured, anchorRecord, waived)` — waiting
+(returns a promise, since 2026-09-25: its datasources and rules read the store,
+and on the server the store is the database) — the
 attribute trio applied as one payload check for callers with no capture form,
 per DSL_SPEC §5 ("in headless mode the datasource doubles as validation").
 Semantics mirror the standard capture form (`@fluxus/page-runtime`, the workbench's until 2026-08-16): attribute show_conditions
@@ -591,9 +639,12 @@ its type is not the one the script named, since a script deleting a record of
 the wrong type would be silently destructive. `apply` calls
 `Store.deleteRecord`, which takes the row and the history embedded in it.
 
-On the server this needs nothing new: `writeBack` diffs the partition by
-absence, so a record a hook removed in memory becomes a real row delete
-(`test/hookDelete.test.ts` in @fluxus/server proves it at the database).
+On the server (since 2026-09-25) the delete is **written through**: the row goes
+at once, inside the hook's savepoint, and what still points at any record the
+hook deleted is checked **when the hook ends** — the same whole-set rule, and by
+then the children deleted with a parent are already gone. A refusal rolls the
+savepoint back (`test/hookDelete.test.ts` and `test/databaseStore.test.ts` in
+@fluxus/server prove it at the database).
 
 What the platform is saying by having this verb destroy history: a delete is for
 a record that should never have existed. The keep-it case is a field the author
@@ -684,10 +735,10 @@ onto the eval host, where the evaluator merges it over `DEFAULT_QUOTAS`. Absent
 — which is every hook, every page evaluation, every existing caller — means the
 defaults, unchanged.
 
-The DSL Editor's endpoint raises them. Its reasoning: `loadOperationHost` has
-already loaded the operation's whole record set into memory before the script
-runs, so `maxRows` is not protecting server memory at that point, and
-`timeoutMs: 1_000` is too short for an interactive tool. Hooks keep the
+The DSL Editor's endpoint raises them: `timeoutMs: 1_000` is too short for an
+interactive tool, and until record queries run as SQL (SERVER_DATA_LOADING
+step 3) a query still reads its whole type. `timeoutMs` counts evaluation only
+since 2026-09-25 — time waiting on the database does not (ruling 20). Hooks keep the
 conservative defaults because their failure mode is different — a runaway hook
 blocks a user's submission.
 

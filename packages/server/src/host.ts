@@ -1,16 +1,12 @@
-// The headless host (DSL Phase 4). Per request: fetch the scope's partition
-// into a MemoryAdapter, run the same sync engine every browser host runs, then
-// write the diff back to Postgres in one transaction — the ARCHITECTURE.md
-// "partition-fetch + filter" runtime model made literal.
-//
-// That model is reversed (docs/SERVER_DATA_LOADING.md): step 2 replaces the
-// partition with a store that reads on demand. Step 1 is what is here — no
-// record's history is loaded, and write-back sends only what changed: the
-// fields that differ, as a patch, and new history entries, as an append. So
-// two runs at once no longer overwrite each other's entries or each other's
-// untouched fields; a field both change is still last-write-wins.
+// The headless host (DSL Phase 4). Per request: load the operation's model and
+// build an engine over a database store that reads each record when a script
+// needs it and writes each change as it happens (docs/SERVER_DATA_LOADING.md,
+// step 2 — which reversed the "partition-fetch + filter" model, where every
+// request loaded the whole operation into memory and wrote the diff back).
+// The transaction an activity run holds is the router's to open and close;
+// see DatabaseStore.
 
-import { and, asc, eq, inArray, isNull, not, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, not, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   createEngine,
@@ -19,52 +15,36 @@ import {
   buildTimeModule,
   buildMathModule,
   type ActivityDef,
-  type ActivityHistoryEntry,
   type AttributeDef,
   type FunctionDef,
   type SolutionConfig,
   type ContextUser,
   type Engine,
-  type RecordInstance,
   type RecordTypeDef,
   type RoleDef,
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, rptActivities, rptAttributes, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 import { withSpan } from './perf';
+import { DatabaseStore } from './databaseStore';
+
+export { DatabaseStore, RecordDeletedMeanwhileError, type WriteCounts } from './databaseStore';
 
 /**
- * A loaded operation: its data partition (operationId) hydrated into an engine
- * built from its linked solution's config (solutionId). writeBack persists back
- * to the operation partition; the config/pages plane is keyed on the solution.
+ * A loaded operation: its linked solution's model, and an engine over a
+ * database store scoped to the operation's records (operationId). The store
+ * holds no records at the start; the config/pages plane is keyed on the
+ * solution. Built per request, never shared (one engine per request).
  */
 export interface OperationHost {
   operationId: string;
   solutionId: string;
   config: SolutionConfig;
-  adapter: MemoryAdapter;
-  engine: Engine;
-  /**
-   * Each loaded record's fields as they were at load, one JSON string per key —
-   * the baseline writeBack finds changed fields against. History is not in it:
-   * it is never loaded, so every entry a record holds after the run is new.
-   */
-  baseline: Map<string, Map<string, string>>;
-}
-
-/**
- * A run changed a record that another request deleted while it ran
- * (SERVER_DATA_LOADING ruling 17). The run fails and nothing of it is written —
- * the alternative, writing the record back, would bring a deleted record back
- * to life.
- */
-export class RecordDeletedMeanwhileError extends Error {
-  constructor(recordId: string) {
-    super(`Record '${recordId}' was deleted meanwhile — nothing was saved; reload and try again`);
-  }
+  store: DatabaseStore;
+  engine: Engine<DatabaseStore>;
 }
 
 export class SolutionNotFoundError extends Error {
@@ -138,123 +118,37 @@ export async function getOperation(db: Db, operationId: string): Promise<Operati
 }
 
 /**
- * Hydrate an operation for a run: resolve operation → solution, load the
- * solution's config and the operation's record partition into one engine.
+ * Ready an operation for a request: resolve operation → solution, load the
+ * solution's model, and build an engine over a database store for the
+ * operation. No record is read here — the store reads what the request touches.
  */
 export async function loadOperationHost(db: Db, operationId: string, sink: NotifySink = consoleNotifySink, user?: ContextUser): Promise<OperationHost> {
-  let recordCount = 0;
   return withSpan('host_load', operationId, async () => {
     const op = await getOperation(db, operationId);
     const config = await getSolutionConfig(db, op.solutionId);
-    // Never `activity_history`: nothing in a run reads it (the engine only
-    // appends, scripts see records without it), and it is most of the bytes.
-    const rows = await db
-      .select({ id: records.id, typeRef: records.typeRef, customFields: records.customFields })
-      .from(records)
-      .where(eq(records.operationId, operationId));
-    recordCount = rows.length;
-
-    const initial: [string, RecordInstance][] = rows.map((r) => [
-      r.id,
-      { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: [] },
-    ]);
-    const adapter = new MemoryAdapter(config, { initialRecords: initial });
+    const store = new DatabaseStore(db, operationId, config);
     const engine = createEngine({
-      store: adapter,
+      store,
       config,
-      services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
+      services: [buildNotifyModule(sink), buildGeoModule(store), buildTimeModule(), buildMathModule()],
       // context.user for gates/hooks; entries record user.id as author.
       user,
     });
-
-    const baseline = new Map(
-      initial.map(([id, rec]) => [
-        id,
-        new Map(Object.entries(rec.customFields).map(([key, value]) => [key, JSON.stringify(value)])),
-      ]),
-    );
-
-    return { operationId, solutionId: op.solutionId, config, adapter, engine, baseline };
-  }, () => ({ records: recordCount }));
+    return { operationId, solutionId: op.solutionId, config, store, engine };
+  });
 }
 
 /** Find an activity by id across the solution's workflows. */
 export function findActivity(host: OperationHost, activityId: string): ActivityDef | null {
-  for (const rt of host.adapter.listRecordTypes()) {
-    const def = host.adapter.getRecordTypeDef(rt.id);
+  for (const rt of host.store.listRecordTypes()) {
+    const def = host.store.getRecordTypeDef(rt.id);
     const activity = def.workflow.activities.find((a) => a.id === activityId);
     if (activity) return activity;
   }
   return null;
 }
 
-// ── Write-back + projection ──────────────────────────────────────────────────
-
-/** rpt author for entries recorded before entries carried one (pre-auth data). */
-const LEGACY_AUTHOR = 'demo';
-
-function attributeValue(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-/**
- * Reporting rows for one committed history entry (ARCHITECTURE.md "fully
- * normalized"): one rpt_activities row per run; one rpt_attributes row per
- * attribute. A waived attribute is the SAME row with value null and
- * waive_desc set; system-produced attributes (system_log, system_warnings)
- * are ordinary rows. Plain-object values (composite attributes: attr → item →
- * column; and file/photo descriptors: attr → field) flatten to one row per
- * leaf, keyed by the dotted path (`prelim_activities.access_permission.ok`,
- * `before_photo.hash`). Arrays (multi attributes) flatten with positional
- * segments (`site_photos.0.hash`, `tags.0`) — '.' is reserved in keys for
- * this, so queries stay uniform on the single text value column.
- */
-function projectionAttributeRows(entry: ActivityHistoryEntry): { key: string; value: string | null; waiveDesc: string | null }[] {
-  const waived = entry.waived ?? {};
-  const rows: { key: string; value: string | null; waiveDesc: string | null }[] = [];
-  const push = (key: string, value: unknown) => {
-    if (key in waived) return; // emitted below as the waived row
-    if (Array.isArray(value)) {
-      value.forEach((item, i) => push(`${key}.${i}`, item));
-      return;
-    }
-    if (value !== null && typeof value === 'object') {
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) push(`${key}.${k}`, v);
-      return;
-    }
-    rows.push({ key, value: attributeValue(value), waiveDesc: null });
-  };
-  for (const [key, value] of Object.entries(entry.capturedAttributes)) {
-    push(key, value);
-  }
-  for (const [key, reason] of Object.entries(waived)) {
-    rows.push({ key, value: null, waiveDesc: reason });
-  }
-  if (entry.warnings && entry.warnings.length > 0) {
-    rows.push({ key: 'system_warnings', value: JSON.stringify(entry.warnings), waiveDesc: null });
-  }
-  return rows;
-}
-
-/**
- * Every `storage_key` a value references (ATTRIBUTE_TYPES_FILES_SCALARS §8):
- * a file/photo descriptor bag carries one; multi values are arrays of them;
- * composite cells nest them. Walked structurally so the ledger commit finds
- * them wherever they sit in an entry's capturedAttributes.
- */
-function collectStorageKeys(value: unknown, out: Set<string> = new Set()): Set<string> {
-  if (Array.isArray(value)) {
-    for (const item of value) collectStorageKeys(item, out);
-  } else if (value !== null && typeof value === 'object') {
-    const bag = value as Record<string, unknown>;
-    if (typeof bag.storage_key === 'string') out.add(bag.storage_key);
-    for (const v of Object.values(bag)) collectStorageKeys(v, out);
-  }
-  return out;
-}
-
+// ── Attachments ledger ───────────────────────────────────────────────────────
 /** Ledger's live footprint — the quota fuse's SUM(size) (§7 #3). */
 export async function usedStorageBytes(db: Db): Promise<number> {
   const [row] = await db
@@ -289,117 +183,6 @@ export async function insertPendingAttachment(
     lng: row.lng ?? null,
     takenAt: row.takenAt ?? null,
   });
-}
-
-/**
- * Persist everything the run changed, atomically: new records inserted,
- * changed records patched, deleted records removed, the reporting projection
- * of each new history entry, and the ledger flip (pending → committed) for
- * every storage_key the new entries reference — the v1 synchronous
- * in-transaction projection (ARCHITECTURE.md "Hosting options"); the
- * outbox/async upgrade replaces this call body, not its callers.
- *
- * A changed record is never rewritten whole (SERVER_DATA_LOADING §3): only the
- * fields that differ from load are merged in, and new entries are appended, so
- * a concurrent run's entries and untouched fields survive.
- */
-export async function writeBack(db: Db, host: OperationHost): Promise<{ created: number; changed: number; deleted: number }> {
-  const current = host.adapter.allRecords();
-  const currentIds = new Set(current.map((r) => r.id));
-
-  const inserts: RecordInstance[] = [];
-  const updates: { record: RecordInstance; fields: Record<string, unknown> | null; entries: ActivityHistoryEntry[] }[] = [];
-  const newEntries: { record: RecordInstance; entry: ActivityHistoryEntry }[] = [];
-  for (const record of current) {
-    const base = host.baseline.get(record.id);
-    // No history was loaded, so every entry the record holds is this run's.
-    const entries = record.activityHistory;
-    for (const entry of entries) newEntries.push({ record, entry });
-    // No baseline ⇒ the run brought it into being.
-    if (!base) {
-      inserts.push(record);
-      continue;
-    }
-    // The engine never removes a field; if one has gone, something is wrong,
-    // and a patch cannot say "remove" — refuse rather than guess.
-    for (const key of base.keys()) {
-      if (!(key in record.customFields)) {
-        throw new Error(`Write-back: record '${record.id}' lost its field '${key}' during the run`);
-      }
-    }
-    const fields: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(record.customFields)) {
-      if (base.get(key) !== JSON.stringify(value)) fields[key] = value;
-    }
-    const hasFields = Object.keys(fields).length > 0;
-    if (!hasFields && entries.length === 0) continue;
-    updates.push({ record, fields: hasFields ? fields : null, entries });
-  }
-  const deletes = [...host.baseline.keys()].filter((id) => !currentIds.has(id));
-  // The perf log's `write_back` counts (PERFORMANCE_LOGGING.md §4).
-  const counts = { created: inserts.length, changed: updates.length, deleted: deletes.length };
-
-  if (inserts.length === 0 && updates.length === 0 && deletes.length === 0) return counts;
-
-  await db.transaction(async (tx) => {
-    for (const record of inserts) {
-      await tx.insert(records).values({
-        operationId: host.operationId,
-        id: record.id,
-        typeRef: record.typeRef,
-        customFields: record.customFields,
-        activityHistory: record.activityHistory,
-        updatedAt: new Date(),
-      });
-    }
-    for (const { record, fields, entries } of updates) {
-      const set: Record<string, unknown> = { updatedAt: new Date() };
-      if (fields) set.customFields = sql`${records.customFields} || ${JSON.stringify(fields)}::jsonb`;
-      if (entries.length > 0) set.activityHistory = sql`${records.activityHistory} || ${JSON.stringify(entries)}::jsonb`;
-      const updated = await tx
-        .update(records)
-        .set(set)
-        .where(and(eq(records.operationId, host.operationId), eq(records.id, record.id)))
-        .returning({ id: records.id });
-      // No row ⇒ another request deleted it while this run held it. Throwing
-      // rolls the whole transaction back, reporting rows included.
-      if (updated.length === 0) throw new RecordDeletedMeanwhileError(record.id);
-    }
-    if (deletes.length > 0) {
-      await tx.delete(records).where(and(eq(records.operationId, host.operationId), inArray(records.id, deletes)));
-    }
-    for (const { record, entry } of newEntries) {
-      const [activityRow] = await tx
-        .insert(rptActivities)
-        .values({
-          operationId: host.operationId,
-          recordId: record.id,
-          recordType: record.typeRef,
-          activityId: entry.activityId,
-          activityName: entry.activityName,
-          author: entry.author ?? LEGACY_AUTHOR,
-          ts: new Date(entry.timestamp),
-        })
-        .returning({ id: rptActivities.id });
-      const attributeRows = projectionAttributeRows(entry);
-      if (attributeRows.length > 0) {
-        await tx.insert(rptAttributes).values(
-          attributeRows.map((row) => ({ activityRowId: activityRow.id, ...row })),
-        );
-      }
-    }
-    // Ledger commit: every blob a new entry references is now real business
-    // data — flip it out of `pending` so GC never reaps it (§8).
-    const referenced = new Set<string>();
-    for (const { entry } of newEntries) collectStorageKeys(entry.capturedAttributes, referenced);
-    if (referenced.size > 0) {
-      await tx
-        .update(attachments)
-        .set({ status: 'committed' })
-        .where(and(eq(attachments.status, 'pending'), inArray(attachments.storageKey, [...referenced])));
-    }
-  });
-  return counts;
 }
 
 // ── Page storage ──────────────────────────────────────────────────────────────

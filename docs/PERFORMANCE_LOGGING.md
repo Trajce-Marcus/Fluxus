@@ -45,10 +45,10 @@ Indexes: `started_at`; `(kind, name, started_at)`; `trace_id`.
 | kind | name | Covers |
 |---|---|---|
 | `request` | the tRPC procedure, e.g. `activities.run` | The whole request, from arrival to reply. Every procedure except the `perf.*` ones (logging about logging is noise), so config loads, the snapshot, page lists and user admin are all covered. |
-| `host_load` | the operation id | Loading the operation's config and records into memory — done at the start of every run and GET today (`loadOperationHost`). |
+| `host_load` | the operation id | Loading the operation's model and building its engine (`loadOperationHost`), at the start of every run and GET. Since 2026-09-25 it reads no record — the database store reads what the request touches ([SERVER_DATA_LOADING](SERVER_DATA_LOADING.md) step 2). |
 | `validate` | the activity id | `validateSubmission`. |
 | `engine` | the activity id | The engine's run: gate, hooks, mapping. One span for now; the steps inside the engine are a later addition (§9). |
-| `write_back` | the activity id | Writing the run's changes to the database. |
+| `write_back` | the activity id | Committing the run's changes. Since 2026-09-25 each change is written as it happens, inside the `engine` span; this span is the commit. A GET has none. |
 | `db_connect` | — | A new database connection being opened. This is what shows the database waking up, as its own row. |
 
 **Browser:**
@@ -65,8 +65,8 @@ extra queries.
 
 - `request`: `db_queries`, `db_ms` — the number of database queries the
   request made, and the time spent in them in total.
-- `host_load`: `records` — how many records were loaded into memory.
-- `write_back`: `created`, `changed`, `deleted`.
+- `host_load`: nothing, since 2026-09-25 (SERVER_DATA_LOADING ruling 23). It counted the records loaded into memory; none are. Counting the records a run reads is a follow-up, with its own name to sign off.
+- `write_back`: `created`, `changed`, `deleted` — as the database store counted the writes it made.
 - `engine` on a GET: `rows` — how many rows it returned.
 - `page_open`: `components`, `calls`.
 

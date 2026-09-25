@@ -58,39 +58,39 @@ function build() {
 }
 
 describe('a hook that deletes', () => {
-  it('destroys the records it selected, and only those', () => {
+  it('destroys the records it selected, and only those', async () => {
     const { adapter, engine, activity, project, nodes, keep } = build();
-    const result = engine.runActivity(activity, { reason: 'test data' }, adapter.getRecord(project.id));
+    const result = await engine.runActivity(activity, { reason: 'test data' }, adapter.getRecord(project.id));
     expect(result.status).toBe('done');
     for (const node of nodes) expect(() => adapter.getRecord(node.id)).toThrow(/Record not found/);
     expect(adapter.getRecord(keep.id).customFields.code).toBe('5.0');
   });
 
-  it('takes the deleted records\' history with them', () => {
+  it('takes the deleted records\' history with them', async () => {
     const { adapter, engine, activity, project, nodes } = build();
     expect(adapter.getRecord(nodes[0].id).activityHistory).toBeDefined();
-    engine.runActivity(activity, { reason: 'test data' }, adapter.getRecord(project.id));
+    await engine.runActivity(activity, { reason: 'test data' }, adapter.getRecord(project.id));
     expect(adapter.allRecords().map((r) => r.id)).not.toContain(nodes[0].id);
   });
 
   // The whole audit design in one assertion: what was deleted is recorded on
   // the record that ran the deletion, which is still there to be read.
-  it('leaves its own entry on the anchor, carrying the reason', () => {
+  it('leaves its own entry on the anchor, carrying the reason', async () => {
     const { adapter, engine, activity, project } = build();
-    engine.runActivity(activity, { reason: 'duplicate import' }, adapter.getRecord(project.id));
+    await engine.runActivity(activity, { reason: 'duplicate import' }, adapter.getRecord(project.id));
     const entry = adapter.getRecord(project.id).activityHistory.at(-1)!;
     expect(entry.activityId).toBe('act_purge_wbs_projects');
     expect(entry.capturedAttributes.reason).toBe('duplicate import');
   });
 
-  it('frees the code the deleted record held', () => {
+  it('frees the code the deleted record held', async () => {
     const { adapter, engine, activity, project } = build();
-    engine.runActivity(activity, { reason: 'test data' }, adapter.getRecord(project.id));
+    await engine.runActivity(activity, { reason: 'test data' }, adapter.getRecord(project.id));
     const again = adapter.createRecord('rt_wbs_nodes', { code: 'AAA', project_id: project.id });
     expect(again.customFields.code).toBe('AAA');
   });
 
-  it('refuses to delete a record of a type the script did not name', () => {
+  it('refuses to delete a record of a type the script did not name', async () => {
     const { adapter, engine, project } = build();
     const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(project.id) });
     // `wbs_nodes` addressed, a project's id handed to it: the id resolves to no
@@ -100,7 +100,7 @@ describe('a hook that deletes', () => {
     void engine;
   });
 
-  it('refuses to delete a record something still points at', () => {
+  it('refuses to delete a record something still points at', async () => {
     const { adapter, parent } = build();
     const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(parent.id) });
     expect(() => executeScript('context.record.delete()', host, { mode: 'mutate' }))
@@ -112,14 +112,14 @@ describe('a hook that deletes', () => {
   // a subtree goes in one statement, and the children pointing at the parent
   // are themselves on the way out. Checking one at a time would have the script
   // refuse itself.
-  it('allows a subtree to go in one run, parent included', () => {
+  it('allows a subtree to go in one run, parent included', async () => {
     const { adapter, engine, activity, project, nodes } = build();
-    const result = engine.runActivity(activity, { reason: 'whole subtree' }, adapter.getRecord(project.id));
+    const result = await engine.runActivity(activity, { reason: 'whole subtree' }, adapter.getRecord(project.id));
     expect(result.status).toBe('done');
     for (const node of nodes) expect(() => adapter.getRecord(node.id)).toThrow(/Record not found/);
   });
 
-  it('names what is holding the reference, so the author can work bottom-up', () => {
+  it('names what is holding the reference, so the author can work bottom-up', async () => {
     const { adapter, parent, children } = build();
     const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(parent.id) });
     try {
@@ -130,7 +130,7 @@ describe('a hook that deletes', () => {
     }
   });
 
-  it('nothing is written when the check refuses', () => {
+  it('nothing is written when the check refuses', async () => {
     const { adapter, parent, children } = build();
     const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(parent.id) });
     expect(() => executeScript(
@@ -141,7 +141,7 @@ describe('a hook that deletes', () => {
     expect(adapter.getRecord(children[0].id).customFields.code).toBe('AAA111');
   });
 
-  it('is refused in a before hook', () => {
+  it('is refused in a before hook', async () => {
     const { adapter, project } = build();
     const host = buildEvalHost(adapter, config, { anchorRecord: adapter.getRecord(project.id) });
     expect(() => executeScript('context.record.delete()', host, { mode: 'read' })).toThrow(/after hooks only/);
@@ -173,36 +173,36 @@ describe('the DELETE record map', () => {
     return { adapter, engine, activity, parent, child };
   }
 
-  it('asks first, and deletes nothing while unconfirmed', () => {
+  it('asks first, and deletes nothing while unconfirmed', async () => {
     const { adapter, engine, activity, child } = scene();
-    const result = engine.runActivity(activity, {}, adapter.getRecord(child.id));
+    const result = await engine.runActivity(activity, {}, adapter.getRecord(child.id));
     expect(result.status).toBe('needs-confirmation');
     expect(result.warnings.join(' ')).toMatch(/also deletes its history/);
     expect(adapter.getRecord(child.id).customFields.code).toBe('AAA111');
   });
 
-  it('deletes once acknowledged, and says the record is gone', () => {
+  it('deletes once acknowledged, and says the record is gone', async () => {
     const { adapter, engine, activity, child } = scene();
-    const result = engine.runActivity(activity, {}, adapter.getRecord(child.id), { acknowledgedWarnings: true });
+    const result = await engine.runActivity(activity, {}, adapter.getRecord(child.id), { acknowledgedWarnings: true });
     expect(result.status).toBe('done');
     expect(result.recordId).toBe(child.id);
     expect(result.deleted).toBe(true);
     expect(() => adapter.getRecord(child.id)).toThrow(/Record not found/);
   });
 
-  it('obeys the same referential rule as a hook delete', () => {
+  it('obeys the same referential rule as a hook delete', async () => {
     const { adapter, engine, activity, parent } = scene();
-    expect(() => engine.runActivity(activity, {}, adapter.getRecord(parent.id), { acknowledgedWarnings: true }))
-      .toThrow(/cannot be deleted — rt_wbs_nodes.parent_id still points at it/);
+    await expect(engine.runActivity(activity, {}, adapter.getRecord(parent.id), { acknowledgedWarnings: true }))
+      .rejects.toThrow(/cannot be deleted — rt_wbs_nodes.parent_id still points at it/);
     expect(adapter.getRecord(parent.id).customFields.code).toBe('AAA');
   });
 
   // The old contract: an attribute literally named `confirm` holding 'DELETE'.
   // Nothing declares it, so its absence used to mean a silent no-op reported as
   // success. Confirmation is the engine's now, and no attribute names it.
-  it('needs no magic attribute — acknowledgement is the whole contract', () => {
+  it('needs no magic attribute — acknowledgement is the whole contract', async () => {
     const { adapter, engine, activity, child } = scene();
-    const result = engine.runActivity(activity, { confirm: 'not the magic word' }, adapter.getRecord(child.id), { acknowledgedWarnings: true });
+    const result = await engine.runActivity(activity, { confirm: 'not the magic word' }, adapter.getRecord(child.id), { acknowledgedWarnings: true });
     expect(result.status).toBe('done');
     expect(result.deleted).toBe(true);
   });

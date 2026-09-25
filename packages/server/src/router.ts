@@ -9,7 +9,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { FkPointer } from '@fluxus/dsl';
-import { DEMO_USER, isUploadType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
+import { AfterHookFailedError, DEMO_USER, isUploadType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -58,7 +58,6 @@ import {
   putPage,
   usedStorageBytes,
   validateOperationMenu,
-  writeBack,
   type ConfigCollection,
 } from './host';
 import {
@@ -836,51 +835,63 @@ export const appRouter = t.router({
           if (!activity) {
             throw new TRPCError({ code: 'NOT_FOUND', message: `Activity not found: ${input.activityId}` });
           }
-
-          let anchorRecord = null;
-          if (activity.record_map === 'CREATE') {
-            if (input.recordId) {
-              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is a CREATE activity — recordId must not be supplied` });
-            }
-          } else {
-            if (!input.recordId) {
-              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' needs a recordId to anchor on` });
-            }
-            anchorRecord = host.adapter.getRecord(input.recordId); // throws → BAD_REQUEST via rethrow
-            // Unreadable anchor ⇒ not-found, checked BEFORE the run gate
-            // (RBAC_COMPACT): the caller can't tell a hidden record from a
-            // missing one. Reuses the already-loaded config + resolved roles.
-            const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
-            if (readable !== null && !readable.has(anchorRecord.typeRef)) {
-              throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
-            }
+          if (activity.record_map === 'CREATE' && input.recordId) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is a CREATE activity — recordId must not be supplied` });
+          }
+          if (activity.record_map !== 'CREATE' && !input.recordId) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' needs a recordId to anchor on` });
           }
 
-          const issues = await withSpan('validate', activity.id, async () =>
-            validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {}));
-          if (issues.length > 0) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
-          }
-
+          // One transaction for the run, open before its first read
+          // (SERVER_DATA_LOADING §4.3): every write lands as it happens, and
+          // every later read sees it. What commits is §4.2's list.
+          await host.store.begin();
+          let result: RunActivityResult;
           try {
-            const result = await withSpan('engine', activity.id, async () =>
+            let anchorRecord = null;
+            if (input.recordId) {
+              anchorRecord = await host.store.getRecord(input.recordId); // throws → BAD_REQUEST via rethrow
+              // Unreadable anchor ⇒ not-found, checked BEFORE the run gate
+              // (RBAC_COMPACT): the caller can't tell a hidden record from a
+              // missing one. Reuses the already-loaded config + resolved roles.
+              const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
+              if (readable !== null && !readable.has(anchorRecord.typeRef)) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
+              }
+            }
+
+            const issues = await withSpan('validate', activity.id, () =>
+              validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {}));
+            if (issues.length > 0) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
+            }
+
+            result = await withSpan('engine', activity.id, () =>
               host.engine.runActivity(activity, input.attributes, anchorRecord, {
                 acknowledgedWarnings: input.acknowledgedWarnings,
                 waived: input.waived,
               }));
-            // needs-confirmation persists nothing by doctrine — the diff is
-            // empty and write-back is a no-op, but skip it explicitly.
-            if (result.status === 'done') await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
-            return result;
           } catch (err) {
-            // A failing after hook throws AFTER the entry was appended and the
-            // record_map change applied ("recorded, but no changes applied") —
-            // those must persist, so write the diff back even on error. A
-            // failing before hook / availability gate left the store untouched
-            // and this is a no-op.
-            await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
-            throw err;
+            // A failing after hook has already rolled back to its savepoint;
+            // the record map's change and the entry stand and commit
+            // ("recorded, but no changes applied"). Anything else — the gate,
+            // the before hook, a record deleted meanwhile, a database error —
+            // leaves nothing written.
+            if (err instanceof AfterHookFailedError && !host.store.fault) {
+              await withSpan('write_back', activity.id, () => host.store.commit(), (counts) => ({ ...counts }));
+              throw err;
+            }
+            await host.store.rollback();
+            throw host.store.fault ?? err;
           }
+          // needs-confirmation has written nothing, by doctrine — and a DELETE
+          // awaiting its confirmation has deleted nothing.
+          if (result.status !== 'done') {
+            await host.store.rollback();
+            return result;
+          }
+          await withSpan('write_back', activity.id, () => host.store.commit(), (counts) => ({ ...counts }));
+          return result;
         } catch (err) {
           rethrow(err);
         }
@@ -888,8 +899,8 @@ export const appRouter = t.router({
 
     /**
      * The read path (DSL_SPEC §5a, DATA_THROUGH_ACTIVITIES step 1). A `query`,
-     * not a mutation, because it is one: nothing persists, so there is no
-     * write-back and no confirmation round-trip. An app names a GET activity
+     * not a mutation, because it is one: no record changes, so there is no
+     * transaction and no confirmation round-trip. An app names a GET activity
      * and the model answers — the query itself never leaves the server.
      *
      * Authorisation is the activity's own gate, exactly as for a write: an
@@ -898,8 +909,8 @@ export const appRouter = t.router({
      * a GET returns what its author declared it to return.
      *
      * It is a query that writes one thing: the light entry the engine records
-     * on the anchor (step 3). So it write-backs like a run does, including on
-     * the way out of a failure — the read happened either way.
+     * on the anchor (step 3), appended in one statement, including on the way
+     * out of a failure — the read happened either way.
      */
     query: t.procedure
       .input(
@@ -927,36 +938,31 @@ export const appRouter = t.router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is not a GET activity — run it through activities.run` });
           }
 
+          // No transaction: a GET only reads, and its one write — the light
+          // entry on its anchor — is a single statement at the end
+          // (SERVER_DATA_LOADING §4.3), written whether the answer came or the
+          // `returns` threw.
           let anchorRecord = null;
           if (input.recordId) {
-            anchorRecord = host.adapter.getRecord(input.recordId);
+            anchorRecord = await host.store.getRecord(input.recordId);
             const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
             if (readable !== null && !readable.has(anchorRecord.typeRef)) {
               throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
             }
           }
 
-          const issues = await withSpan('validate', activity.id, async () =>
+          const issues = await withSpan('validate', activity.id, () =>
             validateSubmission(host.engine, activity, input.attributes, anchorRecord, {}));
           if (issues.length > 0) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
           }
 
-          try {
-            const result = await withSpan(
-              'engine',
-              activity.id,
-              async () => host.engine.runQuery(activity, input.attributes, anchorRecord),
-              (r) => (Array.isArray(r.data) ? { rows: r.data.length } : undefined),
-            );
-            await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
-            return result;
-          } catch (err) {
-            // A `returns` that threw still recorded the attempt; a gate that
-            // rejected recorded nothing, and write-back is then a no-op.
-            await withSpan('write_back', activity.id, () => writeBack(ctx.db, host), (counts) => counts);
-            throw err;
-          }
+          return await withSpan(
+            'engine',
+            activity.id,
+            () => host.engine.runQuery(activity, input.attributes, anchorRecord),
+            (r) => (Array.isArray(r.data) ? { rows: r.data.length } : undefined),
+          );
         } catch (err) {
           rethrow(err);
         }
@@ -1015,9 +1021,11 @@ export const appRouter = t.router({
             // Inside the try: a bad anchor id is the caller's typo, not a
             // transport failure, so it answers as a result like any other
             // script error rather than a thrown BAD_REQUEST.
-            const anchorRecord = input.recordId ? host.adapter.getRecord(input.recordId) : null;
+            const anchorRecord = input.recordId ? await host.store.getRecord(input.recordId) : null;
 
-            const value = host.engine.evaluate(input.source, {
+            // No transaction: the script cannot write, and a GET reached
+            // through `invoke` logs nothing of its own.
+            const value = await host.engine.evaluateAsync(input.source, {
               anchorRecord,
               readonlyRecords: true,
               // The SDM answerable as `model.*` (docs/QUERYING_THE_MODEL.md).
@@ -1028,22 +1036,17 @@ export const appRouter = t.router({
               // construction. Without it the built-in fails loudly, which would
               // make a documented capability silently absent.
               invoke: (activityId, params) => host.engine.invoke(activityId, params, anchorRecord),
-              // The host has already loaded the whole partition, so the row cap
-              // is not protecting memory here; 1s is too short to be
-              // interactive. Hooks keep DEFAULT_QUOTAS.
+              // Raised: an inspection tool, where 1s is too short to be
+              // interactive and a whole type is still read at once until
+              // record queries run as SQL. Hooks keep DEFAULT_QUOTAS.
               quotas: { maxRows: 100_000, maxSteps: 2_000_000, timeoutMs: 15_000 },
             });
-            // A GET reached through `invoke` records a light history entry, so
-            // the run has to be written back even though the script itself
-            // cannot mutate.
-            await withSpan('write_back', 'script', () => writeBack(ctx.db, host), (counts) => counts);
             return {
               value: forWire(value),
               rowCount: Array.isArray(value) ? value.length : undefined,
               elapsedMs: Date.now() - started,
             };
           } catch (err) {
-            await withSpan('write_back', 'script', () => writeBack(ctx.db, host), (counts) => counts);
             return {
               value: null,
               elapsedMs: Date.now() - started,

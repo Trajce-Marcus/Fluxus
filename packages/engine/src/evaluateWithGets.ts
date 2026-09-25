@@ -1,7 +1,7 @@
 // Evaluating an expression that may name a GET, from a host whose answer is a
 // round trip away (DATA_THROUGH_ACTIVITIES step 2, generalised at step 4).
 //
-// The evaluator is synchronous; a GET is a network call. So evaluation runs in
+// The browser evaluates immediately; a GET is a network call. So evaluation runs in
 // **rounds**: a round evaluates with an `invoke` that records the calls it is
 // asked for and answers a placeholder, the round's requests are fetched
 // together, and the next round evaluates again with those answers in hand. When

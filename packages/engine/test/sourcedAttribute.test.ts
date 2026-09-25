@@ -51,31 +51,31 @@ const build = () => {
 };
 
 describe('a sourced attribute', () => {
-  it('may carry a value even though the form never showed it', () => {
+  it('may carry a value even though the form never showed it', async () => {
     const { engine, activity, projectId } = build();
-    const issues = validateSubmission(engine, activity, { wbs_project: projectId, code: 'T1' }, null);
+    const issues = await validateSubmission(engine, activity, { wbs_project: projectId, code: 'T1' }, null);
     expect(issues).toEqual([]);
   });
 
-  it('lands in the field it names', () => {
+  it('lands in the field it names', async () => {
     const { engine, adapter, activity, projectId } = build();
-    const result = engine.runActivity(activity, { wbs_project: projectId, code: 'T1' }, null);
+    const result = await engine.runActivity(activity, { wbs_project: projectId, code: 'T1' }, null);
     expect(result.status).toBe('done');
     expect(adapter.getRecord(result.recordId!).customFields.project_id).toBe(projectId);
   });
 
-  it('is still checked against the target its field names', () => {
+  it('is still checked against the target its field names', async () => {
     const { engine, activity } = build();
-    const issues = validateSubmission(engine, activity, { wbs_project: 'NOPE', code: 'T1' }, null);
+    const issues = await validateSubmission(engine, activity, { wbs_project: 'NOPE', code: 'T1' }, null);
     expect(issues.map(i => i.attribute)).toEqual(['wbs_project']);
   });
 });
 
 describe('an attribute the model rules out', () => {
   // Unchanged: a value for one of those means the caller misread the signature.
-  it('is still refused when a value arrives for it', () => {
+  it('is still refused when a value arrives for it', async () => {
     const { engine, activity, projectId } = build();
-    const issues = validateSubmission(engine, activity, { wbs_project: projectId, ruled_out: 'x', code: 'T1' }, null);
+    const issues = await validateSubmission(engine, activity, { wbs_project: projectId, ruled_out: 'x', code: 'T1' }, null);
     expect(issues.map(i => i.message)).toEqual(["'ruled_out' is not applicable for this submission"]);
   });
 });

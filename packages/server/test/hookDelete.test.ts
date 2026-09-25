@@ -1,9 +1,10 @@
 // A hook that deletes, over the real stack: tRPC → engine → the transactional
 // store. Built 2026-09-21 with the DSL `delete` verb.
 //
-// What it proves that the engine test cannot: `writeBack` diffs the partition
-// by absence, so a record a hook removed in memory becomes a real row delete.
-// Destruction deserves proof at the database, not one layer above it.
+// What it proves that the engine test cannot: on the server a hook's delete is
+// written through — a real row delete inside the hook's savepoint, with what
+// still points at it checked when the hook ends. Destruction deserves proof at
+// the database, not one layer above it.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';

@@ -5,16 +5,16 @@
 // the sdm workbench at the Extraction milestone; UI concerns (selection,
 // toasts, console channels) stay with the host.
 
-import { evaluateExpression, executeScript, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
+import { evaluateExpression, evaluateExpressionAsync, executeScriptAsync, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
 import type { ActivityDef, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
-import type { Store } from './store';
+import type { Store, WaitingStore } from './store';
 import { blockingReferences, buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
 import { attributeFieldRef } from './attributeTypes';
 
-export interface EngineOptions {
-  store: Store;
+export interface EngineOptions<S extends WaitingStore = Store> {
+  store: S;
   /**
    * Either grade of the model (CLIENT_TRUST_BOUNDARY §2). The server passes the
    * full one, a browser host the trimmed one; the engine reads hooks off the
@@ -36,6 +36,17 @@ export interface EngineOptions {
 export interface ActivityAvailability {
   available: boolean;
   error?: string;
+}
+
+/**
+ * The after hook failed: the activity was recorded — its record map's change
+ * and its entry stand — but none of the hook's changes were applied. A caller
+ * that holds the writes in a transaction commits them and then reports this.
+ */
+export class AfterHookFailedError extends Error {
+  constructor(message: string, readonly reason: unknown) {
+    super(`After hook failed — the activity was recorded but no changes were applied: ${message}`);
+  }
 }
 
 export interface RunActivityOptions {
@@ -61,17 +72,29 @@ function landingFields(activity: ActivityDef, typeId: string): Map<string, strin
   return landing;
 }
 
-export interface Engine {
-  readonly store: Store;
+/**
+ * One engine per request, never shared: it holds per-run state (the system
+ * log, the `invoke` in-flight set) that relies on runs not interleaving.
+ *
+ * Two kinds of function (SERVER_DATA_LOADING §4.2). **Immediate** — the
+ * browser's: `activityAvailability`, `isActivityAvailable`, `evaluate`; they
+ * need a store that answers immediately. **Waiting** — the server's, and its
+ * scripts' and tests': everything returning a promise; they take either store.
+ */
+export interface Engine<S extends WaitingStore = Store> {
+  readonly store: S;
   /** Availability gate result — see ActivityRawDef.show_condition. */
   activityAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null): ActivityAvailability;
   isActivityAvailable(activity: ActivityDef, anchorRecord: RecordInstance | null): boolean;
+  /** `activityAvailability`, waiting on the store — the server's gate. */
+  activityAvailabilityAsync(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<ActivityAvailability>;
+  isActivityAvailableAsync(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<boolean>;
   runActivity(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
     options?: RunActivityOptions
-  ): RunActivityResult;
+  ): Promise<RunActivityResult>;
   /**
    * The read path: run a GET activity's `returns` with the captured
    * attributes as its parameters (DSL_SPEC §5a). Same gate and same before
@@ -82,7 +105,7 @@ export interface Engine {
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-  ): QueryActivityResult;
+  ): Promise<QueryActivityResult>;
   /**
    * The read door `invoke(activityId, params)` opens, exposed so a caller can
    * put it in a `ScriptContext` and let an expression name a GET — which is
@@ -98,12 +121,14 @@ export interface Engine {
     activityId: string,
     params: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-  ): unknown;
+  ): Promise<unknown>;
   /**
    * Evaluate a FluxScript expression (datasource, show condition) against the
    * live store, with the given script context injected as the four roots.
    */
   evaluate(source: string, script: ScriptContext): unknown;
+  /** `evaluate`, waiting on the store, services and `invoke`. */
+  evaluateAsync(source: string, script: ScriptContext): Promise<unknown>;
   /** Config-save-time validation of every FluxScript script in the config. */
   validateConfig(): Finding[];
   /** validateConfig with diagnostics reported to the console. */
@@ -153,7 +178,7 @@ function capturedEntryAttributes(
   return entryAttributes;
 }
 
-export function createEngine({ store, config, services: hostServices = [], user }: EngineOptions): Engine {
+export function createEngine<S extends WaitingStore = Store>({ store, config, services: hostServices = [], user }: EngineOptions<S>): Engine<S> {
   // services.logger — engine-owned (see services/logger.ts): lines noted
   // during a run land on the entry as the reserved `system_log` attribute —
   // only if the run commits an entry (rejected submissions leave no trace,
@@ -188,15 +213,33 @@ export function createEngine({ store, config, services: hostServices = [], user 
   ): ActivityAvailability {
     if (!activity.show_condition) return { available: true };
     try {
-      const result = evaluateExpression(
-        activity.show_condition,
-        buildEvalHost(store, config, { anchorRecord, activity: { id: activity.id, name: activity.name }, user }, services)
-      );
+      const result = evaluateExpression(activity.show_condition, availabilityHost(activity, anchorRecord));
       return { available: result === true };
     } catch (err) {
-      console.warn(`show_condition failed for activity '${activity.id}' — failing closed:`, err);
-      return { available: false, error: err instanceof Error ? err.message : String(err) };
+      return failedClosed(activity, err);
     }
+  }
+
+  async function activityAvailabilityAsync(
+    activity: ActivityDef,
+    anchorRecord: RecordInstance | null
+  ): Promise<ActivityAvailability> {
+    if (!activity.show_condition) return { available: true };
+    try {
+      const result = await evaluateExpressionAsync(activity.show_condition, availabilityHost(activity, anchorRecord));
+      return { available: result === true };
+    } catch (err) {
+      return failedClosed(activity, err);
+    }
+  }
+
+  function availabilityHost(activity: ActivityDef, anchorRecord: RecordInstance | null) {
+    return buildEvalHost(store, config, { anchorRecord, activity: { id: activity.id, name: activity.name }, user }, services);
+  }
+
+  function failedClosed(activity: ActivityDef, err: unknown): ActivityAvailability {
+    console.warn(`show_condition failed for activity '${activity.id}' — failing closed:`, err);
+    return { available: false, error: err instanceof Error ? err.message : String(err) };
   }
 
   // `invoke(activityId, params)` — the hook-facing read door (DSL_SPEC §5a).
@@ -218,7 +261,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
     return null;
   }
 
-  function invoke(activityId: string, params: Record<string, unknown>, anchorRecord: RecordInstance | null): unknown {
+  async function invoke(activityId: string, params: Record<string, unknown>, anchorRecord: RecordInstance | null): Promise<unknown> {
     const activity = findActivity(activityId);
     if (!activity) throw new Error(`invoke('${activityId}') — no such activity`);
     if (activity.record_map !== 'GET') {
@@ -235,7 +278,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
       // (runtime SPEC: reads are subsumed by the activity that triggered them),
       // and a separate entry would also mean a read persisting inside a write
       // the gate went on to reject.
-      return executeQuery(activity, params, anchorRecord, { log: false }).data;
+      return (await executeQuery(activity, params, anchorRecord, { log: false })).data;
     } finally {
       inFlight.delete(activityId);
     }
@@ -244,8 +287,8 @@ export function createEngine({ store, config, services: hostServices = [], user 
   // Availability gate — first step of every pipeline, read or write, before
   // the before hook. The UI hides unavailable activities, but the gate is the
   // enforcement point (headless callers skip the UI entirely).
-  function enforceAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null): void {
-    const availability = activityAvailability(activity, anchorRecord);
+  async function enforceAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<void> {
+    const availability = await activityAvailabilityAsync(activity, anchorRecord);
     if (!availability.available) {
       throw new Error(
         availability.error
@@ -259,10 +302,10 @@ export function createEngine({ store, config, services: hostServices = [], user 
   // anything persists. A runtime error in the hook also blocks — a broken gate
   // must not wave submissions through. Returns the warnings it raised; what a
   // caller does with them differs (a write offers a soft stop, a read cannot).
-  function runGate(activity: ActivityDef, scriptContext: ScriptContext): string[] {
+  async function runGate(activity: ActivityDef, scriptContext: ScriptContext): Promise<string[]> {
     if (!activity.before_hook) return [];
     try {
-      const result = executeScript(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: 'read' });
+      const result = await executeScriptAsync(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: 'read' });
       return result.warnings;
     } catch (err) {
       if (err instanceof FluxFailError) throw new Error(err.message);
@@ -290,23 +333,23 @@ export function createEngine({ store, config, services: hostServices = [], user 
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-  ): QueryActivityResult {
+  ): Promise<QueryActivityResult> {
     return executeQuery(activity, captured, anchorRecord, { log: true });
   }
 
-  function executeQuery(
+  async function executeQuery(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
     { log }: { log: boolean },
-  ): QueryActivityResult {
+  ): Promise<QueryActivityResult> {
     if (activity.record_map !== 'GET') {
       throw new Error(`'${activity.name}' is not a GET activity — run it through runActivity`);
     }
     if (!activity.returns) {
       throw new Error(`GET activity '${activity.id}' has no 'returns' expression`);
     }
-    enforceAvailability(activity, anchorRecord);
+    await enforceAvailability(activity, anchorRecord);
 
     // A nested read logs nothing of its own, so it must not disturb the run it
     // belongs to: its logger lines join that run's system log rather than
@@ -332,18 +375,18 @@ export function createEngine({ store, config, services: hostServices = [], user 
 
     // A gate rejection leaves no trace, exactly as a rejected submission does:
     // the entry is the record of a run that happened.
-    const warnings = runGate(activity, scriptContext);
+    const warnings = await runGate(activity, scriptContext);
 
     // The light entry, written whichever way the answer goes. `outcome` is the
     // one thing a read has to say about itself that a write says by persisting;
     // an error's message rides the system log rather than earning a key.
-    const record = (outcome: string) => {
+    const record = async (outcome: string) => {
       if (!log || !anchorRecord) return;
       const entryAttributes = capturedEntryAttributes(activity, captured, stringValues, {});
       entryAttributes[SYSTEM_OUTCOME] = outcome;
       entryAttributes[SYSTEM_DURATION] = Date.now() - startedAt;
       if (runLog.length > 0) entryAttributes['system_log'] = [...runLog];
-      store.appendActivity(anchorRecord.id, {
+      await store.appendActivity(anchorRecord.id, {
         activityId: activity.id,
         activityName: activity.name,
         ...(user ? { author: user.id } : {}),
@@ -353,41 +396,48 @@ export function createEngine({ store, config, services: hostServices = [], user 
       });
     };
 
+    let answer: unknown;
     try {
-      const answer = evaluateExpression(
+      answer = await evaluateExpressionAsync(
         activity.returns,
         buildEvalHost(store, config, scriptContext, services),
       );
-      record('ok');
-      // Callers are SDM-blind (an app page, another host's fetch), so records
-      // flatten to plain data on the way out — the same shaping a component gets.
-      return { data: toComponentValue(answer), warnings };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       runLog.push(`returns failed: ${message}`);
-      record('error');
+      try {
+        await record('error');
+      } finally {
+        if (log) runLog = outerLog;
+      }
       throw err;
+    }
+    try {
+      await record('ok');
+      // Callers are SDM-blind (an app page, another host's fetch), so records
+      // flatten to plain data on the way out — the same shaping a component gets.
+      return { data: toComponentValue(answer), warnings };
     } finally {
       if (log) runLog = outerLog;
     }
   }
 
-  function runActivity(
+  async function runActivity(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
     options?: RunActivityOptions
-  ): RunActivityResult {
+  ): Promise<RunActivityResult> {
     if (activity.record_map === 'GET') {
       throw new Error(`'${activity.name}' is a GET activity — read it through runQuery`);
     }
-    enforceAvailability(activity, anchorRecord);
+    await enforceAvailability(activity, anchorRecord);
 
     const warnings: string[] = [];
     // Attributes declared unavailable: scripts see them as null, they never
     // write to record fields, and the waiver lands on the history entry.
     const waived = options?.waived ?? {};
-    // Fresh system log per run (sync evaluator — runs never interleave).
+    // Fresh system log per run (one engine per request — runs never interleave).
     runLog = [];
 
     // Hooks see captured values coerced to their attribute's declared type (DSL_SPEC §5).
@@ -413,7 +463,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
       invoke: (id, params) => invoke(id, params, anchorRecord),
     };
 
-    warnings.push(...runGate(activity, scriptContext));
+    warnings.push(...(await runGate(activity, scriptContext)));
     // Gate warnings are a soft stop: hand them back for the user to confirm.
     // Nothing has persisted (the gate is read-only), so cancelling is free.
     if (warnings.length > 0 && !options?.acknowledgedWarnings) {
@@ -440,7 +490,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
         const field = landing.get(k) ?? k;
         if (cfKeys.has(field) && !(k in waived)) mappedFields[field] = v; // waived: field seeds from default
       }
-      const newRecord = store.createRecord(typeId, mappedFields);
+      const newRecord = await store.createRecord(typeId, mappedFields);
       targetRecordId = newRecord.id;
     } else if (activity.record_map === 'UPDATE') {
       // Exact-key matching against the anchor record's custom fields — SDM §1.9.5.
@@ -455,7 +505,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
         // someone captured earlier
         if (cfKeys.has(field) && !(k in waived)) mappedFields[field] = v;
       }
-      store.updateRecord(anchorRecord!.id, mappedFields);
+      await store.updateRecord(anchorRecord!.id, mappedFields);
       targetRecordId = anchorRecord!.id;
     } else if (activity.record_map === 'DELETE') {
       // Four steps, the user's sequence (2026-09-21): initiate, confirm, the
@@ -478,9 +528,9 @@ export function createEngine({ store, config, services: hostServices = [], user 
       }
       // **Referential integrity**, the same rule a hook's delete() obeys: a
       // record other records point at is refused, and the message names them.
-      const blocked = blockingReferences(store, recordId);
+      const blocked = await blockingReferences(store, recordId);
       if (blocked) throw new Error(blocked);
-      store.deleteRecord(recordId);
+      await store.deleteRecord(recordId);
       // **The result.** `deleted` is what tells a caller the record is gone
       // rather than merely changed — the id alone cannot say which.
       return { status: 'done', warnings, recordId, deleted: true };
@@ -495,17 +545,22 @@ export function createEngine({ store, config, services: hostServices = [], user 
     // system log land in the same single write — but a failing after hook
     // still gets the entry appended (the activity is recorded; no changes
     // were applied).
-    let afterHookError: string | null = null;
+    //
+    // On a write-through store (the server's) the hook's writes land as they
+    // happen, inside a savepoint; a failing hook rolls back to it, so what
+    // stands is exactly what stands here — the record map's change and the
+    // entry. Its queued calls wait for the request's commit.
+    let afterHookError: { message: string; reason: unknown } | null = null;
     if (activity.after_hook) {
       try {
-        const result = executeScript(
+        const result = await executeScriptAsync(
           activity.after_hook,
-          buildEvalHost(store, config, { ...scriptContext, anchorRecord: store.getRecord(targetRecordId) }, services),
+          buildEvalHost(store, config, { ...scriptContext, anchorRecord: await store.getRecord(targetRecordId) }, services),
           { mode: 'mutate' },
         );
         warnings.push(...result.warnings);
       } catch (err) {
-        afterHookError = err instanceof Error ? err.message : String(err);
+        afterHookError = { message: err instanceof Error ? err.message : String(err), reason: err };
       }
     }
 
@@ -529,7 +584,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
     Object.assign(entryAttributes, serializeFields(hookWritten));
     if (runLog.length > 0) entryAttributes['system_log'] = [...runLog];
 
-    store.appendActivity(targetRecordId, {
+    await store.appendActivity(targetRecordId, {
       activityId: activity.id,
       activityName: activity.name,
       ...(user ? { author: user.id } : {}),
@@ -540,7 +595,7 @@ export function createEngine({ store, config, services: hostServices = [], user 
     });
 
     if (afterHookError !== null) {
-      throw new Error(`After hook failed — the activity was recorded but no changes were applied: ${afterHookError}`);
+      throw new AfterHookFailedError(afterHookError.message, afterHookError.reason);
     }
 
     // After-hook warnings are informational (the commit already happened);
@@ -552,10 +607,13 @@ export function createEngine({ store, config, services: hostServices = [], user 
     store,
     activityAvailability,
     isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
+    activityAvailabilityAsync,
+    isActivityAvailableAsync: async (activity, anchorRecord) => (await activityAvailabilityAsync(activity, anchorRecord)).available,
     runActivity,
     runQuery,
     invoke: (activityId, params, anchorRecord) => invoke(activityId, params, anchorRecord),
     evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
+    evaluateAsync: (source, script) => evaluateExpressionAsync(source, buildEvalHost(store, config, { user, ...script }, services)),
     validateConfig: () => validateConfig(config, services),
     reportConfigFindings: () => reportConfigFindings(config, services),
   };

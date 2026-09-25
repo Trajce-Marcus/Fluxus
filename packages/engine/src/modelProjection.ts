@@ -28,7 +28,7 @@ import type {
   SolutionConfig,
   WorkflowRawDef,
 } from './types';
-import type { Store } from './store';
+import type { ModelStore } from './store';
 import { shortName } from './bridge';
 
 /** The prefix model collections live under. Never written in a script. */
@@ -264,7 +264,7 @@ function joinLines(v: string | string[] | null | undefined): string | null {
  * projecting it directly would break every query over it on the first activity
  * with a heading.
  */
-export function resolvedCaptureLists(store: Store): Map<string, ClientAttributeDef[]> {
+export function resolvedCaptureLists(store: ModelStore): Map<string, ClientAttributeDef[]> {
   const out = new Map<string, ClientAttributeDef[]>();
 
   // Every workflow when the store can list them — an activity in a workflow no
@@ -452,12 +452,16 @@ export function withModelTypes(
 ): RecordsHost {
   const rows = modelRows(config, options);
   const fkByType = new Map<string, Record<string, string>>();
+  const fieldsByType = new Map<string, Record<string, string>>();
   for (const c of COLLECTIONS) {
     const fks: Record<string, string> = {};
+    const fields: Record<string, string> = {};
     for (const [key, col] of Object.entries(c.columns)) {
       if (col.fk) fks[key] = col.fk;
+      fields[key] = col.type;
     }
     fkByType.set(c.name, fks);
+    fieldsByType.set(c.name, fields);
   }
 
   return {
@@ -467,6 +471,7 @@ export function withModelTypes(
     getById: (type, id) => (rows.has(type) ? findCopy(rows.get(type)!, id) : base.getById(type, id)),
     fkTarget: (type, field) => fkByType.get(type)?.[field] ?? (rows.has(type) ? null : base.fkTarget(type, field)),
     reverseRef: (type, name) => (rows.has(type) ? null : base.reverseRef(type, name)),
+    declaredFields: (type) => (rows.has(type) ? { ...fieldsByType.get(type) } : (base.declaredFields?.(type) ?? null)),
   };
 }
 

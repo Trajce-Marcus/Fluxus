@@ -4,7 +4,7 @@
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
 import { withModelTypes, resolvedCaptureLists } from './modelProjection';
-import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type Quotas, type RecordsHost, type ServiceModuleDef } from '@fluxus/dsl';
+import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type Quotas, type RecordsHost, type RecordsMutationHost, type ServiceModuleDef, type WriteThroughMutationHost } from '@fluxus/dsl';
 import type {
   ActivityRawDef,
   AttributeDef,
@@ -15,7 +15,8 @@ import type {
   SolutionConfig,
   RecordInstance,
 } from './types';
-import type { Store } from './store';
+import type { Savepoint, WaitingStore } from './store';
+import { mapMaybe, settle, type MaybePromise } from './maybe';
 
 /**
  * `context.user` when no authenticated user is injected — the auth-unconfigured
@@ -151,7 +152,12 @@ export function toDslRecord(record: RecordInstance): DslRecord {
   return { id: record.id, type: shortName(record.typeRef), fields: record.customFields };
 }
 
-export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): RecordsHost {
+/**
+ * The Store as the evaluator's `records` root. Works over either store: over a
+ * MemoryAdapter every answer is plain, over the database store a promise the
+ * waiting evaluator awaits (SERVER_DATA_LOADING §4).
+ */
+export function buildRecordsHost(adapter: WaitingStore, config: ClientSolutionConfig): RecordsHost {
   const byShortName = new Map(config.recordTypes.map((rt) => [shortName(rt.id), rt]));
 
   return {
@@ -159,16 +165,19 @@ export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): 
     getAll: (type) => {
       const rt = byShortName.get(type);
       if (!rt) return [];
-      return adapter.getRecordTypeData(rt.id).map(toDslRecord);
+      return mapMaybe(adapter.getRecordTypeData(rt.id), (rows) => rows.map(toDslRecord));
     },
-    getById: (type, id) => {
-      try {
-        const record = adapter.getRecord(String(id));
-        return record.typeRef === fullId(type) ? toDslRecord(record) : null;
-      } catch {
-        return null;
-      }
-    },
+    getById: (type, id) =>
+      settle(
+        (function* () {
+          try {
+            const record = (yield adapter.getRecord(String(id))) as RecordInstance;
+            return record.typeRef === fullId(type) ? toDslRecord(record) : null;
+          } catch {
+            return null;
+          }
+        })(),
+      ),
     fkTarget: (type, field) => {
       const cf = byShortName.get(type)?.custom_fields.find((c) => c.key === field);
       return cf?.type === 'fk_ref' && cf.fk_record_type ? shortName(cf.fk_record_type) : null;
@@ -181,62 +190,128 @@ export function buildRecordsHost(adapter: Store, config: ClientSolutionConfig): 
       );
       return fk ? { sourceType: name, field: fk.key } : null;
     },
-    // Staged mutations (DSL Phase 2): validate/shape now, persist on commit.
-    mutate: {
-      prepareCreate: (type, fields) => {
-        const rt = byShortName.get(type);
-        if (!rt) throw new Error(`Unknown record type '${type}'`);
-        return toDslRecord(adapter.buildRecord(rt.id, serializeFields(fields)));
-      },
-      prepareUpdate: (type, id, fields) => {
-        adapter.validateUpdate(String(id), serializeFields(fields));
-      },
-      prepareDelete: (type, id) => {
-        // Reads the record to prove it exists (getRecord throws if not) and to
-        // check it is the type the script named — a script that deleted a
-        // record of the wrong type would be silently destructive.
-        const record = adapter.getRecord(String(id));
-        if (record.typeRef !== fullId(type)) {
-          throw new Error(`Record '${id}' is not a ${type}`);
-        }
-      },
-      apply: (ops) => {
-        // Referential integrity, checked across the WHOLE staged set before a
-        // single op lands (2026-09-21, the user's rule: a delete is refused
-        // while something still points at the record).
-        //
-        // Why here and not in prepareDelete: a script deleting a subtree stages
-        // the parent and its children together, and a per-record check against
-        // the store would see the children still present and refuse the parent
-        // — the script blocking itself. A reference only counts if the record
-        // holding it is not itself on the way out, which is knowable only once
-        // the set is complete. Nothing has been written at this point, so
-        // throwing here leaves the store untouched.
-        const going = new Set(ops.filter((op) => op.op === 'delete').map((op) => op.id));
-        for (const id of going) {
-          const blocked = blockingReferences(adapter, id, going);
-          if (blocked) throw new Error(blocked);
-        }
-        for (const op of ops) {
-          if (op.op === 'create') {
-            adapter.insertRecord({
-              id: op.record.id,
-              typeRef: fullId(op.type),
-              customFields: serializeFields(op.record.fields),
-              activityHistory: [],
-            });
-          } else if (op.op === 'update') {
-            adapter.updateRecord(op.id, serializeFields(op.fields));
-          } else {
-            // The row and its embedded history both go. The reporting rows
-            // projected from that history are NOT touched here — deciding
-            // their fate is deferred (2026-09-21), and leaving them is the
-            // behaviour a DELETE record map already has.
-            adapter.deleteRecord(op.id);
-          }
-        }
-      },
+    declaredFields: (type) => {
+      const rt = byShortName.get(type);
+      return rt ? Object.fromEntries(rt.custom_fields.map((cf) => [cf.key, cf.type])) : null;
     },
+    mutate: adapter.savepoint ? writeThroughMutations(adapter, byShortName) : stagedMutations(adapter, byShortName),
+  };
+}
+
+type RecordTypesByShortName = Map<string, ClientSolutionConfig['recordTypes'][number]>;
+
+/** Staged mutations (DSL Phase 2): validate/shape now, persist on commit. */
+function stagedMutations(adapter: WaitingStore, byShortName: RecordTypesByShortName): RecordsMutationHost {
+  return {
+    prepareCreate: (type, fields) => {
+      const rt = byShortName.get(type);
+      if (!rt) throw new Error(`Unknown record type '${type}'`);
+      return mapMaybe(adapter.buildRecord(rt.id, serializeFields(fields)), toDslRecord);
+    },
+    prepareUpdate: (type, id, fields) => adapter.validateUpdate(String(id), serializeFields(fields)),
+    prepareDelete: (type, id) =>
+      settle(
+        (function* () {
+          // Reads the record to prove it exists (getRecord throws if not) and to
+          // check it is the type the script named — a script that deleted a
+          // record of the wrong type would be silently destructive.
+          const record = (yield adapter.getRecord(String(id))) as RecordInstance;
+          if (record.typeRef !== fullId(type)) {
+            throw new Error(`Record '${id}' is not a ${type}`);
+          }
+        })(),
+      ),
+    apply: (ops) =>
+      settle(
+        (function* () {
+          // Referential integrity, checked across the WHOLE staged set before a
+          // single op lands (2026-09-21, the user's rule: a delete is refused
+          // while something still points at the record).
+          //
+          // Why here and not in prepareDelete: a script deleting a subtree stages
+          // the parent and its children together, and a per-record check against
+          // the store would see the children still present and refuse the parent
+          // — the script blocking itself. A reference only counts if the record
+          // holding it is not itself on the way out, which is knowable only once
+          // the set is complete. Nothing has been written at this point, so
+          // throwing here leaves the store untouched.
+          const going = new Set(ops.filter((op) => op.op === 'delete').map((op) => op.id));
+          for (const id of going) {
+            const record = (yield adapter.getRecord(id)) as RecordInstance;
+            const blocked = yield* referencesTo(adapter, record.typeRef, id, going);
+            if (blocked) throw new Error(blocked);
+          }
+          for (const op of ops) {
+            if (op.op === 'create') {
+              yield adapter.insertRecord({
+                id: op.record.id,
+                typeRef: fullId(op.type),
+                customFields: serializeFields(op.record.fields),
+                activityHistory: [],
+              });
+            } else if (op.op === 'update') {
+              yield adapter.updateRecord(op.id, serializeFields(op.fields));
+            } else {
+              // The row and its embedded history both go. The reporting rows
+              // projected from that history are NOT touched here — deciding
+              // their fate is deferred (2026-09-21), and leaving them is the
+              // behaviour a DELETE record map already has.
+              yield adapter.deleteRecord(op.id);
+            }
+          }
+        })(),
+      ),
+  };
+}
+
+/**
+ * Mutations on a write-through store (SERVER_DATA_LOADING ruling 10): each goes
+ * to the database as it happens, inside the savepoint `begin` opens for the
+ * script; a failed script rolls back to it. What still points at a deleted
+ * record is checked once, when the script ends — the same rule as the staged
+ * set (a subtree may go; a parent something still points at may not), and by
+ * then the children deleted with it are already gone.
+ */
+function writeThroughMutations(adapter: WaitingStore, byShortName: RecordTypesByShortName): WriteThroughMutationHost {
+  let savepoint: Savepoint | null = null;
+  return {
+    writesThrough: true,
+    begin: async () => {
+      savepoint = await adapter.savepoint!();
+    },
+    create: (type, fields) => {
+      const rt = byShortName.get(type);
+      if (!rt) throw new Error(`Unknown record type '${type}'`);
+      return mapMaybe(adapter.createRecord(rt.id, serializeFields(fields)), toDslRecord);
+    },
+    update: (type, id, fields) => adapter.updateRecord(String(id), serializeFields(fields)),
+    delete: (type, id) =>
+      settle(
+        (function* () {
+          const record = (yield adapter.getRecord(String(id))) as RecordInstance;
+          if (record.typeRef !== fullId(type)) {
+            throw new Error(`Record '${id}' is not a ${type}`);
+          }
+          yield adapter.deleteRecord(String(id));
+        })(),
+      ),
+    finish: (deleted) =>
+      settle(
+        (function* () {
+          for (const { type, id } of deleted) {
+            const blocked = yield* referencesTo(adapter, fullId(type), id, new Set());
+            if (blocked) throw new Error(blocked);
+          }
+          yield savepoint!.release();
+          savepoint = null;
+        })(),
+      ),
+    undo: async () => {
+      const open = savepoint;
+      savepoint = null;
+      if (open) await open.rollback();
+    },
+    afterCommit: (fn) => adapter.afterCommit!(fn),
   };
 }
 
@@ -444,7 +519,7 @@ export function coerceValue(type: string | undefined, raw: string): unknown {
 }
 
 export function buildEvalHost(
-  adapter: Store,
+  adapter: WaitingStore,
   config: ClientSolutionConfig,
   script: ScriptContext,
   services: ServiceModuleDef[] = [],
@@ -500,18 +575,31 @@ export function buildEvalHost(
  * children blocking the parent they are leaving with.
  *
  * Shared by both delete paths: a hook's `delete()` (through the mutate
- * surface) and an activity's DELETE record map. One act, one rule.
+ * surface) and an activity's DELETE record map. One act, one rule. Answers
+ * plainly over a MemoryAdapter and with a promise over the database store.
  */
 export function blockingReferences(
-  store: Store,
+  store: WaitingStore,
   recordId: string,
   alsoGoing: ReadonlySet<string> = new Set(),
-): string | null {
-  const record = store.getRecord(recordId);
-  for (const ref of store.getReverseRefs(record.typeRef)) {
-    const holders = store
-      .getRecordsByField(ref.sourceTypeId, ref.fieldKey, recordId)
-      .filter((r) => !alsoGoing.has(r.id));
+): MaybePromise<string | null> {
+  return settle(
+    (function* () {
+      const record = (yield store.getRecord(recordId)) as RecordInstance;
+      return yield* referencesTo(store, record.typeRef, recordId, alsoGoing);
+    })(),
+  );
+}
+
+function* referencesTo(
+  store: WaitingStore,
+  typeRef: string,
+  recordId: string,
+  alsoGoing: ReadonlySet<string>,
+): Generator<unknown, string | null, unknown> {
+  for (const ref of store.getReverseRefs(typeRef)) {
+    const found = (yield store.getRecordsByField(ref.sourceTypeId, ref.fieldKey, recordId)) as RecordInstance[];
+    const holders = found.filter((r) => !alsoGoing.has(r.id));
     if (holders.length === 0) continue;
     const names = holders.slice(0, 3).map((r) => r.id).join(', ');
     const more = holders.length > 3 ? `, and ${holders.length - 3} more` : '';

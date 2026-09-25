@@ -8,44 +8,79 @@ a fetched partition snapshot (`@fluxus/client`) and their mutations through
 reporting projection. Root ARCHITECTURE.md owns the cross-package data
 architecture; this SPEC covers what the server package owns.
 
-## The request model: partition snapshot, not async rewrite
+## The request model: a database store, read on demand (**BUILT 2026-09-25**)
 
-**Being replaced** ([SERVER_DATA_LOADING](../../../docs/SERVER_DATA_LOADING.md),
-2026-09-25): the synchronous Store ruling below is reversed, and step 2 of that
-spec replaces the partition with a store that reads on demand. Step 1 is built
-(2026-09-25) and is described here.
+[SERVER_DATA_LOADING](../../../docs/SERVER_DATA_LOADING.md) step 2. Per request
+the server:
 
-The engine's `Store` contract and the DSL evaluator are synchronous — ruled at
-Phase 4 kickoff. Per request the server:
+1. resolves the operation to its solution and loads that solution's model —
+   **no record** (`loadOperationHost`; the `host_load` span counts nothing,
+   ruling 23);
+2. builds one engine over a **`DatabaseStore`** (`src/databaseStore.ts`) — one
+   per request, never shared — which reads from Postgres only what a script
+   asks for, and writes each change the moment it is made;
+3. runs the same pipeline every browser host runs, through the engine's
+   waiting functions (`validateSubmission` → `runActivity`: availability gate →
+   before hook → record_map → after hook → history append).
 
-1. resolves the operation to its solution, loads that solution's SDM config
-   and the operation's record partition from Postgres into an engine
-   `MemoryAdapter` — `id`, `type_ref` and `custom_fields` only. **No record's
-   history is loaded**: nothing in a run reads it (the engine only appends;
-   scripts see records without it), and it is most of the bytes;
-2. runs the same sync pipeline every browser host runs
-   (`validateSubmission` → `runActivity`: availability gate → before hook →
-   record_map → history append → after hook),
-3. finds what changed against the load-time baseline (each record's fields,
-   one JSON string per key) and writes it back in **one transaction**:
-   - a record the run created: `INSERT`;
-   - a record it changed: `UPDATE` merging in only the fields that differ
-     (`custom_fields || patch`) and appending the new entries
-     (`activity_history || entries`) — never a whole-record rewrite, so a
-     concurrent run's entries and untouched fields survive;
-   - a record it deleted: `DELETE`;
-   - the reporting projection of each new entry, and the ledger flip.
+**Reads** always select `id, type_ref, custom_fields`, never
+`activity_history`, scoped by `operation_id`:
 
-An `UPDATE` that finds no row means another request deleted the record while
-this run held it: the transaction rolls back and the request fails with
-`RecordDeletedMeanwhileError` (`CONFLICT`) — rather than the record coming back
-to life, which the old upsert did. A field two concurrent runs both change is
-still last-write-wins. A write-back that finds a field missing after the run
-throws: the engine never removes one, and a patch cannot say "remove".
+| Asked for | SQL |
+|---|---|
+| a record by id — the anchor, a reference followed | `WHERE id = $1` |
+| a type's records | `WHERE type_ref = $1 ORDER BY id` |
+| records by field value — `geo`, reference checks | `WHERE type_ref = $1 AND custom_fields->>$2 = $3` |
+| "does another record already have this unique value?" | `SELECT 1 … AND id <> $4 LIMIT 1` |
 
-A failing after hook persists by doctrine ("recorded, but no changes
-applied"): the router writes the diff back even when `runActivity` throws,
-because the entry append and record_map change preceded the hook.
+Values and field keys go in as parameters. A type's records are still read
+whole for `records.x.where(...)` — step 3 runs record queries as SQL.
+
+**Held for the request.** Every record read is kept by id; the same object is
+handed back for the same id and changed in place by every write — the router's
+anchor and the `invoke` closure `runActivity` builds rely on it. A savepoint
+that rolls back restores the held records it touched (fields, entries, records
+it created or deleted). Discarded with the store — not caching (ruling 2).
+
+**Writes, as they happen.** Create: `INSERT` (the primary key refuses a
+clashing id; ids are UUIDv7). Update: `custom_fields = custom_fields ||
+$changed` — only the fields given. Delete: `DELETE`. A history entry:
+**one statement** — the append, its `rpt_activities` and `rpt_attributes` rows
+and the ledger flip, as data-modifying CTEs that land only if the record is
+still there. `updated_at` on every write. Unique and immutable checks run
+before the write, against the database.
+
+**The transaction.** `activities.run` opens it (`store.begin()`) before its
+first read — the anchor — and every read and write of the run goes through it,
+so the run sees its own writes. A hook's writes run inside a **savepoint**
+(`store.savepoint()`, opened at the hook's first write); a failing hook rolls
+back to it. `queue`d calls are held (`store.afterCommit`) and dispatched after
+the commit, never on a rollback. What commits (§4.2):
+
+- gate or before hook refuses, or the run needs confirmation (a DELETE awaiting
+  its confirmation included): **rolled back**;
+- the after hook fails (`AfterHookFailedError`): its savepoint is already rolled
+  back; the record map change and the entry **commit**;
+- anything else fails — a record deleted meanwhile (`RecordDeletedMeanwhileError`
+  → `CONFLICT`, ruling 17), a database error: **rolled back**. The store keeps
+  the first such failure as `store.fault`, even after a hook's savepoint rolled
+  it back, and `commit()` refuses while one is set.
+
+`activities.query` (a GET) and `scripts.query` open **no** transaction: they
+read, and a GET's light entry is the one-statement append at the end, written
+whichever way `returns` went. PGlite serialises transactions (a query waits for
+an open one), so in dev a run holds other requests until it ends; on Postgres a
+run holds only the rows it wrote (SERVER_DATA_LOADING §11 on lock waits and
+deadlocks).
+
+*Reversed 2026-09-25: partition snapshot, not async rewrite* (ruled at Phase 4
+kickoff). The engine's Store and the evaluator were synchronous, so per request
+the server loaded the operation's record partition into a `MemoryAdapter`, ran
+the sync engine, and wrote back what differed from a load-time baseline in one
+transaction (step 1 of the same spec had already stopped reading history and
+turned write-back into patches and appends). Dropped because the cost grew with
+the operation, not the request: every run and every GET read every record.
+`writeBack` and the baseline went with it.
 
 ## What the package owns
 
@@ -68,8 +103,11 @@ src/db/client.ts       — driver selection (DATABASE_URL → node-postgres/Neon
 src/auth.ts            — bearer-JWT verification against Neon Auth's JWKS
                          (jose), env-driven posture, the two-lookup
                          roles-resolver seam (stubbed)
-src/host.ts            — loadOperationHost (resolve operation → solution, then
-                         load) / writeBack (diff + projection) / putConfig +
+src/databaseStore.ts   — DatabaseStore: reads on demand, writes through, the
+                         run's transaction + hook savepoints, the one-statement
+                         entry append (+ reporting rows, ledger flip)
+src/host.ts            — loadOperationHost (resolve operation → solution, load
+                         the model, build the store + engine) / putConfig +
                          the per-entity model writes (configCollections,
                          putConfigEntity/deleteConfigEntity/putDefaultMenu);
                          orgs + solutions + operations helpers (ensure/list/
@@ -346,9 +384,9 @@ takes `operationId?` (both default `demo/sdm`):
   → `QueryActivityResult` — the read path (DSL_SPEC §5a, built 2026-08-09). A
   tRPC **query, not a mutation**: no record data changes and there is no
   confirmation round-trip. It does write one thing — the light entry the engine
-  records on the anchor (step 3, 2026-08-11) — so it write-backs like a run
-  does, including on the way out of a failure, because the read happened either
-  way. The app names a GET activity
+  records on the anchor (step 3, 2026-08-11) — appended in one statement
+  (no transaction), including on the way out of a failure, because the read
+  happened either way. The app names a GET activity
   and the model answers; the query itself never reaches the browser (`returns`
   lives on the server grade of the model and `projectConfig` cannot copy it).
   The parameters are the activity's attributes and go through the same
@@ -590,15 +628,15 @@ rev 6 §0). What the server implements:
   segments (`site_photos.0.hash`, `tags.0`) — the one projection extension in
   this build (ATTRIBUTE_TYPES_FILES_SCALARS §9), which also closed the same
   latent gap for multi-select lists. Rejected gates and un-acknowledged
-  soft-stops leave no rows (no entry committed). Projection is synchronous
-  in-transaction; the outbox/async upgrade replaces `writeBack`'s body, not
-  its callers. Rebuild-by-re-projection is possible by construction (the
+  soft-stops leave no rows (no entry committed). Projection is synchronous,
+  in the same statement as the entry append (`DatabaseStore.appendActivity`);
+  the outbox/async upgrade replaces that body, not its callers. Rebuild-by-re-projection is possible by construction (the
   entries live on the records) but no rebuild tool exists yet.
 - `attachments` — the blob ledger (ATTRIBUTE_TYPES_FILES_SCALARS §8): one row
   per uploaded object (`storage_key`, `size`, `mime`, `hash`, photo metadata,
   `status: pending → committed`, `created_at`). Inserted `pending` at presign;
-  `writeBack` flips every `storage_key` a new entry references to `committed`
-  in the same transaction. It is **not the source of truth and nothing
+  the entry append flips every `storage_key` the entry references to
+  `committed` in the same statement. It is **not the source of truth and nothing
   references its rows** — pipeline values stay by-value, so a GC bug can never
   corrupt history. It exists for the bucket-side questions the pipeline is bad
   at: the quota fuse (`SUM(size)`, no Cloudflare usage API), duplicate/
@@ -1048,11 +1086,11 @@ no anchor. Accepted, and recorded as debt against the unified-log design.
 
 **Read-only is structural, not a validation pass.** `readonlyRecords: true`
 removes `records.mutate` from the eval host, so the capability is not on the
-object; `engine.evaluate` additionally runs in expression posture. Static
+object; `engine.evaluateAsync` additionally runs in expression posture. Static
 checking would not have done: a model function's body is validated separately,
 so a mutating function passes at its call site.
 
-**`engine.evaluate`, not `executeScript`.** `executeScript` returns the value of
+**`engine.evaluateAsync`, not `executeScriptAsync`.** A script run returns the value of
 a top-level `return` and null otherwise, so a bare expression or query would
 answer null.
 
@@ -1064,8 +1102,9 @@ operation. As with every gate but platform-admin, `requireOpUser` returns early
 when auth is unconfigured, so on such a deployment this endpoint is open.
 
 **Quotas** are raised per call (`maxRows: 100_000`, `maxSteps: 2_000_000`,
-`timeoutMs: 15_000`) — the partition is already in memory by then. Hooks keep
-`DEFAULT_QUOTAS`.
+`timeoutMs: 15_000`) — an interactive tool, and a query still reads its whole
+type until step 3. Hooks keep `DEFAULT_QUOTAS`. It runs through
+`engine.evaluateAsync` on the database store, with no transaction.
 
 A failed script returns a result carrying `error`, not a TRPCError; the editor
 needs the position. A bad anchor record id answers the same way, for the same
@@ -1136,10 +1175,13 @@ function on purpose: a `return` in the `finally` would replace the procedure's
 result. Logging is never allowed to fail a request.
 
 **Spans nested under `request`**, opened with `withSpan(kind, name, fn, countsOf?)`:
-`host_load` (in `loadOperationHost`; name = operation id; `records`), `validate`
+`host_load` (in `loadOperationHost`; name = operation id; no counts since
+2026-09-25 — it loads the model and no record, ruling 23), `validate`
 (name = activity id), `engine` (activity id; `rows` on a GET), `write_back`
-(activity id, or `script` for `scripts.query`; `created`/`changed`/`deleted` —
-`writeBack` returns them). `db_connect` is pushed by the pool hook. `request`
+(activity id; **the commit** of an activity run since 2026-09-25 — the writes
+themselves land inside `engine`; `created`/`changed`/`deleted` as the store
+counted them, `store.commit()` returns them). A GET and `scripts.query` have no
+`write_back`: they commit nothing. `db_connect` is pushed by the pool hook. `request`
 carries `db_queries`/`db_ms` when the request made any.
 
 **Scope is learned in `resolveUser`** (`setScope`), which every operation-scoped

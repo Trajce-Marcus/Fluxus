@@ -21,6 +21,9 @@ export class FkPointer {
   ) {}
 }
 
+/** A value a host may hand back now or later (SERVER_DATA_LOADING §4.1). */
+export type MaybePromise<T> = T | Promise<T>;
+
 /** A staged record mutation (DSL_SPEC §7): held by the evaluator, applied atomically on commit. */
 export type MutationOp =
   | { op: 'create'; type: string; record: DslRecord }
@@ -31,35 +34,75 @@ export type MutationOp =
  * Mutation surface of a records host (Phase 2). `prepare*` validate and shape a
  * mutation *without persisting* — constraint violations surface while the script
  * runs, so a failing script stages nothing. `apply` commits the staged ops.
+ *
+ * Any of them may answer with a promise; only the waiting evaluator accepts one.
  */
 export interface RecordsMutationHost {
   /** Validate a create, merge type defaults, assign the committed id. Does not persist. */
-  prepareCreate(type: string, fields: Record<string, unknown>): DslRecord;
+  prepareCreate(type: string, fields: Record<string, unknown>): MaybePromise<DslRecord>;
   /** Validate an update (immutable/unique constraints). Does not persist. Throws on violation. */
-  prepareUpdate(type: string, id: string, fields: Record<string, unknown>): void;
+  prepareUpdate(type: string, id: string, fields: Record<string, unknown>): MaybePromise<void>;
   /**
    * Validate a delete — the record exists and is of the type named. Does not
    * persist. The record's history goes with it (2026-09-21, the user's ruling):
    * a delete is for what should never have existed, and anything worth keeping
    * is marked rather than deleted.
    */
-  prepareDelete(type: string, id: string): void;
+  prepareDelete(type: string, id: string): MaybePromise<void>;
   /** Commit staged mutations, in order. */
-  apply(ops: MutationOp[]): void;
+  apply(ops: MutationOp[]): MaybePromise<void>;
+}
+
+/**
+ * A host that writes each mutation at once and undoes a failed script itself
+ * (SERVER_DATA_LOADING ruling 10) — the server's database store. The evaluator
+ * keeps no staging for it: the script's later reads see its writes because the
+ * database does.
+ */
+export interface WriteThroughMutationHost {
+  writesThrough: true;
+  /** Called before the script's first write — where the host opens its undo point. */
+  begin(): MaybePromise<void>;
+  /** Validate and write a create; answers the record as written. */
+  create(type: string, fields: Record<string, unknown>): MaybePromise<DslRecord>;
+  /** Validate and write an update. */
+  update(type: string, id: string, fields: Record<string, unknown>): MaybePromise<void>;
+  /** Check the record is of the type named, and delete it. */
+  delete(type: string, id: string): MaybePromise<void>;
+  /**
+   * The script succeeded: throw if anything still points at a record it
+   * deleted (checked once, at the end, so deleting a subtree is allowed),
+   * otherwise keep its writes. Only called when the script wrote something.
+   */
+  finish(deleted: { type: string; id: string }[]): MaybePromise<void>;
+  /** The script failed: undo everything it wrote since `begin`. */
+  undo(): MaybePromise<void>;
+  /**
+   * Hold `queue`d calls until the host's writes commit; the host drops them
+   * if the writes are rolled back instead.
+   */
+  afterCommit(dispatch: () => void): void;
 }
 
 /** Adapter over the SDM record store + schema, injected as the `records` root. */
 export interface RecordsHost {
   hasType(type: string): boolean;
   /** All records of a type. The evaluator snapshots (copies) what it receives. */
-  getAll(type: string): DslRecord[];
-  getById(type: string, id: unknown): DslRecord | null;
+  getAll(type: string): MaybePromise<DslRecord[]>;
+  getById(type: string, id: unknown): MaybePromise<DslRecord | null>;
   /** Target record type if `field` on `type` is an fk_ref, else null (FK auto-deref). */
   fkTarget(type: string, field: string): string | null;
   /** Reverse-FK navigation (D12): resolve `record.<name>` to the incoming FK it names. */
   reverseRef(type: string, name: string): { sourceType: string; field: string } | null;
+  /**
+   * A type's declared fields and their types (`{ due_date: 'date', … }`), or
+   * null for a type the host does not know. Read from the model, so it answers
+   * immediately. What a record query compares by (SERVER_DATA_LOADING rulings
+   * 12 and 13).
+   */
+  declaredFields?(type: string): Record<string, string> | null;
   /** Mutation support. Read-only hosts (expression embedding points) omit it. */
-  mutate?: RecordsMutationHost;
+  mutate?: RecordsMutationHost | WriteThroughMutationHost;
 }
 
 /**
@@ -76,9 +119,10 @@ export interface ServiceFunctionDef {
    */
   kind: 'read' | 'effect';
   /**
-   * May return a Promise. The sync evaluator accepts that only on `queue`
-   * dispatch (fire-and-forget); a *waiting* call that returns a Promise is a
-   * runtime error until the async evaluator lands with the backend phase.
+   * May return a Promise. The waiting evaluator (the server's) awaits it; the
+   * immediate one (the browser's) accepts one only on `queue` dispatch
+   * (fire-and-forget), and a waiting call that returns a Promise is a runtime
+   * error there.
    */
   fn: (...args: unknown[]) => unknown;
 }
@@ -96,7 +140,10 @@ export interface Quotas {
   maxSteps: number;
   /** Max rows a single query may materialize. */
   maxRows: number;
-  /** Wall-clock budget per evaluation, ms. */
+  /**
+   * Budget per evaluation, ms — evaluation time only: time spent waiting on the
+   * host (the database, a service) does not count (SERVER_DATA_LOADING ruling 20).
+   */
   timeoutMs: number;
 }
 
@@ -129,7 +176,7 @@ export interface EvalHost {
    * returning null, because a guard that silently answers nothing is worse
    * than one that breaks.
    */
-  invoke?: (activityId: string, params: Record<string, unknown>) => unknown;
+  invoke?: (activityId: string, params: Record<string, unknown>) => unknown | Promise<unknown>;
   /** Injectable clock, so hooks are testable (GRAMMAR §6). Defaults to real time. */
   now?: () => Date;
   quotas?: Partial<Quotas>;

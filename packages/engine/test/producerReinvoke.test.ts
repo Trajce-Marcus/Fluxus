@@ -102,44 +102,44 @@ function setup(overrides?: { returns?: string; gate?: string | null; datasource?
 const messages = (issues: { message: string }[]) => issues.map((i) => i.message);
 
 describe('a producer that names a GET is re-run at submission (step 4)', () => {
-  it('accepts a value the GET answered with', () => {
+  it('accepts a value the GET answered with', async () => {
     const { engine, dispatch } = setup();
-    const issues = validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
+    const issues = await validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
     expect(issues).toEqual([]);
   });
 
-  it('rejects a value the GET did not answer with', () => {
+  it('rejects a value the GET did not answer with', async () => {
     const { engine, dispatch } = setup();
-    const issues = validateSubmission(engine, dispatch, { region: 'north', crew: 'Crew Q' }, null);
+    const issues = await validateSubmission(engine, dispatch, { region: 'north', crew: 'Crew Q' }, null);
     expect(messages(issues)).toContain("'Crew Q' is not in the datasource for 'Crew'");
   });
 
-  it('sends the GET the parameters the submission carries', () => {
+  it('sends the GET the parameters the submission carries', async () => {
     // 'south' is only ever in the answer when region=south was passed through,
     // so accepting it here is the proof the parameter arrived.
     const { engine, dispatch } = setup();
-    expect(validateSubmission(engine, dispatch, { region: 'south', crew: 'south' }, null)).toEqual([]);
-    expect(messages(validateSubmission(engine, dispatch, { region: 'north', crew: 'south' }, null)))
+    expect(await validateSubmission(engine, dispatch, { region: 'south', crew: 'south' }, null)).toEqual([]);
+    expect(messages(await validateSubmission(engine, dispatch, { region: 'north', crew: 'south' }, null)))
       .toContain("'south' is not in the datasource for 'Crew'");
   });
 
-  it('fails closed when the GET rejects the caller', () => {
+  it('fails closed when the GET rejects the caller', async () => {
     // The GET's own gate is what decides the set, so a gate that says no must
     // not wave the submitted value through.
     const { engine, dispatch } = setup({ gate: "fail('not your region')" });
-    const issues = validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
+    const issues = await validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
     expect(messages(issues).join(' ')).toMatch(/datasource failed/);
   });
 
-  it('fails closed when the producer names an activity that does not exist', () => {
+  it('fails closed when the producer names an activity that does not exist', async () => {
     const { engine, dispatch } = setup({ datasource: "invoke('act_get_nobody', {})" });
-    const issues = validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
+    const issues = await validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
     expect(messages(issues).join(' ')).toMatch(/no such activity/);
   });
 
-  it('rejects a producer that names a write activity', () => {
+  it('rejects a producer that names a write activity', async () => {
     const { engine, dispatch } = setup({ datasource: "invoke('act_dispatch_jobs', {})" });
-    const issues = validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
+    const issues = await validateSubmission(engine, dispatch, { region: 'north', crew: 'north' }, null);
     expect(messages(issues).join(' ')).toMatch(/only GET activities can be invoked/);
   });
 });
