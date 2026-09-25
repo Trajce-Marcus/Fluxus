@@ -10,24 +10,38 @@ architecture; this SPEC covers what the server package owns.
 
 ## The request model: partition snapshot, not async rewrite
 
-The engine's `Store` contract and the DSL evaluator are synchronous — and
-stay so (ruled at Phase 4 kickoff). Per request the server:
+**Being replaced** ([SERVER_DATA_LOADING](../../../docs/SERVER_DATA_LOADING.md),
+2026-09-25): the synchronous Store ruling below is reversed, and step 2 of that
+spec replaces the partition with a store that reads on demand. Step 1 is built
+(2026-09-25) and is described here.
+
+The engine's `Store` contract and the DSL evaluator are synchronous — ruled at
+Phase 4 kickoff. Per request the server:
 
 1. resolves the operation to its solution, loads that solution's SDM config
-   and the operation's full record partition from Postgres into
-   an engine `MemoryAdapter` (the transactional layer is lean by doctrine —
-   ARCHITECTURE.md "partition-fetch + filter" made literal),
+   and the operation's record partition from Postgres into an engine
+   `MemoryAdapter` — `id`, `type_ref` and `custom_fields` only. **No record's
+   history is loaded**: nothing in a run reads it (the engine only appends;
+   scripts see records without it), and it is most of the bytes;
 2. runs the same sync pipeline every browser host runs
    (`validateSubmission` → `runActivity`: availability gate → before hook →
    record_map → history append → after hook),
-3. diffs the adapter against its load-time baseline and writes everything
-   back in **one transaction**: record upserts/deletes plus the reporting
-   projection of each new history entry.
+3. finds what changed against the load-time baseline (each record's fields,
+   one JSON string per key) and writes it back in **one transaction**:
+   - a record the run created: `INSERT`;
+   - a record it changed: `UPDATE` merging in only the fields that differ
+     (`custom_fields || patch`) and appending the new entries
+     (`activity_history || entries`) — never a whole-record rewrite, so a
+     concurrent run's entries and untouched fields survive;
+   - a record it deleted: `DELETE`;
+   - the reporting projection of each new entry, and the ledger flip.
 
-The DSL's async-shaped API (Phase 3) remains the seam for a future truly
-async evaluator; nothing here forecloses it. Concurrency is last-write-wins
-per record for now; optimistic versioning slots into `writeBack` when
-multi-writer deployments exist.
+An `UPDATE` that finds no row means another request deleted the record while
+this run held it: the transaction rolls back and the request fails with
+`RecordDeletedMeanwhileError` (`CONFLICT`) — rather than the record coming back
+to life, which the old upsert did. A field two concurrent runs both change is
+still last-write-wins. A write-back that finds a field missing after the run
+throws: the engine never removes one, and a patch cannot say "remove".
 
 A failing after hook persists by doctrine ("recorded, but no changes
 applied"): the router writes the diff back even when `runActivity` throws,

@@ -16,6 +16,7 @@ import {
   OperationNotFoundError,
   OrgExistsError,
   OrgNotFoundError,
+  RecordDeletedMeanwhileError,
   SolutionNotFoundError,
 } from './host';
 import {
@@ -165,6 +166,7 @@ export function rethrow(err: unknown): never {
   if (err instanceof OperationNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof OrgNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof OrgExistsError) throw new TRPCError({ code: 'CONFLICT', message: err.message });
+  if (err instanceof RecordDeletedMeanwhileError) throw new TRPCError({ code: 'CONFLICT', message: err.message });
   if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
   if (err instanceof TRPCError) throw err;
   throw new TRPCError({

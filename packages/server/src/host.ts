@@ -1,11 +1,14 @@
 // The headless host (DSL Phase 4). Per request: fetch the scope's partition
 // into a MemoryAdapter, run the same sync engine every browser host runs, then
 // write the diff back to Postgres in one transaction — the ARCHITECTURE.md
-// "partition-fetch + filter" runtime model made literal. Leanness of the
-// transactional layer is what makes this viable; retention enforces it.
+// "partition-fetch + filter" runtime model made literal.
 //
-// Concurrency is last-write-wins per record for now (single-writer dev
-// deployments); optimistic versioning slots into writeBack when it matters.
+// That model is reversed (docs/SERVER_DATA_LOADING.md): step 2 replaces the
+// partition with a store that reads on demand. Step 1 is what is here — no
+// record's history is loaded, and write-back sends only what changed: the
+// fields that differ, as a patch, and new history entries, as an append. So
+// two runs at once no longer overwrite each other's entries or each other's
+// untouched fields; a field both change is still last-write-wins.
 
 import { and, asc, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -44,8 +47,24 @@ export interface OperationHost {
   config: SolutionConfig;
   adapter: MemoryAdapter;
   engine: Engine;
-  /** Load-time serialization of each record — the diff baseline for writeBack. */
-  baseline: Map<string, { json: string; historyLen: number }>;
+  /**
+   * Each loaded record's fields as they were at load, one JSON string per key —
+   * the baseline writeBack finds changed fields against. History is not in it:
+   * it is never loaded, so every entry a record holds after the run is new.
+   */
+  baseline: Map<string, Map<string, string>>;
+}
+
+/**
+ * A run changed a record that another request deleted while it ran
+ * (SERVER_DATA_LOADING ruling 17). The run fails and nothing of it is written —
+ * the alternative, writing the record back, would bring a deleted record back
+ * to life.
+ */
+export class RecordDeletedMeanwhileError extends Error {
+  constructor(recordId: string) {
+    super(`Record '${recordId}' was deleted meanwhile — nothing was saved; reload and try again`);
+  }
 }
 
 export class SolutionNotFoundError extends Error {
@@ -127,12 +146,17 @@ export async function loadOperationHost(db: Db, operationId: string, sink: Notif
   return withSpan('host_load', operationId, async () => {
     const op = await getOperation(db, operationId);
     const config = await getSolutionConfig(db, op.solutionId);
-    const rows = await db.select().from(records).where(eq(records.operationId, operationId));
+    // Never `activity_history`: nothing in a run reads it (the engine only
+    // appends, scripts see records without it), and it is most of the bytes.
+    const rows = await db
+      .select({ id: records.id, typeRef: records.typeRef, customFields: records.customFields })
+      .from(records)
+      .where(eq(records.operationId, operationId));
     recordCount = rows.length;
 
     const initial: [string, RecordInstance][] = rows.map((r) => [
       r.id,
-      { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory },
+      { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: [] },
     ]);
     const adapter = new MemoryAdapter(config, { initialRecords: initial });
     const engine = createEngine({
@@ -144,7 +168,10 @@ export async function loadOperationHost(db: Db, operationId: string, sink: Notif
     });
 
     const baseline = new Map(
-      initial.map(([id, rec]) => [id, { json: JSON.stringify(rec), historyLen: rec.activityHistory.length }]),
+      initial.map(([id, rec]) => [
+        id,
+        new Map(Object.entries(rec.customFields).map(([key, value]) => [key, JSON.stringify(value)])),
+      ]),
     );
 
     return { operationId, solutionId: op.solutionId, config, adapter, engine, baseline };
@@ -265,59 +292,78 @@ export async function insertPendingAttachment(
 }
 
 /**
- * Persist everything the run changed, atomically: record upserts/deletes on
- * the transactional layer, the reporting projection of each new history
- * entry, and the ledger flip (pending → committed) for every storage_key the
- * new entries reference — the v1 synchronous in-transaction projection
- * (ARCHITECTURE.md "Hosting options"); the outbox/async upgrade replaces this
- * call body, not its callers.
+ * Persist everything the run changed, atomically: new records inserted,
+ * changed records patched, deleted records removed, the reporting projection
+ * of each new history entry, and the ledger flip (pending → committed) for
+ * every storage_key the new entries reference — the v1 synchronous
+ * in-transaction projection (ARCHITECTURE.md "Hosting options"); the
+ * outbox/async upgrade replaces this call body, not its callers.
+ *
+ * A changed record is never rewritten whole (SERVER_DATA_LOADING §3): only the
+ * fields that differ from load are merged in, and new entries are appended, so
+ * a concurrent run's entries and untouched fields survive.
  */
 export async function writeBack(db: Db, host: OperationHost): Promise<{ created: number; changed: number; deleted: number }> {
   const current = host.adapter.allRecords();
   const currentIds = new Set(current.map((r) => r.id));
 
-  const upserts: RecordInstance[] = [];
+  const inserts: RecordInstance[] = [];
+  const updates: { record: RecordInstance; fields: Record<string, unknown> | null; entries: ActivityHistoryEntry[] }[] = [];
   const newEntries: { record: RecordInstance; entry: ActivityHistoryEntry }[] = [];
-  let created = 0;
-  let changed = 0;
   for (const record of current) {
     const base = host.baseline.get(record.id);
-    if (base && base.json === JSON.stringify(record)) continue;
-    upserts.push(record);
-    // No baseline ⇒ the run brought it into being; a baseline that no longer
-    // matches ⇒ the run changed it. The two counts feed the perf log's
-    // `write_back` span (PERFORMANCE_LOGGING.md §4) — worked out here because
-    // this loop is where the answer already exists.
-    if (base) changed++; else created++;
-    for (const entry of record.activityHistory.slice(base?.historyLen ?? 0)) {
-      newEntries.push({ record, entry });
+    // No history was loaded, so every entry the record holds is this run's.
+    const entries = record.activityHistory;
+    for (const entry of entries) newEntries.push({ record, entry });
+    // No baseline ⇒ the run brought it into being.
+    if (!base) {
+      inserts.push(record);
+      continue;
     }
+    // The engine never removes a field; if one has gone, something is wrong,
+    // and a patch cannot say "remove" — refuse rather than guess.
+    for (const key of base.keys()) {
+      if (!(key in record.customFields)) {
+        throw new Error(`Write-back: record '${record.id}' lost its field '${key}' during the run`);
+      }
+    }
+    const fields: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record.customFields)) {
+      if (base.get(key) !== JSON.stringify(value)) fields[key] = value;
+    }
+    const hasFields = Object.keys(fields).length > 0;
+    if (!hasFields && entries.length === 0) continue;
+    updates.push({ record, fields: hasFields ? fields : null, entries });
   }
   const deletes = [...host.baseline.keys()].filter((id) => !currentIds.has(id));
-  const counts = { created, changed, deleted: deletes.length };
+  // The perf log's `write_back` counts (PERFORMANCE_LOGGING.md §4).
+  const counts = { created: inserts.length, changed: updates.length, deleted: deletes.length };
 
-  if (upserts.length === 0 && deletes.length === 0 && newEntries.length === 0) return counts;
+  if (inserts.length === 0 && updates.length === 0 && deletes.length === 0) return counts;
 
   await db.transaction(async (tx) => {
-    for (const record of upserts) {
-      await tx
-        .insert(records)
-        .values({
-          operationId: host.operationId,
-          id: record.id,
-          typeRef: record.typeRef,
-          customFields: record.customFields,
-          activityHistory: record.activityHistory,
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [records.operationId, records.id],
-          set: {
-            customFields: record.customFields,
-            activityHistory: record.activityHistory,
-            updatedAt: new Date(),
-          },
-        });
+    for (const record of inserts) {
+      await tx.insert(records).values({
+        operationId: host.operationId,
+        id: record.id,
+        typeRef: record.typeRef,
+        customFields: record.customFields,
+        activityHistory: record.activityHistory,
+        updatedAt: new Date(),
+      });
+    }
+    for (const { record, fields, entries } of updates) {
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      if (fields) set.customFields = sql`${records.customFields} || ${JSON.stringify(fields)}::jsonb`;
+      if (entries.length > 0) set.activityHistory = sql`${records.activityHistory} || ${JSON.stringify(entries)}::jsonb`;
+      const updated = await tx
+        .update(records)
+        .set(set)
+        .where(and(eq(records.operationId, host.operationId), eq(records.id, record.id)))
+        .returning({ id: records.id });
+      // No row ⇒ another request deleted it while this run held it. Throwing
+      // rolls the whole transaction back, reporting rows included.
+      if (updated.length === 0) throw new RecordDeletedMeanwhileError(record.id);
     }
     if (deletes.length > 0) {
       await tx.delete(records).where(and(eq(records.operationId, host.operationId), inArray(records.id, deletes)));
