@@ -4,7 +4,7 @@
 // the store uses prefixed ids (rt_assets) — the bridge owns that translation.
 
 import { withModelTypes, resolvedCaptureLists } from './modelProjection';
-import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type Quotas, type RecordsHost, type RecordsMutationHost, type ServiceModuleDef, type WriteThroughMutationHost } from '@fluxus/dsl';
+import { FkPointer, parseFunction, servicesSchema, type DslRecord, type DslSchema, type EvalHost, type QueryExpr, type Quotas, type RecordQuery, type RecordsHost, type RecordsMutationHost, type ServiceModuleDef, type WriteThroughMutationHost } from '@fluxus/dsl';
 import type {
   ActivityRawDef,
   AttributeDef,
@@ -194,7 +194,43 @@ export function buildRecordsHost(adapter: WaitingStore, config: ClientSolutionCo
       const rt = byShortName.get(type);
       return rt ? Object.fromEntries(rt.custom_fields.map((cf) => [cf.key, cf.type])) : null;
     },
+    query: adapter.queryRecords
+      ? (query) => mapMaybe(adapter.queryRecords!(storeQuery(query)), (answer) => (typeof answer === 'number' ? answer : answer.map(toDslRecord)))
+      : undefined,
     mutate: adapter.savepoint ? writeThroughMutations(adapter, byShortName) : stagedMutations(adapter, byShortName),
+  };
+}
+
+/** A record query in the store's ids: scripts name types short (`jobs`), the store knows them as `rt_jobs`. */
+function storeQuery(query: RecordQuery): RecordQuery {
+  const part = (p: QueryExpr): QueryExpr => {
+    switch (p.kind) {
+      case 'field':
+        return { ...p, path: p.path.map((step) => ({ ...step, type: fullId(step.type) })) };
+      case 'binary':
+        return { ...p, left: part(p.left), right: part(p.right) };
+      case 'not':
+      case 'neg':
+        return { ...p, operand: part(p.operand) };
+      case 'in':
+        return { ...p, target: part(p.target), items: p.items.map(part) };
+      case 'between':
+        return { ...p, target: part(p.target), lower: part(p.lower), upper: part(p.upper) };
+      case 'like':
+        return { ...p, target: part(p.target), pattern: part(p.pattern) };
+      case 'isnull':
+        return { ...p, target: part(p.target) };
+      case 'call':
+        return { ...p, args: p.args.map(part) };
+      default:
+        return p;
+    }
+  };
+  return {
+    ...query,
+    type: fullId(query.type),
+    where: query.where.map(part),
+    orderBy: query.orderBy.map((o) => ({ ...o, key: part(o.key) })),
   };
 }
 

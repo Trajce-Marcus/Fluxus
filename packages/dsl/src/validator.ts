@@ -12,6 +12,7 @@ import type { Arg, Expr, FunctionDecl, Stmt } from './ast';
 import { parseExpression, parseFunction, parseScript } from './parser';
 import { FluxSyntaxError } from './errors';
 import type { ServiceModuleDef } from './host';
+import { analyseFilter, type QuerySchema } from './queryFilter';
 
 // ── Schema input (derived from the SDM by the host) ─────────────────────────────
 
@@ -214,8 +215,11 @@ type Shape =
   | { kind: 'modelRoot' }                           // the SDM's own collections
   | { kind: 'serviceModule'; name: string }
   | { kind: 'record'; type: string }
-  // collection: bare `records.<type>` (create lives here); filtered: a where() ran (D13)
-  | { kind: 'recordList'; type: string; collection?: boolean; filtered?: boolean }
+  // collection: bare `records.<type>` (create lives here); filtered: a where() ran (D13).
+  // query: how far a chain that runs in the database has got (SERVER_DATA_LOADING
+  // §5.1) — where* then orderby? then top?; absent once the rest runs in memory,
+  // which is also what a list held in a variable is (ruling 8).
+  | { kind: 'recordList'; type: string; collection?: boolean; filtered?: boolean; query?: 'where' | 'ordered' | 'topped' }
   | { kind: 'rowList'; keys: string[] }             // result of select()
   | { kind: 'row'; keys: string[] }
   | { kind: 'scalarList' }
@@ -346,7 +350,7 @@ class Validator {
             this.error(stmt, `Unknown variable '${name}' — declare it with 'let ${name} = …'`);
             return;
           }
-          scope.set(name, shape);
+          scope.set(name, held(shape));
           return;
         }
         const object = this.check(stmt.target.object, null);
@@ -425,7 +429,7 @@ class Validator {
       this.error(here, `'${name}' is already declared in this block`);
       return;
     }
-    scope.set(name, shape);
+    scope.set(name, held(shape));
   }
 
   private scopeWith(name: string): Map<string, Shape> | null {
@@ -573,7 +577,7 @@ class Validator {
           this.error(expr, `Unknown record type '${name}'`);
           return UNKNOWN;
         }
-        return { kind: 'recordList', type: name, collection: true };
+        return { kind: 'recordList', type: name, collection: true, query: 'where' };
       }
 
       case 'modelRoot': {
@@ -584,7 +588,7 @@ class Validator {
           this.error(expr, `Unknown model collection '${name}'`);
           return UNKNOWN;
         }
-        return { kind: 'recordList', type, collection: true };
+        return { kind: 'recordList', type, collection: true, query: 'where' };
       }
 
       case 'servicesRoot': {
@@ -611,7 +615,7 @@ class Validator {
         const field = this.fieldOf(object.type, name);
         if (field !== null) return this.fieldShape(field);
         const reverse = this.reverseOf(object.type, name);
-        if (reverse !== null) return { kind: 'recordList', type: reverse };
+        if (reverse !== null) return { kind: 'recordList', type: reverse, query: 'where' };
         this.error(expr, `'${object.type}' has no field '${name}'`);
         return UNKNOWN;
       }
@@ -853,19 +857,34 @@ class Validator {
     const innerType = object.kind === 'recordList' ? object.type : outerItemType;
     const checkArg = (arg: Arg) => this.check(arg.value, innerType);
 
+    // Where the chain still runs in the database, its filters and sort keys
+    // must be able to become SQL (SERVER_DATA_LOADING §5.2, §5.6).
+    const stage = object.kind === 'recordList' ? object.query : undefined;
+    const inDatabase = (arg: Arg) => {
+      if (object.kind === 'recordList') this.queryFilter(arg.value, object.type, method === 'orderby');
+    };
+
     switch (method) {
       case 'where':
         if (expr.args.length !== 1) this.error(expr, 'where() takes one condition');
         expr.args.forEach(checkArg);
-        return object.kind === 'recordList' ? { ...object, collection: false, filtered: true } : object;
+        if (stage === 'where') expr.args.forEach(inDatabase);
+        return object.kind === 'recordList'
+          ? { ...object, collection: false, filtered: true, query: stage === 'where' ? 'where' : undefined }
+          : object;
       case 'top':
         if (expr.args.length !== 1) this.error(expr, 'top() takes one number');
         expr.args.forEach((arg) => this.check(arg.value, outerItemType));
-        return object.kind === 'recordList' ? { ...object, collection: false } : object;
+        return object.kind === 'recordList'
+          ? { ...object, collection: false, query: stage === 'where' || stage === 'ordered' ? 'topped' : undefined }
+          : object;
       case 'orderby':
         if (expr.args.length === 0) this.error(expr, 'orderBy() needs at least one field');
         expr.args.forEach(checkArg);
-        return object.kind === 'recordList' ? { ...object, collection: false } : object;
+        if (stage === 'where') expr.args.forEach(inDatabase);
+        return object.kind === 'recordList'
+          ? { ...object, collection: false, query: stage === 'where' ? 'ordered' : undefined }
+          : object;
       case 'select': {
         if (expr.args.length === 0) this.error(expr, 'select() needs at least one field');
         const keys: string[] = [];
@@ -885,6 +904,25 @@ class Validator {
         this.error(expr, `Unknown chain method '${method}'`);
         return UNKNOWN;
     }
+  }
+
+  /** Report the parts of a filter or sort key that cannot become SQL (§5.2). */
+  private queryFilter(expr: Expr, type: string, sortKey: boolean): void {
+    for (const refusal of analyseFilter(expr, type, this.querySchema(), MODEL_PREFIX, sortKey).refusals) {
+      this.error(refusal.expr, refusal.message);
+    }
+  }
+
+  private querySchema(): QuerySchema {
+    return {
+      fields: (type) => {
+        const schema = this.schema.types[type];
+        if (!schema) return null;
+        return Object.fromEntries(Object.entries(schema.fields).map(([key, field]) => [key, field.type ?? 'text']));
+      },
+      fkTarget: (type, key) => this.schema.types[type]?.fields[key]?.fkTarget ?? null,
+      reverseRef: (type, name) => this.reverseOf(type, name) !== null,
+    };
   }
 
   // ── Schema lookups (case-insensitive) ─────────────────────────────────────────
@@ -931,6 +969,11 @@ class Validator {
         return UNKNOWN;
     }
   }
+}
+
+/** A list held in a variable is filtered in memory (ruling 8), not queried. */
+function held(shape: Shape): Shape {
+  return shape.kind === 'recordList' && shape.query ? { ...shape, query: undefined } : shape;
 }
 
 /** `queue`'s operand must be a call on a member chain rooted at `services`. */

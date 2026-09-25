@@ -44,11 +44,10 @@ describe('a numeric field holds a number', () => {
     expect(node.customFields.budget_cost).toBe(480000);
   });
 
-  // Blank means blank everywhere; turning it into null here would be a second
-  // change riding on this one.
-  it('leaves a blank blank', () => {
+  // A blank is null (2026-09-26) — this used to pin that it stayed ''.
+  it('stores a blank as null', () => {
     const node = adapter().createRecord('rt_cbs_nodes', { code: '1300', budget_cost: '' });
-    expect(node.customFields.budget_cost).toBe('');
+    expect(node.customFields.budget_cost).toBeNull();
   });
 
   // A typo stays visible rather than silently becoming null.
@@ -71,5 +70,32 @@ describe('a numeric field holds a number', () => {
     const total = (store.getRecord(a.id).customFields.budget_cost as number)
       + (store.getRecord(b.id).customFields.budget_cost as number);
     expect(total).toBe(1080000);
+  });
+});
+
+// A blank is stored as null, never '' (the user's ruling, 2026-09-26): whatever
+// the field's type, whitespace-only text included, on create and on update.
+describe('a blank is null', () => {
+  it('a field with no value starts as null, and a blank default is null too', () => {
+    const node = adapter().createRecord('rt_cbs_nodes', {});
+    expect(node.customFields).toEqual({ code: null, budget_cost: null, budget_qty: null });
+  });
+
+  it('blank and whitespace-only text is stored as null', () => {
+    const node = adapter().createRecord('rt_cbs_nodes', { code: '   ', budget_qty: '' });
+    expect(node.customFields.code).toBeNull();
+    expect(node.customFields.budget_qty).toBeNull();
+  });
+
+  it('an update that blanks a field stores null', () => {
+    const store = adapter();
+    const node = store.createRecord('rt_cbs_nodes', { code: '1500', budget_cost: '10' });
+    store.updateRecord(node.id, { code: '', budget_cost: ' ' });
+    expect(store.getRecord(node.id).customFields).toMatchObject({ code: null, budget_cost: null });
+  });
+
+  it('text with content keeps its spaces', () => {
+    const node = adapter().createRecord('rt_cbs_nodes', { code: ' 16 ' });
+    expect(node.customFields.code).toBe(' 16 ');
   });
 });

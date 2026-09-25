@@ -67,9 +67,10 @@ const errors = (src: string) =>
 describe('model.* — the collections', () => {
   it('lists record types with the name a script can actually use', () => {
     const rows = run('model.record_types.select(id, query_name)') as Record<string, unknown>[];
+    // By id: a query without orderby answers in id order (SERVER_DATA_LOADING §5.3).
     expect(rows).toEqual([
-      { id: 'rt_projects', query_name: 'projects' },
       { id: 'rt_people', query_name: 'people' },
+      { id: 'rt_projects', query_name: 'projects' },
     ]);
   });
 

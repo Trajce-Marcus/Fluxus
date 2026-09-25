@@ -225,7 +225,7 @@ describe('opt-in fails cleanly, and differently, on each side', () => {
 describe('derived columns', () => {
   it('query_name is the pasteable name, and records.<query_name> actually resolves', () => {
     const names = run('model.record_types.select(query_name)') as Record<string, unknown>[];
-    expect(names).toEqual([{ query_name: 'widgets' }, { query_name: 'empty' }]);
+    expect(names).toEqual([{ query_name: 'empty' }, { query_name: 'widgets' }]); // by id (§5.3)
     expect(() => run('records.widgets.count')).not.toThrow();
   });
 
@@ -282,9 +282,9 @@ describe('derived columns', () => {
     ];
     const rows = runOn(fns, 'model.functions.select(id, params)') as Record<string, unknown>[];
     expect(rows).toEqual([
-      { id: 'fn_none', params: '[]' },
       { id: 'fn_bad', params: null },
       { id: 'fn_empty', params: null },
+      { id: 'fn_none', params: '[]' },
       { id: 'fn_two', params: '["a","b"]' },
     ]);
   });
@@ -297,8 +297,8 @@ describe('derived columns', () => {
     ];
     const rows = runOn(fns, 'model.functions.select(id, params)') as Record<string, unknown>[];
     expect(rows).toEqual([
-      { id: 'fn_lines', params: '["a","b"]' },
       { id: 'fn_comment', params: '["a"]' },
+      { id: 'fn_lines', params: '["a","b"]' },
     ]);
   });
 });
@@ -347,7 +347,7 @@ describe('what the chain can and cannot do over the model', () => {
       { query_name: 'empty' },
       { query_name: 'widgets' },
     ]);
-    expect(runOn(bare, 'model.record_types.values(query_name)')).toEqual(['widgets', 'empty']);
+    expect(runOn(bare, 'model.record_types.values(query_name)')).toEqual(['empty', 'widgets']); // by id (§5.3)
     expect((runOn(bare, 'model.fields.top(1)') as unknown[]).length).toBe(1);
   });
 

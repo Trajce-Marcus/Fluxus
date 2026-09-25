@@ -1037,8 +1037,8 @@ export const appRouter = t.router({
               // make a documented capability silently absent.
               invoke: (activityId, params) => host.engine.invoke(activityId, params, anchorRecord),
               // Raised: an inspection tool, where 1s is too short to be
-              // interactive and a whole type is still read at once until
-              // record queries run as SQL. Hooks keep DEFAULT_QUOTAS.
+              // interactive and a script may pull back more than a hook
+              // would. Hooks keep DEFAULT_QUOTAS.
               quotas: { maxRows: 100_000, maxSteps: 2_000_000, timeoutMs: 15_000 },
             });
             return {

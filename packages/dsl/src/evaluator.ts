@@ -2,6 +2,9 @@ import type { Arg, Call, Expr, FunctionDecl, Position, QueueStmt, Script, Stmt }
 import { parseExpression, parseFunction, parseScript } from './parser';
 import { FluxFailError, FluxSyntaxError } from './errors';
 import { DEFAULT_QUOTAS, DslRecord, EvalHost, FkPointer, MutationOp, Quotas, RecordsHost, RecordsMutationHost, ServiceFunctionDef, ServiceModuleDef, WriteThroughMutationHost } from './host';
+import type { QueryExpr, QueryFieldStep, QueryFunction, RecordQuery } from './host';
+import { analyseFilter, declaredKey, fieldValueType, REFUSED, type FilterAnalysis, type QuerySchema, type QueryValueType } from './queryFilter';
+import { addToInstant, article, convertValue, parseInstant, queryCompare, queryEquals, queryLike, queryPartType as partType, readStored, valueTypeOf } from './queryValues';
 
 /** Model collections are ordinary record types under this prefix, which no
  *  script ever writes — `model.record_types` reads `sdm_record_types`. */
@@ -179,6 +182,12 @@ function isThenable(value: unknown): value is Promise<unknown> {
 
 const CHAIN_METHODS = new Set(['where', 'orderby', 'select', 'values', 'top']);
 const DATE_METHODS = new Set(['adddays', 'addmonths', 'addyears']);
+/** The chain steps a record query takes into the database: where*, orderby?, top? (§5.1). */
+const QUERY_STEPS = new Set(['where', 'orderby', 'top']);
+
+function isQueryEnd(name: string): name is 'count' | 'first' {
+  return name === 'count' || name === 'first';
+}
 
 function isRecord(value: unknown): value is DslRecord {
   return typeof value === 'object' && value !== null && 'id' in value && 'type' in value && 'fields' in value;
@@ -278,7 +287,11 @@ function leafShaped(expr: Expr): boolean {
     case 'binary': {
       let known = leafShapeCache.get(expr);
       if (known === undefined) {
-        known = expr.kind === 'member' ? leafShaped(expr.object) : leafShaped(expr.left) && leafShaped(expr.right);
+        // `.count` / `.first` over anything but a name may end a record query,
+        // which the database answers (SERVER_DATA_LOADING §5.1).
+        known = expr.kind === 'member'
+          ? leafShaped(expr.object) && !(isQueryEnd(expr.name) && expr.object.kind !== 'ident')
+          : leafShaped(expr.left) && leafShaped(expr.right);
         leafShapeCache.set(expr, known);
       }
       return known;
@@ -660,6 +673,7 @@ class Evaluator {
         return expr.negated ? !isNull : isNull;
       }
       case 'member': {
+        if (isQueryEnd(expr.name) && expr.object.kind !== 'ident') return yield* this.chain(expr, scope);
         let object = this.leaf(expr.object, scope);
         if (object === NOT_LEAF) object = yield* this.eval(expr.object, scope);
         if (!this.waiting) return this.memberImmediate(object, expr.name, expr.pos);
@@ -679,9 +693,9 @@ class Evaluator {
         return object[index] ?? null;
       }
       case 'call':
-        return expr.callee.kind === 'ident'
-          ? yield* this.builtin(expr.callee.name, expr, scope)
-          : yield* this.call(expr, scope);
+        if (expr.callee.kind === 'ident') return yield* this.builtin(expr.callee.name, expr, scope);
+        if (expr.callee.kind === 'member' && QUERY_STEPS.has(expr.callee.name)) return yield* this.chain(expr, scope);
+        return yield* this.call(expr, scope);
     }
   }
 
@@ -851,11 +865,23 @@ class Evaluator {
     if (!this.waiting) return this.memberImmediate(object, name, pos);
     const now = this.memberNow(object, name, pos);
     if (now !== NOT_LEAF) return now;
-    if (object instanceof RecordsRoot) return yield* this.readAll(this.collectionType(object, name, pos), pos);
     if (object instanceof FkPointer) {
       const target = yield* this.readById(object.targetType, object.id, pos);
       return target === null ? null : yield* this.member(target, name, pos);
     }
+    return yield* this.collection(object, name, pos);
+  }
+
+  /**
+   * `records.<type>` or a record's reverse reference — the two things
+   * `memberNow` leaves besides a reference to follow. A host that declares the
+   * type's fields answers it as a record query (§5.1); one that does not gets
+   * the whole type, as before.
+   */
+  private *collection(object: unknown, name: string, pos: Position): Gen<unknown> {
+    const start = this.queryStart(object, name, pos);
+    if (start !== null) return yield* this.runQuery(this.newQuery(start, pos), pos, null);
+    if (object instanceof RecordsRoot) return yield* this.readAll(this.collectionType(object, name, pos), pos);
     const { record, reverse } = this.reverseOf(object, name);
     return this.reverseRows(record, reverse, yield* this.readAll(reverse.sourceType, pos));
   }
@@ -868,13 +894,12 @@ class Evaluator {
   private memberImmediate(object: unknown, name: string, pos: Position): unknown {
     const now = this.memberNow(object, name, pos);
     if (now !== NOT_LEAF) return now;
-    if (object instanceof RecordsRoot) return this.readAllNow(this.collectionType(object, name, pos), pos);
     if (object instanceof FkPointer) {
       const target = this.readByIdNow(object.targetType, object.id, pos);
       return target === null ? null : this.memberImmediate(target, name, pos);
     }
-    const { record, reverse } = this.reverseOf(object, name);
-    return this.reverseRows(record, reverse, this.readAllNow(reverse.sourceType, pos));
+    // The immediate evaluator never waits, so the generator finishes at once.
+    return runImmediate(this.collection(object, name, pos));
   }
 
   /** The type a collection name reads — `records.<name>` or `model.<name>`. */
@@ -1014,107 +1039,114 @@ class Evaluator {
       } else {
         object = ((this.v = this.leaf(callee.object, scope)) !== NOT_LEAF ? this.v : yield* this.eval(callee.object, scope));
       }
-
-      // FK auto-deref extends to method calls: wo.workgroup_id.update({...})
-      if (object instanceof FkPointer) {
-        object = yield* this.readById(object.targetType, object.id, expr.pos);
-      }
-
-      if (object === null) return null; // null-safe: method on null is null
-
-      if (method === 'update' && isRecord(object)) {
-        return yield* this.updateRecord(object, yield* this.fieldsArg(expr, scope, 'update'), expr.pos);
-      }
-      if (method === 'update' && Array.isArray(object)) {
-        // Bulk update as chain terminal — every element must carry record identity
-        const fields = yield* this.fieldsArg(expr, scope, 'update');
-        for (const item of object) {
-          // The model is read-only whatever route reaches it. Guarding the
-          // rows rather than the root catches the chain terminal too, which
-          // otherwise fell through to the store and failed as "record not
-          // found" — a confusing answer to an act that is simply not allowed.
-          if (isRecord(item) && item.type.startsWith(MODEL_PREFIX)) {
-            throw new FluxRuntimeError('The model is read-only — it changes through the SDM editors, not a script', expr.pos);
-          }
-          if (!isRecord(item)) {
-            throw new FluxRuntimeError(
-              'Only records can be updated — projected rows have no identity',
-              expr.pos,
-            );
-          }
-        }
-        for (const item of object) {
-          this.tick(expr.pos);
-          yield* this.updateRecord(item as DslRecord, fields, expr.pos);
-        }
-        return object.length;
-      }
-      if (method === 'delete' && isRecord(object)) {
-        this.noArgs(expr, 'delete');
-        return yield* this.deleteRecord(object, expr.pos);
-      }
-      if (method === 'delete' && Array.isArray(object)) {
-        // Bulk delete as chain terminal — the selection decides what goes, the
-        // same way bulk update decides what changes.
-        this.noArgs(expr, 'delete');
-        for (const item of object) {
-          if (!isRecord(item)) {
-            throw new FluxRuntimeError(
-              'Only records can be deleted — projected rows have no identity',
-              expr.pos,
-            );
-          }
-        }
-        for (const item of object) {
-          this.tick(expr.pos);
-          yield* this.deleteRecord(item as DslRecord, expr.pos);
-        }
-        return object.length;
-      }
-      if (method === 'create' && (Array.isArray(object) || isRecord(object))) {
-        throw new FluxRuntimeError('create is collection-level: records.<type>.create({...})', expr.pos);
-      }
-
-      if (Array.isArray(object) && CHAIN_METHODS.has(method)) {
-        return yield* this.chainMethod(object, method, expr.args, scope, expr.pos);
-      }
-
-      if (object instanceof Date && DATE_METHODS.has(method)) {
-        const n = yield* this.numberArg(expr, scope, `${method} needs a number`);
-        const out = new Date(object.getTime());
-        if (method === 'adddays') out.setDate(out.getDate() + n);
-        else if (method === 'addmonths') out.setMonth(out.getMonth() + n);
-        else out.setFullYear(out.getFullYear() + n);
-        return out;
-      }
-
-      // Service module functions (Phase 3): registry-resolved, purity-checked
-      if (object instanceof ServiceModuleValue) {
-        const resolved = object.fn(method);
-        if (resolved === null) {
-          throw new FluxRuntimeError(`Service '${object.def.name}' has no function '${method}'`, expr.pos);
-        }
-        const label = `services.${object.def.name}.${resolved.key}`;
-        if (resolved.def.kind === 'effect' && this.mode !== 'mutate') {
-          throw new FluxRuntimeError(`'${label}' has effects — it runs in after hooks only (prefer 'queue')`, expr.pos);
-        }
-        const args: unknown[] = [];
-        for (const arg of expr.args) args.push(((this.v = this.leaf(arg.value, scope)) !== NOT_LEAF ? this.v : yield* this.eval(arg.value, scope)));
-        const result = resolved.def.fn(...args);
-        if (isThenable(result) && !this.waiting) {
-          result.then(undefined, () => undefined);
-          throw new FluxRuntimeError(
-            `'${label}' is asynchronous — this evaluation cannot wait for it; use 'queue' for fire-and-forget`,
-            expr.pos,
-          );
-        }
-        return yield* this.settle(result, expr.pos, `'${label}'`);
-      }
-
-      throw new FluxRuntimeError(`Unknown method '${method}' on ${describe(object)}`, expr.pos);
+      return yield* this.callOn(object, expr, scope);
     }
 
     throw new FluxRuntimeError('This is not something that can be called', expr.pos);
+  }
+
+  /** A method call on an object already worked out — what `call` does after its object. */
+  private *callOn(object: unknown, expr: Expr & { kind: 'call' }, scope: Scope): Gen<unknown> {
+    const method = (expr.callee as Expr & { kind: 'member' }).name;
+
+    // FK auto-deref extends to method calls: wo.workgroup_id.update({...})
+    if (object instanceof FkPointer) {
+      object = yield* this.readById(object.targetType, object.id, expr.pos);
+    }
+
+    if (object === null) return null; // null-safe: method on null is null
+
+    if (method === 'update' && isRecord(object)) {
+      return yield* this.updateRecord(object, yield* this.fieldsArg(expr, scope, 'update'), expr.pos);
+    }
+    if (method === 'update' && Array.isArray(object)) {
+      // Bulk update as chain terminal — every element must carry record identity
+      const fields = yield* this.fieldsArg(expr, scope, 'update');
+      for (const item of object) {
+        // The model is read-only whatever route reaches it. Guarding the
+        // rows rather than the root catches the chain terminal too, which
+        // otherwise fell through to the store and failed as "record not
+        // found" — a confusing answer to an act that is simply not allowed.
+        if (isRecord(item) && item.type.startsWith(MODEL_PREFIX)) {
+          throw new FluxRuntimeError('The model is read-only — it changes through the SDM editors, not a script', expr.pos);
+        }
+        if (!isRecord(item)) {
+          throw new FluxRuntimeError(
+            'Only records can be updated — projected rows have no identity',
+            expr.pos,
+          );
+        }
+      }
+      for (const item of object) {
+        this.tick(expr.pos);
+        yield* this.updateRecord(item as DslRecord, fields, expr.pos);
+      }
+      return object.length;
+    }
+    if (method === 'delete' && isRecord(object)) {
+      this.noArgs(expr, 'delete');
+      return yield* this.deleteRecord(object, expr.pos);
+    }
+    if (method === 'delete' && Array.isArray(object)) {
+      // Bulk delete as chain terminal — the selection decides what goes, the
+      // same way bulk update decides what changes.
+      this.noArgs(expr, 'delete');
+      for (const item of object) {
+        if (!isRecord(item)) {
+          throw new FluxRuntimeError(
+            'Only records can be deleted — projected rows have no identity',
+            expr.pos,
+          );
+        }
+      }
+      for (const item of object) {
+        this.tick(expr.pos);
+        yield* this.deleteRecord(item as DslRecord, expr.pos);
+      }
+      return object.length;
+    }
+    if (method === 'create' && (Array.isArray(object) || isRecord(object))) {
+      throw new FluxRuntimeError('create is collection-level: records.<type>.create({...})', expr.pos);
+    }
+
+    if (Array.isArray(object) && CHAIN_METHODS.has(method)) {
+      return yield* this.chainMethod(object, method, expr.args, scope, expr.pos);
+    }
+
+    if (object instanceof Date && DATE_METHODS.has(method)) {
+      const n = yield* this.numberArg(expr, scope, `${method} needs a number`);
+      if (this.inFilter > 0) return addToInstant(object, method as 'adddays' | 'addmonths' | 'addyears', n);
+      const out = new Date(object.getTime());
+      if (method === 'adddays') out.setDate(out.getDate() + n);
+      else if (method === 'addmonths') out.setMonth(out.getMonth() + n);
+      else out.setFullYear(out.getFullYear() + n);
+      return out;
+    }
+
+    // Service module functions (Phase 3): registry-resolved, purity-checked
+    if (object instanceof ServiceModuleValue) {
+      const resolved = object.fn(method);
+      if (resolved === null) {
+        throw new FluxRuntimeError(`Service '${object.def.name}' has no function '${method}'`, expr.pos);
+      }
+      const label = `services.${object.def.name}.${resolved.key}`;
+      if (resolved.def.kind === 'effect' && this.mode !== 'mutate') {
+        throw new FluxRuntimeError(`'${label}' has effects — it runs in after hooks only (prefer 'queue')`, expr.pos);
+      }
+      const args: unknown[] = [];
+      for (const arg of expr.args) args.push(((this.v = this.leaf(arg.value, scope)) !== NOT_LEAF ? this.v : yield* this.eval(arg.value, scope)));
+      const result = resolved.def.fn(...args);
+      if (isThenable(result) && !this.waiting) {
+        result.then(undefined, () => undefined);
+        throw new FluxRuntimeError(
+          `'${label}' is asynchronous — this evaluation cannot wait for it; use 'queue' for fire-and-forget`,
+          expr.pos,
+        );
+      }
+      return yield* this.settle(result, expr.pos, `'${label}'`);
+    }
+
+    throw new FluxRuntimeError(`Unknown method '${method}' on ${describe(object)}`, expr.pos);
   }
 
   private *builtin(name: string, expr: Expr & { kind: 'call' }, scope: Scope): Gen<unknown> {
@@ -1155,7 +1187,7 @@ class Evaluator {
         need(1);
         const raw = ((this.v = this.leaf(args[0].value, scope)) !== NOT_LEAF ? this.v : yield* this.eval(args[0].value, scope));
         if (typeof raw !== 'string') throw new FluxRuntimeError(`date() needs text like '2026-07-01'`, expr.pos);
-        const parsed = new Date(raw.length === 10 ? `${raw}T00:00:00` : raw);
+        const parsed = (this.inFilter > 0 ? parseInstant(raw) : null) ?? new Date(raw.length === 10 ? `${raw}T00:00:00` : raw);
         if (Number.isNaN(parsed.getTime())) throw new FluxRuntimeError(`Invalid date: '${raw}'`, expr.pos);
         return parsed;
       }
@@ -1273,6 +1305,25 @@ class Evaluator {
       case 'where': {
         if (args.length !== 1) throw new FluxRuntimeError('where() takes one condition', pos);
         const cond = args[0].value;
+        // Records whose fields the host declares are filtered by what a query
+        // means (§5.4) — in memory, so nothing is refused (ruling 8).
+        if (this.typedRecords(list)) {
+          const plans = new Map<string, QueryExpr>();
+          const memory = this.memoryQuery(outer);
+          const out: DslRecord[] = [];
+          for (const item of list) {
+            let plan = plans.get(item.type);
+            if (plan === undefined) {
+              plan = yield* this.queryPart(cond, item.type, outer, false, false);
+              plans.set(item.type, plan);
+            }
+            this.tick(cond.pos);
+            let keep = this.qNow(plan, item, memory);
+            if (keep === NOT_LEAF) keep = yield* this.q(plan, item, memory);
+            if (this.qBool(keep, cond.pos)) out.push(item);
+          }
+          return out;
+        }
         const out: unknown[] = [];
         for (const item of list) {
           const scope = this.itemScope(item, outer);
@@ -1284,6 +1335,18 @@ class Evaluator {
       }
       case 'orderby': {
         if (args.length === 0) throw new FluxRuntimeError('orderBy() needs at least one field', pos);
+        if (this.typedRecords(list)) {
+          const plans = new Map<string, { key: QueryExpr; desc: boolean }[]>();
+          for (const item of list) {
+            if (plans.has(item.type)) continue;
+            const keys: { key: QueryExpr; desc: boolean }[] = [];
+            for (const arg of args) {
+              keys.push({ key: yield* this.queryPart(arg.value, item.type, outer, false, true), desc: arg.direction === 'desc' });
+            }
+            plans.set(item.type, keys);
+          }
+          return yield* this.sortRows(list, (row) => plans.get(row.type)!, this.memoryQuery(outer));
+        }
         const decorated: { item: unknown; keys: unknown[] }[] = [];
         for (const item of list) {
           const scope = this.itemScope(item, outer);
@@ -1341,14 +1404,8 @@ class Evaluator {
         }
         return out;
       }
-      case 'top': {
-        if (args.length !== 1) throw new FluxRuntimeError('top() takes one number', pos);
-        const n = ((this.v = this.leaf(args[0].value, outer)) !== NOT_LEAF ? this.v : yield* this.eval(args[0].value, outer));
-        if (typeof n !== 'number' || n < 0) {
-          throw new FluxRuntimeError(`top() needs a non-negative number, got ${describe(n)}`, pos);
-        }
-        return list.slice(0, Math.floor(n));
-      }
+      case 'top':
+        return list.slice(0, yield* this.topCount(args, outer, pos));
       default:
         throw new FluxRuntimeError(`Unknown chain method '${method}'`, pos);
     }
@@ -1376,6 +1433,808 @@ class Evaluator {
     };
   }
 
+
+  // ── Record queries (SERVER_DATA_LOADING §5) ───────────────────────────────────
+  //
+  // A chain that starts at `records.<type>` or a reverse reference and goes on
+  // with where*, orderby?, top? — or ends with .count / .first — is handed to
+  // the host as one description (`RecordQuery`). The rest of the chain runs in
+  // memory over what comes back. A host that answers queries itself (the
+  // server's store, in SQL) gets only filters that can become SQL and refuses
+  // the rest (ruling 14); otherwise the evaluator answers the description in
+  // memory, by the same rules (§5.4).
+
+  /** Whether the host answers queries itself. Never while this script holds staged writes it could not see. */
+  private answersInDatabase(): boolean {
+    return this.host.records?.query !== undefined && this.staged.length === 0;
+  }
+
+  private schemaForQueries: QuerySchema | null = null;
+
+  /**
+   * Above zero while a filter's row-independent parts are worked out: there
+   * `date('…')` and the date methods read in UTC, as the query does (ruling
+   * 18). Everywhere else they keep today's rules (§6).
+   */
+  private inFilter = 0;
+
+  /** The model, as the filter walk reads it. */
+  private querySchema(host: RecordsHost): QuerySchema {
+    return (this.schemaForQueries ??= {
+      fields: (type) => host.declaredFields?.(type) ?? null,
+      fkTarget: (type, key) => host.fkTarget(type, key),
+      reverseRef: (type, name) => host.reverseRef(type, name) !== null,
+    });
+  }
+
+  /** Whether a list holds only records whose fields the host declares — what the §5.4 rules need. */
+  private typedRecords(list: unknown[]): list is DslRecord[] {
+    const host = this.host.records;
+    if (!host?.declaredFields || list.length === 0) return false;
+    return list.every((item) => isRecord(item) && host.declaredFields!(item.type) !== null);
+  }
+
+  /**
+   * Where a query starts: `records.<type>`, or a record's reverse reference
+   * (the source type filtered on its reference field). Null when `name` is
+   * neither, or the host does not declare the type's fields — the type is then
+   * read whole and filtered as before.
+   */
+  private queryStart(object: unknown, name: string, pos: Position): { type: string; where: QueryExpr[] } | null {
+    const host = this.host.records;
+    if (!host?.declaredFields) return null;
+    if (object instanceof RecordsRoot) {
+      const type = this.collectionType(object, name, pos);
+      return host.declaredFields(type) ? { type, where: [] } : null;
+    }
+    if (!isRecord(object)) return null;
+    const reverse = host.reverseRef(object.type, name);
+    if (reverse === null || !host.declaredFields(reverse.sourceType)) return null;
+    const field: QueryExpr = { kind: 'field', path: [{ type: reverse.sourceType, key: reverse.field }], as: 'text', pos };
+    const id: QueryExpr = { kind: 'value', value: object.id, as: 'text', pos };
+    return { type: reverse.sourceType, where: [{ kind: 'binary', op: '=', left: field, right: id, as: 'bool', pos }] };
+  }
+
+  private newQuery(start: { type: string; where: QueryExpr[] }, pos: Position): RecordQuery {
+    return { type: start.type, where: [...start.where], orderBy: [], limit: null, count: false, maxRows: this.quotas.maxRows, pos };
+  }
+
+  /**
+   * A chain of where / orderby / top calls, or a `.count` / `.first`, over
+   * whatever its base is. The longest part the database can take — where*,
+   * then orderby?, then top?, then .count / .first if nothing else followed —
+   * goes as one query; the rest runs in memory over its answer.
+   */
+  private *chain(expr: Expr, scope: Scope): Gen<unknown> {
+    let node = expr;
+    let end: 'count' | 'first' | null = null;
+    if (node.kind === 'member') {
+      end = node.name as 'count' | 'first';
+      node = node.object;
+    }
+    const steps: (Expr & { kind: 'call' })[] = [];
+    while (node.kind === 'call' && node.callee.kind === 'member' && QUERY_STEPS.has(node.callee.name)) {
+      steps.push(node);
+      node = node.callee.object;
+    }
+    steps.reverse();
+
+    // The base: where a query starts, or an ordinary value the steps then run over.
+    let value: unknown = null;
+    let start: { type: string; where: QueryExpr[] } | null = null;
+    if (node.kind === 'member') {
+      let object = (this.v = this.leaf(node.object, scope)) !== NOT_LEAF ? this.v : yield* this.eval(node.object, scope);
+      if (object instanceof FkPointer) object = yield* this.readById(object.targetType, object.id, node.pos);
+      const now = this.memberNow(object, node.name, node.pos);
+      if (now !== NOT_LEAF) value = now;
+      else {
+        start = this.queryStart(object, node.name, node.pos);
+        if (start === null) value = yield* this.collection(object, node.name, node.pos);
+      }
+    } else {
+      value = (this.v = this.leaf(node, scope)) !== NOT_LEAF ? this.v : yield* this.eval(node, scope);
+    }
+
+    let rest = steps;
+    if (start !== null) {
+      const query = this.newQuery(start, expr.pos);
+      let stage = 0; // 0: where*, 1: after orderby, 2: after top
+      let taken = 0;
+      for (const step of steps) {
+        const method = (step.callee as Expr & { kind: 'member' }).name;
+        if (method === 'top' ? stage > 1 : stage > 0) break;
+        if (method === 'orderby') stage = 1;
+        if (method === 'top') stage = 2;
+        taken++;
+      }
+      const inDatabase = this.answersInDatabase();
+      for (const step of steps.slice(0, taken)) yield* this.addStep(query, step, scope, inDatabase);
+      rest = steps.slice(taken);
+      const takesEnd = end !== null && rest.length === 0 && stage < 2;
+      if (takesEnd) {
+        if (end === 'count') query.count = true;
+        else query.limit = 1;
+      }
+      value = yield* this.runQuery(query, expr.pos, scope, inDatabase);
+      if (takesEnd) return end === 'first' ? ((value as DslRecord[])[0] ?? null) : value;
+    }
+    for (const step of rest) value = yield* this.callOn(value, step, scope);
+    return end === null ? value : yield* this.member(value, end, expr.pos);
+  }
+
+  private *addStep(query: RecordQuery, step: Expr & { kind: 'call' }, scope: Scope, inDatabase: boolean): Gen<void> {
+    const method = (step.callee as Expr & { kind: 'member' }).name;
+    const { args } = step;
+    if (method === 'where') {
+      if (args.length !== 1) throw new FluxRuntimeError('where() takes one condition', step.pos);
+      query.where.push(yield* this.queryPart(args[0].value, query.type, scope, inDatabase, false));
+    } else if (method === 'orderby') {
+      if (args.length === 0) throw new FluxRuntimeError('orderBy() needs at least one field', step.pos);
+      for (const arg of args) {
+        query.orderBy.push({ key: yield* this.queryPart(arg.value, query.type, scope, inDatabase, true), desc: arg.direction === 'desc' });
+      }
+    } else {
+      query.limit = yield* this.topCount(args, scope, step.pos);
+    }
+  }
+
+  private *topCount(args: Arg[], scope: Scope, pos: Position): Gen<number> {
+    if (args.length !== 1) throw new FluxRuntimeError('top() takes one number', pos);
+    const n = (this.v = this.leaf(args[0].value, scope)) !== NOT_LEAF ? this.v : yield* this.eval(args[0].value, scope);
+    if (typeof n !== 'number' || n < 0) {
+      throw new FluxRuntimeError(`top() needs a non-negative number, got ${describe(n)}`, pos);
+    }
+    return Math.floor(n);
+  }
+
+  /**
+   * A filter condition or a sort key as the query holds it. For the database,
+   * a part that cannot become SQL is refused here, naming why (ruling 14); in
+   * memory it runs per row instead.
+   */
+  private *queryPart(expr: Expr, type: string, outer: Scope, inDatabase: boolean, sortKey: boolean): Gen<QueryExpr> {
+    const host = this.recordsHost(expr.pos);
+    const analysis = analyseFilter(expr, type, this.querySchema(host), MODEL_PREFIX, sortKey);
+    if (inDatabase && analysis.refusals.length > 0) {
+      const first = analysis.refusals[0];
+      throw new FluxRuntimeError(first.message, first.expr.pos);
+    }
+    const part = yield* this.resolve(expr, type, outer, analysis);
+    if (!sortKey) this.needBool(part);
+    return part;
+  }
+
+  /**
+   * One part of a filter, turned into what the query holds (§5.2, §5.3): a
+   * part that does not read the row is worked out now and becomes a value,
+   * converted to the type of what it is compared with; fields are read by
+   * their declared type.
+   */
+  private *resolve(expr: Expr, type: string, outer: Scope, analysis: FilterAnalysis): Gen<QueryExpr> {
+    const pos = expr.pos;
+    if (!analysis.row.has(expr)) {
+      let value: unknown;
+      this.inFilter++;
+      try {
+        value = (this.v = this.leaf(expr, outer)) !== NOT_LEAF ? this.v : yield* this.eval(expr, outer);
+      } finally {
+        this.inFilter--;
+      }
+      if (value instanceof FkPointer) value = value.id;
+      return { kind: 'value', value, as: valueTypeOf(value), pos };
+    }
+    if (analysis.refused.has(expr)) return { kind: 'dsl', expr, pos };
+    const host = this.recordsHost(pos);
+    switch (expr.kind) {
+      case 'ident':
+        return this.fieldPart([], type, expr.name, pos);
+      case 'member': {
+        const object = yield* this.resolve(expr.object, type, outer, analysis);
+        const last = object.kind === 'field' ? object.path[object.path.length - 1] : null;
+        const target = last ? host.fkTarget(last.type, last.key) : null;
+        if (object.kind !== 'field' || target === null) throw new FluxRuntimeError(REFUSED.readInside(expr.name), pos);
+        return this.fieldPart(object.path, target, expr.name, pos);
+      }
+      case 'unary': {
+        const operand = yield* this.resolve(expr.operand, type, outer, analysis);
+        if (expr.op === 'not') {
+          this.needBool(operand);
+          return { kind: 'not', operand, pos };
+        }
+        return { kind: 'neg', operand: this.needType(operand, 'number', (got) => `Unary '-' needs a number, got ${got}`), pos };
+      }
+      case 'binary': {
+        const left = yield* this.resolve(expr.left, type, outer, analysis);
+        const right = yield* this.resolve(expr.right, type, outer, analysis);
+        const { op } = expr;
+        if (op === 'and' || op === 'or') {
+          this.needBool(left);
+          this.needBool(right);
+          return { kind: 'binary', op, left, right, as: 'bool', pos };
+        }
+        if (op === '=' || op === '!=' || op === '<' || op === '<=' || op === '>' || op === '>=') {
+          const [l, r] = this.unify([left, right], pos);
+          return { kind: 'binary', op, left: l, right: r, as: 'bool', pos };
+        }
+        const lt = partType(left);
+        const rt = partType(right);
+        if (op === '+' && (lt === 'text' || rt === 'text')) {
+          const joined = (part: QueryExpr) => {
+            const t = partType(part);
+            if (part.kind === 'value') return this.converted(part, 'text');
+            if (t !== null && t !== 'text' && t !== 'number') {
+              throw new FluxRuntimeError(`A query cannot join ${article(t)} value to text with '+'`, part.pos);
+            }
+            return part;
+          };
+          return { kind: 'binary', op, left: joined(left), right: joined(right), as: 'text', pos };
+        }
+        const number = (part: QueryExpr) => this.needType(part, 'number', (got) => `'${op}' needs numbers, got ${got}`);
+        return { kind: 'binary', op, left: number(left), right: number(right), as: 'number', pos };
+      }
+      case 'in': {
+        let target = yield* this.resolve(expr.target, type, outer, analysis);
+        let values: unknown[] = [];
+        const items: QueryExpr[] = [];
+        if (expr.source.kind === 'list' && expr.source.items.some((item) => analysis.row.has(item))) {
+          for (const item of expr.source.items) {
+            const part = yield* this.resolve(item, type, outer, analysis);
+            if (part.kind === 'value') values.push(part.value);
+            else items.push(part);
+          }
+        } else {
+          const source = (this.v = this.leaf(expr.source, outer)) !== NOT_LEAF ? this.v : yield* this.eval(expr.source, outer);
+          values = Array.isArray(source) ? source.slice() : source === null ? [] : [source];
+        }
+        const as = partType(target) ?? items.map(partType).find((t) => t !== null) ?? null;
+        if (as !== null) {
+          if (target.kind === 'value') target = this.converted(target, as);
+          values = values.map((v) => this.convertOrThrow(v, as, pos)).filter((v) => v !== null);
+          for (const item of items) this.sameType(as, item);
+        } else {
+          values = values.map(unwrap).filter((v) => v !== null && v !== undefined);
+        }
+        return { kind: 'in', negated: expr.negated, target, values, items, pos };
+      }
+      case 'between': {
+        const parts = [
+          yield* this.resolve(expr.target, type, outer, analysis),
+          yield* this.resolve(expr.lower, type, outer, analysis),
+          yield* this.resolve(expr.upper, type, outer, analysis),
+        ];
+        const [target, lower, upper] = this.unify(parts, pos);
+        return { kind: 'between', negated: expr.negated, target, lower, upper, pos };
+      }
+      case 'like': {
+        const text = (part: QueryExpr) => this.needType(part, 'text', (got) => `'like' compares text, got ${got}`);
+        return {
+          kind: 'like',
+          negated: expr.negated,
+          target: text(yield* this.resolve(expr.target, type, outer, analysis)),
+          pattern: text(yield* this.resolve(expr.pattern, type, outer, analysis)),
+          pos,
+        };
+      }
+      case 'isnull':
+        return { kind: 'isnull', negated: expr.negated, target: yield* this.resolve(expr.target, type, outer, analysis), pos };
+      case 'call': {
+        const { callee } = expr;
+        const args: QueryExpr[] = [];
+        if (callee.kind === 'member' && DATE_METHODS.has(callee.name)) {
+          if (expr.args.length !== 1) throw new FluxRuntimeError(`${callee.name} needs a number`, pos);
+          const object = yield* this.resolve(callee.object, type, outer, analysis);
+          const n = yield* this.resolve(expr.args[0].value, type, outer, analysis);
+          return {
+            kind: 'call',
+            fn: callee.name as QueryFunction,
+            args: [
+              this.needType(object, 'instant', (got) => `${callee.name} needs a date, got ${got}`),
+              this.needType(n, 'number', (got) => `${callee.name} needs a number, got ${got}`),
+            ],
+            as: 'instant',
+            pos,
+          };
+        }
+        if (callee.kind !== 'ident') break;
+        for (const arg of expr.args) args.push(yield* this.resolve(arg.value, type, outer, analysis));
+        const fn = callee.name as QueryFunction;
+        const arity = (min: number, max = min) => {
+          if (args.length < min || args.length > max) {
+            const wants = min === max ? `${min} argument${min === 1 ? '' : 's'}` : `${min} or ${max} arguments`;
+            throw new FluxRuntimeError(`${fn}() takes ${wants}, got ${args.length}`, pos);
+          }
+        };
+        const text = (part: QueryExpr) => this.needType(part, 'text', (got) => `${fn}() needs text, got ${got}`);
+        const number = (part: QueryExpr) => this.needType(part, 'number', (got) => `${fn}() needs a number, got ${got}`);
+        switch (fn) {
+          case 'len':
+            arity(1);
+            return { kind: 'call', fn, args: [text(args[0])], as: 'number', pos };
+          case 'lower':
+          case 'upper':
+          case 'trim':
+            arity(1);
+            return { kind: 'call', fn, args: [text(args[0])], as: 'text', pos };
+          case 'abs':
+            arity(1);
+            return { kind: 'call', fn, args: [number(args[0])], as: 'number', pos };
+          case 'round':
+            arity(1, 2);
+            return { kind: 'call', fn, args: args.map(number), as: 'number', pos };
+          case 'exact':
+            arity(2);
+            return { kind: 'call', fn, args: this.unify(args, pos), as: 'bool', pos };
+          case 'date': {
+            arity(1);
+            if (partType(args[0]) === 'instant') return args[0];
+            return { kind: 'call', fn, args: [this.needType(args[0], 'text', () => "date() needs text like '2026-07-01'")], as: 'instant', pos };
+          }
+          case 'iif': {
+            arity(3);
+            this.needBool(args[0]);
+            const [a, b] = [args[1], args[2]];
+            const at = partType(a);
+            const bt = partType(b);
+            if (at !== null && bt !== null && at !== bt) throw new FluxRuntimeError(REFUSED.iif(), pos);
+            return { kind: 'call', fn, args, as: at ?? bt, pos };
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    throw new FluxRuntimeError(REFUSED.other(), pos);
+  }
+
+  /** A field read, `name` on a record of `type` after `path` — by the field's declared type (ruling 12). */
+  private fieldPart(path: QueryFieldStep[], type: string, name: string, pos: Position): QueryExpr {
+    if (name === 'id') return { kind: 'field', path: [...path, { type, key: 'id' }], as: 'text', pos };
+    const fields = this.recordsHost(pos).declaredFields?.(type) ?? null;
+    const key = declaredKey(fields, name);
+    if (key === null) throw new FluxRuntimeError(`'${type}' has no field '${name}'`, pos);
+    return { kind: 'field', path: [...path, { type, key }], as: fieldValueType(fields![key]), pos };
+  }
+
+  private convertOrThrow(value: unknown, as: QueryValueType, pos: Position): unknown {
+    const converted = convertValue(value, as);
+    if ('error' in converted) throw new FluxRuntimeError(converted.error, pos);
+    return converted.value;
+  }
+
+  /** A worked-out value, converted to the type it is compared with (ruling 12). */
+  private converted(part: QueryExpr & { kind: 'value' }, as: QueryValueType): QueryExpr {
+    return { kind: 'value', value: this.convertOrThrow(part.value, as, part.pos), as, pos: part.pos };
+  }
+
+  /** A part that must read as `as`: a value is converted, a row part must already be one. */
+  private needType(part: QueryExpr, as: QueryValueType, message: (got: string) => string): QueryExpr {
+    if (part.kind === 'value') {
+      const converted = convertValue(part.value, as);
+      if ('error' in converted) throw new FluxRuntimeError(message(describe(part.value)), part.pos);
+      return { kind: 'value', value: converted.value, as, pos: part.pos };
+    }
+    const t = partType(part);
+    if (t !== null && t !== as) throw new FluxRuntimeError(message(`${article(t)} value`), part.pos);
+    return part;
+  }
+
+  private needBool(part: QueryExpr): void {
+    if (part.kind === 'value') {
+      if (part.value !== null && typeof part.value !== 'boolean') {
+        throw new FluxRuntimeError(`Expected true/false, got ${describe(part.value)}`, part.pos);
+      }
+      return;
+    }
+    const t = partType(part);
+    if (t !== null && t !== 'bool') throw new FluxRuntimeError(`Expected true/false, got ${article(t)} value`, part.pos);
+  }
+
+  private sameType(as: QueryValueType, part: QueryExpr): void {
+    const t = partType(part);
+    if (t !== null && t !== as) throw new FluxRuntimeError(`Cannot compare ${article(as)} value with ${article(t)} value`, part.pos);
+  }
+
+  /** Parts compared with each other: values take the type of the row part they meet (ruling 12). */
+  private unify(parts: QueryExpr[], pos: Position): QueryExpr[] {
+    const as = parts.filter((p) => p.kind !== 'value').map(partType).find((t) => t !== null) ?? null;
+    if (as === null) return parts;
+    return parts.map((part) => {
+      if (part.kind === 'value') return this.converted(part, as);
+      this.sameType(as, part);
+      return part;
+    });
+  }
+
+  // ── Answering a query in memory (§5.4) ────────────────────────────────────────
+
+  /** Run a query: the host answers it, or the evaluator does over the type's records. */
+  private *runQuery(query: RecordQuery, pos: Position, outer: Scope | null, inDatabase = this.answersInDatabase()): Gen<unknown> {
+    const host = this.recordsHost(pos);
+    if (inDatabase) {
+      let answer: DslRecord[] | number;
+      try {
+        answer = yield* this.settle(host.query!(query), pos, 'The records host');
+      } catch (e) {
+        if (e instanceof FluxRuntimeError || e instanceof FluxFailError) throw e;
+        throw new FluxRuntimeError(e instanceof Error ? e.message : String(e), pos);
+      }
+      if (typeof answer === 'number') return answer;
+      if (answer.length > query.maxRows) throw this.quotaError(query.maxRows, pos);
+      return answer.map((r) => this.copyRecord(r));
+    }
+    const answer = yield* this.answerInMemory(query, yield* this.readAllUnlimited(query.type, pos), outer);
+    if (typeof answer !== 'number' && answer.length > query.maxRows) throw this.quotaError(query.maxRows, pos);
+    return answer;
+  }
+
+  /** A query over records in memory, by §5.3: filtered, sorted (by id without an orderby), limited. */
+  *answerInMemory(query: RecordQuery, rows: DslRecord[], outer: Scope | null): Gen<DslRecord[] | number> {
+    const memory = this.memoryQuery(outer);
+    let kept: DslRecord[] = [];
+    for (const row of rows) {
+      this.tick(query.pos);
+      let keep = true;
+      for (const condition of query.where) {
+        let v = this.qNow(condition, row, memory);
+        if (v === NOT_LEAF) v = yield* this.q(condition, row, memory);
+        if (!this.qBool(v, condition.pos)) {
+          keep = false;
+          break;
+        }
+      }
+      if (keep) kept.push(row);
+    }
+    if (query.count) return kept.length;
+    kept = yield* this.sortRows(kept, () => query.orderBy, memory);
+    return query.limit === null ? kept : kept.slice(0, query.limit);
+  }
+
+  /** Sort by the keys: nulls last whichever the direction, ties by id (§5.3). */
+  private *sortRows(rows: DslRecord[], keysOf: (row: DslRecord) => { key: QueryExpr; desc: boolean }[], memory: MemoryQuery): Gen<DslRecord[]> {
+    const decorated: { row: DslRecord; keys: unknown[]; desc: boolean[] }[] = [];
+    for (const row of rows) {
+      const plan = keysOf(row);
+      const keys: unknown[] = [];
+      for (const { key } of plan) {
+        let v = this.qNow(key, row, memory);
+        if (v === NOT_LEAF) v = yield* this.q(key, row, memory);
+        keys.push(unwrap(v));
+      }
+      decorated.push({ row, keys, desc: plan.map((k) => k.desc) });
+    }
+    decorated.sort((a, b) => {
+      for (let i = 0; i < a.keys.length; i++) {
+        const x = a.keys[i];
+        const y = b.keys[i];
+        if (x === null || y === null) {
+          if (x === null && y === null) continue;
+          return x === null ? 1 : -1;
+        }
+        const c = this.qCompare(x, y, keysOf(a.row)[i].key.pos);
+        if (c !== 0) return a.desc[i] ? -c : c;
+      }
+      return a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : 0;
+    });
+    return decorated.map((d) => d.row);
+  }
+
+  private memoryQuery(outer: Scope | null): MemoryQuery {
+    return { outer, records: new Map(), likes: new Map() };
+  }
+
+  /**
+   * Names inside a part that runs per row (`dsl`): the record type's declared
+   * fields first (ruling 13) — a record missing the key reads null — then the
+   * scope the query was written in.
+   */
+  private rowScope(row: DslRecord, outer: Scope | null): Scope {
+    const host = this.host.records;
+    const fields = host?.declaredFields?.(row.type) ?? null;
+    return (name) => {
+      if (name === 'id') return { found: true, value: row.id };
+      const key = declaredKey(fields, name);
+      if (key === null) return outer ? outer(name) : { found: false, value: undefined };
+      const value = row.fields[key];
+      const fkTarget = host?.fkTarget(row.type, key) ?? null;
+      if (fkTarget !== null && value !== null && value !== undefined) return { found: true, value: new FkPointer(fkTarget, value) };
+      return { found: true, value: value ?? null };
+    };
+  }
+
+  /**
+   * A query part's value for one row, answered without a generator — or
+   * NOT_LEAF in a waiting evaluator when it needs the host (a reference to
+   * follow, a part that runs as DSL), which `q` then answers.
+   */
+  private qNow(part: QueryExpr, row: DslRecord, memory: MemoryQuery): unknown {
+    switch (part.kind) {
+      case 'value':
+        return part.value;
+      case 'field': {
+        if (part.path.length === 1) {
+          const key = part.path[0].key;
+          return key === 'id' ? row.id : readStored(row.fields[key], part.as);
+        }
+        if (this.waiting) return NOT_LEAF;
+        let record: DslRecord | null = row;
+        for (let i = 0; i < part.path.length - 1 && record !== null; i++) {
+          const id = this.referenceOf(record, part.path[i].key);
+          record = id === null ? null : this.referencedNow(part.path[i + 1].type, id, memory, part.pos);
+        }
+        return record === null ? null : this.lastStep(record, part);
+      }
+      case 'dsl': {
+        if (this.waiting) return NOT_LEAF;
+        const scope = this.rowScope(row, memory.outer);
+        return (this.v = this.leaf(part.expr, scope)) !== NOT_LEAF ? this.v : runImmediate(this.eval(part.expr, scope));
+      }
+      case 'binary': {
+        const left = this.qNow(part.left, row, memory);
+        if (left === NOT_LEAF) return NOT_LEAF;
+        if (part.op === 'and' || part.op === 'or') {
+          const l = this.qBool(left, part.pos);
+          if (part.op === 'and' ? !l : l) return l;
+          const right = this.qNow(part.right, row, memory);
+          return right === NOT_LEAF ? NOT_LEAF : this.qBool(right, part.pos);
+        }
+        const right = this.qNow(part.right, row, memory);
+        return right === NOT_LEAF ? NOT_LEAF : this.qBinary(part, left, right);
+      }
+      case 'not': {
+        const v = this.qNow(part.operand, row, memory);
+        return v === NOT_LEAF ? NOT_LEAF : !this.qBool(v, part.pos);
+      }
+      case 'neg': {
+        const v = this.qNow(part.operand, row, memory);
+        return v === NOT_LEAF ? NOT_LEAF : this.qNeg(v, part.pos);
+      }
+      case 'isnull': {
+        const v = this.qNow(part.target, row, memory);
+        return v === NOT_LEAF ? NOT_LEAF : (v === null) !== part.negated;
+      }
+      case 'like': {
+        const target = this.qNow(part.target, row, memory);
+        if (target === NOT_LEAF) return NOT_LEAF;
+        const pattern = this.qNow(part.pattern, row, memory);
+        return pattern === NOT_LEAF ? NOT_LEAF : this.qLike(part, target, pattern, memory);
+      }
+      case 'between': {
+        const target = this.qNow(part.target, row, memory);
+        if (target === NOT_LEAF) return NOT_LEAF;
+        const lower = this.qNow(part.lower, row, memory);
+        if (lower === NOT_LEAF) return NOT_LEAF;
+        const upper = this.qNow(part.upper, row, memory);
+        return upper === NOT_LEAF ? NOT_LEAF : this.qBetween(part, target, lower, upper);
+      }
+      case 'in': {
+        const target = this.qNow(part.target, row, memory);
+        if (target === NOT_LEAF) return NOT_LEAF;
+        let found = target !== null && part.values.some((v) => this.qEquals(target, v));
+        for (const item of part.items) {
+          if (found || target === null) break;
+          const v = this.qNow(item, row, memory);
+          if (v === NOT_LEAF) return NOT_LEAF;
+          found = v !== null && this.qEquals(target, v);
+        }
+        return found !== part.negated;
+      }
+      case 'call': {
+        if (part.fn === 'iif') {
+          const c = this.qNow(part.args[0], row, memory);
+          if (c === NOT_LEAF) return NOT_LEAF;
+          return this.qNow(this.qBool(c, part.pos) ? part.args[1] : part.args[2], row, memory);
+        }
+        const args: unknown[] = [];
+        for (const arg of part.args) {
+          const v = this.qNow(arg, row, memory);
+          if (v === NOT_LEAF) return NOT_LEAF;
+          args.push(v);
+        }
+        return this.qCall(part, args);
+      }
+    }
+  }
+
+  /** `qNow` in a waiting evaluator, for the parts that need the host. */
+  private *q(part: QueryExpr, row: DslRecord, memory: MemoryQuery): Gen<unknown> {
+    const sub = (p: QueryExpr): unknown => this.qNow(p, row, memory);
+    switch (part.kind) {
+      case 'field': {
+        let record: DslRecord | null = row;
+        for (let i = 0; i < part.path.length - 1 && record !== null; i++) {
+          const id = this.referenceOf(record, part.path[i].key);
+          record = id === null ? null : yield* this.referenced(part.path[i + 1].type, id, memory, part.pos);
+        }
+        return record === null ? null : this.lastStep(record, part);
+      }
+      case 'dsl': {
+        const scope = this.rowScope(row, memory.outer);
+        return (this.v = this.leaf(part.expr, scope)) !== NOT_LEAF ? this.v : yield* this.eval(part.expr, scope);
+      }
+      case 'binary': {
+        const left = (this.v = sub(part.left)) !== NOT_LEAF ? this.v : yield* this.q(part.left, row, memory);
+        if (part.op === 'and' || part.op === 'or') {
+          const l = this.qBool(left, part.pos);
+          if (part.op === 'and' ? !l : l) return l;
+          return this.qBool((this.v = sub(part.right)) !== NOT_LEAF ? this.v : yield* this.q(part.right, row, memory), part.pos);
+        }
+        const right = (this.v = sub(part.right)) !== NOT_LEAF ? this.v : yield* this.q(part.right, row, memory);
+        return this.qBinary(part, left, right);
+      }
+      case 'not':
+        return !this.qBool((this.v = sub(part.operand)) !== NOT_LEAF ? this.v : yield* this.q(part.operand, row, memory), part.pos);
+      case 'neg':
+        return this.qNeg((this.v = sub(part.operand)) !== NOT_LEAF ? this.v : yield* this.q(part.operand, row, memory), part.pos);
+      case 'isnull':
+        return (((this.v = sub(part.target)) !== NOT_LEAF ? this.v : yield* this.q(part.target, row, memory)) === null) !== part.negated;
+      case 'like': {
+        const target = (this.v = sub(part.target)) !== NOT_LEAF ? this.v : yield* this.q(part.target, row, memory);
+        const pattern = (this.v = sub(part.pattern)) !== NOT_LEAF ? this.v : yield* this.q(part.pattern, row, memory);
+        return this.qLike(part, target, pattern, memory);
+      }
+      case 'between': {
+        const target = (this.v = sub(part.target)) !== NOT_LEAF ? this.v : yield* this.q(part.target, row, memory);
+        const lower = (this.v = sub(part.lower)) !== NOT_LEAF ? this.v : yield* this.q(part.lower, row, memory);
+        const upper = (this.v = sub(part.upper)) !== NOT_LEAF ? this.v : yield* this.q(part.upper, row, memory);
+        return this.qBetween(part, target, lower, upper);
+      }
+      case 'in': {
+        const target = (this.v = sub(part.target)) !== NOT_LEAF ? this.v : yield* this.q(part.target, row, memory);
+        let found = target !== null && part.values.some((v) => this.qEquals(target, v));
+        for (const item of part.items) {
+          if (found || target === null) break;
+          const v = (this.v = sub(item)) !== NOT_LEAF ? this.v : yield* this.q(item, row, memory);
+          found = v !== null && this.qEquals(target, v);
+        }
+        return found !== part.negated;
+      }
+      case 'call': {
+        if (part.fn === 'iif') {
+          const c = (this.v = sub(part.args[0])) !== NOT_LEAF ? this.v : yield* this.q(part.args[0], row, memory);
+          const branch = this.qBool(c, part.pos) ? part.args[1] : part.args[2];
+          return (this.v = sub(branch)) !== NOT_LEAF ? this.v : yield* this.q(branch, row, memory);
+        }
+        const args: unknown[] = [];
+        for (const arg of part.args) args.push((this.v = sub(arg)) !== NOT_LEAF ? this.v : yield* this.q(arg, row, memory));
+        return this.qCall(part, args);
+      }
+      default:
+        return this.qNow(part, row, memory);
+    }
+  }
+
+  /** The id a reference step holds, or null. */
+  private referenceOf(record: DslRecord, key: string): string | null {
+    return key === 'id' ? record.id : (readStored(record.fields[key], 'text') as string | null);
+  }
+
+  private lastStep(record: DslRecord, part: QueryExpr & { kind: 'field' }): unknown {
+    const key = part.path[part.path.length - 1].key;
+    return key === 'id' ? record.id : readStored(record.fields[key], part.as);
+  }
+
+  private referencedNow(type: string, id: string, memory: MemoryQuery, pos: Position): DslRecord | null {
+    const key = `${type}\u0000${id}`;
+    if (memory.records.has(key)) return memory.records.get(key)!;
+    const record = this.readByIdNow(type, id, pos);
+    memory.records.set(key, record);
+    return record;
+  }
+
+  private *referenced(type: string, id: string, memory: MemoryQuery, pos: Position): Gen<DslRecord | null> {
+    const key = `${type}\u0000${id}`;
+    if (memory.records.has(key)) return memory.records.get(key)!;
+    const record = yield* this.readById(type, id, pos);
+    memory.records.set(key, record);
+    return record;
+  }
+
+  /** A condition's answer: null is false (the null rules, §5.3); anything else must be true/false. */
+  private qBool(value: unknown, pos: Position): boolean {
+    if (value === null) return false;
+    if (typeof value === 'boolean') return value;
+    throw new FluxRuntimeError(`Expected true/false, got ${describe(value)}`, pos);
+  }
+
+  private qEquals(a: unknown, b: unknown): boolean {
+    const x = unwrap(a);
+    const y = unwrap(b);
+    if (isRecord(x) && isRecord(y)) return x.type === y.type && x.id === y.id;
+    return queryEquals(x, y);
+  }
+
+  private qCompare(a: unknown, b: unknown, pos: Position): number {
+    const x = unwrap(a);
+    const y = unwrap(b);
+    const c = queryCompare(x, y);
+    if (c === null) throw new FluxRuntimeError(`Cannot compare ${describe(x)} with ${describe(y)}`, pos);
+    return c;
+  }
+
+  /** Comparisons never match null, except `!=` (IS DISTINCT FROM); arithmetic over null is null (§5.3). */
+  private qBinary(part: QueryExpr & { kind: 'binary' }, left: unknown, right: unknown): unknown {
+    switch (part.op) {
+      case '=':
+        return left !== null && right !== null && this.qEquals(left, right);
+      case '!=':
+        return left === null ? right !== null : right === null ? true : !this.qEquals(left, right);
+      case '<':
+      case '<=':
+      case '>':
+      case '>=': {
+        if (left === null || right === null) return false;
+        const c = this.qCompare(left, right, part.pos);
+        return part.op === '<' ? c < 0 : part.op === '<=' ? c <= 0 : part.op === '>' ? c > 0 : c >= 0;
+      }
+    }
+    if (left === null || right === null) return null;
+    if (part.op === '+' && part.as === 'text') return this.toText(left, part.pos) + this.toText(right, part.pos);
+    return this.applyBinary(part.op, left, right, part.pos);
+  }
+
+  private qNeg(value: unknown, pos: Position): unknown {
+    if (value === null) return null;
+    if (typeof value !== 'number') throw new FluxRuntimeError(`Unary '-' needs a number, got ${describe(value)}`, pos);
+    return -value;
+  }
+
+  private qLike(part: QueryExpr & { kind: 'like' }, target: unknown, pattern: unknown, memory: MemoryQuery): boolean {
+    if (target === null || pattern === null) return part.negated;
+    if (typeof target !== 'string' || typeof pattern !== 'string') {
+      throw new FluxRuntimeError(`'like' compares text, got ${describe(target)} like ${describe(pattern)}`, part.pos);
+    }
+    let regex = memory.likes.get(pattern);
+    if (!regex) memory.likes.set(pattern, (regex = queryLike(pattern)));
+    return regex.test(target) !== part.negated;
+  }
+
+  private qBetween(part: QueryExpr & { kind: 'between' }, target: unknown, lower: unknown, upper: unknown): boolean {
+    if (target === null || lower === null || upper === null) return part.negated;
+    const inside = this.qCompare(target, lower, part.pos) >= 0 && this.qCompare(target, upper, part.pos) <= 0;
+    return inside !== part.negated;
+  }
+
+  private qCall(part: QueryExpr & { kind: 'call' }, args: unknown[]): unknown {
+    const [a, b] = args;
+    const { fn, pos } = part;
+    switch (fn) {
+      case 'len':
+      case 'lower':
+      case 'upper':
+      case 'trim':
+        if (a === null) return null;
+        if (typeof a !== 'string') throw new FluxRuntimeError(`${fn}() needs text, got ${describe(a)}`, pos);
+        return fn === 'len' ? a.length : fn === 'lower' ? a.toLowerCase() : fn === 'upper' ? a.toUpperCase() : a.trim();
+      case 'abs':
+      case 'round': {
+        if (a === null || (args.length === 2 && b === null)) return null;
+        if (typeof a !== 'number') throw new FluxRuntimeError(`${fn}() needs a number, got ${describe(a)}`, pos);
+        if (fn === 'abs') return Math.abs(a);
+        const places = args.length === 2 ? (b as number) : 0;
+        const factor = 10 ** places;
+        return Math.round(a * factor) / factor;
+      }
+      case 'exact':
+        if (a === null || b === null) return false;
+        return a instanceof Date && b instanceof Date ? a.getTime() === b.getTime() : unwrap(a) === unwrap(b);
+      case 'date':
+        if (a === null) return null;
+        if (a instanceof Date) return a;
+        if (typeof a !== 'string') throw new FluxRuntimeError(`date() needs text like '2026-07-01'`, pos);
+        return parseInstant(a);
+      case 'adddays':
+      case 'addmonths':
+      case 'addyears':
+        if (a === null || b === null) return null;
+        if (!(a instanceof Date)) throw new FluxRuntimeError(`${fn} needs a date, got ${describe(a)}`, pos);
+        if (typeof b !== 'number') throw new FluxRuntimeError(`${fn} needs a number, got ${describe(b)}`, pos);
+        return addToInstant(a, fn, b);
+      case 'iif':
+        return a; // answered lazily by the walkers
+    }
+  }
+
   // ── Records: reads through the staging overlay, staged mutations ───────────────
 
   private recordsHost(pos: Position): RecordsHost {
@@ -1400,7 +2259,7 @@ class Evaluator {
     return this.overlayAll(type, isThenable(answer) ? this.cannotWait(answer, pos, 'The records host') : answer, pos);
   }
 
-  private overlayAll(type: string, base: DslRecord[], pos: Position): DslRecord[] {
+  private overlayAll(type: string, base: DslRecord[], pos: Position, quota = true): DslRecord[] {
     const patches = this.stagedPatches.get(type);
     const out = base.map((r) => {
       const copy = this.copyRecord(r);
@@ -1411,10 +2270,18 @@ class Evaluator {
     for (const created of this.stagedCreates.get(type) ?? []) {
       out.push(this.copyRecord(created));
     }
-    if (out.length > this.quotas.maxRows) {
-      throw new FluxRuntimeError(`Query exceeded the row quota (${this.quotas.maxRows})`, pos);
-    }
+    if (quota && out.length > this.quotas.maxRows) throw this.quotaError(this.quotas.maxRows, pos);
     return out;
+  }
+
+  private quotaError(maxRows: number, pos: Position): FluxRuntimeError {
+    return new FluxRuntimeError(`Query exceeded the row quota (${maxRows})`, pos);
+  }
+
+  /** A type's records with the script's staged writes over them, the row quota not applied — a query counts its result. */
+  private *readAllUnlimited(type: string, pos: Position): Gen<DslRecord[]> {
+    const answer = this.recordsHost(pos).getAll(type);
+    return this.overlayAll(type, isThenable(answer) ? yield* this.settle(answer, pos, 'The records host') : answer, pos, false);
   }
 
   private *readById(type: string, id: unknown, pos: Position): Gen<DslRecord | null> {
@@ -1600,6 +2467,26 @@ class Evaluator {
     }
     return out;
   }
+}
+
+/** What answering one query in memory keeps: the scope it was written in, references followed, `like` patterns. */
+interface MemoryQuery {
+  outer: Scope | null;
+  records: Map<string, DslRecord | null>;
+  likes: Map<string, RegExp>;
+}
+
+
+/**
+ * Answer a record query over records a host holds in memory, by the rules the
+ * evaluator follows there (§5.4) — for a host that answers queries itself but
+ * keeps some types in memory (the model collections, `withModelTypes`). At most
+ * `maxRows + 1` rows, as any host's answer.
+ */
+export function answerQuery(query: RecordQuery, records: DslRecord[], host: RecordsHost): DslRecord[] | number {
+  const evaluator = new Evaluator({ records: host }, 'read', false);
+  const answer = runImmediate(evaluator.answerInMemory(query, records, null));
+  return typeof answer === 'number' ? answer : answer.slice(0, query.maxRows + 1);
 }
 
 function isWriteThrough(mutate: RecordsMutationHost | WriteThroughMutationHost): mutate is WriteThroughMutationHost {

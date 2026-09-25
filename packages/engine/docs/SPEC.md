@@ -417,6 +417,16 @@ its own writes. The bridge then gives the evaluator a write-through mutation
 host instead of the staged one (see *A hook may delete* and the DSL SPEC §7).
 The server's `DatabaseStore` (@fluxus/server) is the one write-through store.
 
+**Record queries (2026-09-25, SERVER_DATA_LOADING §5).** A `WaitingStore` may
+also answer a record query itself — `queryRecords?(query)`, taking the DSL's
+`RecordQuery` with the store's type ids (`rt_…`) in `query.type` and in every
+field path, and answering the rows (at most `maxRows + 1`) or the count. The
+bridge's `RecordsHost.query` rewrites the short names into those ids
+(`storeQuery`) and passes the answer back as DSL records. `DatabaseStore`
+answers with one SQL statement. `MemoryAdapter` has no `queryRecords`: over it,
+the evaluator answers the same description in memory by the same rules
+(DSL GRAMMAR §4.5), after laying any staged writes over the type's records.
+
 Code that runs over either store is written once as a generator that yields
 each store answer, and resumed by `settle` (`src/maybe.ts`): synchronously for
 as long as the answers are plain, asynchronously from the first promise. So
@@ -601,10 +611,18 @@ arithmetic gap in the DSL. There was no gap. With the write fixed and the 18
 stored values converted (`packages/server/scripts/numeric-fields-to-numbers.ts`),
 those totals return real figures with no script changed.
 
-Two values are deliberately left alone, and both keep an existing meaning
-rather than introducing one: a blank stays `''`, because blank already means
-blank everywhere; and a string that is not a number — `"2,400,000"`, a typo —
-stays as typed, so a bad value stays visible instead of silently becoming null.
+A string that is not a number — `"2,400,000"`, a typo — stays as typed, so a
+bad value stays visible instead of silently becoming null.
+
+**A blank is null** (the user's ruling, 2026-09-26, reversing this section's
+first rule that a blank stays `''`). `coerceFieldValues`, the door every write
+passes, stores empty or whitespace-only text as null whatever the field's type,
+and `shapeNewRecord` starts a field with no default as null. A form still holds
+`''` while someone types; the update form starts a null field empty. The dev
+database's 2,112 stored blanks were converted in one statement, and the model's
+bare `= ''` / `<> ''` tests rewritten to `is null` / `is not null` (one-off
+scripts, not kept). An empty list on a multi field stays `[]`, as before (the
+user's call).
 History entries are untouched: `capturedAttributes` is what a person submitted,
 append-only, and a record of a submission rather than a value anything computes
 with.
@@ -613,8 +631,9 @@ with.
 
 `bridge.ts` translates between SDM shapes and the DSL's hosts: config →
 `DslSchema` (short type names, `rt_` stripped; service manifests in),
-Store → `RecordsHost` (queries, FK targets, reverse refs, the `mutate`
-staging surface), captured strings → typed script values (`coerceCaptured`),
+Store → `RecordsHost` (queries, FK targets, reverse refs, declared fields,
+record queries passed to a store that answers them, the `mutate` staging
+surface), captured strings → typed script values (`coerceCaptured`),
 and `buildEvalHost` assembling the four roots + named functions.
 `validateConfig.ts` is the config-save-time check (DSL_SPEC §9) over every
 datasource, show condition, validation rule, hook, and named function.
@@ -736,16 +755,17 @@ onto the eval host, where the evaluator merges it over `DEFAULT_QUOTAS`. Absent
 defaults, unchanged.
 
 The DSL Editor's endpoint raises them: `timeoutMs: 1_000` is too short for an
-interactive tool, and until record queries run as SQL (SERVER_DATA_LOADING
-step 3) a query still reads its whole type. `timeoutMs` counts evaluation only
+interactive tool. `timeoutMs` counts evaluation only
 since 2026-09-25 — time waiting on the database does not (ruling 20). Hooks keep the
 conservative defaults because their failure mode is different — a runaway hook
 blocks a user's submission.
 
-Note what the row quota does: it **throws**, and it throws in `readAll`, before
-`where` runs. A record type larger than `maxRows` cannot be queried at all, not
-even by id. The real fix is query pushdown (DSL_SPEC §9); raising the cap is the
-interim.
+What the row quota does: since 2026-09-25 (SERVER_DATA_LOADING ruling 16) it
+counts **a query's result** — `records.jobs.where(id = x)` works over any number
+of jobs — and throws when the result has more rows than `maxRows`; `.count` is
+not limited. Before, it threw in `readAll`, before `where` ran, so a type larger
+than `maxRows` could not be queried at all. A host that declares no fields keeps
+that older behaviour.
 
 ## Defect: `resolveUsage` drops the pool's `required` (found 2026-09-22, not fixed)
 
@@ -791,6 +811,10 @@ and `modelProjection.test.ts` for what is pinned.
   host that validates (the Console's editor).
 - `withModelTypes(base, config, opts)` — wraps a records host so those types
   answer from the config while everything else falls through to the store.
+  **The model is not in the database** (SERVER_DATA_LOADING §5.1): when the base
+  host answers record queries itself, a query on a model collection is answered
+  here, in memory, by the DSL's `answerQuery`, and never passed on. A query
+  without `orderby` answers in id order, model collections included.
 - `ScriptContext.modelTypes` turns it on. Absent everywhere but the editor's
   endpoint, which is how exposure stays opt-in rather than opt-out.
 

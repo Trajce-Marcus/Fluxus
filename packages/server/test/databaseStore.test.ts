@@ -135,13 +135,16 @@ describe('a run reads only what it touches', () => {
     await create('act_create_tags', { name: 'T1' });
 
     const byType = vi.spyOn(DatabaseStore.prototype, 'getRecordTypeData');
+    const byQuery = vi.spyOn(DatabaseStore.prototype, 'queryRecords');
     const byId = vi.spyOn(DatabaseStore.prototype, 'getRecord');
     const byField = vi.spyOn(DatabaseStore.prototype, 'getRecordsByField');
 
     const result = await runOn('act_count_tags_items', item);
     expect(result.warnings).toContain(`tags:${(await tagNames()).length}`);
 
-    expect(byType.mock.calls.map(([type]) => type)).toEqual(['rt_tags']);
+    // Step 3: the hook's read of the type is one query, never the whole type.
+    expect(byQuery.mock.calls.map(([query]) => query.type)).toEqual(['rt_tags']);
+    expect(byType).not.toHaveBeenCalled();
     expect(new Set(byId.mock.calls.map(([id]) => id))).toEqual(new Set([item]));
     expect(byField).not.toHaveBeenCalled();
   });

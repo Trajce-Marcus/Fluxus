@@ -29,12 +29,30 @@ the server:
 | Asked for | SQL |
 |---|---|
 | a record by id — the anchor, a reference followed | `WHERE id = $1` |
-| a type's records | `WHERE type_ref = $1 ORDER BY id` |
+| a record query — `records.x.where(…)…`, a reverse reference (step 3) | one statement: `WHERE type_ref = $1 AND …`, see below |
+| a type's records (the engine's own paths; no script reaches it) | `WHERE type_ref = $1 ORDER BY id` |
 | records by field value — `geo`, reference checks | `WHERE type_ref = $1 AND custom_fields->>$2 = $3` |
 | "does another record already have this unique value?" | `SELECT 1 … AND id <> $4 LIMIT 1` |
 
-Values and field keys go in as parameters. A type's records are still read
-whole for `records.x.where(...)` — step 3 runs record queries as SQL.
+Values, field keys and type ids go in as parameters.
+
+**Record queries as SQL (step 3, BUILT 2026-09-25).** `DatabaseStore.queryRecords`
+takes the evaluator's `RecordQuery` and runs it as one statement
+(`src/recordQuery.ts`): `SELECT r.id, r.type_ref, r.custom_fields FROM records r`
+with one `LEFT JOIN records` per reference a filter follows, the filters ANDed
+in `WHERE`, `ORDER BY` the sort keys `NULLS LAST` then `r.id`, and `LIMIT`
+`min(top, maxRows + 1)` — or `SELECT count(*)` for `.count`. Written to DSL
+GRAMMAR §4.5: each field read by its declared type (a guarded cast, so a blank
+or unfit value is null — `pg_input_is_valid` checks dates), text compared and
+sorted `lower()`, `ILIKE … ESCAPE ''`, each comparison wrapped
+(`COALESCE(…, false)`, `IS DISTINCT FROM`), date arithmetic `AT TIME ZONE 'UTC'`,
+`%` as `mod(numeric, numeric)`. Inside a run's transaction a statement that
+divides runs under its own savepoint, so a division by zero is the DSL's
+"Division by zero" error, not a fault that fails the run; any other database
+error is a fault as before. Rows already held come back as the held objects.
+No field indexes (ruling 6): `records_operation_type` narrows every query to one
+type. Neon and PGlite both use C collation, so text orders by code point, as it
+does in memory.
 
 **Held for the request.** Every record read is kept by id; the same object is
 handed back for the same id and changed in place by every write — the router's
@@ -105,7 +123,9 @@ src/auth.ts            — bearer-JWT verification against Neon Auth's JWKS
                          roles-resolver seam (stubbed)
 src/databaseStore.ts   — DatabaseStore: reads on demand, writes through, the
                          run's transaction + hook savepoints, the one-statement
-                         entry append (+ reporting rows, ledger flip)
+                         entry append (+ reporting rows, ledger flip), record
+                         queries (`queryRecords`)
+src/recordQuery.ts     — a record query as one SQL statement (step 3)
 src/host.ts            — loadOperationHost (resolve operation → solution, load
                          the model, build the store + engine) / putConfig +
                          the per-entity model writes (configCollections,
@@ -1102,8 +1122,11 @@ operation. As with every gate but platform-admin, `requireOpUser` returns early
 when auth is unconfigured, so on such a deployment this endpoint is open.
 
 **Quotas** are raised per call (`maxRows: 100_000`, `maxSteps: 2_000_000`,
-`timeoutMs: 15_000`) — an interactive tool, and a query still reads its whole
-type until step 3. Hooks keep `DEFAULT_QUOTAS`. It runs through
+`timeoutMs: 15_000`) — an interactive tool. The row quota counts a query's
+result (step 3), so it bounds what a script may pull back, not the size of a
+type. Hooks keep `DEFAULT_QUOTAS`. A filter that cannot become SQL answers as a
+script error naming why (ruling 14); `model.*` is answered from the model, never
+the database. It runs through
 `engine.evaluateAsync` on the database store, with no transaction.
 
 A failed script returns a result carrying `error`, not a TRPCError; the editor

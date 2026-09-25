@@ -401,9 +401,9 @@ describe('derived and synthesised columns', () => {
   it('params: a list for a body with parameters, [] for none, null for one that will not parse', () => {
     const rows = runOn(full, 'model.functions.select(id, params)') as Record<string, unknown>[];
     expect(rows).toEqual([
-      { id: 'fn_ok', params: '["a","b"]' },
-      { id: 'fn_none', params: '[]' },
       { id: 'fn_bad', params: null },
+      { id: 'fn_none', params: '[]' },
+      { id: 'fn_ok', params: '["a","b"]' },
     ]);
   });
 

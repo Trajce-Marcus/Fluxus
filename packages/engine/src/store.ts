@@ -1,3 +1,4 @@
+import type { RecordQuery } from '@fluxus/dsl';
 import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ReverseRefEntry } from './types';
 
 // The Store contract, split three ways (SERVER_DATA_LOADING §4.2):
@@ -67,6 +68,14 @@ export interface WaitingStore extends ModelStore {
   savepoint?(): Promise<Savepoint>;
   /** With `savepoint`: run `fn` once the store's writes commit; never if they roll back. */
   afterCommit?(fn: () => void): void;
+  /**
+   * Answer a record query itself (SERVER_DATA_LOADING §5) — the database
+   * store, with one SQL statement. Types are the store's ids (`rt_…`) here,
+   * in `query.type` and in every field path. The rows, at most
+   * `query.maxRows + 1` of them, or the count when `query.count`. A store
+   * without it has the evaluator filter in memory.
+   */
+  queryRecords?(query: RecordQuery): MaybePromise<RecordInstance[] | number>;
 }
 
 /** A hook's undo point on a write-through store. */

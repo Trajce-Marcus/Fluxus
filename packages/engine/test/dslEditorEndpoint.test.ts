@@ -203,13 +203,13 @@ describe('DSL editor: quotas reach the evaluator (§6)', () => {
     expect(() => engine.evaluate('records.wbs_nodes', { quotas: { maxRows: 100_000 } })).not.toThrow();
   });
 
-  it('the row quota throws in readAll, BEFORE where runs — a type over the cap cannot be queried at all', () => {
+  it('the row quota counts what a query answers, not the whole type (SERVER_DATA_LOADING ruling 16)', () => {
     const { engine, nodes } = build(5);
-    expect(() => engine.evaluate(`records.wbs_nodes.where(code = 'N0')`, { quotas: { maxRows: 2 } })).toThrow(/row quota/);
-    // even by id
-    expect(() => engine.evaluate(`records.wbs_nodes.where(id = '${nodes[0].id}')`, { quotas: { maxRows: 2 } })).toThrow(
-      /row quota/,
-    );
+    expect(engine.evaluate(`records.wbs_nodes.where(code = 'N0').count`, { quotas: { maxRows: 2 } })).toBe(1);
+    expect((engine.evaluate(`records.wbs_nodes.where(id = '${nodes[0].id}')`, { quotas: { maxRows: 2 } }) as unknown[]).length).toBe(1);
+    expect(() => engine.evaluate(`records.wbs_nodes.where(true)`, { quotas: { maxRows: 2 } })).toThrow(/row quota/);
+    // .count is not limited
+    expect(engine.evaluate(`records.wbs_nodes.count`, { quotas: { maxRows: 2 } })).toBe(5);
   });
 
   it('maxSteps is honoured per call', () => {

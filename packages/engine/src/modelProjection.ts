@@ -17,7 +17,7 @@
 //     name, so a projection answering `rt_projects` hands back something that
 //     cannot be pasted after `records.` — hence `query_name`.
 
-import { parseFunction } from '@fluxus/dsl';
+import { answerQuery, parseFunction } from '@fluxus/dsl';
 import type { DslRecord, FieldSchema, RecordsHost, TypeSchema } from '@fluxus/dsl';
 import type {
   ActivityRawDef,
@@ -464,7 +464,7 @@ export function withModelTypes(
     fieldsByType.set(c.name, fields);
   }
 
-  return {
+  const host: RecordsHost = {
     ...base,
     hasType: (type) => rows.has(type) || base.hasType(type),
     getAll: (type) => (rows.has(type) ? rows.get(type)!.map(copy) : base.getAll(type)),
@@ -472,7 +472,14 @@ export function withModelTypes(
     fkTarget: (type, field) => fkByType.get(type)?.[field] ?? (rows.has(type) ? null : base.fkTarget(type, field)),
     reverseRef: (type, name) => (rows.has(type) ? null : base.reverseRef(type, name)),
     declaredFields: (type) => (rows.has(type) ? { ...fieldsByType.get(type) } : (base.declaredFields?.(type) ?? null)),
+    // The model is not in the database (SERVER_DATA_LOADING §5.1): a query on
+    // a model collection is answered here, in memory, and only record types
+    // reach the base host's own answer.
+    query: base.query
+      ? (query) => (rows.has(query.type) ? answerQuery(query, rows.get(query.type)!.map(copy), host) : base.query!(query))
+      : undefined,
   };
+  return host;
 }
 
 function copy(r: DslRecord): DslRecord {

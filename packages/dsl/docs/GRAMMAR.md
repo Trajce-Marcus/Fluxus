@@ -155,11 +155,13 @@ records.suburbs.where(city_id = attributes.city)
 
 If an SDM field name shadows a root name, the field wins inside the chain and the validator emits a warning at config-save time. ⚑ D8
 
+**By declared field, not by what a record holds** (2026-09-25, SERVER_DATA_LOADING ruling 13). Where the host declares the type's fields (every SDM host does), a bare name that is a declared field always means that field: a record missing the key reads it as null, and an outer variable is reached only by a name the type does not declare. A host that declares no fields keeps the older rule — the record's own keys first, then the outer scope.
+
 ### 4.2 Chain methods (Phase 1 set)
 
 | Method | Meaning |
 |---|---|
-| `.where(expr)` | filter; expr evaluated per record in bare-field scope |
+| `.where(expr)` | filter; expr evaluated per record in bare-field scope — see §4.5 for what a filter means and may hold |
 | `.orderBy(field [asc\|desc], ...)` | sort; default `asc` |
 | `.select(field, alias: expr, ...)` | project; any number of entries; aliases may be full expressions incl. FK paths (`group: work_group.name`) |
 | `.top(n)` | cap the result set (after any `orderBy`) — datasources should always bound what they return |
@@ -206,6 +208,33 @@ records.assets.where(id in
 ```
 
 If two FKs from one source type point at the same target, reverse navigation needs disambiguation — `wo_resources(by: alt_wo_id)` — rare, and the validator names the options. Relating types on non-FK fields is expressible via `in` + subquery, but the first-class answer is: **if two types need relating, put the FK in the SDM** — relationships belong in the model, not ad-hoc inside queries.
+
+### 4.5 What a query means (2026-09-25, SERVER_DATA_LOADING §5)
+
+A chain that starts at `records.<type>` (or `model.<name>`, or a reverse reference such as `context.record.wo_resources`) and goes on with any number of `where`, then optionally one `orderBy`, then optionally `top` — or ends at once with `.count` or `.first` — is **one query**. On the server it is one SQL statement; anything after that point (`select`, `values`, a `where` after `top`, `.top(n).count`) runs in memory over its answer. In memory the same rules apply, as closely as is practical.
+
+- **Worked out first.** Every part of a filter that does not read the row — variables, `attributes`, `context`, `now()`, `date('…')` of a constant, a service or function call with no field argument, an `in` subquery that does not read the outer row — is worked out once, before the query runs, and used as a value. So an error in one surfaces even over an empty type.
+- **Fields read by their declared type.** A blank (stored as null since 2026-09-26; `''` from before still reads as null) and a stored value that does not fit the type read as null, so `is null` finds them. A value compared with a field is converted to the field's type: text against a date field becomes a date; text that does not convert is an error.
+- **Text** (text, reference ids, `time`) compares and sorts by its lower-cased form. **`int` / `decimal`** are numbers (stored text that reads as a number counts). **`date` / `datetime`** are instants in UTC — no offset means UTC, and inside a filter `date('…')` and the date methods read in UTC too. **`bool`** is `'true'` / `'false'` text or a JSON boolean, so `where(active)` works. Photo, file, geopoint and composite fields only take `is null`.
+- **Nulls.** `=`, `in`, `like` and `<` `<=` `>` `>=` never match null; `!=`, `not in` and `not like` are true for null; `not` of a comparison that met a null is true.
+- **Order.** `orderBy` puts nulls last whichever the direction; ties are ordered by id; without `orderBy` the order is by id.
+- **`like`**: case-insensitive, `%` any run (line breaks included), `_` one character, no escape character.
+- **Errors.** Division by zero is the usual error. `and` / `or` are not promised to short-circuit in the database, so `qty != 0 and total / qty > 5` does not guard the division — write it with `iif`.
+- **Known differences in memory:** non-ASCII case folding and ordering; `trim` (all whitespace in memory, spaces in the database); `len` (UTF-16 units in memory, characters in the database); `round` of an exact half and month arithmetic past a month's end; the text form of a number joined to text with `+`; short-circuiting.
+
+Rows produced by `select` have no record type; filtering them keeps the ordinary rules. A `where` over a list held in a variable follows these rules too, in memory.
+
+**Refused in a query filter or sort key** (the save check reports them; the server refuses them when they run, naming why):
+
+- a service call, a named DSL function or `invoke` that takes a field of the row — it would run once per record. The same call with no field argument is fine (it is worked out first);
+- indexing into a list field (`tags[0]`), reading inside a photo, file, geopoint or composite value (`photo.taken_at`), `x in` a list field, `len` / `.count` / `.first` on a list field;
+- a reverse reference inside the filter (`work_order.wo_resources.count > 0`), and a nested `records.<type>` query that reads the outer row;
+- comparing or sorting by a photo, file, geopoint or composite field (only `is null`);
+- `iif` whose branches have different types.
+
+None of these is refused where the chain runs in memory: a list held in a variable, or steps after the part the database takes. The browser refuses nothing.
+
+**Row quota.** A query fails with "Query exceeded the row quota" when its **result** has more rows than the quota (10,000 for hooks and bindings; 100,000 in the DSL Editor) — counted on what it answers, not on the whole type. `.count` has no limit.
 
 ---
 

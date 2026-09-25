@@ -4,7 +4,10 @@
 the reviews raised is answered (§2). **Steps 1 and 2 built** the same day
 (`packages/server/test/writeBack.test.ts`, `packages/server/test/databaseStore.test.ts`,
 `packages/dsl/test/waiting.test.ts`; the DSL evaluator and script suites run
-through both drivers); step 3 next. What the build of step 2 chose is in §12. Direction:
+through both drivers). **Step 3 built** the same day
+(`packages/server/test/recordQuery.test.ts`, `packages/dsl/test/query.test.ts`);
+the save check ran clean over the dev database; prod is not checked — it is to be reset (§13). What the
+builds chose is in §12 (step 2) and §13 (step 3). Direction:
 [BLUEPRINT.md](BLUEPRINT.md) § Loading only what a request needs. Spans
 `@fluxus/dsl`, `@fluxus/engine` and `@fluxus/server`, so it lives in root
 `docs/`.
@@ -665,3 +668,82 @@ contract*) and the server SPEC (*The request model*).
   the field order (shaping and uniqueness were split so both stores share the
   shaping).
 
+## 13. As built — step 3 (2026-09-25)
+
+What the build chose where §5 left it open, or did differently. Package detail
+is in the DSL GRAMMAR §4.5 and DSL_SPEC §9–§10, the engine SPEC (*The Store
+contract*, *Per-call quotas*, *The model projected as record types*) and the
+server SPEC (*The request model*).
+
+- **Names.** The description is `RecordQuery`, its parts `QueryExpr`
+  (`@fluxus/dsl` host.ts); the host method `RecordsHost.query`; the store method
+  `WaitingStore.queryRecords` (store type ids, which the bridge's `storeQuery`
+  rewrites from the short names); the SQL in `packages/server/src/recordQuery.ts`.
+  One static walk, `packages/dsl/src/queryFilter.ts`, says which parts of a
+  filter read the row and which cannot become SQL — the save check and the run
+  both use it, so their messages are the same words. The §5.3 value rules in
+  memory are `queryValues.ts`; the number and date patterns there are shared with
+  the SQL.
+- **Where the in-memory answer lives.** `MemoryAdapter` has no `queryRecords`;
+  over it the evaluator answers the description itself, after laying the
+  script's staged writes over the type's records — a host answering on its own
+  could not see those. For the same reason a host's `query` is not used while a
+  script holds staged writes (no such host exists; the database store writes
+  through). `withModelTypes` answers model collections with the exported
+  `answerQuery`, the same code.
+- **A host that declares no fields keeps the old behaviour** for that type:
+  whole type read, filtered by the ordinary rules, quota on the type. Only the
+  DSL's own test hosts are like this; every SDM host declares its fields.
+- **In memory, only the part that cannot become SQL runs as plain DSL**, per
+  row; what encloses it still follows §5.3. (A first cut ran the whole
+  enclosing condition as plain DSL, which lost §5.3 for the rest of it; the
+  tests caught it.)
+- **`date('…')` and the date methods read in UTC inside a filter's worked-out
+  parts.** §5.3 says `date('…')` compares as an instant in UTC; the ordinary
+  `date()` reads date-only text as local midnight, which on a machine not on
+  UTC compared a day's boundary wrongly. Outside a filter they keep today's
+  rules (§6).
+- **A division by zero inside a run is the DSL's error, not a fault.** Postgres
+  aborts a transaction on a failed statement, which would have failed the whole
+  run where memory fails only the hook. So inside a run's transaction a
+  statement that divides runs under its own savepoint; failing, it rolls back to
+  it and answers "Division by zero". Other database errors are faults as before.
+- **Where a chain splits.** The database takes `where*`, then one `orderby`,
+  then `top`; `.count` / `.first` only when nothing else followed and there was
+  no `top`. A second `orderby`, a `where` after `orderby` or `top`, and
+  `.top(n).count` run in memory over the answer.
+- **Type mismatches are errors in the query**, not refusals: two row parts of
+  different types compared (`Cannot compare a text value with a date value`),
+  and a date joined to text with `+`. An `iif` whose branches have different
+  types is refused at run time as the save check refuses it, even when one
+  branch is a worked-out value.
+- **Field types.** `photo`, `file`, `geopoint`, `composite` take only `is null`
+  (blank: missing, null, `''`, an empty list). A field declared `list` is the
+  "list field" of §5.2; no stored model declares one (dev holds text, fk_ref,
+  decimal, datetime, photo, time, geopoint). Any other declared type reads as
+  text.
+- **Collation.** Neon (Postgres 18, `C.UTF-8`) and PGlite (Postgres 17, `C`)
+  both order text by code point, as memory does — so ASCII text and ids agree,
+  and §5.3's "whatever the locale does" is code-point order on both.
+- **Order by id without `orderby` applies in memory too**, model collections
+  included: seven engine tests that expected config order, or the old quota
+  counted on the whole type, were updated to the rules (six orders, one quota).
+- **`24:00` is the next midnight** in memory as in Postgres. The build first
+  read it as unfit in memory; the cold test caught the difference, which §5.4
+  did not list, and memory was brought into line.
+- **Refusal messages name a service in lower case** (`services.time.hoursbetween`)
+  — the parser lower-cases identifiers and the walk has no registry to recover
+  the declared spelling.
+- **The save check over stored models and pages** —
+  `packages/server/scripts/check-query-filters.ts`, read-only, migrations off:
+  dev (ep-quiet-dust) clean — 4 models, 10 page drafts, 10 published pages, no
+  filter refused. **Prod not checked** — the user's call, 2026-09-26: prod is so
+  far out of date that it is to be reset, so nothing stored there will survive
+  to be refused.
+- **Speed in memory**, 50,000 rows, old rules → §5.3 rules: an `and` of two
+  comparisons counted 11.3 → 10.2 ms; the same returned as a list 9.3 → 11.9 ms
+  (the id sort); a reference followed 13.4 → 11.3 ms; `lower(name) like` 26.0 →
+  10.6 ms; `orderby … top(10)` 17.7 → 20.1 ms; a date comparison, an error
+  under the old rules, 27.2 ms.
+- **Tests at the build:** dsl 345, engine 319, server 384, page-runtime 231,
+  runtime 20.

@@ -298,19 +298,27 @@ export class MemoryAdapter implements Store {
  * hook writes both land in `buildRecord`/`updateRecord` of whichever store,
  * which is why this is the one place it belongs.
  *
- * Two values are deliberately left alone: a blank stays `''` rather than
- * becoming null, because blank already means blank everywhere; and a string
- * that is not a number (`"2,400,000"`, a typo) stays as typed, so a bad value
- * stays visible instead of silently becoming null.
+ * **A blank is stored as null, never `''`** (the user's ruling, 2026-09-26) —
+ * whatever the field's type, and whitespace-only text counts as blank. This
+ * reverses the rule written here on 2026-09-22 that a blank stays `''`
+ * "because blank already means blank everywhere": it did not — a record query
+ * reads `''` as null while the rest of the DSL read it as text, so the same
+ * field needed `is null` in a filter and `= ''` beside it.
+ *
+ * A string that is not a number (`"2,400,000"`, a typo) still stays as typed,
+ * so a bad value stays visible instead of silently becoming null.
  */
 export function coerceFieldValues(rt: RecordTypeDef, fields: Record<string, unknown>): Record<string, unknown> {
   const numeric = new Set(rt.custom_fields.filter(cf => cf.type === 'int' || cf.type === 'decimal').map(cf => cf.key));
-  if (numeric.size === 0) return fields;
   const out: Record<string, unknown> = { ...fields };
   for (const key of Object.keys(out)) {
-    if (!numeric.has(key)) continue;
     const value = out[key];
-    if (typeof value !== 'string' || value.trim() === '') continue;
+    if (typeof value !== 'string') continue;
+    if (value.trim() === '') {
+      out[key] = null;
+      continue;
+    }
+    if (!numeric.has(key)) continue;
     const coerced = coerceValue('decimal', value.trim());
     if (typeof coerced === 'number') out[key] = coerced;
   }
@@ -323,7 +331,9 @@ export function coerceFieldValues(rt: RecordTypeDef, fields: Record<string, unkn
  * needs the other records and so is each store's own.
  */
 export function shapeNewRecord(rt: RecordTypeDef, customFields: Record<string, unknown>): RecordInstance {
-  const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default ?? '']));
+  // Every declared field is present from the start — null when it has no
+  // default (a blank is null, 2026-09-26; before, it started as `''`).
+  const defaults = Object.fromEntries(rt.custom_fields.map(cf => [cf.key, cf.default ?? null]));
   const merged = coerceFieldValues(rt, { ...defaults, ...customFields });
 
   for (const cf of rt.custom_fields) {

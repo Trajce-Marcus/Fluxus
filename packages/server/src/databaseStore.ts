@@ -1,7 +1,8 @@
 // The server's database store (SERVER_DATA_LOADING §4.3). Built per request,
 // holding no records at the start: it asks Postgres for each thing when a
-// script needs it — one record by id, one type's records, records by a field
-// value — and writes each change the moment it is made.
+// script needs it — one record by id, one record query as one SQL statement
+// (§5), records by a field value — and writes each change the moment it is
+// made.
 //
 // An activity run holds one transaction from before its first read to its end
 // (`begin` … `commit` / `rollback`), so every later read in the run sees the
@@ -32,8 +33,10 @@ import {
   type WaitingStore,
   type WorkflowDef,
 } from '@fluxus/engine';
+import type { RecordQuery } from '@fluxus/dsl';
 import type { Db, DbOrTx } from './db/client';
 import { records } from './db/schema';
+import { canFailOnRows, recordQuerySql } from './recordQuery';
 
 /**
  * A run changed a record that another request deleted while it ran
@@ -259,7 +262,10 @@ export class DatabaseStore implements WaitingStore {
     return this.hold(rows[0]);
   }
 
-  /** Step 2 reads the whole type; step 3 narrows a query to SQL. */
+  /**
+   * A type's every record. A script's record query does not come here — it is
+   * `queryRecords` — but the engine's own paths still may.
+   */
   async getRecordTypeData(typeId: string): Promise<RecordInstance[]> {
     const rows = await this.run(
       this.handle
@@ -285,6 +291,43 @@ export class DatabaseStore implements WaitingStore {
         .orderBy(asc(records.id)),
     );
     return rows.map((row) => this.hold(row));
+  }
+
+  /**
+   * One record query as one SQL statement (SERVER_DATA_LOADING §5), inside the
+   * run's transaction when there is one, so it sees the run's own writes. At
+   * most `maxRows + 1` rows come back; the evaluator raises the quota.
+   *
+   * A division by zero is the DSL's error, not a database fault (§5.3): inside
+   * a transaction the statement runs under its own savepoint, so failing leaves
+   * the run able to go on — an after hook that fails this way is recorded like
+   * any other failing after hook.
+   */
+  async queryRecords(query: RecordQuery): Promise<RecordInstance[] | number> {
+    const statement = recordQuerySql(query, this.operationId);
+    const guarded = this.transaction !== null && canFailOnRows(query);
+    const name = guarded ? `query_${++this.savepointSeq}` : null;
+    if (name) await this.run(this.handle.execute(sql.raw(`SAVEPOINT ${name}`)));
+    let result: unknown;
+    try {
+      result = await this.handle.execute(statement);
+    } catch (err) {
+      if (isDivisionByZero(err) && (name !== null || this.transaction === null)) {
+        if (name) {
+          await this.run(this.handle.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${name}`)));
+          await this.run(this.handle.execute(sql.raw(`RELEASE SAVEPOINT ${name}`)));
+        }
+        throw new Error('Division by zero');
+      }
+      this.fault ??= err;
+      throw err;
+    }
+    if (name) await this.run(this.handle.execute(sql.raw(`RELEASE SAVEPOINT ${name}`)));
+    const rows = (result as { rows: Record<string, unknown>[] }).rows;
+    if (query.count) return Number(rows[0]?.n ?? 0);
+    return rows.map((row) =>
+      this.hold({ id: row.id as string, typeRef: row.type_ref as string, customFields: parseJson(row.custom_fields) }),
+    );
   }
 
   async resolveDisplayLabel(fkRecordType: string, fkDisplayField: string | undefined, rawId: string): Promise<string> {
@@ -507,6 +550,19 @@ export class DatabaseStore implements WaitingStore {
       throw err;
     }
   }
+}
+
+/** Postgres's division_by_zero, however the driver wraps it. */
+function isDivisionByZero(err: unknown): boolean {
+  for (let e = err as { code?: unknown; cause?: unknown } | undefined; e; e = e.cause as typeof e) {
+    if (e.code === '22012') return true;
+  }
+  return false;
+}
+
+/** A jsonb column from a raw statement — parsed already by node-postgres and PGlite, text on some paths. */
+function parseJson(value: unknown): Record<string, unknown> {
+  return (typeof value === 'string' ? JSON.parse(value) : value) as Record<string, unknown>;
 }
 
 // ── Reporting rows (moved from host.ts with write-back) ──────────────────────

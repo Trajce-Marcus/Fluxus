@@ -21,6 +21,7 @@ function promisedRecords(records: RecordsHost): RecordsHost {
     ...records,
     getAll: (type) => later(() => records.getAll(type)),
     getById: (type, id) => later(() => records.getById(type, id)),
+    ...(records.query ? { query: (q) => later(() => records.query!(q)) } : {}),
   };
   const mutate = records.mutate as RecordsMutationHost | undefined;
   if (mutate && !('writesThrough' in mutate)) {

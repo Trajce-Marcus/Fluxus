@@ -2,6 +2,9 @@
 // backend) injects the four roots into the evaluator. Scripts are scope-blind;
 // everything they can touch enters through EvalHost.
 
+import type { BinaryOp, Expr, Position } from './ast';
+import type { QueryValueType } from './queryFilter';
+
 /** A record value as the DSL sees it. Hosts adapt their storage to this shape. */
 export interface DslRecord {
   id: string;
@@ -84,6 +87,67 @@ export interface WriteThroughMutationHost {
   afterCommit(dispatch: () => void): void;
 }
 
+// ── Record queries (SERVER_DATA_LOADING §5) ──────────────────────────────────
+
+/** One step of a field read: `key` on a record of `type` ('id' for the id). Every step but the last follows a reference. */
+export interface QueryFieldStep {
+  type: string;
+  key: string;
+}
+
+/** Built-ins and date methods a query applies to the row (ruling 15). */
+export type QueryFunction =
+  | 'len' | 'lower' | 'upper' | 'trim' | 'abs' | 'round' | 'exact' | 'date' | 'iif'
+  | 'adddays' | 'addmonths' | 'addyears';
+
+/**
+ * One part of a query's filter or sort key, as the host receives it. Every
+ * part that does not depend on the row was worked out before the query ran and
+ * arrives as a `value`, already converted to the type of what it is compared
+ * with (§5.3). `as` is the type a part reads as — null where nothing says.
+ */
+export type QueryExpr =
+  | { kind: 'value'; value: unknown; as: QueryValueType | null; pos: Position }
+  | { kind: 'field'; path: QueryFieldStep[]; as: QueryValueType; pos: Position }
+  | { kind: 'binary'; op: BinaryOp; left: QueryExpr; right: QueryExpr; as: QueryValueType | null; pos: Position }
+  | { kind: 'not'; operand: QueryExpr; pos: Position }
+  | { kind: 'neg'; operand: QueryExpr; pos: Position }
+  /** `values` are the list's parts worked out beforehand, nulls dropped; `items` the parts that read the row. */
+  | { kind: 'in'; negated: boolean; target: QueryExpr; values: unknown[]; items: QueryExpr[]; pos: Position }
+  | { kind: 'between'; negated: boolean; target: QueryExpr; lower: QueryExpr; upper: QueryExpr; pos: Position }
+  | { kind: 'like'; negated: boolean; target: QueryExpr; pattern: QueryExpr; pos: Position }
+  | { kind: 'isnull'; negated: boolean; target: QueryExpr; pos: Position }
+  | { kind: 'call'; fn: QueryFunction; args: QueryExpr[]; as: QueryValueType | null; pos: Position }
+  /**
+   * A part that cannot become SQL, run per row by the evaluator. Only in a
+   * query the evaluator answers in memory; a host is never handed one.
+   */
+  | { kind: 'dsl'; expr: Expr; pos: Position };
+
+/**
+ * A record-query chain handed to the host as one description (§5.1):
+ * `records.<type>` or a reverse reference, then `where`s, an `orderby`, a
+ * `top`, or `.count` / `.first`.
+ */
+export interface RecordQuery {
+  type: string;
+  /** Conditions that must all hold — one per `where`, a reverse reference's own included. */
+  where: QueryExpr[];
+  /** Sort keys; nulls last whichever the direction, ties by id (§5.3). Without any, the order is by id. */
+  orderBy: { key: QueryExpr; desc: boolean }[];
+  /** At most this many rows — `top(n)`, or 1 for `.first`. Null for no limit. */
+  limit: number | null;
+  /** Answer how many rows match rather than the rows. Not limited by the row quota (§5.5). */
+  count: boolean;
+  /**
+   * The row quota: more matching rows than this is an error. A host reads at
+   * most `maxRows + 1` rows and answers what it read; the evaluator raises it.
+   */
+  maxRows: number;
+  /** Where the chain was written, for the host's errors. */
+  pos: Position;
+}
+
 /** Adapter over the SDM record store + schema, injected as the `records` root. */
 export interface RecordsHost {
   hasType(type: string): boolean;
@@ -101,6 +165,13 @@ export interface RecordsHost {
    * 12 and 13).
    */
   declaredFields?(type: string): Record<string, string> | null;
+  /**
+   * Answer a record query itself (§5.1) — the rows, at most `maxRows + 1` of
+   * them, or the count when `query.count`. The server's store answers with one
+   * SQL statement. A host without it has the evaluator read the type and
+   * filter it in memory, by the same rules where the host declares its fields.
+   */
+  query?(query: RecordQuery): MaybePromise<DslRecord[] | number>;
   /** Mutation support. Read-only hosts (expression embedding points) omit it. */
   mutate?: RecordsMutationHost | WriteThroughMutationHost;
 }

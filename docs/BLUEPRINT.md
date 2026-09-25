@@ -149,6 +149,25 @@ What follows from it:
 - **Existing records keep the ids they have.** Nothing parses an id, so old
   value-shaped ids and new UUIDs coexist; no re-keying migration was run.
 
+## A blank is null — *Built* (ruled 2026-09-26)
+
+**A record field that holds nothing holds null, never `''`.** A new record's
+fields start as null unless the model gives a default; text that is empty or
+only whitespace is stored as null, whatever the field's type — from a form, a
+hook or a GET alike. So there is one way to ask whether a field is blank,
+everywhere: `is null` / `is not null`. `''` in a script is empty text and
+nothing else.
+
+**Reversed: blank as `''`.** Fields started as `''` since the first proof of
+concept, a convenience never ruled on. It split the language: a record query
+reads `''` as null (SERVER_DATA_LOADING ruling 12), while the rest of the DSL
+read it as text, so the same field needed `is null` in a filter and `= ''`
+beside it — five shift-report lists came back empty for exactly that. Dev's
+stored blanks (2,112 fields) were converted and the model's `= ''` / `<> ''`
+tests rewritten to `is null` / `is not null`. History entries are what a person
+submitted and are left as they were. An empty list on a multi-value field
+stays `[]`, as before (the user's call, 2026-09-26).
+
 ## Versioning and upgrades — *Direction* (agreed 2026-07-27)
 
 - A **release** is one numbered snapshot of a whole solution — the model plus a
@@ -203,10 +222,11 @@ Not built — no window, no policy storage, no admin tool.
 a GET, an activity, anything — **and so does the server**: it reads from the
 database only what a request touches. It must hold at millions of records per
 operation. Spec: [SERVER_DATA_LOADING.md](SERVER_DATA_LOADING.md).
-*Built 2026-09-25: steps 1 and 2 — no history read, and the server's database
-store reads on demand and writes through, one transaction per run. Not built:
-step 3, record queries as SQL — until then a record query still reads its whole
-type.*
+*Built 2026-09-25: all three steps — no history read; the server's database
+store reads on demand and writes through, one transaction per run; record
+queries run as one SQL statement each, and a filter that cannot become SQL is
+refused at save and when it runs. Not built: the Console workbench still takes
+the whole operation at connect (the spec's §6).*
 
 **Reversed: partition-fetch + filter, and the synchronous Store** (Phase 4,
 2026-07-12). The server loaded an operation's every record, with full

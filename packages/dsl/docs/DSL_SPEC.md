@@ -92,6 +92,7 @@ records.resources
 - Inside `where(...)`, **bare field names are scoped to the queried record type** — the SQL trick that removes the need for lambdas. Roots (`context`, `attributes`, …) remain visible for the other side of comparisons: `where(city_id = attributes.city)`.
 - `select(...)` projects and **aliases**: `select(id, title: code, start: due_date)`. Aliasing is the adapter that maps SDM fields onto a consumer's expected shape (page-builder ports, service payloads).
 - Chain set (initial): `where`, `orderBy`, `select`, `first`, `count`. Extended (later, as needed): `top/limit`, `sum/min/max`, grouping.
+- **What a query means** — declared field types, blanks as null, UTC dates, the null rules, order by id — and the forms a filter may not hold are in GRAMMAR §4.5 (2026-09-25, SERVER_DATA_LOADING §5). The save check refuses those forms (§9).
 
 ### 4.3 Statements (scripts tier)
 
@@ -267,7 +268,8 @@ The division of labour with the expressions tier: **expressions ask, functions t
 ## 9. Validation and safety
 
 - **Schema-aware static validation at config-save time** — the defining feature. Every script parses and checks against the SDM: unknown record types/fields, type mismatches in comparisons, `queue` return-value misuse, service module/function existence + arity + purity (§7a), and (once manifests carry shape contracts) query projections checked against page-builder port shapes. Errors surface when the config is saved, not when a user runs the activity.
-- **Runaway protection from day one**: max loop iterations, max rows per query, execution timeout — quotas enforced by the interpreter. The timeout (`timeoutMs`) counts **evaluation only** since 2026-09-25: time the waiting evaluator spends waiting on the host — the database, a service — does not count (SERVER_DATA_LOADING ruling 20). It exists to stop runaway scripts, not slow databases.
+- **Record-query filters that cannot become SQL are errors at save** (2026-09-25, GRAMMAR §4.5): a service, named function or `invoke` taking a field of the row, list-field indexing and membership, reading inside a photo/file/geopoint/composite value, a reverse reference or a nested query reading the outer row, comparing a photo-like field, `iif` with branches of different types. Only the part of a chain the database takes is checked; a list held in a variable is not. One walk (`queryFilter.ts`) serves the save check and the run.
+- **Runaway protection from day one**: max loop iterations, max rows per query, execution timeout — quotas enforced by the interpreter. The row quota counts **a query's result**, not the whole type, and `.count` is not limited (2026-09-25, SERVER_DATA_LOADING ruling 16). The timeout (`timeoutMs`) counts **evaluation only** since 2026-09-25: time the waiting evaluator spends waiting on the host — the database, a service — does not count (SERVER_DATA_LOADING ruling 20). It exists to stop runaway scripts, not slow databases.
 
 ### Scale strategy (large result sets)
 
@@ -275,8 +277,8 @@ Fetch-all-then-filter does not survive production data volumes. The measures, la
 
 1. **Quotas are the fuse, not the fix** — a query over the row cap fails fast with a clear error rather than silently grinding.
 2. **`.top(n)` in the chain set** — scripts can and should bound their result sets; datasources feeding pickers should always end in a `top`.
-3. **Query pushdown is the designed fix**: because chains are lambda-free AST, `where/orderBy/select/top/count/first` are statically compilable to SQL. Internally, chains become a *query plan* the host executes — the in-memory host by filtering, the Postgres host by SQL with indexes (the `indexed` custom-field flag exists for this), so `.count` is `COUNT(*)` and `.first` is `LIMIT 1` at any scale. FK derefs in projections (an N+1 trap in naive execution) compile to joins. Translation caveats: JS-way nulls map to `IS NULL` forms; case-insensitive comparison maps to collation/`ILIKE`. The semantics test suite referees both hosts — identical behaviour or the pushdown is wrong.
-4. **Today's eager materialize-then-filter is a POC simplification** behind the `RecordsHost` seam; the plan-based refactor changes no language surface and no scripts.
+3. **Query pushdown — built 2026-09-25** (SERVER_DATA_LOADING §5). A chain's `where*` / `orderBy?` / `top?` / `.count` / `.first` goes to the host as one description (`RecordQuery`); the server's store answers it with one SQL statement, so `.count` is `COUNT(*)` and `.first` is `LIMIT 1`. References in a filter become joins. The rules both sides follow are GRAMMAR §4.5; a test table refereed both hosts at the build. No field indexes yet (ruling 6). `select` still fetches whole rows.
+4. The in-memory host answers the same description by filtering — the browser's path, where nothing is refused.
 
 ## 10. Implementation
 
@@ -291,7 +293,13 @@ A plain answer is never yielded, and literals, names, member access and operator
 
 Hosts integrate by implementing the root providers (`RecordsHost` — whose reads and mutations may answer with a promise, and which reports each type's declared fields and their types through `declaredFields`, for record queries — context, service registry) and calling the entry points above.
 
-Hosts integrate by implementing the root providers (record store adapter, context, service registry) and calling `evaluate(script, roots)` / `validate(script, sdm)`.
+**Record queries (built 2026-09-25, SERVER_DATA_LOADING §5).** The evaluator recognises a query chain on the syntax tree (`chain`), takes the longest part the database can run (`where*`, `orderBy?`, `top?`, then `.count` / `.first` if nothing else followed), works out every row-independent part of each filter now (`resolve`, walking `queryFilter.ts`'s analysis) and hands the host a `RecordQuery`: the type, filters and sort keys as `QueryExpr` trees whose values are already converted to the field types, a limit, a count flag and `maxRows`. The rest of the chain runs in memory over the answer.
+
+- `RecordsHost.query` (optional) answers it — at most `maxRows + 1` rows, or the count; the evaluator raises the quota. A host that has it gets only filters that can become SQL; the rest are refused when they run, naming why (ruling 14). It is not used while the script holds staged writes it could not see.
+- A host without it has the evaluator answer the same description in memory, by GRAMMAR §4.5 (`answerInMemory`), where a part that cannot become SQL runs per row as ordinary DSL instead of being refused.
+- A host that declares no fields for a type (`declaredFields` absent or null) keeps the older behaviour for that type: the whole type read, filtered per row by the ordinary rules, the quota counted on the type.
+- `answerQuery(query, records, host)` is the in-memory answer for a host that answers queries itself but keeps some types in memory — `withModelTypes`, for the model collections.
+
 
 ## 11. Phases
 

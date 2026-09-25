@@ -137,9 +137,9 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
         ? seeded.value
         : sourced !== undefined
           ? sourced
-          : activity.record_map === 'UPDATE' && anchorRecord && a.key in anchorRecord.customFields
+          : activity.record_map === 'UPDATE' && anchorRecord && anchorRecord.customFields[a.key] != null
             ? anchorRecord.customFields[a.key]
-            : emptyValue(a);
+            : emptyValue(a); // a blank field is stored as null (2026-09-26); the form starts it empty
     }
     return out;
   });
