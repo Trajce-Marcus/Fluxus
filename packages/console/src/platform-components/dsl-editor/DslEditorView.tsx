@@ -48,6 +48,17 @@ function loadBuffer(solutionId: string | null): { source: string; anchorId: stri
   }
 }
 
+/**
+ * Validation runs this long after the last keystroke, not on every one — the
+ * same 300 ms the record picker's search waits (`SEARCH_DEBOUNCE_MS`).
+ *
+ * Why it matters here: a script is invalid for most of the time it is being
+ * typed, so validating per keystroke paints the editor red while you are still
+ * writing the line. Waiting until you stop means the marker appears when it is
+ * information rather than noise.
+ */
+const VALIDATE_DEBOUNCE_MS = 300;
+
 const PLACEHOLDER = `records.<record_type>\n  .where(<field> = 'value')\n  .top(50)\n\n-- the model itself:\n-- model.record_types.select(query_name, name)`;
 
 /** How many rows the grid draws. There is no windowing dependency in the repo
@@ -126,16 +137,25 @@ function DslEditorViewComponent() {
     return { types: { ...built.types, ...modelSchemaTypes() } };
   }, [dataOperationId]);
 
-  const diagnostics = useMemo(
-    () =>
-      source.trim() === ''
+  const validate = useCallback(
+    (text: string) =>
+      text.trim() === ''
         ? []
-        : validateExpression(source, schema, {
+        : validateExpression(text, schema, {
             bannedRoots: ['attributes'],
             functions: functionSignatures(sdmClient.config),
           }),
-    [source, schema],
+    [schema],
   );
+
+  // What is *shown*, which lags what is typed by the debounce.
+  const [settled, setSettled] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setSettled(source), VALIDATE_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [source]);
+
+  const diagnostics = useMemo(() => validate(settled), [settled, validate]);
   const errors = diagnostics.filter((d) => d.severity === 'error');
 
   // Diagnostics as squiggles, not just a list underneath. `Diagnostic` carries
@@ -176,11 +196,17 @@ function DslEditorViewComponent() {
   }, [source]);
 
   const run = useCallback(async () => {
-    // The same guard the button carries. Without it the keybinding is a way
-    // past "Run is blocked while errors stand".
-    if (!dataOperationId || running || errors.length > 0) return;
+    if (!dataOperationId || running) return;
     const text = selectedText().trim();
     if (text === '') return;
+    // Validate the text being run, now — not the debounced verdict, which may
+    // be up to 300 ms behind, and which was formed over the whole buffer while
+    // a run may carry only the selection.
+    const live = validate(text).filter((d) => d.severity === 'error');
+    if (live.length > 0) {
+      setSettled(source);
+      return;
+    }
     setRunning(true);
     setSelected(null);
     try {
@@ -199,7 +225,7 @@ function DslEditorViewComponent() {
     } finally {
       setRunning(false);
     }
-  }, [anchorId, dataOperationId, errors.length, running, selectedText]);
+  }, [anchorId, dataOperationId, running, selectedText, source, validate]);
 
   // Cmd/Ctrl+Enter, bound on the editor rather than the document so it does not
   // fire from elsewhere in the Console.

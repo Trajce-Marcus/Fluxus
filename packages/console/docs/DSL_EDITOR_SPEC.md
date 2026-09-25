@@ -166,7 +166,14 @@ results. The real fix is query pushdown compiling `where` to SQL
 ## 7. The script pane
 
 - Monaco, language `fluxscript` — `registerFluxscript` already exists.
-- **Live validation** with `validateExpression` in `'expression'` mode, which is
+- **Validation 300 ms after the last keystroke**, not on every one — the same
+  wait the record picker's search uses (`SEARCH_DEBOUNCE_MS`). A script is
+  invalid for most of the time it is being typed, so validating per keystroke
+  paints the editor red while you are still writing the line. Run validates the
+  text it is about to send **synchronously**, so the debounce never lets an
+  invalid script through on a stale verdict — and because a run may carry only
+  the selection while the shown verdict was formed over the whole buffer.
+- **Validation** uses `validateExpression` in `'expression'` mode, which is
   the mode matching the tiers this tool admits and the one GET's `returns` uses.
   Not `validateScript`.
 - **Error markers** — `Diagnostic` carries `line` and `col`, so diagnostics map
