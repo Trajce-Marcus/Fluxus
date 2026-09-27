@@ -381,6 +381,27 @@ other's activities, never by reading each other's records.**
 
 ## Apps — *Direction* (agreed 2026-09-28)
 
+In short: the model's workflows list every activity that can happen, and an
+**app** is what picks the ones it uses and puts them in front of people (as
+pages) or runs them with nobody driving (as automations). What each thing is
+called:
+
+- **App**: a solution-level definition that picks which of the model's
+  activities it uses and can narrow them further. It has pages, automations
+  or both.
+- **Page**: an app's user-facing part.
+- **Automation**: an app's part with no user interface, run by a schedule, an
+  event or an outside caller.
+- **Activity run**: one run of an activity, whoever starts it: a page, an
+  automation, the workbench or an outside caller. It replaces the older
+  "app-triggered run".
+- **Console / Runtime / Platform app**: the platform's own front ends, always
+  named in full, so a bare "app" means the solution-level one.
+- **Module**: a reusable unit installed into a solution (for example, a
+  scheduler), with its own model and records. It replaces the glossary's old
+  "App (module)".
+- **Component**: a reusable page building block, for example `RecordList`.
+
 **The workflow lists everything that can be done to a record type**: acts on
 one record and acts on the collection. For example, in the projects solution's
 shift reports, Submit and Raise Amendment act on one report, while Create Shift
