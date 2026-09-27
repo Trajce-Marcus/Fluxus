@@ -379,6 +379,55 @@ and modules installed into one solution will need distinct ids within it.
 The invariant behind all of it: **solutions exchange data only by calling each
 other's activities, never by reading each other's records.**
 
+## Apps — *Direction* (agreed 2026-09-28)
+
+**The workflow lists everything that can be done to a record type**: acts on
+one record and acts on the collection. For example, in the projects solution's
+shift reports, Submit and Raise Amendment act on one report, while Create Shift
+Report or a bulk cancel act on the collection. Its rules (roles, show conditions, hook checks) say
+when each is allowed, and they are the minimum every caller is held to.
+
+**An app picks which of those activities it uses, and how.** It is a
+solution-level definition with pages, automations, or both:
+- **Page**: the app's user-facing part.
+- **Automation**: the part with no user interface, run by a schedule, an event
+  or an outside caller.
+
+An app may add logic of its own, but it can only **narrow** (hide more, set an
+order, pre-fill). It never loosens a workflow rule. A rule that is too strict
+is changed in the workflow, and keeping the two consistent is the author's
+job. The app's rules are stored on the server like everything else, so the
+server can check them.
+
+Several apps can then work over one model without copying activities between
+them, which is the limit this removes. Under the current approach, each app is
+its own record type with its own workflow, so, for example, a second app that
+also creates shift reports would need a second create activity.
+
+**What a page gains:** it can name a record type without naming a record, so
+`RecordActivities` can offer that type's collection-level activities on a
+dashboard. A page can also limit which activities it shows. That is display
+only, separate from `show_condition`: the model says whether an act is
+allowed, the page says whether it wants it here.
+
+**Open:** how the server knows which app a run came through. If the browser
+just reports it, a caller could claim a looser app or none and fall back to
+the workflow's rules. That is harmless while the workflow is the true minimum,
+and only matters if an app's extra narrowing must hold. Also open: where an
+app definition is stored, and what an app's own logic is written in.
+
+**Reversed 2026-09-28: "the record type is the app"** (CLIENT_TRUST_BOUNDARY
+§1, 2026-08-09). The app is now its own definition. A record type that stands
+for an app, with a record the page finds or creates when it opens, is kept
+only where an app has state of its own (for example, a board's settings). Most dashboards
+need no such record: a collection-level run's history lands on the records it
+creates or changes. The page record mechanism (`PageDef.record`) stays.
+
+**Naming:** "app" means this solution-level app. The platform's own front ends
+are always named in full: Console app, Runtime app, Platform app. The
+glossary's old "App (module)" entry is retired (a reusable scheduler is a
+module), and so is "app-triggered run": it is just an activity run.
+
 ## The page header — *Built and Direction* (agreed 2026-09-23)
 
 **Built:** `PageHeader`, a component an author places — a back arrow (the
@@ -600,12 +649,14 @@ Canonical definitions live in [GLOSSARY.md](GLOSSARY.md); this is the working se
 | **Module** | A self-contained, reusable unit installed into a solution — its own model, workflow and records, hidden from the solution, reached only through callbacks. Direction. |
 | **Activity history** | The append-only record of who did what, with what inputs. The audit spine. |
 | **FluxScript** | The one scripting language (expressions → queries → scripts). |
-| **Page** | A stored, validated screen definition rendered by the page runtime. |
+| **App** *(direction)* | A solution-level definition that picks which of the model's activities it uses and can only narrow them. Has pages, automations or both. |
+| **Page** | A stored, validated screen definition rendered by the page runtime; direction: an app's user-facing part. |
+| **Automation** *(direction)* | An app's part with no user interface, run by a schedule, an event or an outside caller. |
 | **Component** | A model-blind UI block wired to the SDM per page; reused, never rewritten. |
 | **Solution** | The shippable design bundle: SDM + pages + roles + default menu. No data. |
 | **Operation** | A running instance of a solution: its records, users, and roles. |
 | **Org** | The subscribing business everything hangs under. |
-| **Console / Runtime** | The builder's app / the end user's app. |
+| **Console / Runtime** | The builder's app / the end user's app. Always named in full, so a bare "app" means the solution-level one. |
 | **Release** *(direction)* | One numbered snapshot of a whole solution. |
 | **Pinning** *(direction)* | An operation staying on a chosen release until it opts to upgrade. |
 | **Solution connector** *(direction)* | A hook in one solution calling an activity in another. |

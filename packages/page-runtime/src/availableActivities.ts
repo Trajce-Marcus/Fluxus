@@ -22,10 +22,10 @@ export type ConditionEvaluator = (source: string) => Promise<unknown>;
 /**
  * The record-level activities that apply.
  *
- * - **CREATE and GET are excluded.** A CREATE has no anchor — it is a button on
- *   a collection, not on a record — and a GET answers a question rather than
- *   being an act someone takes (DSL_SPEC §5a). The workbench's own
- *   `AvailableActivities` draws the same line.
+ * - **GET is excluded**: it answers a question rather than being an act
+ *   someone takes (DSL_SPEC §5a). **A CREATE is offered** like any other
+ *   activity (ruled 2026-09-28): whether it belongs on this record is the
+ *   author's call, made with its `show_condition`, not something assumed here.
  * - **A condition that throws hides its activity.** Availability fails closed,
  *   exactly as the engine's gate does: a broken access rule must never wave an
  *   activity through. The reason goes to the console, since the person looking
@@ -39,7 +39,7 @@ export async function availableActivities(
   onWarn: (message: string) => void = (m) => console.warn(m),
 ): Promise<ActivityOption[]> {
   const candidates = activities
-    .filter((a) => a.record_map !== 'CREATE' && a.record_map !== 'GET')
+    .filter((a) => a.record_map !== 'GET')
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
   const verdicts = await Promise.all(candidates.map(async (activity) => {

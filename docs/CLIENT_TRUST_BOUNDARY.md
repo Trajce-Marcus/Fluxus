@@ -77,6 +77,11 @@ instance did this relate to" is answered the same way it is for any record.
 Nothing in the record type marks it as an app — see §7, where the only special
 thing (how you arrive at the record) lives on the page instead.
 
+> **Reversed in part 2026-09-28** (BLUEPRINT § Apps): the record type is no
+> longer the app — an app is its own definition that picks from the model's
+> activities. A record type standing for an app is kept only where an app has
+> state of its own; the rule that every run is about a record is unchanged.
+
 **A run record is the act itself.** "Geocode all jobs" leaves a record of the
 run, and that record's history is the run's story. An act that leaves no trace
 would contradict the platform.

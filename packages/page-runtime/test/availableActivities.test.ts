@@ -26,16 +26,25 @@ describe('what is offered', () => {
     expect(found.map((a) => a.id)).toEqual(['act_start']);
   });
 
-  // A CREATE belongs to a collection, not to a record; a GET answers a
-  // question rather than being an act anyone takes.
-  it('leaves out CREATE and GET whatever their condition says', async () => {
+  // A GET answers a question rather than being an act anyone takes.
+  it('leaves out GET whatever its condition says', async () => {
     const acts = [
-      activity({ id: 'act_new', record_map: 'CREATE' }),
       activity({ id: 'act_list', record_map: 'GET' }),
       activity({ id: 'act_edit', name: 'Edit' }),
     ];
     const found = await availableActivities(acts, always);
     expect(found.map((a) => a.id)).toEqual(['act_edit']);
+  });
+
+  // Whether a CREATE belongs on this record is the author's call, made with
+  // its show_condition — not assumed away here.
+  it('offers a CREATE, subject to its condition like any other', async () => {
+    const acts = [
+      activity({ id: 'act_raise', name: 'Raise', record_map: 'CREATE', sort_order: 1, show_condition: "context.record.status = 'Approved'" }),
+      activity({ id: 'act_new', name: 'New', record_map: 'CREATE', sort_order: 2, show_condition: "context.record.status = 'Draft'" }),
+    ];
+    const found = await availableActivities(acts, async (src) => src.includes('Approved'));
+    expect(found).toEqual([{ id: 'act_raise', name: 'Raise' }]);
   });
 
   it('keeps the workflow order', async () => {
