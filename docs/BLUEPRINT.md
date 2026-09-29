@@ -381,6 +381,11 @@ other's activities, never by reading each other's records.**
 
 ## Apps — *Direction* (agreed 2026-09-28)
 
+> **Being re-explored (2026-09-30).** A newer idea, not yet ruled, makes the
+> page itself the app, adds app **instances** (the operation's menu) and a pool
+> of shared activities. See [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
+> before building anything from this section.
+
 In short: the model's workflows list every activity that can happen, and an
 **app** is what picks the ones it uses and puts them in front of people (as
 pages) or runs them with nobody driving (as automations). What each thing is
