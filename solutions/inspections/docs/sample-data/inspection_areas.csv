@@ -1,0 +1,11 @@
+code,name,sequence
+A01,Site,1
+A02,Roof and Gutter,2
+A03,Hot Water System,3
+A04,Exterior,4
+A05,Garage - Carport,5
+A06,Stairs - Pergola - Balconies - Decks,6
+A07,Interiors,7
+A08,Bathroom(s),8
+A09,Kitchen & Laundry,9
+A10,Roof Void,10

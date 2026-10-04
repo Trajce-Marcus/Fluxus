@@ -1,0 +1,37 @@
+code,name,description,default_category
+D01,Cracking to internal wall or ceiling linings,"Cracks in plaster or plasterboard walls, ceilings, cornices or bulkheads.",Minor defect
+D02,Cracking to external masonry,"Cracks in brick or block walls, including stepped cracking through mortar joints.",Major defect
+D03,"Cracking to concrete paths, driveways or slab","Cracks in paving, driveways, garage or patio slabs.",Minor defect
+D04,Uneven or out-of-level floor,"Floor visibly sloping, springy, or out of level across a room.",Major defect
+D05,Door binding or not closing,"Door jams, rubs on frame or floor, or will not latch.",Minor defect
+D06,Window binding or difficult to operate,"Window sticks, will not open or close fully, or locks do not engage.",Minor defect
+D07,Water staining to ceiling,Stains or discolouration indicating a past or current roof or plumbing leak.,Major defect
+D08,Dampness to walls,"Damp patches, efflorescence or bubbling paint low on walls (possible rising damp).",Major defect
+D09,Mould growth,"Visible mould on ceilings, walls or joinery, often from poor ventilation.",Minor defect
+D10,Leaking shower or failed waterproofing,"Water escaping the shower area: damaged skirting, swollen joinery or damp walls outside the shower.",Major defect
+D11,"Drummy, loose or cracked tiles","Tiles sound hollow when tapped, are cracked, or have lifted.",Minor defect
+D12,Deteriorated grout or silicone,"Missing, cracked or mouldy grout or sealant at joints and junctions.",Minor defect
+D13,Inadequate fall to floor waste,Water ponds on the wet-area floor instead of draining to the waste.,Minor defect
+D14,Exhaust fan missing or not ducted outside,"No exhaust fan, or fan discharges into the roof space.",Minor defect
+D15,"Cracked, broken or slipped roof tiles","Roof tiles damaged or displaced, allowing water entry.",Major defect
+D16,Deteriorated ridge pointing or bedding,"Ridge or hip cap pointing cracked, missing or loose.",Minor defect
+D17,Corroded roof sheeting or flashings,"Rust or corrosion on metal roofing, flashings or cappings.",Minor defect
+D18,"Gutters blocked, overflowing or poorly graded","Debris in gutters, water lying in gutters, or signs of overflow onto fascias.",Minor defect
+D19,Gutters or downpipes corroded or leaking,"Rust holes, leaking joints or damaged gutters and downpipes.",Minor defect
+D20,Downpipe not connected to stormwater,Downpipe discharges onto the ground next to the building.,Minor defect
+D21,Poor site drainage,"Ground or paving falls toward the building, or water ponds against walls.",Major defect
+D22,Ground level too high against wall,"Soil, garden beds or paving built up against walls, covering weepholes or damp-proof course.",Major defect
+D23,Weepholes blocked or missing,"Weepholes above flashings covered, mortared up or not provided.",Minor defect
+D24,Inadequate subfloor ventilation,Too few or blocked subfloor vents; signs of damp under the floor.,Minor defect
+D25,Balustrade too low or with wide gaps,"Barrier below required height, or gaps a 125 mm sphere could pass through.",Safety hazard
+D26,Handrail missing or loose,"Stair has no handrail, or handrail is loose or discontinuous.",Safety hazard
+D27,Uneven stair risers or treads,Riser heights or tread depths vary noticeably within a flight.,Safety hazard
+D28,Timber decay,"Rot or decay to deck boards, posts, pergola members, fascias or window frames.",Major defect
+D29,Deck or balcony structure loose or deteriorated,"Loose, corroded or missing fixings; posts not bearing; structure moves under load.",Safety hazard
+D30,Smoke alarm missing or not working,"No smoke alarm near bedrooms, or alarm does not sound when tested.",Safety hazard
+D31,Possible non-safety glass in wet area,Glazing in bathroom or shower without a visible safety-glass mark.,Safety hazard
+D32,Hot water unit leaking or corroded,"Water leaking from tank or fittings, or corrosion on the unit.",Major defect
+D33,Relief valve drain not discharging safely,"Relief or expansion valve drain missing, blocked or discharging against the building.",Safety hazard
+D34,Ceiling insulation missing or displaced,Gaps in insulation or batts disturbed by trades.,Minor defect
+D35,Roof framing damaged or altered,"Cut, cracked or sagging rafters, struts or purlins.",Major defect
+D36,Evidence of roof leaks in roof space,"Water stains on framing, sarking or top of ceiling linings.",Major defect

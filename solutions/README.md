@@ -10,3 +10,4 @@ folders hold the thinking: what we are building, why, and in what order.
 | Folder | Solution | Status |
 | --- | --- | --- |
 | [projects/](projects/) | Construction project cost and progress | Spec drafted, nothing built |
+| [inspections/](inspections/) | Domestic building inspections (Victoria) | Spec drafted, nothing built |
