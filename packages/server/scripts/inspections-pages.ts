@@ -105,7 +105,7 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
       staticConfig: {
         title: 'Jobs', search: true, sortable: true, columnFilters: true,
         columns: [
-          col('address', 'Address'), col('customer_name', 'Customer'), col('status', 'Status', { width: 120 }),
+          col('job_no', 'Job', { width: 90 }), col('address', 'Address'), col('customer_name', 'Customer'), col('status', 'Status', { width: 120 }),
           col('scheduled_at', 'Scheduled', { type: 'datetime', format: 'dd/MM/yyyy HH:mm', width: 140 }), col('inspector', 'Inspector'),
           open('pages/job'),
         ],
@@ -119,7 +119,7 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
   'pages/job': page({
     record: 'rt_jobs',
     header: [
-      header('{{ context.record.address }}', '{{ context.record.customer_name }} · {{ context.record.status }}'),
+      header('{{ context.record.job_no }} · {{ context.record.address }}', '{{ context.record.customer_name }} · {{ context.record.status }}'),
       { id: 'slot-summary', componentName: 'Text', staticConfig: { text: "{{ invoke('act_summarise_findings', { job: context.record.id }) }}", style: 'caption' } },
       activities('Nothing can be done to this job right now.'),
       // One section at a time (spec, *Pages*): Job, Inspection, Findings.
@@ -127,6 +127,7 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
     ],
     body: [
       details([
+        ['Job number', 'context.record.job_no'],
         ['Status', 'context.record.status'],
         ['Job type', 'context.record.job_type'],
         ['Customer', 'context.record.customer_name'],
@@ -189,7 +190,7 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
   'pages/finding': page({
     record: 'rt_findings',
     header: [
-      header('{{ context.record.area.name }} — {{ context.record.location }}', '{{ context.record.job.address }}'),
+      header('{{ context.record.area.name }} — {{ context.record.location }}', '{{ context.record.job.job_no }} · {{ context.record.job.address }}'),
       activities('This finding can no longer be changed.'),
       { id: 'slot-open-job', componentName: 'OpenPage', staticConfig: { label: 'View job', target: 'pages/job' }, dynamicProps: { record: 'context.record.job' } },
     ],

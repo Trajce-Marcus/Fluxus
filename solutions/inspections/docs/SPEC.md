@@ -187,6 +187,7 @@ record's Update activity.
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
+| `job_no` | text | **J-0001**, J-0002… set by Create's hook (2026-10-11), never typed or edited; jobs created before it were numbered directly in the database, in creation order |
 | `job_type` | text | always "Pre-Purchase Inspection" for now — set by Create's hook |
 | `status` | text | see *The job's life* |
 | `customer_name` | text | |
@@ -317,7 +318,9 @@ the way existing solutions do it.
 | `act_list_jobs` | — | GET | — | — | — |
 
 Schedule is rerun to reschedule. Quote is rerun to change the price. Create's
-hook sets `job_type` to "Pre-Purchase Inspection".
+hook sets `job_type` to "Pre-Purchase Inspection" and the **job number**: the
+count of jobs, the new one included, padded to four digits. Jobs are never
+deleted, so the count only grows.
 
 
 
@@ -407,10 +410,11 @@ not open.
 
 ## Pages
 
-1. **Jobs** — list of jobs (address, customer, status, scheduled date,
-   inspector), with a button for Create Pre-Purchase Job. The way in, and the
+1. **Jobs** — list of jobs (job number, address, customer, status, scheduled
+   date, inspector), with a button for Create Pre-Purchase Job. The way in, and the
    only place a job is created. A row opens the Job page.
-2. **Job** — always at the top: the header (address; customer and status), a
+2. **Job** — always at the top: the header (job number and address; customer
+   and status), a
    **summary line of counts** ("Major defects: 3 · Minor defects: 5 · Safety
    hazards: 1"), the job's activities, and a **tab strip** that shows one
    section at a time (2026-10-11):
@@ -712,8 +716,7 @@ Claude's calls, not discussed:
 
 ### Open — Part 2
 
-- **The payment reference** the customer is asked to use — job number,
-  address or something else. Records have no human-readable number today.
+- ~~The payment reference~~ — settled 2026-10-11: the **job number**.
 - **Photos in the PDF.** The converter has to reach them: short-lived links or
   embedded in the HTML. Settled in the PDF service's spec.
 - **Where the template is stored** in the solution — see *The report*.

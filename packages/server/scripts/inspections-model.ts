@@ -173,6 +173,7 @@ const EXPIRES = field('expires_on', 'Expires on', 'date');
 
 const RECORD_TYPES = [
   { id: 'rt_jobs', name: 'Jobs', description: 'One inspection engagement, whatever its type.', workflow_ref: 'wf_jobs', custom_fields: [
+    field('job_no', 'Job number'),
     field('job_type', 'Job type'),
     field('status', 'Status'),
     field('customer_name', 'Customer name'),
@@ -271,7 +272,15 @@ const JOB_ACTIVITIES = [
     // among a job's own activities.
     show_condition: 'context.record is null',
     attributes: [req('customer_name'), req('customer_email'), req('address'), use('details'), use('notes')],
-    after_hook: "context.record.update({ status: 'Requested', job_type: 'Pre-Purchase Inspection' })",
+    // The job number counts jobs, the new one included: jobs are never
+    // deleted, so the count only grows (the projects solution numbers its
+    // defects the same way).
+    after_hook: [
+      "context.record.update({ status: 'Requested', job_type: 'Pre-Purchase Inspection' })",
+      "let seq = '' + records.jobs.count",
+      "let padded = iif(len(seq) = 1, '000' + seq, iif(len(seq) = 2, '00' + seq, iif(len(seq) = 3, '0' + seq, seq)))",
+      "context.record.update({ job_no: 'J-' + padded })",
+    ].join('\n'),
   }),
   act({
     id: 'act_quote_jobs', name: 'Quote', record_map: 'UPDATE',
@@ -347,7 +356,7 @@ const JOB_ACTIVITIES = [
   act({
     id: 'act_list_jobs', name: 'List Jobs', record_map: 'GET',
     description: 'Every job, for the Jobs page.',
-    returns: 'records.jobs.orderBy(scheduled_at desc).select(id, address, customer_name, status, scheduled_at, inspector)',
+    returns: 'records.jobs.orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector)',
   }),
 ];
 
