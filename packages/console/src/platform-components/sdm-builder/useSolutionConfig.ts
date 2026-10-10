@@ -74,14 +74,35 @@ export const saveActivities = (loaded: ActivityRawDef[], current: ActivityRawDef
 /**
  * A workflow stores references only. Every per-entity save validates the whole
  * model, so the order must never pass through an invalid state
- * (APPS_AND_INSTANCES §1.6): a workflow that only drops activities is saved
- * before one that adds — when a CREATE moves between workflows, the one losing
- * it goes first, or for a moment two record types would reach it.
+ * (APPS_AND_INSTANCES §1.6): when a CREATE moves between workflows, the one
+ * losing it is saved first, or for a moment two record types would reach it.
+ *
+ * So a workflow that drops an activity another workflow picks up in the same
+ * save goes before that workflow — whatever else either of them added, which
+ * is what an "adds nothing goes first" rule got wrong (cold test, 2026-10-10).
+ * Otherwise, workflows that only drop go before ones that add, then list order.
+ * A swap (each picks up what the other drops) has no valid order; it keeps the
+ * fallback and the server says which CREATE clashed.
  */
 export const saveWorkflows = (loaded: WorkflowRawDef[], current: WorkflowRawDef[]) => {
-  const before = new Map(loaded.map((w) => [w.id, new Set(w.activities.map((r) => r.activity_ref))]));
-  const adds = (w: WorkflowRawDef) => w.activities.filter((r) => !before.get(w.id)?.has(r.activity_ref)).length;
-  const ordered = [...current].sort((a, b) => Number(adds(a) > 0) - Number(adds(b) > 0));
+  const refs = (w: WorkflowRawDef) => new Set(w.activities.map((r) => r.activity_ref));
+  const before = new Map(loaded.map((w) => [w.id, refs(w)]));
+  const gains = new Map(current.map((w) => [w.id, [...refs(w)].filter((id) => !before.get(w.id)?.has(id))]));
+  const drops = new Map(current.map((w) => {
+    const now = refs(w);
+    return [w.id, [...(before.get(w.id) ?? [])].filter((id) => !now.has(id))];
+  }));
+  // Must `a` be saved before `b`? It must when `a` drops something `b` gains.
+  const precedes = (a: WorkflowRawDef, b: WorkflowRawDef) =>
+    a.id !== b.id && drops.get(a.id)!.some((id) => gains.get(b.id)!.includes(id));
+
+  const pending = [...current].sort((a, b) => Number(gains.get(a.id)!.length > 0) - Number(gains.get(b.id)!.length > 0));
+  const ordered: WorkflowRawDef[] = [];
+  while (pending.length > 0) {
+    // The first workflow nothing still pending has to precede; in a cycle, the first.
+    const i = Math.max(0, pending.findIndex((w) => !pending.some((p) => precedes(p, w))));
+    ordered.push(...pending.splice(i, 1));
+  }
   return saveEntities(loaded, ordered, (w) => w.id, (w) => sdmClient.putWorkflow(w), (id) => sdmClient.deleteWorkflow(id));
 };
 
