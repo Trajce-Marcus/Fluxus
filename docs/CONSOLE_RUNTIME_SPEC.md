@@ -148,7 +148,7 @@ Whole-menu replacement is the MVP and stays as the escape hatch, but it **forks 
 
 ## 6. Page access control (RBAC stage-2 surface, per RBAC_COMPACT)
 
-- `PageDef.access.open: [roleIds]`; default deny once the solution declares `access.roles`; no roles section ⇒ open (adoption posture). **Authored in the page editor since 2026-08-10** — a "Page Access" section in the configuration column, one checkbox per declared role, warning while the list is empty. Until then the rule was enforced but unauthorable: a published page reached nobody, and the Runtime reported it as *not in the snapshot* (the page is filtered server-side, while the menu item that names it stays visible — menu roles gate listing, `access.open` gates entry).
+- `PageDef.access.open: [roleIds]`; default deny. **No roles section ⇒ no page opens** (strict, 2026-10-11; it was open until then — the adoption posture, reversed: BLUEPRINT *Access*). **Authored in the page editor since 2026-08-10** — a "Page Access" section in the configuration column, one checkbox per declared role, warning while the list is empty. Until then the rule was enforced but unauthorable: a published page reached nobody, and the Runtime reported it as *not in the snapshot* (the page is filtered server-side, while the menu item that names it stays visible — menu roles gate listing, `access.open` gates entry).
 - Enforcement: server filters the Runtime `pages.list` snapshot to openable published versions per `context.user.roles` (upgrades the "client interim" — cheap once roles are in context). Client menu filtering is cosmetic on top.
 - Console preview exempt (design plane; `read` sees all).
 

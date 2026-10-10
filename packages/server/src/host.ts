@@ -583,14 +583,16 @@ export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu
 
 /**
  * Whether a published page def is openable to `roles` (RBAC_COMPACT page
- * surface / §6). Enforced server-side only when auth is configured AND the
- * solution declares roles; otherwise open (env stub / adoption). When active it
- * is **default deny**: `def.access.open` must list a held role. `def` is opaque
+ * surface / §6). Enforced whenever auth is configured: **default deny** —
+ * `def.access.open` must list a held role, and a solution that declares no
+ * roles opens no page (strict, 2026-10-11; it was open until then — the
+ * "adoption posture"). Only an environment with no auth is open. `def` is opaque
  * jsonb — this reads only the shallow `access.open` convention, no PageDef dep.
  */
 export function pageOpenable(authConfigured: boolean | undefined, config: SolutionConfig, roles: string[] | undefined, def: unknown): boolean {
   if (!authConfigured) return true;
-  if (!config.access?.roles?.length) return true;
+  // Strict (2026-10-11): no roles declared ⇒ no page opens, as for record types.
+  if (!config.access?.roles?.length) return false;
   const open = (def as { access?: { open?: string[] } } | null)?.access?.open;
   if (!open || open.length === 0) return false;
   const held = new Set(roles ?? []);

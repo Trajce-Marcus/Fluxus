@@ -77,10 +77,11 @@ The owner is `orgs.owner_email` — also the org's contact address, since the se
 - **Entry is `op_users` OR `op_admins`.** An admin row implies entry: an
   administrator who cannot open what they administer would be nonsense. Enforced
   in `resolveUser` — the one choke point every operation-scoped call passes.
-- **Strict, not dormant.** An operation with nobody in it admits nobody. Unlike
-  record types and pages, which are dormant-until-declared, this gate has no
-  adoption default: those ask *what may you see*, this asks *may you enter*, and
-  an empty list is an answer. Demo posture (auth unconfigured) stays open.
+- **Strict, not dormant.** An operation with nobody in it admits nobody. Demo
+  posture (auth unconfigured) stays open. **Since 2026-10-11 record types and
+  pages are strict too**: a solution that declares no roles shows nothing
+  (BLUEPRINT, *Access*). Until then they were dormant-until-declared — the
+  "adoption posture" — which is reversed.
 - **No design-plane bypass.** Someone who builds the solution is added to an
   operation like anyone else; the Console reaches records through the same gate
   as the Runtime.

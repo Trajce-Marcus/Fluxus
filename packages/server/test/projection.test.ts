@@ -159,11 +159,14 @@ describe('projectConfig — the role cut', () => {
     expect(projected.functions).toBeUndefined();
   });
 
-  it('ships everything readable when RBAC is dormant (env stub / no roles declared)', () => {
+  it('ships everything readable only in an unconfigured environment (env stub)', () => {
     expect(projectConfig(config, { roles: [], enforced: false }).recordTypes.map((rt) => rt.id))
       .toEqual(['rt_alpha', 'rt_beta']);
+  });
+
+  it('ships nothing when the solution declares no roles — strict, 2026-10-11', () => {
     const { access: _dropped, ...noRoles } = config;
-    expect(projectConfig(noRoles, { roles: [], enforced: true }).recordTypes).toHaveLength(2);
+    expect(projectConfig(noRoles, { roles: [], enforced: true }).recordTypes).toEqual([]);
   });
 });
 

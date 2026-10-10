@@ -547,10 +547,11 @@ rev 6 §0). What the server implements:
   `solutions.update|delete`, operations, users and roles left this check when the
   admin tiers landed. `requireSolAdmin` is a **no-op when auth is unconfigured**
   (env stub open, §7).
-- **Record-type read enforcement** (RBAC stage 1, RBAC_COMPACT): active only
-  when auth is **configured** (`ctx.authConfigured`) AND the solution declares
-  `access.roles`; otherwise everything reads open (env stub / adoption
-  posture). When active it is **default deny** — a type is readable only if its
+- **Record-type read enforcement** (RBAC stage 1, RBAC_COMPACT): active
+  whenever auth is **configured** (`ctx.authConfigured`); only the env stub
+  reads open. **A solution that declares no `access.roles` reads nothing**
+  (`computeReadable` returns the empty set — strict, 2026-10-11, reversing the
+  adoption posture; `pageOpenable` likewise opens no page). It is **default deny** — a type is readable only if its
   `access.read` lists a role the caller holds. Applied by `records.*`, by
   the `activities.run` anchor check (unreadable anchor ⇒ not-found, *before*
   the run gate), and since 2026-08-09 by `projectConfig` — one answer

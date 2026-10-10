@@ -256,8 +256,10 @@ good enough (a leading comment defeated it, and it then answered null).
 governance tables and are not model.
 
 **An empty result is ambiguous, and stays so in v1.** Roles live at
-`config.access?.roles`, and *absent* means RBAC is dormant — every record type
-reads open — while *empty* means roles exist and none are declared. The stored
+`config.access?.roles`, and *absent* meant RBAC was dormant — every record type
+read open — while *empty* means roles exist and none are declared. (Since
+2026-10-11 both read nothing — no role, no access — so the distinction no
+longer changes what anyone sees.) The stored
 config preserves that distinction deliberately; this projection cannot express
 it. Documented, not solved: exposing an `rbac_enabled` flag is a model change,
 and this spec does not make one.

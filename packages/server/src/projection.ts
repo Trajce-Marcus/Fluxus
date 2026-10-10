@@ -28,9 +28,10 @@ import type { MenuItem } from './db/schema';
 /**
  * The record-type read surface (RBAC_COMPACT: role list, default deny, server
  * partition filter). Returns the set of type ids readable to the caller in the
- * operation, or `null` when RBAC is dormant/off (everything readable):
- *   - auth unconfigured (env stub) ⇒ null (open), OR
- *   - the solution declares no `access.roles` ⇒ null (adoption posture).
+ * operation, or `null` when RBAC is off (everything readable) — only when
+ * auth is unconfigured (env stub). A solution that declares no `access.roles`
+ * gets the empty set: nothing readable (strict, 2026-10-11; until then it read
+ * open — the "adoption posture").
  * Otherwise **default deny**: a type is readable only if its `access.read`
  * lists a role the user holds. A held role set comes from `runtimeRoles`.
  *
@@ -44,7 +45,10 @@ export function computeReadable(
   roles: string[] | undefined,
 ): Set<string> | null {
   if (!authConfigured) return null; // env stub ⇒ everything open
-  if (!config.access?.roles?.length) return null; // solution opted out ⇒ open (adoption)
+  // Strict (ruled 2026-10-11, reversing the July "adoption posture"): a
+  // solution that declares no roles shows nothing — no role, no access. Only
+  // an unconfigured environment (no auth at all) stays open, above.
+  if (!config.access?.roles?.length) return new Set();
   const held = new Set(roles ?? []);
   const readable = new Set<string>();
   for (const rt of config.recordTypes) {

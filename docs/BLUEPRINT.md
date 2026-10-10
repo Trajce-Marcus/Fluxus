@@ -77,6 +77,42 @@ columns exist today; the install path doesn't).
 6. **Pages are data, not code.** A page is a stored, validated definition
    interpreted at render time — no compile step, no arbitrary bundles.
 
+## Access — *Built and Direction* (ruled 2026-10-11)
+
+**Built: no role, no access.** Two checks, both strict once sign-in is
+configured:
+
+- **Entering an operation** — only the people listed on it (`op_users`, or an
+  op admin). Unchanged since 2026-08-02.
+- **Inside it, roles.** A page opens only to a role its access list names; a
+  record type reads only to a role its read list names; a menu item shows only
+  to a role it names. **A solution that declares no roles shows nothing.**
+  Only an environment with no sign-in configured at all stays open.
+
+**Actions follow the page and the record type.** Whoever can open a page sees
+its actions; an action is restricted further only where it matters, by its
+availability condition (e.g. a payment only for admins). On the server, an
+action on an existing record is refused unless the caller may read that
+record's type.
+
+**Reversed 2026-10-11: the "adoption posture".** Since July a solution that
+declared no roles read open — every page and record type visible to everyone
+let into the operation — while the menu filtered by role regardless. The
+user's ruling: access is always set up, so no role means no access. Dropped
+because it made what a user saw flip on whether a solution happened to declare
+any role, and the menu disagreed with the pages beside it (found on the
+inspections solution, whose menu vanished while its pages stayed open).
+Solutions with no roles in dev (next-solution, primary-school-victoria,
+inspections) go dark until roles are set up.
+
+**Direction — page-level checks on the server come with apps Part 2**
+([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)). Today a call carries the action
+and its record, not the page, so the server cannot tell which page it came
+from, and a create — which has no existing record to check — is not
+role-checked. Part 2 makes every run carry its app instance, which holds the
+roles and covers pages with no record type; a run with no instance is refused.
+Not treated as a gap until then (the user's call).
+
 ## Deleting — *Built and Direction* (ruled 2026-09-21)
 
 **Built.** The DSL has `delete()` — `r.delete()`, or
