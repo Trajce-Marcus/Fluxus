@@ -6,6 +6,11 @@ BLUEPRINT § Apps (agreed 2026-09-28), which said an app *contains* pages and
 automations; here the page **is** the app. Earlier rulings were set aside
 while exploring, on purpose.
 
+**Update 2026-10-04:** taken forward into a spec,
+[../APPS_AND_INSTANCES.md](../APPS_AND_INSTANCES.md), which records the rulings
+made since. Where the two differ, the spec wins. This note stays as the record
+of the exploration.
+
 Everything below is the user's idea unless marked **(Claude)**.
 
 ## The foundation

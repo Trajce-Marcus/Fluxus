@@ -381,10 +381,15 @@ other's activities, never by reading each other's records.**
 
 ## Apps — *Direction* (agreed 2026-09-28)
 
-> **Being re-explored (2026-09-30).** A newer idea, not yet ruled, makes the
-> page itself the app, adds app **instances** (the operation's menu) and a pool
-> of shared activities. See [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
-> before building anything from this section.
+> **Superseded in part, 2026-10-04.** The page itself is the app; an operation
+> runs **instances** of it (its menu). **Settled:** activities live in a
+> solution-level **pool**; a workflow is an ordered list of pool activities; a
+> record type points to one workflow and an app may point to one of its own; an
+> activity runs only through a workflow; an app may change which activities it
+> has but only narrow how each is used. This reverses the 2026-08-08 storage
+> ruling that activities stay inside their workflow. Instances are still being
+> settled. See [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md) (the spec) before
+> building anything from this section.
 
 In short: the model's workflows list every activity that can happen, and an
 **app** is what picks the ones it uses and puts them in front of people (as
