@@ -340,7 +340,7 @@ const FINDING_ACTIVITIES = [
 
 /** Create / update / list / search for one master-data type. */
 function masterData(o: {
-  plural: string; singular: string; collection: string;
+  plural: string; singular: string; pluralName?: string; collection: string;
   fields: string[]; required: string[]; listSelect: string; orderBy: string;
   searchFields: string[]; searchSelect: string; uniqueCode: boolean;
 }) {
@@ -370,12 +370,12 @@ function masterData(o: {
       before_hook: unique(true),
     }),
     act({
-      id: `act_list_${o.plural}`, name: `List ${o.singular}s`, record_map: 'GET',
+      id: `act_list_${o.plural}`, name: `List ${o.pluralName ?? o.singular + 's'}`, record_map: 'GET',
       description: 'Every record, expired included, for its page.',
       returns: `records.${o.collection}.orderBy(${o.orderBy}).select(${o.listSelect})`,
     }),
     act({
-      id: `act_search_${o.plural}`, name: `Search ${o.singular}s`, record_map: 'GET',
+      id: `act_search_${o.plural}`, name: `Search ${o.pluralName ?? o.singular + 's'}`, record_map: 'GET',
       description: 'Unexpired records matching a search term — for pickers.',
       attributes: [use('term')],
       returns: `records.${o.collection}.where(${UNEXPIRED} and ${TERM(...o.searchFields)}).orderBy(${o.orderBy}).select(${o.searchSelect})`,
@@ -390,7 +390,7 @@ const AREA_ACTIVITIES = masterData({
   searchFields: ['name', 'code'], searchSelect: 'id, code, name', uniqueCode: true,
 });
 const CATEGORY_ACTIVITIES = masterData({
-  plural: 'defect_categories', singular: 'Category', collection: 'defect_categories',
+  plural: 'defect_categories', singular: 'Category', pluralName: 'Categories', collection: 'defect_categories',
   fields: ['name', 'meaning'], required: ['name'],
   listSelect: 'id, name, meaning, expires_on', orderBy: 'name',
   searchFields: ['name'], searchSelect: 'id, name', uniqueCode: false,
