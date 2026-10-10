@@ -568,6 +568,62 @@ directly, as an append-only change ledger over the admin tables. The SDM stays
 the right home for the platform's own *business* objects — orgs, billing,
 catalogue, approvals — none of which sit in the authorization path.
 
+## Documents and email — *Direction* (agreed 2026-10-10)
+
+The first solution to need them is inspections ([SPEC Part 2](../solutions/inspections/docs/SPEC.md#part-2--after-inspected)):
+a report as a PDF, emailed to a customer who never signs in. Neither exists
+today. `services.notify.email` writes to the server log and delivers nothing,
+and there is no document output. Three additions, each needing its own spec:
+
+- **Real email delivery.** `notify.email` sends through an email provider
+  (Postmark or SES; not chosen). Emails come from the org's own domain, so the
+  org adds the provider's DNS records once. An email can **attach a file saved
+  on a record**. The server reads that file to attach it — a deliberate
+  exception to the rule that file contents never pass through our server
+  (files go browser ↔ storage directly). `queue` holds a send until the
+  activity's changes are saved, but nothing then waits for it: on Vercel the
+  function can stop before the send finishes, and a failure before the
+  provider accepts the email reaches only the server log. **For now failed
+  sends get no handling in the platform** — follow-up is human (a customer who
+  does not receive an email calls).
+- **HTML template → PDF, as a service called from a hook.** The hook gathers
+  the data with ordinary queries and passes it with a template; the service
+  fills the template (Handlebars placeholders), converts it, and returns the
+  PDF. **The converter is hidden inside the service**, so swapping it changes
+  nothing else: **DocRaptor (hosted Prince) now; long term our own Gotenberg
+  container (Chrome)**, hosted outside Vercel — the report data stays with us
+  and there is no per-document fee. Templates stick to plain HTML and CSS so
+  the swap stays cheap. While DocRaptor is in place, every report's contents,
+  customer details and photos included, go to it to be converted.
+- **A service can save a file onto a record from the server.** Today files
+  reach storage only by browser upload.
+- **A page component that opens a file saved on a record** — a platform
+  component, like `Photos`. Today the open/download control exists only inside
+  activity forms.
+
+**Templates belong to the solution**, not to an operation, so they travel with
+it; operation-specific details (bank details, firm name) are passed in with the
+data the hook gathers. How a solution stores a template is open: records belong
+to operations, so a template is a new kind of solution content.
+
+Considered and not chosen:
+
+- **Chrome inside our server functions.** A full Chrome does not fit Vercel's
+  250 MB function limit; trimmed builds fit but add seconds of start-up and
+  want 1–2 GB of memory.
+- **A page as the template.** The page runtime loads its data in the browser
+  after the page mounts, so the server cannot simply turn a page into HTML, and
+  our components are made for screens, not printed pages. Revisit if a second
+  solution needs reports and its authors should not write HTML.
+- **HTML converters with their own small layout engine** (print quality too
+  poor for a professional report) and **pdfmake's document format** (light,
+  but clumsy to write by hand).
+
+Open: where a solution stores its templates; the service and function names;
+how the converter reaches photos
+(short-lived links or embedded); what happens to a PDF already rendered when
+the activity then fails; where Gotenberg is hosted.
+
 ## Building by AI assistance — *Direction* (agreed 2026-09-13)
 
 Hand-crafting a solution — model, activities, pages, roles — takes too long to

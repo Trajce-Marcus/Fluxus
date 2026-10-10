@@ -1,6 +1,15 @@
 # Inspections — Spec
 
-Drafted 2026-10-04. Living document. Covers **Pre-Purchase Inspection** only.
+Drafted 2026-10-04. Living document. Covers **Pre-Purchase Inspection** only,
+built in two parts:
+
+- **Part 1 — up to Inspected.** Job intake, quote, scheduling, the walk-through
+  and Finish Inspection. Everything from *The job's life* to the Part 1 *Open*
+  list.
+- **Part 2 — after Inspected** (added 2026-10-10). The inspector's review, the
+  report as a PDF, the payment request, recording payment and emailing the
+  report. See [Part 2](#part-2--after-inspected). Part 2 needs platform
+  additions that Part 1 does not.
 
 > Record type, attribute and activity ids below are **proposals**, not endorsed
 > names. They need a pass before anything is authored in the Console.
@@ -9,8 +18,8 @@ Drafted 2026-10-04. Living document. Covers **Pre-Purchase Inspection** only.
 
 A system for a small Melbourne building-inspection firm to run domestic
 inspections and record what they find. Scope is conducting the inspection and
-capturing its findings. Requests for quote and billing are out; a quote is
-recorded as a price only.
+capturing its findings. Requests for quote are out; a quote is recorded as a
+price only. Billing is out beyond Part 2's payment request and payment record.
 
 It is a test of how Fluxus goes, not a move into the inspection-software
 market. Hello Inspections (pre-purchase) and PermAssist (mandatory inspections)
@@ -98,6 +107,7 @@ Sample data is in [sample-data/](sample-data/).
 | `job_type` | text | Pre-Purchase Inspection (the other two later) |
 | `status` | text | see *The job's life* |
 | `customer_name` | text | |
+| `customer_email` | text | required at intake; Part 2 emails the customer at it |
 | `address` | text | |
 | `details` | text, multiline | |
 | `notes` | text, multiline | |
@@ -174,7 +184,7 @@ Sample data is in [sample-data/](sample-data/).
 
 | Activity | Display name | Kind | Captures | Allowed when | Status after |
 | --- | --- | --- | --- | --- | --- |
-| `act_create_jobs` | Create Pre-Purchase Job | CREATE | customer name, address, details, notes | always | Requested |
+| `act_create_jobs` | Create Pre-Purchase Job | CREATE | customer name, customer email (required), address, details, notes | always | Requested |
 | `act_quote_jobs` | Quote | UPDATE | quoted amount, quote notes | not Cancelled or Inspected | Quoted from Requested; otherwise unchanged |
 | `act_accept_jobs` | Accept Quote | UPDATE | — | Quoted | Accepted |
 | `act_cancel_jobs` | Cancel Job | UPDATE | reason (required) | not Cancelled or Inspected | Cancelled |
@@ -268,10 +278,10 @@ Claude's calls, not discussed:
   operation's users with a role.
 - **Refining the master data** — more defects, their default categories, and
   how code references are cited for an existing house.
-- **The report** — sections 11–16 (Conclusion, Property and Inspection
-  Information, Access and Restrictions, Timber Pest Findings, Conducive
-  Conditions, Overall Assessment) and producing it. A report as a document (a
-  PDF to email) is a platform gap: Fluxus has no document output.
+- **The report** — producing it is [Part 2](#part-2--after-inspected). Its
+  sections 11–16 (Conclusion, Property and Inspection Information, Access and
+  Restrictions, Timber Pest Findings, Conducive Conditions, Overall Assessment)
+  are in neither part; they come later.
 - **Timber pest** findings.
 - Mandatory and Independent Stage Inspections.
 
@@ -286,3 +296,196 @@ Claude's calls, not discussed:
 - **Loading the sample data** — entered through the admin activities; how to
   bulk-load it is not settled. Nothing may be seeded.
 - Record type, attribute and activity ids need endorsement.
+
+---
+
+## Part 2 — after Inspected
+
+Added 2026-10-10. Builds on Part 1 unchanged except where *Changes to Part 1*
+says otherwise. Ids are proposals, as above.
+
+Part 2 needs four platform additions, recorded as direction in the blueprint
+([Documents and email](../../../docs/BLUEPRINT.md#documents-and-email--direction-agreed-2026-10-10)):
+real email delivery with attachments, a service that turns an HTML template
+into a PDF, a service saving a file onto a record from the server, and a page
+component that opens a file saved on a record. None is built. Each needs its
+own platform spec before Part 2 is built.
+
+### The job's life, continued
+
+| Status | Reached by |
+| --- | --- |
+| Inspected | Finish Inspection (Part 1), or Reopen Report |
+| Report Ready | Finalise Report |
+| Awaiting Payment | Send Report Ready |
+| Paid | Record Payment |
+| Cancelled | Cancel Job — from any status except Cancelled and Paid |
+
+### The steps
+
+1. **Review — status stays Inspected.** The inspector reviews their own report.
+   Findings can still be added and changed (Add Finding, Update Finding).
+2. **Finalise Report → Report Ready.** The after hook gathers the job and its
+   findings, fills the job type's report template, has it turned into a PDF and
+   saves the PDF on the job. Changes after this need Reopen Report.
+3. **Reopen Report → Inspected.** Allowed in Report Ready and Awaiting Payment.
+   The job goes back to review; Finalise Report makes the PDF again. Payment
+   can be recorded only once the job is back in Awaiting Payment, so Send
+   Report Ready runs again and the customer gets the payment request again —
+   even if they have already paid.
+4. **Send Report Ready → Awaiting Payment.** A manual step — it never follows
+   Finalise Report on its own. Emails the customer that the report is ready and
+   that payment is due, with the amount (the quoted amount) and the firm's
+   bank details.
+5. **Record Payment → Paid.** Captures the amount, the date and a reference. If
+   the amount differs from the quoted amount, a reason is required. Once the
+   payment is saved, the report is emailed to the customer with the PDF
+   attached.
+
+**When an email fails**, nothing is built for it, and the failure may not show
+anywhere a person looks — some failures reach only the server log. Follow-up is
+human: a customer who does not receive an email calls, and an admin downloads
+the PDF from the job and sends it from their own email.
+
+### Emails
+
+Both come from the firm's no-reply address (`sender_email` on the firm details
+record), on the firm's own domain. The firm adds the email provider's DNS
+records to its domain once.
+
+| Sent by | To | Says | Attachment |
+| --- | --- | --- | --- |
+| Send Report Ready | `customer_email` | the report for the address is ready; the amount due; BSB, account number and account name; how to pay | — |
+| Record Payment | `customer_email` | payment received; the report is attached | the job's `report` |
+
+Both are `queue`d in the after hook, so they go only once the activity's
+changes are saved. Exact wording is settled when built.
+
+### The report
+
+- **The template belongs to the solution**, not to an operation: HTML and CSS
+  with Handlebars placeholders, written by hand. Claude writes the first one
+  once the model exists in the Console. It lives in the database, never in the
+  repo. **How a solution stores it is open** — records belong to operations, so
+  a template is a new kind of solution content, a platform decision.
+- **Operation-specific details** — firm name, BSB, account — come from the
+  operation's firm details record and are passed in with the data.
+- **The data** Finalise Report passes: the job's attributes, the firm details,
+  and its findings
+  grouped by area in the areas' `sequence` order, each with location, defect
+  name, category, comments and photos.
+- **The content** for now is the job details and the findings by area.
+  Sections 11–16 come later.
+- **The PDF** is saved on the job's `report` attribute, replacing any earlier
+  one.
+
+### Record types — Part 2
+
+`rt_jobs` gains:
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `report` | file, single, PDF | set by Finalise Report |
+| `amount_paid` | decimal, 2 places | captured at Record Payment |
+| `paid_on` | date | captured at Record Payment |
+| `payment_reference` | text | captured at Record Payment |
+| `payment_difference_reason` | text, multiline | required when `amount_paid` ≠ `quoted_amount` |
+
+#### `rt_firm_details`
+
+One record, maintained by the firm.
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `firm_name` | text | |
+| `sender_email` | text | the no-reply address emails come from |
+| `bsb` | text | |
+| `account_number` | text | |
+| `account_name` | text | |
+
+#### Report template — solution content, not a record type
+
+| Holds | Notes |
+| --- | --- |
+| job type | which job type it is for — Pre-Purchase Inspection |
+| name | |
+| body | HTML and CSS with Handlebars placeholders |
+
+### Workflows — Part 2
+
+#### Changes to Part 1
+
+| Activity | Was allowed when | Now allowed when |
+| --- | --- | --- |
+| `act_cancel_jobs` Cancel Job | not Cancelled or Inspected | not Cancelled or Paid |
+| `act_add_findings` Add Finding | the job is In Progress | the job is In Progress or Inspected |
+| `act_update_findings` Update Finding | the job is In Progress | the job is In Progress or Inspected |
+| `act_quote_jobs` Quote | not Cancelled or Inspected | not Cancelled, Inspected, Report Ready, Awaiting Payment or Paid |
+
+#### `wf_jobs` gains
+
+| Activity | Display name | Kind | Captures | Allowed when | Status after |
+| --- | --- | --- | --- | --- | --- |
+| `act_finalise_jobs` | Finalise Report | UPDATE | — | Inspected | Report Ready |
+| `act_reopen_jobs` | Reopen Report | UPDATE | — | Report Ready or Awaiting Payment | Inspected |
+| `act_notify_jobs` | Send Report Ready | UPDATE | — | Report Ready | Awaiting Payment |
+| `act_pay_jobs` | Record Payment | UPDATE | amount, date, reference, difference reason | Awaiting Payment | Paid |
+
+- **Finalise Report** refuses when there is no template for the job's type.
+  If the PDF conversion fails, the job stays Inspected and its history keeps
+  the Finalise Report entry with nothing changed — the platform's normal
+  handling of a failed after hook, accepted as is.
+- **Send Report Ready** refuses when there is no firm details record.
+- **Record Payment**'s before hook refuses when the amount differs from
+  `quoted_amount` and no reason is given; the refusal names the quoted amount.
+
+#### Firm details
+
+The same three as the master data: `act_create_firm_details`,
+`act_modify_firm_details`, `act_list_firm_details`.
+
+### Roles — Part 2
+
+| Role | Runs |
+| --- | --- |
+| Admin | everything below, and firm details |
+| Inspector | Add Finding and Update Finding while Inspected, Finalise Report, Reopen Report |
+
+Send Report Ready and Record Payment are Admin only.
+
+### Pages — Part 2
+
+- **Job** — opens the report through the new file component, and shows the
+  payment details always — blank until paid.
+  The new activities appear with the job's other activities.
+- **Firm details** — the one record, with modify.
+
+### Decided while writing — check these (Part 2)
+
+Claude's calls, not discussed:
+
+- Add Finding, as well as Update Finding, is allowed during review.
+- Quote is not allowed from Inspected on — the price is fixed once the report
+  exists.
+- Send Report Ready and Record Payment are Admin only.
+- The sender address sits on the firm details record.
+- A template is chosen by the job's type.
+- Reopen Report keeps the old PDF until Finalise Report replaces it.
+
+### Out of Part 2
+
+- Report sections 11–16.
+- Anything built for failed emails — handled by hand.
+- Sending Report Ready automatically.
+- A page used as the report template — templates are hand-written HTML.
+
+### Open — Part 2
+
+- **The payment reference** the customer is asked to use — job number,
+  address or something else. Records have no human-readable number today.
+- **Photos in the PDF.** The converter has to reach them: short-lived links or
+  embedded in the HTML. Settled in the PDF service's spec.
+- **Where the template is stored** in the solution — see *The report*.
+- **Saving the PDF from the server.** The uploads ledger and the storage limit
+  count only files captured by an activity — part of the server-side file save
+  addition.
