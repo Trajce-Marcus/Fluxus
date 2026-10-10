@@ -253,7 +253,8 @@ const RECORD_TYPES = [
 
 const status = (s: string) => `context.record.update({ status: '${s}' })`;
 
-/** What Start Inspection asks, and Update Inspection Details corrects. */
+/** What Inspection Details asks: the property facts (required) and Start
+ *  Inspection's three answers (optional, to correct them). */
 const INSPECTION_DETAILS = (): Usage[] => [
   use('access'), use('weather'), use('checklist'),
   req('building_type'), req('construction'), req('roof_cladding'), req('footings'), req('storeys'), use('year_built'),
@@ -301,14 +302,17 @@ const JOB_ACTIVITIES = [
   }),
   act({
     id: 'act_start_jobs', name: 'Start Inspection', record_map: 'UPDATE',
-    description: 'On site: access, weather, the pre-start checklist and the property facts.',
+    description: 'On site: access, weather and the pre-start checklist.',
     show_condition: "context.record.status = 'Scheduled'",
-    attributes: INSPECTION_DETAILS(),
+    attributes: [use('access'), use('weather'), use('checklist')],
     after_hook: status('In Progress'),
   }),
   act({
-    id: 'act_update_jobs', name: 'Update Inspection Details', record_map: 'UPDATE',
-    description: 'Corrects what Start Inspection captured.',
+    // One place for everything about the visit (2026-10-11, "consolidate"):
+    // the property facts, entered whenever they are known, and corrections to
+    // what Start Inspection captured.
+    id: 'act_update_jobs', name: 'Inspection Details', record_map: 'UPDATE',
+    description: 'The property facts, and corrections to access, weather and the checklist. Rerunnable.',
     show_condition: "context.record.status = 'In Progress'",
     attributes: INSPECTION_DETAILS(),
   }),
@@ -326,6 +330,9 @@ const JOB_ACTIVITIES = [
     before_hook: [
       'if context.record.major_incidence is null or context.record.minor_incidence is null or context.record.overall_condition is null or context.record.overall_assessment is null {',
       "  fail('Complete the Assessment before finishing the inspection.')",
+      '}',
+      'if context.record.building_type is null or context.record.construction is null or context.record.roof_cladding is null or context.record.footings is null or context.record.storeys is null or context.record.occupied is null or context.record.furnished is null {',
+      "  fail('Fill in the property facts in Inspection Details before finishing the inspection.')",
       '}',
       "let missing = ''",
       `for each a in records.inspection_areas.where(${UNEXPIRED} and not (id in records.findings.where(job = context.record.id).values(area))).orderBy(sequence) {`,

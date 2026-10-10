@@ -108,7 +108,11 @@ Added 2026-10-11, for the report's Property and Inspection Information,
 Conclusion and Overall Assessment.
 
 **Start Inspection** captures, on site: access, weather and the pre-start
-checklist (as before), and the **property facts**:
+checklist. **Inspection Details** (consolidated 2026-10-11) holds everything
+else about the visit, in one place: the **property facts**, entered whenever
+they are known — the footings or the age are often not known at the door —
+and corrections to access, weather and the checklist (optional there). It is
+rerunnable while the inspection is in progress. The property facts:
 
 | Fact | Answer |
 | --- | --- |
@@ -125,7 +129,8 @@ checklist (as before), and the **property facts**:
 | Signs of concealed defects | true / false, optional, with a note |
 
 The answer lists are fixed for now; any of them can become master data later.
-**Update Inspection Details** changes them while the inspection is in progress.
+The required facts are building type, construction, roof cladding, footings,
+storeys, occupied and furnished.
 
 **Assessment** records the inspector's judgement, rerunnable while the
 inspection is in progress:
@@ -137,7 +142,9 @@ inspection is in progress:
 | Overall condition | Below average, Average, Above average |
 | Overall assessment | free text |
 
-**Finish Inspection refuses** until the Assessment is done.
+**Finish Inspection refuses** until the Assessment is done and the required
+property facts are filled in. An activity cannot be made mandatory as such —
+whether it ran is told by the answers it saved — so this is the check.
 
 The defect **counts** — major, minor, safety hazards — are worked out from the
 findings, never entered. A finding recorded before 2026-10-11 with the expired
@@ -302,10 +309,10 @@ the way existing solutions do it.
 | `act_accept_jobs` | Accept Quote | UPDATE | — | Quoted | Accepted |
 | `act_cancel_jobs` | Cancel Job | UPDATE | reason (required) | not Cancelled or Inspected | Cancelled |
 | `act_schedule_jobs` | Schedule | UPDATE | date/time, inspector's name, instructions | Accepted or Scheduled | Scheduled |
-| `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist, and the property facts | Scheduled | In Progress |
-| `act_update_jobs` | Update Inspection Details | UPDATE | the same as Start Inspection | In Progress | unchanged |
+| `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist | Scheduled | In Progress |
+| `act_update_jobs` | Inspection Details | UPDATE | the property facts; access, weather, checklist (optional) | In Progress | unchanged |
 | `act_assess_jobs` | Assessment | UPDATE | major incidence, minor incidence, overall condition, overall assessment | In Progress | unchanged |
-| `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress, every area has a finding, and the Assessment is done | Inspected |
+| `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress, every area has a finding, the Assessment is done, and the required property facts are filled in | Inspected |
 | `act_summarise_findings` | — | GET | job | — | — (one line of counts for the Job page) |
 | `act_list_jobs` | — | GET | — | — | — |
 
@@ -409,8 +416,9 @@ not open.
    section at a time (2026-10-11):
    - **Job** — customer, email, address, details, notes, quote, schedule,
      inspector, instructions, cancel reason.
-   - **Inspection** — what Start Inspection captured (access, weather,
-     checklist, property facts), the Assessment, and the declaration.
+   - **Inspection** — access, weather, checklist and the property facts
+     (Start Inspection and Inspection Details), the Assessment, and the
+     declaration.
    - **Findings** — an Add Finding button, and the findings as a `RecordList`
      (area order, area, location, access, defect, category, safety hazard,
      photo count) with Update Finding and Remove Finding on each row. A row
@@ -450,8 +458,8 @@ Claude's calls, approved by the user 2026-10-10:
 - (2026-10-11) The property-fact and assessment answer lists; storeys and year
   built as numbers; utilities as three true/false answers (a script cannot join
   a list into words for display).
-- (2026-10-11) Update Inspection Details, so property facts can be corrected
-  during the walk-through; Finish Inspection requiring the Assessment.
+- (2026-10-11) Finish Inspection requiring the Assessment and the required
+  property facts.
 - (2026-10-11) The finding's access field is `area_access`, because `access` is
   already the job's free-text access note.
 - (2026-10-11) The summary line counts by category **name** ("Major defect",
@@ -639,7 +647,7 @@ One record, maintained by the firm.
 | `act_add_findings` Add Finding | the job is In Progress | the job is In Progress or Inspected |
 | `act_update_findings` Update Finding | the job is In Progress | the job is In Progress or Inspected |
 | `act_remove_findings` Remove Finding | In Progress | In Progress or Inspected |
-| `act_update_jobs` Update Inspection Details | In Progress | In Progress or Inspected |
+| `act_update_jobs` Inspection Details | In Progress | In Progress or Inspected |
 | `act_assess_jobs` Assessment | In Progress | In Progress or Inspected |
 | `act_quote_jobs` Quote | not Cancelled or Inspected | not Cancelled, Inspected, Report Ready, Awaiting Payment or Paid |
 

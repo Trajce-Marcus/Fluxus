@@ -343,7 +343,10 @@ for (const job of JOBS) {
   if (reached(job, 'Quoted')) await run('act_quote_jobs', { quoted_amount: job.quote, ...(job.quoteNotes ? { quote_notes: job.quoteNotes } : {}) }, id);
   if (reached(job, 'Accepted')) await run('act_accept_jobs', {}, id);
   if (reached(job, 'Scheduled')) await run('act_schedule_jobs', { scheduled_at: job.scheduledAt, inspector: job.inspector, ...(job.instructions ? { instructions: job.instructions } : {}) }, id);
-  if (reached(job, 'In Progress')) await run('act_start_jobs', { access: job.access, weather: job.weather, checklist: job.checklist, ...(job.facts ?? DEFAULT_FACTS) }, id);
+  if (reached(job, 'In Progress')) {
+    await run('act_start_jobs', { access: job.access, weather: job.weather, checklist: job.checklist }, id);
+    await run('act_update_jobs', { ...(job.facts ?? DEFAULT_FACTS) }, id);
+  }
   for (const f of job.findings ?? []) {
     const defect = f.defect ? defectIds.get(f.defect) : undefined;
     if (f.defect && !defect) throw new Error(`${job.address}: unknown defect ${f.defect}`);
