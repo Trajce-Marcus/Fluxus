@@ -26,17 +26,20 @@ const config = {
         { key: 'project_id', type: 'fk_ref', label: 'Project', default: '', fk_record_type: 'rt_projects', fk_display_field: 'code' },
       ] },
   ],
-  workflows: [
-    { id: 'wf_projects', name: 'Projects', activities: [] },
-    { id: 'wf_wbs_nodes', name: 'WBS', activities: [{
-      id: 'act_create_wbs_nodes', name: 'Create', description: '', sort_order: 0, record_map: 'CREATE',
+  activities: [
+    {
+      id: 'act_create_wbs_nodes', name: 'Create', description: '', record_map: 'CREATE',
       before_hook: null, after_hook: null,
       attributes: [
         { attribute_ref: 'wbs_project', source: 'context.page.record.id' },
         { attribute_ref: 'ruled_out', show_condition: 'false' },
         { attribute_ref: 'code' },
       ],
-    }] },
+    },
+  ],
+  workflows: [
+    { id: 'wf_projects', name: 'Projects', activities: [] },
+    { id: 'wf_wbs_nodes', name: 'WBS', activities: [{ activity_ref: 'act_create_wbs_nodes' }] },
   ],
 } as unknown as ClientSolutionConfig;
 

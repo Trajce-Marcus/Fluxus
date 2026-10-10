@@ -496,6 +496,13 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.recordTypes, input.id)),
 
+    // The activity pool (APPS_AND_INSTANCES §1.6). Deleting one a workflow
+    // still lists fails validation, naming each such workflow.
+    putActivity: entityPut(configCollections.activities),
+    deleteActivity: t.procedure
+      .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.activities, input.id)),
+
     putWorkflow: entityPut(configCollections.workflows),
     deleteWorkflow: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))

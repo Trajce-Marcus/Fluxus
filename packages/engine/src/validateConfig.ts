@@ -10,6 +10,7 @@ import type { ClientActivityRawDef, ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
+import { includedActivityIds, recordTypesByActivity } from './activityPool';
 
 export interface Finding {
   where: string;
@@ -112,7 +113,6 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   }
 
   const attrByKey = new Map(config.attributes.map((a) => [a.key, a]));
-  const rtByWorkflow = new Map(config.recordTypes.map((rt) => [rt.workflow_ref, rt]));
 
   // '.' is reserved as the composite cell path separator (attr.item.column) —
   // ban it from every key namespace so a dotted path is always unambiguous.
@@ -216,96 +216,170 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
     }
   }
 
-  // Every activity's record_map, so a literal invoke('act_…') can be resolved
-  // to a real GET below.
-  const recordMapById = new Map<string, string | undefined>();
+  // ── The activity pool (APPS_AND_INSTANCES §1.4) ────────────────────────────
+  const pool = config.activities ?? [];
+  const poolIds = new Set<string>();
+  for (const activity of pool) {
+    if (poolIds.has(activity.id)) note(`activity '${activity.id}'`, 'duplicate activity id in the pool');
+    poolIds.add(activity.id);
+  }
   for (const workflow of config.workflows) {
-    for (const activity of workflow.activities) recordMapById.set(activity.id, activity.record_map);
+    const listed = new Set<string>();
+    for (const usage of workflow.activities) {
+      if (!poolIds.has(usage.activity_ref)) {
+        note(`workflow '${workflow.id}'`, `activity '${usage.activity_ref}' is not in the activity pool`);
+      }
+      if (listed.has(usage.activity_ref)) {
+        note(`workflow '${workflow.id}'`, `lists activity '${usage.activity_ref}' twice`);
+      }
+      listed.add(usage.activity_ref);
+    }
+  }
+  const typesByActivity = recordTypesByActivity(config);
+  const included = includedActivityIds(config);
+
+  // The engine works out which type a CREATE makes from the one record type
+  // whose workflow lists it. Reached through two, it could not say.
+  for (const activity of pool) {
+    const types = typesByActivity.get(activity.id) ?? [];
+    if (activity.record_map === 'CREATE' && types.length > 1) {
+      note(activity.id, `a CREATE belongs to one record type; this one is reached through ${types.join(', ')}`);
+    }
+  }
+
+  // Every runnable activity's record_map, so a literal invoke('act_…') can be
+  // resolved to a real GET below. Only activities some workflow lists can run,
+  // so only they are here — matching validatePage and the engine.
+  const recordMapById = new Map<string, string | undefined>();
+  for (const activity of pool) {
+    if (included.has(activity.id)) recordMapById.set(activity.id, activity.record_map);
   }
 
   /**
    * Resolve literal ids passed to `invoke(...)` against the model: the id must
-   * exist and must be a GET. A non-literal first argument is left to runtime —
-   * same posture as validatePage's activity-id check.
+   * be a runnable activity and must be a GET. A non-literal first argument is
+   * left to runtime — same posture as validatePage's activity-id check.
    */
-  const checkInvokes = (where: string, source: string) => {
+  const checkInvokes = (where: string, source: string, out: Finding[]) => {
     let body: Stmt[];
     try {
       body = parseScript(source).body;
     } catch {
       return; // syntax errors are already reported by the validator
     }
+    const fail = (message: string) => out.push({ where, diagnostic: { severity: 'error', message, line: 1, col: 1 } });
     walkCalls(body, (call) => {
       if (call.callee.kind !== 'ident' || call.callee.name !== 'invoke') return;
       const first = call.args[0]?.value;
       if (first?.kind !== 'string') return;
       if (!recordMapById.has(first.value)) {
-        note(where, `invoke('${first.value}') — no such activity`);
+        fail(poolIds.has(first.value)
+          ? `invoke('${first.value}') — no workflow includes this activity, so it cannot run`
+          : `invoke('${first.value}') — no such activity`);
       } else if (recordMapById.get(first.value) !== 'GET') {
-        note(where, `invoke('${first.value}') — only GET activities can be invoked`);
+        fail(`invoke('${first.value}') — only GET activities can be invoked`);
       }
     });
   };
 
-  for (const workflow of config.workflows) {
-    const anchorType = rtByWorkflow.has(workflow.id) ? shortName(rtByWorkflow.get(workflow.id)!.id) : undefined;
-    for (const activity of workflow.activities) {
-      // Availability condition: evaluated before capture, so `attributes` is banned
-      if (activity.show_condition) {
-        collect(`${activity.id} show_condition`, activity.show_condition, anchorType, undefined, ['attributes']);
+  /** Every script an activity carries, checked with `context.record` typed as
+   *  `anchorType` (untyped when undefined). */
+  const activityScripts = (activity: ClientActivityRawDef, anchorType: string | undefined): Finding[] => {
+    const out: Finding[] = [];
+    const check = (where: string, source: string, extraRoots?: string[], bannedRoots?: string[]) => {
+      for (const diagnostic of validateExpression(source, schema, { anchorType, extraRoots, bannedRoots, functions })) {
+        out.push({ where, diagnostic });
       }
-      for (const usage of activity.attributes) {
-        // Section markers are presentation-only entries — no ref to validate.
-        if (!('attribute_ref' in usage)) {
-          if (!usage.section?.trim()) note(`${activity.id} section marker`, 'a section marker needs a non-empty label');
-          continue;
-        }
-        if (usage.show_condition) {
-          collect(`${activity.id} → '${usage.attribute_ref}' show_condition`, usage.show_condition, anchorType);
-        }
-        const attr = attrByKey.get(usage.attribute_ref);
-        const validation = usage.validation ?? attr?.validation;
-        if (validation) {
-          collect(`${activity.id} → '${usage.attribute_ref}' validation`, validation, anchorType, ['value']);
-        }
-        if (attr?.type_config?.datasource) {
-          collect(`${activity.id} → '${usage.attribute_ref}' datasource`, attr.type_config.datasource, anchorType, DATASOURCE_ROOTS);
-        }
+    };
+    // Availability condition: evaluated before capture, so `attributes` is banned
+    if (activity.show_condition) {
+      check(`${activity.id} show_condition`, activity.show_condition, undefined, ['attributes']);
+    }
+    for (const usage of activity.attributes) {
+      if (!('attribute_ref' in usage)) continue;
+      if (usage.show_condition) {
+        check(`${activity.id} → '${usage.attribute_ref}' show_condition`, usage.show_condition);
       }
-      // Hooks (scripts tier): before = gate (validate only), after = effects.
-      // No extra roots: values reach a hook as declared attributes, never as a
-      // free-form object off the wire (DATA_THROUGH_ACTIVITIES §4).
-      const hooks = activityHooks(activity);
-      for (const phase of ['before', 'after'] as const) {
-        const source = phase === 'before' ? hooks.before : hooks.after;
-        if (!source) continue;
-        for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
-          findings.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
-        }
-        checkInvokes(`${activity.id} ${phase}_hook`, source);
+      const attr = attrByKey.get(usage.attribute_ref);
+      const validation = usage.validation ?? attr?.validation;
+      if (validation) {
+        check(`${activity.id} → '${usage.attribute_ref}' validation`, validation, ['value']);
       }
+      if (attr?.type_config?.datasource) {
+        check(`${activity.id} → '${usage.attribute_ref}' datasource`, attr.type_config.datasource, DATASOURCE_ROOTS);
+      }
+    }
+    // Hooks (scripts tier): before = gate (validate only), after = effects.
+    // No extra roots: values reach a hook as declared attributes, never as a
+    // free-form object off the wire (DATA_THROUGH_ACTIVITIES §4).
+    const hooks = activityHooks(activity);
+    for (const phase of ['before', 'after'] as const) {
+      const source = phase === 'before' ? hooks.before : hooks.after;
+      if (!source) continue;
+      for (const diagnostic of validateScript(source, schema, { anchorType, mode: phase, functions })) {
+        out.push({ where: `${activity.id} ${phase}_hook`, diagnostic });
+      }
+      checkInvokes(`${activity.id} ${phase}_hook`, source, out);
+    }
+    const returns = joinScript((activity as { returns?: string | string[] }).returns);
+    if (activity.record_map === 'GET' && returns) {
+      check(`${activity.id} returns`, returns);
+      checkInvokes(`${activity.id} returns`, returns, out);
+    }
+    return out;
+  };
 
-      // GET activities (DSL_SPEC §5a): the `returns` expression IS the
-      // activity, so it is required — and it is only meaningful on a GET.
-      // Validated as an expression, which is what gives purity for free: the
-      // 'expression' mode already rejects create()/update() and unqueued
-      // service effects, so a read cannot write.
-      const returns = joinScript((activity as { returns?: string | string[] }).returns);
-      if (activity.record_map === 'GET') {
-        if (!returns && serverGrade(activity)) {
-          note(activity.id, "a GET activity needs a 'returns' expression — that is what it answers with");
-        } else if (returns) {
-          collect(`${activity.id} returns`, returns, anchorType);
-          checkInvokes(`${activity.id} returns`, returns);
-        }
-        // Nothing persists, so there is nothing to react to. An after hook here
-        // is either dead code or an attempt to make a read write.
-        if (hooks.after) {
-          note(activity.id, 'a GET activity cannot have an after hook — reads never write');
-        }
-      } else if (returns) {
-        note(activity.id, `'returns' belongs to GET activities; this one is ${activity.record_map ?? 'log-only'}`);
+  for (const activity of pool) {
+    for (const usage of activity.attributes) {
+      // Section markers are presentation-only entries — no ref to validate.
+      if (!('attribute_ref' in usage) && !usage.section?.trim()) {
+        note(`${activity.id} section marker`, 'a section marker needs a non-empty label');
       }
+    }
+
+    // **Scripts are checked per record type** (§1.4): a shared activity must
+    // fit every type that uses it, so `context.record` is typed as each in
+    // turn. A problem every type has (syntax, an unknown function, a bad
+    // invoke id) does not depend on the type and is reported once; the rest
+    // name the type they fail on. An activity no record type reaches is
+    // checked untyped, so field typos surface once a workflow includes it.
+    const types = typesByActivity.get(activity.id) ?? [];
+    if (types.length === 0) {
+      findings.push(...activityScripts(activity, undefined));
+    } else {
+      const perType = types.map((typeId) => ({ typeId, found: activityScripts(activity, shortName(typeId)) }));
+      const keyOf = (f: Finding) => `${f.where}\u0000${f.diagnostic.severity}\u0000${f.diagnostic.message}\u0000${f.diagnostic.line}:${f.diagnostic.col}`;
+      const everyType = (f: Finding) => perType.every((t) => t.found.some((g) => keyOf(g) === keyOf(f)));
+      const reported = new Set<string>();
+      for (const { typeId, found } of perType) {
+        for (const f of found) {
+          if (types.length > 1 && !everyType(f)) {
+            findings.push({ where: `${f.where} (on ${typeId})`, diagnostic: f.diagnostic });
+          } else if (!reported.has(keyOf(f))) {
+            reported.add(keyOf(f));
+            findings.push(f);
+          }
+        }
+      }
+    }
+
+    // GET activities (DSL_SPEC §5a): the `returns` expression IS the
+    // activity, so it is required — and it is only meaningful on a GET.
+    // Validated as an expression (above), which is what gives purity for free:
+    // the 'expression' mode already rejects create()/update() and unqueued
+    // service effects, so a read cannot write.
+    const returns = joinScript((activity as { returns?: string | string[] }).returns);
+    if (activity.record_map === 'GET') {
+      if (!returns && serverGrade(activity)) {
+        note(activity.id, "a GET activity needs a 'returns' expression — that is what it answers with");
+      }
+      // Nothing persists, so there is nothing to react to. An after hook here
+      // is either dead code or an attempt to make a read write.
+      if (activityHooks(activity).after) {
+        note(activity.id, 'a GET activity cannot have an after hook — reads never write');
+      }
+    } else if (returns) {
+      note(activity.id, `'returns' belongs to GET activities; this one is ${activity.record_map ?? 'log-only'}`);
     }
   }
 

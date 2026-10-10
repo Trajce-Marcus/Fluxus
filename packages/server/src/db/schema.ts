@@ -21,6 +21,7 @@
 import { pgTable, text, jsonb, timestamp, bigserial, bigint, integer, doublePrecision, foreignKey, index, primaryKey } from 'drizzle-orm/pg-core';
 import type {
   ActivityHistoryEntry,
+  ActivityRawDef,
   AttributeDef,
   FunctionDef,
   RecordTypeDef,
@@ -314,12 +315,25 @@ export const sdmAttributes = pgTable('sdm_attributes', {
   primaryKey({ columns: [t.solutionId, t.key] }),
 ]);
 
-// Activities ride INSIDE their workflow def (ruled 2026-08-08). They were the
-// obvious sixth table — an activity is the largest object in the model — but
-// the change unit is really the workflow: one person owns one at a time, and
-// reviewing a workflow change wants the whole thing in one view. Nesting also
-// preserves their authored order for free. Splitting them out later is a
-// migration with no API change; assembly is per-collection either way.
+// **Reversed 2026-10-04** (APPS_AND_INSTANCES Part 1): activities used to ride
+// INSIDE their workflow def (ruled 2026-08-08), the change unit being the
+// workflow. They now live once per solution in `sdm_activities`, the activity
+// pool, because one activity is shared by several workflows; a workflow's def
+// holds an ordered list of `{ activity_ref }`. The ruling's "a migration with
+// no API change" did not hold — `putActivity` / `deleteActivity` are new.
+// Migration 0022 moved them.
+export const sdmActivities = pgTable('sdm_activities', {
+  solutionId: text('solution_id').notNull().references(() => solutions.id),
+  id: text('id').notNull(),
+  def: jsonb('def').$type<ActivityRawDef>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+}, (t) => [
+  primaryKey({ columns: [t.solutionId, t.id] }),
+]);
+
 export const sdmWorkflows = pgTable('sdm_workflows', {
   solutionId: text('solution_id').notNull().references(() => solutions.id),
   id: text('id').notNull(),
@@ -399,10 +413,20 @@ export const sdmMenus = pgTable('sdm_menus', {
 // config as a NEW version. This is what replaces git as the model's history:
 // the repo's config files install nothing (no seed path since 2026-08-05) —
 // they are test fixture and future sample-solution material only.
+/** A model as published before the activity pool: each workflow carries its
+ *  activities, each with a `sort_order`, and there is no `activities`
+ *  collection. */
+export type StoredConfigBeforePool = Omit<SolutionConfig, 'activities' | 'workflows'> & {
+  workflows: (Omit<WorkflowRawDef, 'activities'> & { activities: (ActivityRawDef & { sort_order?: number })[] })[];
+};
+
 export const sdmConfigVersions = pgTable('sdm_config_versions', {
   solutionId: text('solution_id').notNull(),
   version: integer('version').notNull(),
-  config: jsonb('config').$type<SolutionConfig>().notNull(),
+  // Immutable, so a version published before the activity pool (migration
+  // 0022) keeps its activities nested inside its workflows. Read it through
+  // `toActivityPool` — rollback does.
+  config: jsonb('config').$type<SolutionConfig | StoredConfigBeforePool>().notNull(),
   readme: text('readme').notNull(),
   publishedBy: text('published_by').notNull(),
   publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),

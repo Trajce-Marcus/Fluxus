@@ -12,6 +12,7 @@ import { blockingReferences, buildEvalHost, coerceCaptured, compositeSubs, flatt
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
 import { attributeFieldRef } from './attributeTypes';
+import { recordTypesByActivity } from './activityPool';
 
 export interface EngineOptions<S extends WaitingStore = Store> {
   store: S;
@@ -192,15 +193,14 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   });
   const services = [...hostServices, loggerModule];
 
-  // A CREATE activity targets the record type whose workflow declares it —
+  // A CREATE activity targets the record type whose workflow lists it —
   // derived from config here so hosts never have to say which type is
-  // "selected" (the pipeline must work headless).
+  // "selected" (the pipeline must work headless). `validateConfig` refuses a
+  // CREATE that two record types reach, so there is one.
   const createTypeByActivity = new Map<string, string>();
-  for (const rt of config.recordTypes) {
-    const wf = config.workflows.find(w => w.id === rt.workflow_ref);
-    for (const act of wf?.activities ?? []) {
-      if (act.record_map === 'CREATE') createTypeByActivity.set(act.id, rt.id);
-    }
+  const creates = new Set((config.activities ?? []).filter((a) => a.record_map === 'CREATE').map((a) => a.id));
+  for (const [activityId, types] of recordTypesByActivity(config)) {
+    if (creates.has(activityId)) createTypeByActivity.set(activityId, types[0]);
   }
 
   // Activity-level show_condition — the availability gate. Strict boolean: only
@@ -253,9 +253,12 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   // does changes what the next read sees.
   const inFlight = new Set<string>();
 
+  // Only an activity some workflow lists can run (APPS_AND_INSTANCES §1.5);
+  // one in the pool alone is "not found".
   function findActivity(activityId: string): ActivityDef | null {
-    for (const rt of store.listRecordTypes()) {
-      const found = store.getRecordTypeDef(rt.id).workflow.activities.find((a) => a.id === activityId);
+    const workflows = store.listWorkflows?.() ?? store.listRecordTypes().map((rt) => store.getRecordTypeDef(rt.id).workflow);
+    for (const wf of workflows) {
+      const found = wf.activities.find((a) => a.id === activityId);
       if (found) return found;
     }
     return null;

@@ -32,29 +32,28 @@ const CONFIG: ClientSolutionConfig = {
       custom_fields: [{ key: 'region', label: 'Region', description: 'Where', type: 'text' }],
     },
   ],
+  activities: [
+    {
+      id: 'act_dispatch',
+      name: 'Dispatch',
+      description: 'Send a crew',
+      record_map: 'UPDATE',
+      attributes: [{ attribute_ref: 'region' }, { attribute_ref: 'crew' }],
+    },
+    {
+      id: 'act_get_crews',
+      name: 'Get Crews',
+      description: 'The crews working a region',
+      record_map: 'GET',
+      attributes: [{ attribute_ref: 'region', required: true }],
+    },
+  ],
   workflows: [
     {
       id: 'wf_work_orders',
       name: 'Work Orders',
       description: 'The work order lifecycle',
-      activities: [
-        {
-          id: 'act_dispatch',
-          name: 'Dispatch',
-          description: 'Send a crew',
-          sort_order: 1,
-          record_map: 'UPDATE',
-          attributes: [{ attribute_ref: 'region' }, { attribute_ref: 'crew' }],
-        },
-        {
-          id: 'act_get_crews',
-          name: 'Get Crews',
-          description: 'The crews working a region',
-          sort_order: 2,
-          record_map: 'GET',
-          attributes: [{ attribute_ref: 'region', required: true }],
-        },
-      ],
+      activities: [{ activity_ref: 'act_dispatch' }, { activity_ref: 'act_get_crews' }],
     },
   ],
 };

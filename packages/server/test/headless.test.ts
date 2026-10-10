@@ -88,7 +88,8 @@ describe('config storage', () => {
 
   it('rejects an invalid SDM at save time', async () => {
     const broken = structuredClone(config);
-    broken.workflows[0].activities[0].before_hook = 'records.nonexistent_type.count() > 0';
+    const first = broken.activities.find((a) => a.id === broken.workflows[0].activities[0].activity_ref)!;
+    first.before_hook = 'records.nonexistent_type.count() > 0';
     await ensureSolution(db, 'demo/broken', 'Broken');
     await expect(caller().config.put({ solutionId: 'demo/broken', config: broken })).rejects.toThrow(/SDM config rejected/);
   });
@@ -101,7 +102,10 @@ describe('config storage', () => {
     const SOL = 'demo/guard';
     const OP = 'demo/guard-op';
     const withGuardType = structuredClone(config);
-    withGuardType.recordTypes.push({ id: 'rt_guard_only', name: 'Guard Only', description: '', workflow_ref: withGuardType.workflows[0].id, custom_fields: [] });
+    // Its own workflow: sharing one that holds a CREATE would put that CREATE
+    // on two record types, which save refuses (APPS_AND_INSTANCES §1.4).
+    withGuardType.workflows.push({ id: 'wf_guard_only', name: 'Guard Only', description: '', activities: [] });
+    withGuardType.recordTypes.push({ id: 'rt_guard_only', name: 'Guard Only', description: '', workflow_ref: 'wf_guard_only', custom_fields: [] });
     await ensureSolution(db, SOL, 'Guard');
     await putConfig(db, SOL, withGuardType, sink);
     await ensureOperation(db, OP, SOL, 'Guard');

@@ -4,14 +4,13 @@
 // `config.getForOperation` is covered in rbac.test.ts.
 
 import { describe, expect, it } from 'vitest';
-import type { AttributeUsageDef, ClientAttributeDef, ClientAttributeTypeConfig, SolutionConfig } from '@fluxus/engine';
+import type { ActivityRawDef, AttributeUsageDef, ClientAttributeDef, ClientAttributeTypeConfig, SolutionConfig } from '@fluxus/engine';
 import { projectConfig } from '../src/projection';
 
-const activity = (id: string, refs: string[]): SolutionConfig['workflows'][number]['activities'][number] => ({
+const activity = (id: string, refs: string[]): ActivityRawDef => ({
   id,
   name: id,
   description: '',
-  sort_order: 1,
   show_condition: 'available()',
   attributes: refs.map((attribute_ref) => ({ attribute_ref })),
   before_hook: 'fail("the crew is not yours")',
@@ -47,9 +46,13 @@ const config: SolutionConfig = {
       access: { read: ['role_b'] },
     },
   ],
+  activities: [
+    activity('act_touch_alphas', ['note', 'site_photos', 'crew', 'bundle']),
+    activity('act_touch_betas', ['beta_only']),
+  ],
   workflows: [
-    { id: 'wf_alpha', name: 'Alpha', description: '', activities: [activity('act_touch_alphas', ['note', 'site_photos', 'crew', 'bundle'])] },
-    { id: 'wf_beta', name: 'Beta', description: '', activities: [activity('act_touch_betas', ['beta_only'])] },
+    { id: 'wf_alpha', name: 'Alpha', description: '', activities: [{ activity_ref: 'act_touch_alphas' }] },
+    { id: 'wf_beta', name: 'Beta', description: '', activities: [{ activity_ref: 'act_touch_betas' }] },
   ],
   functions: [
     { id: 'fn_crewnames', name: 'crewnames', description: 'crew list', body: 'function crewnames() { return ["A"] }' },
@@ -114,7 +117,28 @@ describe('projectConfig — the role cut', () => {
     const projected = asRoleA();
     expect(projected.recordTypes.map((rt) => rt.id)).toEqual(['rt_alpha']);
     expect(projected.workflows.map((wf) => wf.id)).toEqual(['wf_alpha']);
-    expect(allKeys(projected).has('act_touch_betas')).toBe(false);
+    expect(projected.activities.map((a) => a.id)).toEqual(['act_touch_alphas']);
+  });
+
+  // The pool is trimmed like the nested activities were (APPS_AND_INSTANCES
+  // §1.3): only what a shipped workflow lists, each once.
+  it('sends a pool activity no shipped workflow lists not at all', () => {
+    const withUnused = { ...config, activities: [...config.activities, activity('act_unused', ['orphan'])] };
+    const projected = projectConfig(withUnused, { roles: ['role_a', 'role_b'], enforced: true });
+    expect(projected.activities.map((a) => a.id).sort()).toEqual(['act_touch_alphas', 'act_touch_betas']);
+    expect(projected.attributes.map((a) => a.key)).not.toContain('orphan');
+  });
+
+  it('sends an activity two shipped workflows list once, and both keep their reference', () => {
+    const shared = {
+      ...config,
+      workflows: config.workflows.map((wf) =>
+        wf.id === 'wf_beta' ? { ...wf, activities: [...wf.activities, { activity_ref: 'act_touch_alphas' }] } : wf),
+    };
+    const projected = projectConfig(shared, { roles: ['role_a', 'role_b'], enforced: true });
+    expect(projected.activities.filter((a) => a.id === 'act_touch_alphas')).toHaveLength(1);
+    expect(projected.workflows.find((wf) => wf.id === 'wf_beta')?.activities)
+      .toEqual([{ activity_ref: 'act_touch_betas' }, { activity_ref: 'act_touch_alphas' }]);
   });
 
   it('drops the attributes only an unreachable form used, and the pool orphans', () => {
@@ -130,6 +154,7 @@ describe('projectConfig — the role cut', () => {
     const projected = projectConfig(config, { roles: [], enforced: true });
     expect(projected.recordTypes).toEqual([]);
     expect(projected.workflows).toEqual([]);
+    expect(projected.activities).toEqual([]);
     expect(projected.attributes).toEqual([]);
     expect(projected.functions).toBeUndefined();
   });
@@ -150,7 +175,7 @@ describe('projectConfig — what the client does need', () => {
   });
 
   it('keeps the form definition and the availability condition', () => {
-    const act = asRoleA().workflows[0].activities[0];
+    const act = asRoleA().activities[0];
     expect(act.show_condition).toBe('available()');
     expect(act.attributes.map((a) => ('attribute_ref' in a ? a.attribute_ref : a.section)))
       .toEqual(['note', 'site_photos', 'crew', 'bundle']);
@@ -219,9 +244,9 @@ describe('projectConfig — every field is decided, none dropped by omission', (
       can_waive: true,
     };
     const projected = projectConfig(
-      { ...config, workflows: [{ ...config.workflows[0], activities: [{ ...activity('act_touch_alphas', []), attributes: [full] }] }] },
+      { ...config, activities: [{ ...activity('act_touch_alphas', []), attributes: [full] }] },
       { roles: ['role_a'], enforced: true },
-    ).workflows[0].activities[0].attributes[0];
+    ).activities[0].attributes[0];
 
     for (const key of Object.keys(full)) {
       if (WITHHELD_FROM_USAGE.includes(key)) expect(projected).not.toHaveProperty(key);

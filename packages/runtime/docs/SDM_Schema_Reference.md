@@ -29,7 +29,7 @@ A standalone, named process definition. Records point at workflows; a workflow d
 | *(record identity)* | — | **Issued by the platform, never declared** (2026-09-18). Every Record instance gets a UUIDv7 at creation; a record type cannot nominate a field to key on. `id_field` did exactly that until this date — see 1.3a. |
 | `name` | text | |
 | `description` | text | |
-| `activities` | list of Activity | Ordered (see `sort_order` on Activity). |
+| `activities` | list of `{ activity_ref }` | References into the solution's **activity pool**, in order — the order is the list's (since 2026-10-10; activities were nested here before). |
 
 ### 1.2 Record
 The central, universal object. Every piece of business data is a Record of some type. A Record references exactly one workflow, and that workflow runs **against** the Record. A Record is the data *plus* the accumulated history of activities performed on it.
@@ -84,14 +84,13 @@ This matters at runtime because there can be **many instances** of the same Reco
 > **Forward note (POC2):** scheduled/CRON-triggered workflows follow this same pattern — a Record with a workflow — but additionally need a *temporal trigger* to start without a user. The trigger primitive is deferred to POC2 (see Section 4).
 
 ### 1.3 Activity
-A step within a workflow. Activities capture data and carry logic.
+A step within a workflow. Activities capture data and carry logic. Stored once per solution in the **activity pool** and listed by workflows by id, so one activity can serve several record types (docs/APPS_AND_INSTANCES.md Part 1, 2026-10-10). An activity no workflow lists cannot run.
 
 | Field | Type | Notes |
 | :--- | :--- | :--- |
 | `id` | identifier | Unique. |
 | `name` | text | |
 | `description` | text | |
-| `sort_order` | number | Position within the workflow. |
 | `attributes` | list of Attribute | The fields captured at this step (see 1.5). |
 | `before_hook` | Hook? | At most one. Runs before commit. |
 | `after_hook` | Hook? | At most one. Runs after commit. |
@@ -236,7 +235,7 @@ When an activity with `record_map: UPDATE` is opened against an anchor Record, t
 ## 2. Relationships at a Glance
 
 ```
-Workflow ──< Activity (ordered by sort_order)
+Workflow ──< { activity_ref } ──> Activity (pool; ordered by the workflow's list)
                  │
                  ├── Attribute(s)   (typed capture fields, may have show_condition)
                  ├── before_hook : Hook ──< Command
@@ -251,7 +250,7 @@ Expression  (generic syntax, used by Attribute.show_condition, Command.condition
 Reference integrity rules:
 - Every `Record.workflow_ref` must resolve to a defined Workflow.
 - Every `Attribute.key` is unique within its container.
-- An Activity belongs to exactly one Workflow.
+- An Activity is listed by any number of Workflows (none means it cannot run); a CREATE is reached through one record type only.
 
 ---
 
@@ -269,7 +268,6 @@ Workflow {
     Activity {
       id: "act_record_finding"
       name: "Record Finding"
-      sort_order: 1
       attributes: [
         { key: "condition_rating", label: "Condition Rating", type: text }
         { key: "notes",            label: "Notes",            type: text }
@@ -288,7 +286,6 @@ Workflow {
     Activity {
       id: "act_close"
       name: "Close Inspection"
-      sort_order: 2
       attributes: [
         { key: "completed_by", label: "Completed By", type: text }
       ]

@@ -33,21 +33,21 @@ const CONFIG: ClientSolutionConfig = {
       custom_fields: [],
     },
   ],
+  activities: [
+    {
+      id: 'act_create_dispatch_boards',
+      name: 'Open Dispatch Board',
+      description: 'Bring the board into being',
+      record_map: 'CREATE',
+      attributes: [],
+    },
+  ],
   workflows: [
     {
       id: 'wf_dispatch_boards',
       name: 'Dispatch Boards',
       description: 'Board lifecycle',
-      activities: [
-        {
-          id: 'act_create_dispatch_boards',
-          name: 'Open Dispatch Board',
-          description: 'Bring the board into being',
-          sort_order: 1,
-          record_map: 'CREATE',
-          attributes: [],
-        },
-      ],
+      activities: [{ activity_ref: 'act_create_dispatch_boards' }],
     },
     {
       id: 'wf_notifications',

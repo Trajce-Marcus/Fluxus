@@ -19,7 +19,7 @@ const runtime = createPageRuntime({ client }); // client: a connected FluxusClie
 A host creates it once at bootstrap (platform singleton, never React context — the Extraction fork 2 ruling) and passes it to `PageRenderer` / the editor's validation calls. Everything else derives from the client's snapshot:
 
 - `store` = `client.adapter` (the engine `MemoryAdapter`; it holds the fetched partition in a host that asked for one, and **nothing** in a pages-only host — since 2026-08-16 the Runtime app connects with `records: 'none'`), `config` = `client.config`.
-- `findActivity(id)` — resolve an activity id to its def + owning record type.
+- `findActivity(id)` — resolve an activity id to its def + the **first** record type whose workflow lists it. Since the activity pool (2026-10-10) one activity can serve several types, so a run on a record takes the type from **that record**: `ComponentContainer` sets the capture form's record type from the fetched anchor (`found.typeDef` stands in while it loads, and is right for a CREATE, which has one type).
 - `findRecordType(id)` — resolve a record type id to its def + workflow, or null (a page may name a type that was since renamed); how `validatePage` checks the page's record declaration.
 - `getPage(path)` / `listPagePaths()` — reads over the client's page snapshot.
 - `captureHost` — what the capture form runs against when a page opens one (below): this client's GET query, upload service and label resolution. No record picker.
@@ -305,6 +305,7 @@ Both work on **the rows already delivered**. There is no paging (design §4.4), 
 A row of buttons the **model** decides on, instead of buttons an author placed one by one. It asks the host for the record's workflow activities, minus those their `show_condition` rules out, and runs the one that is clicked. Props: `title`, `record` (dynamic — a page binds `context.record.id`), `emptyMessage`.
 
 - **GET is excluded**: it answers a question rather than being an act anyone takes (DSL_SPEC §5a).
+- **In the workflow's order.** The list is taken as the workflow gives it; nothing re-sorts it (an activity carries no `sort_order` since the activity pool, 2026-10-10).
 - **A CREATE is offered like any other activity** (ruled 2026-09-28, reversing the first cut). The first cut left CREATEs out on the grounds that a CREATE belongs to a collection. That was never endorsed, and it hid acts that do belong on a record, such as Raise Amendment on a shift report. Whether an activity belongs on a record is the author's call, made with its `show_condition`. The component does not assume it. A CREATE still runs with no anchor (`launchActivity`), so the record it came from reaches it through `context.page.record` or a seeded attribute. The workbench's `AvailableActivities` still leaves CREATEs out; that is unchanged.
 - **An unanswerable condition hides its activity**, and says why to the console. Availability fails closed, exactly as the engine's gate does.
 - **This does not soften the 2026-08-26 ruling.** That one is about *wiring* — an author's omission, which must stay visible. This is *availability*, the model's answer to "may I do this?", and disappearing is what that answer looks like. It is also why a page built from this component does not go stale: a new activity on the workflow simply appears.

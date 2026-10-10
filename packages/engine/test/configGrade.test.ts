@@ -31,23 +31,23 @@ function buildConfig({ grade, returns }: { grade: 'server' | 'client'; returns?:
         custom_fields: [{ key: 'name', type: 'text', default: '' }],
       },
     ],
+    activities: [
+      {
+        id: 'act_list_jobs',
+        name: 'List Jobs',
+        description: '',
+        record_map: 'GET',
+        attributes: [],
+        ...hooks,
+        ...(returns ? { returns } : {}),
+      },
+    ],
     workflows: [
       {
         id: 'wf_jobs',
         name: 'Jobs',
         description: '',
-        activities: [
-          {
-            id: 'act_list_jobs',
-            name: 'List Jobs',
-            description: '',
-            sort_order: 0,
-            record_map: 'GET',
-            attributes: [],
-            ...hooks,
-            ...(returns ? { returns } : {}),
-          },
-        ],
+        activities: [{ activity_ref: 'act_list_jobs' }],
       },
     ],
   } as unknown as SolutionConfig & ClientSolutionConfig;

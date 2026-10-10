@@ -362,7 +362,8 @@ ClientSolutionConfig      ← SolutionConfig      (adds access.roles)
 ClientRecordTypeDef       ← RecordTypeDef       (adds access.read + storage constraints)
 ClientActivityRawDef      ← ActivityRawDef      (adds before_hook / after_hook)
 ClientAttributeTypeConfig ← AttributeTypeConfig (adds max_count / max_size_mb)
-ClientCustomFieldDef · ClientAttributeDef · ClientWorkflowRawDef
+ClientCustomFieldDef · ClientAttributeDef · ClientWorkflowRawDef (= WorkflowRawDef:
+a workflow is references only, the same on both planes)
 ```
 
 **The narrow one is declared first, deliberately.** Code typed against it
@@ -373,7 +374,7 @@ shapes; `projectConfig` (server) is the only thing that performs the trim.
 Everything here that takes a config takes the **narrow** grade —
 `MemoryAdapter`, `EngineOptions.config`, the bridge, `validateConfig` — because
 the full grade is assignable to it and nothing in the engine needs a stripped
-field. Two places do read hooks off a raw config (`MemoryAdapter`'s workflow
+field. Two places do read hooks off a raw config (`MemoryAdapter`'s pool
 resolution, `validateConfig`'s hook pass) and both go through
 **`activityHooks(activity)`** (`src/bridge.ts`): the one place that widens back
 to the full def, so "hooks may simply not be here" is stated once. On a client
@@ -398,7 +399,8 @@ stays the existing `show_condition`/availability check, which already reads
 §4.2):
 
 - **the model, immediate** (`ModelStore`): `listRecordTypes`,
-  `getRecordTypeDef`, `listWorkflows?`, `resolveAttributeDisplayField`,
+  `getRecordTypeDef`, `listWorkflows?`, `listActivities?` (the resolved pool,
+  used or not — 2026-10-10), `resolveAttributeDisplayField`,
   `resolveAttributeTarget`, `getReverseRefs`;
 - **the records, may wait**: `getRecordTypeData`, `getRecord`,
   `getRecordsByField`, `buildRecord`, `insertRecord`, `createRecord`,
@@ -801,6 +803,39 @@ today. It needs the user's ruling and a look at live configs first.
 Found while specifying `docs/QUERYING_THE_MODEL.md`, which wanted to project
 pool-level defaults and could not describe them truthfully.
 
+## The activity pool (BUILT 2026-10-10)
+
+docs/APPS_AND_INSTANCES.md Part 1. Activities are stored **once per solution**
+(`SolutionConfig.activities`); a workflow is an ordered list of
+`ActivityUsage` — `{ activity_ref }` — so one activity serves several record
+types. `sort_order` is gone from both activity types: order is the workflow's
+list. The **resolved** shape is unchanged apart from that: `WorkflowDef.activities`
+is still `ActivityDef[]`, filled from the pool in the workflow's order, and
+`MemoryAdapter` resolves each pool activity once, so two workflows hand back
+the same object. A reference the pool does not hold throws at construction.
+
+`activityPool.ts` holds the walks every reader of the stored shape shares:
+`workflowActivities`, `includedActivityIds` (what can run),
+`recordTypesByActivity`, and **`toActivityPool`** — the old nested shape to the
+pool, by the rules migration 0022 applies (order by `sort_order` then position,
+missing last; identical duplicates become one; differing ones throw
+`ActivityPoolConflictError` naming the id). A model already in the pool shape
+passes through.
+
+- **Only a listed activity runs.** `findActivity` (and so `invoke`) looks at
+  activities some workflow lists; one in the pool alone is not found.
+- **A CREATE makes the one record type whose workflow lists it**
+  (`recordTypesByActivity`); a CREATE reached through two is refused at save.
+- **Field filling is per record type**, as before: an UPDATE fills the fields
+  of the record it runs on by exact key, so a shared UPDATE fills each type's
+  own fields.
+- **`validateConfig`** adds: pool ids unique; every `activity_ref` resolves;
+  no workflow lists one twice; the one-type CREATE rule; scripts checked **once
+  per record type** reaching the activity (`anchorType` per type), a problem
+  every type has reported once and the rest with `(on <type>)` appended to
+  `where`; an activity no type reaches checked untyped; `invoke` of an
+  activity no workflow lists is an error.
+
 ## The model projected as record types (BUILT 2026-09-22)
 
 `modelProjection.ts` turns a `SolutionConfig` into the `sdm_*` collections
@@ -832,7 +867,13 @@ Three things the projection has to do, each of which broke a draft:
   no attribute reference at all — so `resolvedCaptureLists` reads the adapter's
   resolution and a heading becomes a row with `kind: 'section'`.
 
-Two links are derived rather than stored: an activity's `workflow_ref` (from
-nesting) and its `record_type_ref` (reverse lookup through the workflow). 
-**Nothing enforces one record type per workflow**, so that answers null when
-none points at the workflow and the first by config order when several do.
+**Since the activity pool (2026-10-10)** `model.activities` lists every pool
+activity, one row each, used or not, and has **no** `workflow_ref`,
+`record_type_ref` or `sort_order` — an activity has many of each now, or none.
+`model.workflow_activities` has one row per workflow's use of an activity
+(`workflow_ref`, `activity_ref`, `position`; id `<workflow>.<activity>`); a
+workflow's activities are its rows there, and the record types reach them
+through `model.record_types.workflow_ref`. Capture lists come from the store's
+`listActivities()`, so an unused activity has its rows too. (Until then the two
+links were derived from nesting and a reverse lookup, null when no record type
+pointed at the workflow.)

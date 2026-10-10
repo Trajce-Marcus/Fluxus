@@ -242,7 +242,13 @@ A separate action in the tool, not something a script can do.
 
 The picker carries each activity's **owning record type** through to the form —
 that is what resolves reference display labels, not the anchor's type, which
-differs whenever the anchor is of another type and is empty for a CREATE.
+differs whenever the anchor is of another type and is empty for a CREATE. An
+activity shared by several record types (the activity pool, 2026-10-10) is
+listed **once per type**, each entry carrying its own.
+
+Not affected by the pool's deferred run check (APPS_AND_INSTANCES §1.5): runs
+here against a record of another type still go through. If that check is
+built, whether the Editor is exempt is decided then.
 
 An activity that needs an anchor it does not have is **called out in the picker**
 rather than refused: anything but CREATE runs against an existing record, and

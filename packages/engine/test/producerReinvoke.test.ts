@@ -37,48 +37,46 @@ function buildConfig(overrides: { returns?: string; gate?: string | null } = {})
         custom_fields: [{ key: 'name', type: 'text', default: '' }],
       },
     ],
+    activities: [
+      {
+        id: 'act_create_jobs',
+        name: 'Create Job',
+        description: '',
+        record_map: 'CREATE',
+        attributes: [],
+        before_hook: null,
+        after_hook: null,
+      },
+      {
+        id: 'act_get_crews',
+        name: 'Get Crews',
+        description: '',
+        record_map: 'GET',
+        attributes: [{ attribute_ref: 'region', required: true }],
+        before_hook: overrides.gate ?? null,
+        // The region asked for is in the answer, so a test can prove the
+        // parameter reached the GET rather than being ignored.
+        returns: overrides.returns ?? "[attributes.region, 'Crew Z']",
+      },
+      {
+        id: 'act_dispatch_jobs',
+        name: 'Dispatch Job',
+        description: '',
+        record_map: 'UPDATE',
+        attributes: [
+          { attribute_ref: 'region', required: true },
+          { attribute_ref: 'crew', required: true },
+        ],
+        before_hook: null,
+        after_hook: null,
+      },
+    ],
     workflows: [
       {
         id: 'wf_jobs',
         name: 'Jobs',
         description: '',
-        activities: [
-          {
-            id: 'act_create_jobs',
-            name: 'Create Job',
-            description: '',
-            sort_order: 0,
-            record_map: 'CREATE',
-            attributes: [],
-            before_hook: null,
-            after_hook: null,
-          },
-          {
-            id: 'act_get_crews',
-            name: 'Get Crews',
-            description: '',
-            sort_order: 1,
-            record_map: 'GET',
-            attributes: [{ attribute_ref: 'region', required: true }],
-            before_hook: overrides.gate ?? null,
-            // The region asked for is in the answer, so a test can prove the
-            // parameter reached the GET rather than being ignored.
-            returns: overrides.returns ?? "[attributes.region, 'Crew Z']",
-          },
-          {
-            id: 'act_dispatch_jobs',
-            name: 'Dispatch Job',
-            description: '',
-            sort_order: 2,
-            record_map: 'UPDATE',
-            attributes: [
-              { attribute_ref: 'region', required: true },
-              { attribute_ref: 'crew', required: true },
-            ],
-            before_hook: null,
-            after_hook: null,
-          },
-        ],
+        activities: [{ activity_ref: 'act_create_jobs' }, { activity_ref: 'act_get_crews' }, { activity_ref: 'act_dispatch_jobs' }],
       },
     ],
   } as unknown as SolutionConfig;

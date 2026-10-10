@@ -3,6 +3,7 @@
 
 import { RecordTypesEditor } from './RecordTypesEditor';
 import { AttributesEditor } from './AttributesEditor';
+import { ActivitiesEditor } from './ActivitiesEditor';
 import { WorkflowsEditor } from './WorkflowsEditor';
 import { RolesEditor } from './RolesEditor';
 import { MenuEditor } from './MenuEditor';
@@ -29,6 +30,8 @@ function sdmSection(tab: string) {
       return <RecordTypesEditor />;
     case 'attributes':
       return <AttributesEditor />;
+    case 'activities':
+      return <ActivitiesEditor />;
     case 'workflows':
       return <WorkflowsEditor />;
     case 'roles':
@@ -62,8 +65,8 @@ export const css = `
   .admin-btn-ghost { background: none; border: 1px solid var(--color-border); color: var(--color-text); }
   .admin-btn-ghost:hover { background: rgba(255,255,255,0.05); }
 
-  /* Workflows editor: activities nested under the selected workflow, and the
-     lean attribute-usage composer. */
+  /* Activities editor's lean attribute-usage composer, and the Workflows
+     editor's ordered list of pool activities. */
   .sdm-subsplit { display: flex; gap: 12px; align-items: flex-start; }
   .sdm-sublist { display: flex; flex-direction: column; gap: 2px; min-width: 160px; flex-shrink: 0; }
   .sdm-code { font-family: var(--font-mono, monospace); font-size: 0.78rem; line-height: 1.4; resize: vertical; min-height: 52px; }
@@ -76,6 +79,7 @@ export const css = `
     border-radius: 3px; cursor: pointer;
   }
   .sdm-usage-move button:disabled { opacity: 0.3; cursor: default; }
+  .sdm-ref { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 0.82rem; }
   .sdm-usage-section { color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; flex-shrink: 0; }
 
   /* Model publish toolbar (SDM sections share it). */

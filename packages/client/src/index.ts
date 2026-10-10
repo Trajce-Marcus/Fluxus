@@ -9,6 +9,7 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
 import type {
+  ActivityRawDef,
   AttributeDef,
   ClientSolutionConfig,
   FunctionDef,
@@ -683,7 +684,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       trpc.pages.list.query({ solutionId, published: false }),
       (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch((err) => {
         if (err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN') throw err;
-        return { attributes: [], recordTypes: [], workflows: [] } as SolutionConfig;
+        return { attributes: [], activities: [], recordTypes: [], workflows: [] } as SolutionConfig;
       }),
       operationId
         ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
@@ -738,7 +739,16 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     await this.trpc.config.deleteRecordType.mutate({ solutionId: this.solutionId, id });
   }
 
-  /** Activities ride inside their workflow — the workflow is the change unit. */
+  /** One activity in the solution's pool (APPS_AND_INSTANCES §1.6). Save it
+   *  before a workflow that lists it; delete it only once no workflow does. */
+  async putActivity(def: ActivityRawDef): Promise<void> {
+    await this.trpc.config.putActivity.mutate({ solutionId: this.solutionId, def });
+  }
+  async deleteActivity(id: string): Promise<void> {
+    await this.trpc.config.deleteActivity.mutate({ solutionId: this.solutionId, id });
+  }
+
+  /** A workflow is a name and an ordered list of pool activity references. */
   async putWorkflow(def: WorkflowRawDef): Promise<void> {
     await this.trpc.config.putWorkflow.mutate({ solutionId: this.solutionId, def });
   }

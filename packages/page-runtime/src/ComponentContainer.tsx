@@ -163,7 +163,12 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
         // comes back as not-found.
         const anchorRecord = anchorId ? await runtime.client.fetchRecord(anchorId) : null;
         if (opensDialog) {
-          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: found.typeDef.id, seed });
+          // The form resolves attributes against the record type it runs on.
+          // An activity shared by several types (APPS_AND_INSTANCES §1.5) has
+          // no one type of its own, so the anchor's decides; `found.typeDef`
+          // is only the first type listing it, right for a CREATE (which has
+          // exactly one) and a stand-in while the anchor loads.
+          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: anchorRecord?.typeRef ?? found.typeDef.id, seed });
         } else {
           await runWithConfirm(found.activity, anchorRecord);
         }

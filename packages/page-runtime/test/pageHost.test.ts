@@ -30,21 +30,21 @@ const CONFIG: ClientSolutionConfig = {
       ],
     },
   ],
+  activities: [
+    {
+      id: 'act_get_work_orders',
+      name: 'Get Work Orders',
+      description: 'Answer with the work orders in a given status',
+      record_map: 'GET',
+      attributes: [{ attribute_ref: 'status', required: true }],
+    },
+  ],
   workflows: [
     {
       id: 'wf_work_orders',
       name: 'Work Orders',
       description: 'The work order lifecycle',
-      activities: [
-        {
-          id: 'act_get_work_orders',
-          name: 'Get Work Orders',
-          description: 'Answer with the work orders in a given status',
-          sort_order: 1,
-          record_map: 'GET',
-          attributes: [{ attribute_ref: 'status', required: true }],
-        },
-      ],
+      activities: [{ activity_ref: 'act_get_work_orders' }],
     },
   ],
 };

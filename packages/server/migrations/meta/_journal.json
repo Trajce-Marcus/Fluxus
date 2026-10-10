@@ -155,6 +155,13 @@
       "when": 1785201300000,
       "tag": "0021_performance_logging",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785201400000,
+      "tag": "0022_activity_pool",
+      "breakpoints": true
     }
   ]
 }

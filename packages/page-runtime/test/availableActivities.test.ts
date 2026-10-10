@@ -5,7 +5,7 @@ import { availableActivities } from '../src/availableActivities';
 import type { ActivityDef } from '@fluxus/engine';
 
 const activity = (over: Partial<ActivityDef>): ActivityDef => ({
-  id: 'act_x', name: 'X', description: '', sort_order: 0, record_map: 'UPDATE',
+  id: 'act_x', name: 'X', description: '', record_map: 'UPDATE',
   attributes: [], before_hook: null, after_hook: null, ...over,
 });
 
@@ -40,21 +40,23 @@ describe('what is offered', () => {
   // its show_condition — not assumed away here.
   it('offers a CREATE, subject to its condition like any other', async () => {
     const acts = [
-      activity({ id: 'act_raise', name: 'Raise', record_map: 'CREATE', sort_order: 1, show_condition: "context.record.status = 'Approved'" }),
-      activity({ id: 'act_new', name: 'New', record_map: 'CREATE', sort_order: 2, show_condition: "context.record.status = 'Draft'" }),
+      activity({ id: 'act_raise', name: 'Raise', record_map: 'CREATE', show_condition: "context.record.status = 'Approved'" }),
+      activity({ id: 'act_new', name: 'New', record_map: 'CREATE', show_condition: "context.record.status = 'Draft'" }),
     ];
     const found = await availableActivities(acts, async (src) => src.includes('Approved'));
     expect(found).toEqual([{ id: 'act_raise', name: 'Raise' }]);
   });
 
+  // The workflow's list is the order — a shared activity has no position of
+  // its own (APPS_AND_INSTANCES §1.2), so nothing re-sorts it.
   it('keeps the workflow order', async () => {
     const acts = [
-      activity({ id: 'act_third', sort_order: 3 }),
-      activity({ id: 'act_first', sort_order: 1 }),
-      activity({ id: 'act_second', sort_order: 2 }),
+      activity({ id: 'act_third' }),
+      activity({ id: 'act_first' }),
+      activity({ id: 'act_second' }),
     ];
     const found = await availableActivities(acts, always);
-    expect(found.map((a) => a.id)).toEqual(['act_first', 'act_second', 'act_third']);
+    expect(found.map((a) => a.id)).toEqual(['act_third', 'act_first', 'act_second']);
   });
 });
 
@@ -73,7 +75,7 @@ describe('when a condition cannot be answered', () => {
   it('does not let one bad condition take the others down', async () => {
     const acts = [
       activity({ id: 'act_bad', show_condition: 'boom' }),
-      activity({ id: 'act_good', name: 'Good', sort_order: 1 }),
+      activity({ id: 'act_good', name: 'Good' }),
     ];
     const found = await availableActivities(acts, async (src) => {
       if (src === 'boom') throw new Error('boom');

@@ -34,20 +34,22 @@ const OP = 'test/entities';
 const config: SolutionConfig = {
   attributes: [{ key: 'name', label: 'Name', description: '', type: 'text' }],
   recordTypes: [{ id: 'rt_assets', name: 'Assets', description: '', workflow_ref: 'wf_assets', custom_fields: [] }],
-  workflows: [{
-    id: 'wf_assets',
-    name: 'Assets',
-    description: '',
-    activities: [{
+  activities: [
+    {
       id: 'act_create_assets',
       name: 'Create asset',
       description: '',
-      sort_order: 0,
       record_map: 'CREATE',
       attributes: [{ attribute_ref: 'name' }],
       before_hook: null,
       after_hook: null,
-    }],
+    },
+  ],
+  workflows: [{
+    id: 'wf_assets',
+    name: 'Assets',
+    description: '',
+    activities: [{ activity_ref: 'act_create_assets' }],
   }],
   access: { roles: [{ id: 'role_crew', name: 'Crew' }] },
 };
@@ -177,15 +179,8 @@ describe('the graph is validated on every entity write', () => {
         id: 'wf_ghost',
         name: 'Ghost',
         description: '',
-        activities: [{
-          id: 'act_ghost',
-          name: 'Ghost',
-          description: '',
-          sort_order: 0,
-          attributes: [{ attribute_ref: 'nope' }],
-          before_hook: null,
-          after_hook: null,
-        }],
+        // A reference the pool does not hold (APPS_AND_INSTANCES §1.4).
+        activities: [{ activity_ref: 'act_ghost' }],
       },
     })).rejects.toThrow();
     expect((await getSolutionConfig(db, SOL)).workflows.map((w) => w.id)).toEqual(['wf_assets']);
@@ -296,7 +291,7 @@ describe('the tables are truth', () => {
 
   it('a solution with nothing authored yet reads as the empty model', async () => {
     await ensureSolution(db, 'test/blank2', 'Blank');
-    expect(await getSolutionConfig(db, 'test/blank2')).toEqual({ attributes: [], recordTypes: [], workflows: [] });
+    expect(await getSolutionConfig(db, 'test/blank2')).toEqual({ attributes: [], activities: [], recordTypes: [], workflows: [] });
   });
 
   it('a model cannot exist without its solution', async () => {

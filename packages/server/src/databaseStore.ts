@@ -32,6 +32,7 @@ import {
   type SolutionConfig,
   type WaitingStore,
   type WorkflowDef,
+  type ActivityDef,
 } from '@fluxus/engine';
 import type { RecordQuery } from '@fluxus/dsl';
 import type { Db, DbOrTx } from './db/client';
@@ -112,6 +113,10 @@ export class DatabaseStore implements WaitingStore {
 
   listWorkflows(): WorkflowDef[] {
     return this.model.listWorkflows();
+  }
+
+  listActivities(): ActivityDef[] {
+    return this.model.listActivities();
   }
 
   resolveAttributeDisplayField(typeId: string, attrKey: string): string | undefined {

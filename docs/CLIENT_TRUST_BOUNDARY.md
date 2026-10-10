@@ -194,8 +194,8 @@ on.
 |---|---|---|
 | attributes | `key`, `label`, `description`, `type`, display config, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | presign / storage gating config (`max_size_mb`, `max_count`) |
 | record types | `id`, `name`, `id_field`, custom field keys + labels | `access.read`; **unreadable types entirely** |
-| activities | `id`, `name`, `description`, `sort_order`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely**; unrunnable activities |
-| workflows | `id`, `name`, and the activities that survive | — |
+| activities (the pool, since 2026-10-10) | `id`, `name`, `description`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely**; unrunnable activities — any no shipped workflow lists |
+| workflows | `id`, `name`, and their ordered `{ activity_ref }` list | — |
 | functions | those reachable from a shipped expression | the rest |
 | roles | — | **the whole `access.roles` block**; the client gets its own roles from `me` |
 

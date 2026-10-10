@@ -728,8 +728,8 @@ somebody deliberately exposes them. This is the rule the whole module rests on.
 |---|---|---|
 | attributes | `key`, `label`, `description`, `type`, display config, `max_count`, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | the presign gate (`max_size_mb`); attributes no surviving form reaches, and pool orphans |
 | record types | `id`, `name`, `description`, `workflow_ref`, custom field key + label + type + FK wiring | `access.read`; storage constraints (`required`/`unique`/`immutable`/`indexed`/`default`); **unreadable types entirely** |
-| activities | `id`, `name`, `description`, `sort_order`, `record_map`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely** |
-| workflows | `id`, `name`, `description`, and the activities that survive | workflows serving no surviving record type |
+| activities (the pool) | `id`, `name`, `description`, `record_map`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely**; any activity no surviving workflow lists (one listed by two is sent once) |
+| workflows | `id`, `name`, `description`, and their ordered `{ activity_ref }` list | workflows serving no surviving record type |
 | functions | those reachable from a shipped expression, transitively | the rest — including every hook-only helper |
 | roles | — | **the whole `access` block**; the client gets its own roles from `me` |
 | `default_menu` | rides through untouched | — |
@@ -794,8 +794,9 @@ config spells it.
 | Table | PK | Holds |
 |---|---|---|
 | `sdm_attributes` | `(solution_id, key)` | the attribute pool |
+| `sdm_activities` | `(solution_id, id)` | `activities[]` — the activity pool (since 2026-10-10, migration 0022) |
 | `sdm_record_types` | `(solution_id, id)` | `recordTypes[]` |
-| `sdm_workflows` | `(solution_id, id)` | `workflows[]`, **activities included** |
+| `sdm_workflows` | `(solution_id, id)` | `workflows[]` — each an ordered list of `{ activity_ref }` |
 | `sdm_functions` | `(solution_id, id)` | `functions[]` |
 | `sdm_roles` | `(solution_id, id)` | `access.roles[]` |
 | `sdm_menus` | `(solution_id)` | `default_menu` — one row, not a collection |
@@ -806,7 +807,7 @@ field. It is a table rather than a column on `sdm_configs` so that **nothing in
 `sdm_configs` is truth**: the snapshot row stays purely derived, and therefore
 droppable and rebuildable at any time. Its `def` holds the menu array whole —
 menu items are not independently authored entities, and one person edits a menu
-at a time (the same reasoning that keeps activities inside their workflow).
+at a time.
 
 Common columns: `solution_id` text NOT NULL (FK → `solutions.id`), the PK's
 second column where there is one (`key` for attributes — the config's own
@@ -826,14 +827,34 @@ One promoted column: **`sdm_record_types.workflow_ref`** text NOT NULL, FK
 one reference the split can hand to Postgres. Named `workflow_ref` to match
 the config field, not `workflow_id`, because it *is* that field lifted out.
 
-**Activities stay inside their workflow** (ruled 2026-08-08). They were the
-obvious sixth table — an activity is the largest object in the model and
-plausibly the edit unit — but the change unit is really the workflow: one
-person owns one workflow at a time, and reviewing a workflow change wants the
-whole thing in one view. Keeping them nested also preserves their authored
-order for free. If a workflow ever grows too contended or too long to review,
-splitting activities out later is a migration with no API change — assembly is
-per-collection either way.
+~~**Activities stay inside their workflow** (ruled 2026-08-08).~~ **Reversed
+2026-10-04, built 2026-10-10** (docs/APPS_AND_INSTANCES.md Part 1). The ruling
+took the workflow as the change unit and kept activities nested in its def. It
+was reversed because **one activity is now shared by several workflows**, so it
+cannot live inside any one of them: activities are stored once per solution in
+`sdm_activities` (the *activity pool*), and a workflow's def holds an ordered
+list of `{ "activity_ref": "<id>" }` — an object rather than a bare id, so
+settings per workflow can be added later without a reshape. The ruling's "a
+migration with no API change" did not hold: `config.putActivity` /
+`deleteActivity` are new.
+
+**Migration 0022** moved them: for each workflow, its nested activities ordered
+by `sort_order` then position (missing `sort_order` last), each into the pool
+without `sort_order`, the workflow left with references in that order. The same
+id in two workflows becomes one pool activity when the definitions match
+(ignoring `sort_order`) and **fails the migration, naming the id**, when they do
+not. Applied to the dev database 2026-10-10 (111 activities, two solutions, no
+conflicts). Code and migration must ship together: old code cannot read the
+new shape, and new code cannot read the old.
+
+**Published versions keep the old shape** — `sdm_config_versions` is immutable.
+`toActivityPool` (engine) states the migration's rules again in TypeScript, and
+every path that accepts a whole model runs it: `config.put` (import) and
+`rollbackConfig`. A rollback stores the **converted** model as its new version,
+so the newest version always matches the live tables; an old snapshot that
+defines one activity id two ways cannot be converted, and the rollback is
+refused naming the id. One test fixture runs through both the SQL and the
+converter (`test/activityPool.test.ts`).
 
 ### What does not change
 
@@ -854,21 +875,24 @@ per-collection either way.
   2026-08-09 it is sol-admin gated and no longer the runtime plane's door — see
   "What the client is given" above.
 - **`config.put`** (whole config) — kept, as the **import** path: it explodes an
-  incoming config into rows, replacing all five collections and the menu (rows
+  incoming config into rows, replacing all six collections and the menu (rows
   absent from the incoming config are deleted). `rollbackConfig` depends on it,
-  and installing a solution package will too.
+  and installing a solution package will too. A model in the shape before the
+  activity pool is converted first (`toActivityPool`).
 
 ### Ordering
 
 Rows carry no authored array order, so assembly is deterministic by key:
-attributes by `key`, the other four by `id`. Activities keep their existing
-`sort_order` inside the workflow def. Authored array order in today's blobs is
-**lost at migration** — accepted; nothing reads it.
+attributes by `key`, the other five by `id`. **The one authored order is a
+workflow's list of activity references**, which lives inside its def; an
+activity carries no `sort_order` since the pool (a shared activity has no single
+position). Callers that sorted by `sort_order` take the list as given.
 
 ### The write path (BUILT 2026-08-08)
 
-Eleven per-entity mutations sit beside `config.put`: `config.putAttribute` /
-`deleteAttribute`, `config.putRecordType` / `deleteRecordType`,
+Thirteen per-entity mutations sit beside `config.put`: `config.putAttribute` /
+`deleteAttribute`, `config.putActivity` / `deleteActivity` (the pool, since
+2026-10-10), `config.putRecordType` / `deleteRecordType`,
 `config.putWorkflow` / `deleteWorkflow`, `config.putFunction` /
 `deleteFunction`, `config.putRole` / `deleteRole`, and
 `config.putDefaultMenu` (no delete — an empty array is the empty menu) — sol
@@ -893,8 +917,31 @@ admin, like `config.put`. Each runs one transaction:
 6. success → commit. There is no snapshot to refresh.
 
 A delete that would dangle (an attribute an activity still uses, a workflow a
-record type still points at) fails at step 4 like any other invalid graph — the
-FK catches the record-type case earlier and more cheaply.
+record type still points at, a pool activity a workflow still lists) fails at
+step 4 like any other invalid graph — the FK catches the record-type case
+earlier and more cheaply. For a pool activity the refusal names **every**
+workflow still listing it, checked before the adapter (which would stop at the
+first).
+
+**The activity pool's save rules** (engine `validateConfig`, APPS_AND_INSTANCES
+§1.4) run here too: pool ids unique; every `activity_ref` resolves and none is
+listed twice in one workflow; **a CREATE reached through two record types is
+refused** (the engine takes the type a CREATE makes from the one type whose
+workflow lists it); a shared activity's scripts are checked once per record
+type that reaches it, a problem every type has reported once and the rest
+naming the type they fail on; `invoke` of an activity no workflow lists is
+refused. **Save order matters** for the per-entity writes, since each validates
+the whole graph: new pool activities before the workflows that list them,
+workflows that drop one before its deletion, and when a CREATE moves between
+workflows the one losing it before the one gaining it — the Console orders its
+saves that way.
+
+**Finding an activity to run** (`findActivity`, `activities.run` /
+`activities.query`) looks only at activities some workflow lists; one in the
+pool alone is "Activity not found". **Not built (deferred by the user
+2026-10-10):** the spec's check that refuses a run whose activity is not in the
+anchor record type's workflow (§1.5). Today, as before the pool, an UPDATE,
+DELETE or log-only activity runs on any readable record.
 
 Details settled in the build:
 

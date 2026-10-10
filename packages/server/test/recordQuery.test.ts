@@ -20,7 +20,7 @@ const OP = 'test/record-query';
 
 const field = (key: string, type: string, extra: Record<string, unknown> = {}) => ({ key, type, label: key, default: '', ...extra });
 const act = (id: string, record_map: string | null, attributes: string[], after?: string) => ({
-  id, name: id, description: '', sort_order: 0, record_map, before_hook: null, after_hook: after ?? null,
+  id, name: id, description: '', record_map, before_hook: null, after_hook: after ?? null,
   attributes: attributes.map((a) => ({ attribute_ref: a })),
 });
 
@@ -39,8 +39,7 @@ const config = {
     { id: 'rt_items', name: 'Items', description: '', workflow_ref: 'wf_items',
       custom_fields: [field('label', 'text'), field('job', 'fk_ref', { fk_record_type: 'rt_jobs', fk_display_field: 'name' })] },
   ],
-  workflows: [
-    { id: 'wf_jobs', name: 'Jobs', description: '', activities: [
+  activities: [
       // A hook that writes, then reads its writes back through every form of query.
       act('act_touch_jobs', null, [], `
         let g = records.groups.where(region = 'north').first
@@ -52,7 +51,9 @@ const config = {
         warn('top:' + records.jobs.orderby(qty desc).top(1).first.name)
         warn('first:' + records.jobs.where(qty = 99).first.name)
         warn('gone:' + records.jobs.where(name = 'gone').count)`),
-    ] },
+  ],
+  workflows: [
+    { id: 'wf_jobs', name: 'Jobs', description: '', activities: [{ activity_ref: 'act_touch_jobs' }] },
     { id: 'wf_groups', name: 'Groups', description: '', activities: [] },
     { id: 'wf_items', name: 'Items', description: '', activities: [] },
   ],

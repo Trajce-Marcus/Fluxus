@@ -28,24 +28,24 @@ const config = {
   attributes: [
     { key: 'closure_note', label: 'Closure note', description: '', type: 'text' },
   ],
+  activities: [
+    {
+      id: 'act_close_projects',
+      name: 'Close Project',
+      description: '',
+      record_map: 'UPDATE',
+      show_condition: "context.record.code != ''",
+      before_hook: "if 1 > 2 { fail('no') }",
+      after_hook: null,
+      attributes: [{ section: 'Closing' }, { attribute_ref: 'closure_note', required: true }],
+    },
+  ],
   workflows: [
     {
       id: 'wf_projects',
       name: 'Projects',
       description: '',
-      activities: [
-        {
-          id: 'act_close_projects',
-          name: 'Close Project',
-          description: '',
-          sort_order: 20,
-          record_map: 'UPDATE',
-          show_condition: "context.record.code != ''",
-          before_hook: "if 1 > 2 { fail('no') }",
-          after_hook: null,
-          attributes: [{ section: 'Closing' }, { attribute_ref: 'closure_note', required: true }],
-        },
-      ],
+      activities: [{ activity_ref: 'act_close_projects' }],
     },
     { id: 'wf_people', name: 'People', description: '', activities: [] },
   ],
@@ -87,11 +87,16 @@ describe('model.* — the collections', () => {
     expect(rows).toEqual([{ target: 'people', target_display_field: 'name' }]);
   });
 
-  it('derives an activity back to its workflow and record type', () => {
-    const rows = run('model.activities.select(id, workflow_ref, record_type_ref)') as Record<string, unknown>[];
+  it('lists which workflow uses an activity, through workflow_activities', () => {
+    const rows = run('model.workflow_activities.select(workflow_ref, activity_ref, position)') as Record<string, unknown>[];
     expect(rows).toEqual([
-      { id: 'act_close_projects', workflow_ref: 'wf_projects', record_type_ref: 'rt_projects' },
+      { workflow_ref: 'wf_projects', activity_ref: 'act_close_projects', position: 0 },
     ]);
+  });
+
+  it('reaches the record type from a workflow use, through the workflow', () => {
+    const rows = run("model.record_types.where(workflow_ref = 'wf_projects').select(id)") as Record<string, unknown>[];
+    expect(rows).toEqual([{ id: 'rt_projects' }]);
   });
 
   it('includes hook source text', () => {

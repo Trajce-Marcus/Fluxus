@@ -1,5 +1,5 @@
 import type { RecordQuery } from '@fluxus/dsl';
-import type { RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ReverseRefEntry } from './types';
+import type { ActivityDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ReverseRefEntry } from './types';
 
 // The Store contract, split three ways (SERVER_DATA_LOADING §4.2):
 //   - the **model**, which every store answers immediately;
@@ -23,6 +23,12 @@ export interface ModelStore {
    * lists them and their capture lists would otherwise be silently missing.
    */
   listWorkflows?(): WorkflowDef[];
+  /**
+   * The resolved activity pool, including activities no workflow lists
+   * (APPS_AND_INSTANCES §1.3). Optional for the same reason: only the model
+   * projection needs the unused ones, which `model.activities` lists.
+   */
+  listActivities?(): ActivityDef[];
   // Returns the fk_display_field for an attribute by key-matching against the
   // record type's CustomFields (§SDM_Change §7 resolution rule).
   resolveAttributeDisplayField(typeId: string, attrKey: string): string | undefined;

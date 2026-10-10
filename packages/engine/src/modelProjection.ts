@@ -24,7 +24,6 @@ import type {
   AttributeDef,
   ClientAttributeDef,
   CustomFieldDef,
-  RecordTypeDef,
   SolutionConfig,
   WorkflowRawDef,
 } from './types';
@@ -103,14 +102,21 @@ const COLLECTIONS: Collection[] = [
     columns: {
       name: T('text'),
       description: T('text'),
-      workflow_ref: FK('workflows'),
-      record_type_ref: FK('record_types'),
-      sort_order: T('number'),
       record_map: T('text'),
       show_condition: T('text'),
       before_hook: T('text'),
       after_hook: T('text'),
       returns: T('text'),
+    },
+  },
+  {
+    // One row per workflow's use of a pool activity (APPS_AND_INSTANCES §1.5).
+    // A workflow's activities are its rows here, in `position` order.
+    name: P + 'workflow_activities',
+    columns: {
+      workflow_ref: FK('workflows'),
+      activity_ref: FK('activities'),
+      position: T('number'),
     },
   },
   {
@@ -208,41 +214,33 @@ function fieldRows(config: SolutionConfig): DslRecord[] {
   return out;
 }
 
-/**
- * Which record type an activity belongs to. Activities carry no such field —
- * the link runs record type → workflow — and **nothing enforces one record
- * type per workflow**. So: null when none points at it, and the first by
- * config order when several do, rather than pretending it is single.
- */
-function recordTypeByWorkflow(config: SolutionConfig): Map<string, RecordTypeDef> {
-  const m = new Map<string, RecordTypeDef>();
-  for (const rt of config.recordTypes) {
-    if (!m.has(rt.workflow_ref)) m.set(rt.workflow_ref, rt);
-  }
-  return m;
+/** Every pool activity, one row each, used or not. An activity no longer
+ *  belongs to one workflow — `workflow_activities` says which use it. */
+function activityRows(config: SolutionConfig): DslRecord[] {
+  return (config.activities ?? []).map((act: ActivityRawDef) =>
+    row(P + 'activities', act.id, {
+      name: act.name,
+      description: act.description ?? null,
+      record_map: act.record_map ?? null,
+      show_condition: act.show_condition ?? null,
+      before_hook: joinLines(act.before_hook),
+      after_hook: joinLines(act.after_hook),
+      returns: joinLines((act as { returns?: string | string[] | null }).returns),
+    }),
+  );
 }
 
-function activityRows(config: SolutionConfig): DslRecord[] {
-  const byWorkflow = recordTypeByWorkflow(config);
+function workflowActivityRows(config: SolutionConfig): DslRecord[] {
   const out: DslRecord[] = [];
   for (const wf of config.workflows as WorkflowRawDef[]) {
-    for (const act of wf.activities as ActivityRawDef[]) {
-      out.push(
-        row(P + 'activities', act.id, {
-          name: act.name,
-          description: act.description ?? null,
-          // Derived from nesting: an activity is stored inside its workflow.
-          workflow_ref: wf.id,
-          record_type_ref: byWorkflow.get(wf.id)?.id ?? null,
-          sort_order: act.sort_order ?? null,
-          record_map: act.record_map ?? null,
-          show_condition: act.show_condition ?? null,
-          before_hook: joinLines(act.before_hook),
-          after_hook: joinLines(act.after_hook),
-          returns: joinLines((act as { returns?: string | string[] | null }).returns),
-        }),
-      );
-    }
+    wf.activities.forEach((usage, position) => {
+      // A workflow lists an activity at most once, so the pair is an identity.
+      out.push(row(P + 'workflow_activities', `${wf.id}.${usage.activity_ref}`, {
+        workflow_ref: wf.id,
+        activity_ref: usage.activity_ref,
+        position,
+      }));
+    });
   }
   return out;
 }
@@ -267,10 +265,12 @@ function joinLines(v: string | string[] | null | undefined): string | null {
 export function resolvedCaptureLists(store: ModelStore): Map<string, ClientAttributeDef[]> {
   const out = new Map<string, ClientAttributeDef[]>();
 
-  // Every workflow when the store can list them — an activity in a workflow no
-  // record type points at is still listed by `model.activities`, so its
-  // capture list must be there too or a count over the collection is silently
-  // short.
+  // The whole pool when the store can list it — `model.activities` lists every
+  // pool activity, used or not, so its capture list must be there too or a
+  // count over the collection is silently short.
+  for (const act of store.listActivities?.() ?? []) {
+    out.set(act.id, (act.attributes ?? []) as ClientAttributeDef[]);
+  }
   for (const wf of store.listWorkflows?.() ?? []) {
     for (const act of wf.activities) {
       if (!out.has(act.id)) out.set(act.id, (act.attributes ?? []) as ClientAttributeDef[]);
@@ -289,9 +289,9 @@ export function resolvedCaptureLists(store: ModelStore): Map<string, ClientAttri
       continue;
     }
     for (const act of def.workflow.activities) {
-      // Two record types can point at one workflow. First wins, and the list is
-      // identical either way: the adapter resolves each workflow once, into a
-      // map keyed by id, so both types hand back the same object.
+      // Two record types can reach one activity. First wins, and the list is
+      // identical either way: the adapter resolves each pool activity once, so
+      // every workflow hands back the same object.
       if (!out.has(act.id)) out.set(act.id, (act.attributes ?? []) as ClientAttributeDef[]);
     }
   }
@@ -393,6 +393,7 @@ export function modelRows(
   );
 
   rows.set(P + 'activities', activityRows(config));
+  rows.set(P + 'workflow_activities', workflowActivityRows(config));
   rows.set(P + 'activity_attributes', activityAttributeRows(options));
 
   rows.set(

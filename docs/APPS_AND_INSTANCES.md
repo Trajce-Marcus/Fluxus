@@ -1,11 +1,11 @@
 # Apps and instances — spec
 
-**Status:** draft for review, 2026-10-04. Nothing built. Built from the
-exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md) and
-the user's rulings of 2026-10-04 (below). Two build parts, built and checked
-one at a time: **Part 1, the activity pool**, then **Part 2, apps and
-instances**. Part 2 has decisions still open (§ Decisions needed); Part 1 does
-not depend on them.
+**Status:** **Part 1 (the activity pool) BUILT 2026-10-10**, except the run
+check in §1.5, which the user deferred. Part 2 not built; decisions still open
+(§ Decisions needed). Built from the exploration in
+[ideas/apps-and-instances.md](ideas/apps-and-instances.md) and the user's
+rulings of 2026-10-04 (below). Two build parts, built and checked one at a
+time: **Part 1, the activity pool**, then **Part 2, apps and instances**.
 
 ## What this changes, in one paragraph
 
@@ -172,7 +172,10 @@ that name activity ids keep working.
   runtime) finds only activities some workflow includes; an activity in the pool
   alone is "not found", as today.
 - **New check — only an activity that belongs to the record may run on it**
-  (approved by the user 2026-10-06). Today the server runs any UPDATE, DELETE
+  (approved by the user 2026-10-06). **Deferred by the user 2026-10-10 — not
+  built with Part 1.** It is one check in `activities.run` and nothing else in
+  Part 1 depends on it; until it is built, runs behave as they did before the
+  pool. Part 2 needs it (§2.5). Today the server runs any UPDATE, DELETE
   or log-only activity against any readable record, whether or not that
   record's type lists it (`activities.run` checks the anchor is readable, never
   that its workflow holds the activity). The server now rejects a run whose
@@ -252,6 +255,8 @@ working. These read the stored shape, assume one owning record type, or are new:
 
 ### Decision before building
 
+*Moot for now: the check was deferred (§1.5). Decide when it is built.*
+
 - **The DSL Editor and the new check.** The Console's DSL Editor runs any
   activity against any anchor, including a record of another type — documented
   as allowed ("said, not enforced", DSL_EDITOR_SPEC). The new check refuses
@@ -280,7 +285,7 @@ working. These read the stored shape, assume one owning record type, or are new:
   at save, naming that type.
 - An activity in the pool but in no workflow is "not found" when run or
   `invoke`d.
-- The server refuses an UPDATE, DELETE or log-only run on a record whose type's
+- *(Deferred with the check, §1.5.)* The server refuses an UPDATE, DELETE or log-only run on a record whose type's
   workflow does not include the activity.
 - Rolling back to a version published before the migration works.
 - Workbench and page activity buttons keep their order.

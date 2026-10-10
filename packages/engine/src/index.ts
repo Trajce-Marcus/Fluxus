@@ -62,12 +62,21 @@ export type { AttributeFieldRef, AttributeTypeSpec, DescriptorField, DescriptorF
 export { modelSchemaTypes, modelRows, withModelTypes } from './modelProjection';
 export type { ModelProjectionOptions } from './modelProjection';
 export { validateConfig, reportConfigFindings } from './validateConfig';
+export {
+  ActivityPoolConflictError,
+  hasNestedActivities,
+  includedActivityIds,
+  recordTypesByActivity,
+  toActivityPool,
+  workflowActivities,
+} from './activityPool';
 export type { Finding } from './validateConfig';
 
 export type {
   ActivityDef,
   ActivityHistoryEntry,
   ActivityRawDef,
+  ActivityUsage,
   AttributeDef,
   AttributeTypeConfig,
   AttributeUsageDef,

@@ -172,7 +172,7 @@ describe('a GET is logged light', () => {
     // A `returns` that is legal at save time and throws at run time: the
     // activity id is computed, so validateConfig leaves it to runtime — and at
     // runtime there is no such activity.
-    broken.workflows.find((w) => w.id === 'wf_work_orders')!.activities
+    broken.activities
       .find((a) => a.id === 'act_get_work_orders')!.returns = "invoke('act_get_' + 'nothing', {})";
     await ensureSolution(db, SOL, 'Failing');
     await putConfig(db, SOL, broken, sink);
@@ -194,7 +194,7 @@ describe('a GET is logged light', () => {
     const SOL = 'demo/get-nested';
     const OP = 'demo/get-nested-op';
     const withGuard = structuredClone(config);
-    withGuard.workflows.find((w) => w.id === 'wf_work_orders')!.activities
+    withGuard.activities
       .find((a) => a.id === 'act_complete_work_orders')!.before_hook =
         "if len(invoke('act_get_work_orders', { status: 'Nothing' })) > 0 { fail('x') }";
     await ensureSolution(db, SOL, 'Nested');
@@ -223,8 +223,7 @@ describe('config validation of GET activities', () => {
     await ensureSolution(db, id, 'Broken');
     return caller().config.put({ solutionId: id, config: broken });
   };
-  const workOrderActivities = (c: typeof config) =>
-    c.workflows.find((w) => w.id === 'wf_work_orders')!.activities;
+  const workOrderActivities = (c: typeof config) => c.activities;
   const getActivity = (c: typeof config) =>
     workOrderActivities(c).find((a) => a.id === 'act_get_work_orders')!;
 
@@ -275,7 +274,7 @@ describe('invoke() from a hook', () => {
     const SOL = 'demo/get-invoke';
     const OP = 'demo/get-invoke-op';
     const withGuard = structuredClone(config);
-    const activities = withGuard.workflows.find((w) => w.id === 'wf_work_orders')!.activities;
+    const activities = withGuard.activities;
     activities.find((a) => a.id === 'act_complete_work_orders')!.before_hook = [
       "if len(invoke('act_get_work_orders', { status: 'Dispatched' })) = 0 {",
       "  fail('Nothing is dispatched — complete a dispatched work order')",

@@ -48,20 +48,21 @@ const bare = {
     // no required/validation/validation_message/can_waive
     { key: 'note', type: 'text' },
   ],
+  activities: [
+    {
+      id: 'act_log_widgets',
+      name: 'Log Widget',
+      // no description, no sort_order, no record_map, no show_condition,
+      // no before_hook/after_hook/returns
+      attributes: [{ attribute_ref: 'note' }],
+    },
+  ],
   workflows: [
     {
       id: 'wf_widgets',
       name: 'Widgets',
       // no description
-      activities: [
-        {
-          id: 'act_log_widgets',
-          name: 'Log Widget',
-          // no description, no sort_order, no record_map, no show_condition,
-          // no before_hook/after_hook/returns
-          attributes: [{ attribute_ref: 'note' }],
-        },
-      ],
+      activities: [{ activity_ref: 'act_log_widgets' }],
     },
   ],
   // no functions key at all, no access key at all
@@ -90,36 +91,35 @@ const full = {
     { key: 'line', label: 'Line', type: 'composite', type_config: { attributes: [{ attribute_ref: 'qty' }] } },
     { key: 'reason', label: 'Reason', type: 'text', source: "'auto'", show_condition: '1 = 1', required: true, validation: 'len(value) > 2', validation_message: 'too short', can_waive: true },
   ],
+  activities: [
+    {
+      id: 'act_create_jobs',
+      name: 'Create Job',
+      description: 'Opens one',
+      record_map: 'CREATE',
+      show_condition: '1 = 1',
+      before_hook: ['let a = 1', 'let b = 2'],
+      after_hook: null,
+      returns: null,
+      attributes: [{ section: 'Head' }, { attribute_ref: 'qty' }, { section: 'Tail' }, { attribute_ref: 'reason', required: true }],
+    },
+    { id: 'act_markers_jobs', name: 'Markers', attributes: [{ section: 'One' }, { section: 'Two' }] },
+    { id: 'act_empty_jobs', name: 'Empty', attributes: [] },
+    { id: 'act_orphan', name: 'Orphan Activity', attributes: [{ attribute_ref: 'qty' }] },
+  ],
   workflows: [
     {
       id: 'wf_jobs',
       name: 'Jobs',
       description: 'The job flow',
-      activities: [
-        {
-          id: 'act_create_jobs',
-          name: 'Create Job',
-          description: 'Opens one',
-          sort_order: 10,
-          record_map: 'CREATE',
-          show_condition: '1 = 1',
-          before_hook: ['let a = 1', 'let b = 2'],
-          after_hook: null,
-          returns: null,
-          attributes: [{ section: 'Head' }, { attribute_ref: 'qty' }, { section: 'Tail' }, { attribute_ref: 'reason', required: true }],
-        },
-        // Only section markers.
-        { id: 'act_markers_jobs', name: 'Markers', attributes: [{ section: 'One' }, { section: 'Two' }] },
-        // Empty capture list.
-        { id: 'act_empty_jobs', name: 'Empty', attributes: [] },
-      ],
+      activities: [{ activity_ref: 'act_create_jobs' }, { activity_ref: 'act_markers_jobs' }, { activity_ref: 'act_empty_jobs' }],
     },
     { id: 'wf_sites', name: 'Sites', activities: [] },
     // An ORPHAN workflow: no record type points at it (§5 "answers null").
     {
       id: 'wf_orphan',
       name: 'Orphan',
-      activities: [{ id: 'act_orphan', name: 'Orphan Activity', attributes: [{ attribute_ref: 'qty' }] }],
+      activities: [{ activity_ref: 'act_orphan' }],
     },
   ],
   functions: [
@@ -151,6 +151,7 @@ const COLLECTIONS = [
   'attributes',
   'workflows',
   'activities',
+  'workflow_activities',
   'activity_attributes',
   'functions',
   'roles',
@@ -172,6 +173,7 @@ describe('§4 rule 1: every declared column is materialized, on a config with no
       'attributes',
       'workflows',
       'activities',
+      'workflow_activities',
       'activity_attributes',
     ]);
   });
@@ -226,7 +228,7 @@ describe('§5: the collections declare exactly the columns the spec lists', () =
   const types = modelSchemaTypes();
   const declared = (c: string) => Object.keys(types[`sdm_${c}`].fields).sort();
 
-  it('the eight collections, no more and no fewer', () => {
+  it('the nine collections, no more and no fewer', () => {
     expect(Object.keys(types).sort()).toEqual(COLLECTIONS.map((c) => `sdm_${c}`).sort());
   });
 
@@ -248,8 +250,11 @@ describe('§5: the collections declare exactly the columns the spec lists', () =
   });
   it('activities', () => {
     expect(declared('activities')).toEqual(
-      ['name', 'description', 'workflow_ref', 'record_type_ref', 'sort_order', 'record_map', 'show_condition', 'before_hook', 'after_hook', 'returns'].sort(),
+      ['name', 'description', 'record_map', 'show_condition', 'before_hook', 'after_hook', 'returns'].sort(),
     );
+  });
+  it('workflow_activities', () => {
+    expect(declared('workflow_activities')).toEqual(['activity_ref', 'position', 'workflow_ref']);
   });
   it('activity_attributes', () => {
     expect(declared('activity_attributes')).toEqual(
@@ -268,8 +273,8 @@ describe('§5: the collections declare exactly the columns the spec lists', () =
     const fk = (t: string, f: string) => host.fkTarget(t, f);
     expect(fk('sdm_record_types', 'workflow_ref')).toBe('sdm_workflows');
     expect(fk('sdm_fields', 'record_type_ref')).toBe('sdm_record_types');
-    expect(fk('sdm_activities', 'workflow_ref')).toBe('sdm_workflows');
-    expect(fk('sdm_activities', 'record_type_ref')).toBe('sdm_record_types');
+    expect(fk('sdm_workflow_activities', 'workflow_ref')).toBe('sdm_workflows');
+    expect(fk('sdm_workflow_activities', 'activity_ref')).toBe('sdm_activities');
     expect(fk('sdm_activity_attributes', 'activity_ref')).toBe('sdm_activities');
     // §5: `target_ref` is the one that dereferences — `target` holds the
     // query name, which the collection is not keyed by.
@@ -380,15 +385,17 @@ describe('derived and synthesised columns', () => {
     expect(runOn(full, "model.attributes.where(key = 'qty').select(id)")).toEqual([{ id: 'qty' }]);
   });
 
-  it('record_type_ref is null when NO record type points at the workflow', () => {
-    expect(runOn(full, "model.activities.where(id = 'act_orphan').select(record_type_ref)")).toEqual([
-      { record_type_ref: null },
+  it('a workflow\'s activities are its workflow_activities rows, in its order', () => {
+    expect(runOn(full, "model.workflow_activities.where(workflow_ref = 'wf_jobs').orderBy(position).select(activity_ref, position)")).toEqual([
+      { activity_ref: 'act_create_jobs', position: 0 },
+      { activity_ref: 'act_markers_jobs', position: 1 },
+      { activity_ref: 'act_empty_jobs', position: 2 },
     ]);
   });
 
-  it('record_type_ref is the FIRST by config order when TWO point at the workflow', () => {
-    expect(runOn(full, "model.activities.where(id = 'act_create_jobs').select(record_type_ref)")).toEqual([
-      { record_type_ref: 'rt_jobs' },
+  it('a workflow_activities row dereferences to both ends', () => {
+    expect(runOn(full, "model.workflow_activities.where(activity_ref = 'act_orphan').select(wf: workflow_ref.name, act: activity_ref.name)")).toEqual([
+      { wf: 'Orphan', act: 'Orphan Activity' },
     ]);
   });
 
@@ -426,9 +433,10 @@ describe('derived and synthesised columns', () => {
     expect(runOn(full, "model.record_types.where(id = 'rt_jobs').select(wf: workflow_ref.name)")).toEqual([
       { wf: 'Jobs' },
     ]);
-    // record_type_ref is null on the orphan — the deref must not throw.
-    expect(runOn(full, "model.activities.where(id = 'act_orphan').select(rt: record_type_ref.name)")).toEqual([
-      { rt: null },
+    // A record type with no workflow match is not possible, but an empty
+    // reference must not throw: description is absent on wf_sites.
+    expect(runOn(full, "model.record_types.where(id = 'rt_sites').select(wf: workflow_ref.description)")).toEqual([
+      { wf: null },
     ]);
   });
 

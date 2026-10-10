@@ -14,7 +14,10 @@ import {
   buildGeoModule,
   buildTimeModule,
   buildMathModule,
+  toActivityPool,
+  ActivityPoolConflictError,
   type ActivityDef,
+  type ActivityRawDef,
   type AttributeDef,
   type FunctionDef,
   type SolutionConfig,
@@ -25,7 +28,7 @@ import {
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig, type StoredConfigBeforePool } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 import { withSpan } from './perf';
@@ -66,7 +69,7 @@ export class OrgNotFoundError extends Error {
 }
 
 /**
- * The solution's model, assembled from the six `sdm_*` tables — **one round
+ * The solution's model, assembled from the seven `sdm_*` tables — **one round
  * trip**, which is what let the derived `sdm_configs` snapshot be dropped
  * (2026-08-09) rather than kept as a second copy of the truth.
  *
@@ -79,6 +82,7 @@ export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise
   const [row] = await db
     .select({
       attributes: sql<AttributeDef[] | null>`(SELECT jsonb_agg(${sdmAttributes.def} ORDER BY ${sdmAttributes.key}) FROM ${sdmAttributes} WHERE ${eq(sdmAttributes.solutionId, solutionId)})`,
+      activities: sql<ActivityRawDef[] | null>`(SELECT jsonb_agg(${sdmActivities.def} ORDER BY ${sdmActivities.id}) FROM ${sdmActivities} WHERE ${eq(sdmActivities.solutionId, solutionId)})`,
       recordTypes: sql<RecordTypeDef[] | null>`(SELECT jsonb_agg(${sdmRecordTypes.def} ORDER BY ${sdmRecordTypes.id}) FROM ${sdmRecordTypes} WHERE ${eq(sdmRecordTypes.solutionId, solutionId)})`,
       workflows: sql<WorkflowRawDef[] | null>`(SELECT jsonb_agg(${sdmWorkflows.def} ORDER BY ${sdmWorkflows.id}) FROM ${sdmWorkflows} WHERE ${eq(sdmWorkflows.solutionId, solutionId)})`,
       functions: sql<FunctionDef[] | null>`(SELECT jsonb_agg(${sdmFunctions.def} ORDER BY ${sdmFunctions.id}) FROM ${sdmFunctions} WHERE ${eq(sdmFunctions.solutionId, solutionId)})`,
@@ -90,6 +94,7 @@ export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise
   if (!row) throw new SolutionNotFoundError(solutionId);
   return {
     attributes: row.attributes ?? [],
+    activities: row.activities ?? [],
     recordTypes: row.recordTypes ?? [],
     workflows: row.workflows ?? [],
     // Absent collections stay absent — `functions` and `access` are optional in
@@ -138,11 +143,11 @@ export async function loadOperationHost(db: Db, operationId: string, sink: Notif
   });
 }
 
-/** Find an activity by id across the solution's workflows. */
+/** Find an activity by id among those some workflow lists. One in the pool
+ *  alone cannot run, and is not found (APPS_AND_INSTANCES §1.5). */
 export function findActivity(host: OperationHost, activityId: string): ActivityDef | null {
-  for (const rt of host.store.listRecordTypes()) {
-    const def = host.store.getRecordTypeDef(rt.id);
-    const activity = def.workflow.activities.find((a) => a.id === activityId);
+  for (const wf of host.store.listWorkflows()) {
+    const activity = wf.activities.find((a) => a.id === activityId);
     if (activity) return activity;
   }
   return null;
@@ -613,8 +618,16 @@ export class ConfigValidationError extends Error {
  * references attributes — so no per-entity write gets a smaller check.
  */
 async function validateConfigGraph(db: DbOrTx, solutionId: string, config: SolutionConfig, sink: NotifySink): Promise<void> {
-  // Structural check first — MemoryAdapter resolves every attribute_ref and
-  // workflow_ref, throwing on danglers…
+  // A workflow listing an activity the pool does not hold — what deleting a
+  // pool activity still in use leaves behind. Said for every workflow before
+  // the adapter throws on the first, so the author learns all of them.
+  const poolIds = new Set(config.activities.map((a) => a.id));
+  const dangling = config.workflows.flatMap((wf) => wf.activities
+    .filter((usage) => !poolIds.has(usage.activity_ref))
+    .map((usage) => `workflow '${wf.id}': activity '${usage.activity_ref}' is not in the activity pool`));
+  if (dangling.length > 0) throw new ConfigValidationError(dangling);
+  // Structural check next — MemoryAdapter resolves every attribute_ref,
+  // activity_ref and workflow_ref, throwing on danglers…
   const adapter = new MemoryAdapter(config);
   for (const rt of config.recordTypes) adapter.getRecordTypeDef(rt.id);
   // …then every FluxScript surface against the schema + service registry.
@@ -657,9 +670,13 @@ async function validateConfigGraph(db: DbOrTx, solutionId: string, config: Solut
  *
  * Since the storage split this is the **import** path, not the editing path
  * (the Console saves one entity at a time): it explodes the incoming config
- * into rows, replacing all five collections and the menu, and **rows absent
+ * into rows, replacing all six collections and the menu, and **rows absent
  * from the incoming config are deleted**. `rollbackConfig` depends on it, and
  * installing a solution package will too.
+ *
+ * A model in the shape before the activity pool (activities nested in their
+ * workflows) is converted first, by the rules migration 0022 applied
+ * (`toActivityPool`), so an old export still imports.
  */
 export async function putConfig(
   db: Db,
@@ -668,6 +685,7 @@ export async function putConfig(
   sink: NotifySink = consoleNotifySink,
   author: string | null = null,
 ): Promise<void> {
+  config = poolShaped(config);
   await editConfig(db, solutionId, sink, async (tx) => {
     // Deletes walk the FK order backwards and precede every insert: a record
     // type that is going has to go before the workflow it points at can.
@@ -757,8 +775,38 @@ export const configCollections = {
     },
   } as ConfigCollection<AttributeDef>,
 
-  // Activities ride inside their workflow (ruled 2026-08-08) — the change unit
-  // is the workflow, and nesting keeps their authored order for free.
+  // The activity pool (APPS_AND_INSTANCES Part 1). Activities rode inside
+  // their workflow until 2026-10-04; a workflow now stores references only.
+  activities: {
+    name: 'activities',
+    idField: 'id',
+    read: (c) => c.activities ?? [],
+    list: async (tx, solutionId) => (await tx
+      .select({ def: sdmActivities.def })
+      .from(sdmActivities)
+      .where(eq(sdmActivities.solutionId, solutionId))
+      .orderBy(asc(sdmActivities.id))).map((r) => r.def),
+    put: async (tx, solutionId, id, def, author) => {
+      await tx
+        .insert(sdmActivities)
+        .values({ solutionId, id, def, createdBy: author, updatedBy: author })
+        .onConflictDoUpdate({
+          target: [sdmActivities.solutionId, sdmActivities.id],
+          set: { def, updatedAt: new Date(), updatedBy: author },
+        });
+    },
+    remove: async (tx, solutionId, id) => {
+      await tx.delete(sdmActivities).where(and(eq(sdmActivities.solutionId, solutionId), eq(sdmActivities.id, id)));
+    },
+    removeExcept: async (tx, solutionId, keep) => {
+      await tx.delete(sdmActivities).where(and(
+        eq(sdmActivities.solutionId, solutionId),
+        keep.length > 0 ? not(inArray(sdmActivities.id, keep)) : undefined,
+      ));
+    },
+  } as ConfigCollection<ActivityRawDef>,
+
+  // A workflow is a name and an ordered list of `{ activity_ref }`.
   workflows: {
     name: 'workflows',
     idField: 'id',
@@ -890,6 +938,7 @@ export const configCollections = {
 // the one thing no caller here needs to know.
 const COLLECTIONS_IN_FK_ORDER: readonly ConfigCollection<unknown>[] = [
   configCollections.attributes,
+  configCollections.activities,
   configCollections.workflows,
   configCollections.recordTypes,
   configCollections.functions,
@@ -1044,6 +1093,7 @@ async function appendConfigVersion(db: Db, solutionId: string, config: SolutionC
 export async function publishConfig(db: Db, solutionId: string, readme: string, publishedBy: string): Promise<{ version: number }> {
   const config = await getSolutionConfig(db, solutionId);
   const empty = config.attributes.length === 0
+    && config.activities.length === 0
     && config.recordTypes.length === 0
     && config.workflows.length === 0
     && (config.functions?.length ?? 0) === 0
@@ -1057,12 +1107,30 @@ export async function publishConfig(db: Db, solutionId: string, readme: string, 
  * as the draft — unlike pages (whose draft is the page builder's working copy),
  * the config draft IS what every host evaluates against, so a rollback that
  * left it untouched would change nothing observable.
+ *
+ * A version published before the activity pool is converted
+ * (`toActivityPool`), and the **converted** model is what the new version
+ * stores, so the newest version always matches the live tables. The old
+ * version itself is never rewritten. One whose workflows define the same
+ * activity id differently cannot be converted, and the rollback is refused.
  */
 export async function rollbackConfig(db: Db, solutionId: string, version: number, readme: string, publishedBy: string): Promise<{ version: number }> {
-  const config = await getConfigVersion(db, solutionId, version);
-  if (config === null) throw new ConfigDraftNotFoundError(`${solutionId} (version ${version})`);
+  const stored = await getConfigVersion(db, solutionId, version);
+  if (stored === null) throw new ConfigDraftNotFoundError(`${solutionId} (version ${version})`);
+  const config = poolShaped(stored as SolutionConfig);
   await putConfig(db, solutionId, config);
   return appendConfigVersion(db, solutionId, config, readme, publishedBy);
+}
+
+/** `toActivityPool`, with a refusal reported the way every other rejected
+ *  model is. */
+function poolShaped(config: SolutionConfig): SolutionConfig {
+  try {
+    return toActivityPool(config);
+  } catch (err) {
+    if (err instanceof ActivityPoolConflictError) throw new ConfigValidationError([err.message]);
+    throw err;
+  }
 }
 
 /** Version history for a solution's model, newest first. */
@@ -1074,8 +1142,9 @@ export async function listConfigVersions(db: Db, solutionId: string): Promise<{ 
   return rows.sort((a, b) => b.version - a.version);
 }
 
-/** One specific published config — the rollback source. */
-export async function getConfigVersion(db: Db, solutionId: string, version: number): Promise<SolutionConfig | null> {
+/** One specific published config — the rollback source. As stored: a version
+ *  published before the activity pool is in the old shape. */
+export async function getConfigVersion(db: Db, solutionId: string, version: number): Promise<SolutionConfig | StoredConfigBeforePool | null> {
   const rows = await db
     .select({ config: sdmConfigVersions.config })
     .from(sdmConfigVersions)

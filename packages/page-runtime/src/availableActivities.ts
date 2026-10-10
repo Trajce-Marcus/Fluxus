@@ -38,9 +38,8 @@ export async function availableActivities(
   evaluate: ConditionEvaluator,
   onWarn: (message: string) => void = (m) => console.warn(m),
 ): Promise<ActivityOption[]> {
-  const candidates = activities
-    .filter((a) => a.record_map !== 'GET')
-    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  // In the workflow's order, which is the order its list gives them.
+  const candidates = activities.filter((a) => a.record_map !== 'GET');
 
   const verdicts = await Promise.all(candidates.map(async (activity) => {
     const condition = activity.show_condition;

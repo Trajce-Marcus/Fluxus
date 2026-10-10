@@ -28,20 +28,20 @@ const config = {
     { id: 'rt_ledgers', name: 'Ledgers', description: '', workflow_ref: 'wf_ledgers',
       custom_fields: [{ key: 'code', type: 'text', label: 'Code', default: '' }] },
   ],
-  workflows: [
-    { id: 'wf_bins', name: 'Bins', description: '', activities: [{
-      id: 'act_create_bins', name: 'Create Bin', description: '', sort_order: 0, record_map: 'CREATE',
+  activities: [
+    {
+      id: 'act_create_bins', name: 'Create Bin', description: '', record_map: 'CREATE',
       before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'code' }],
-    }] },
-    { id: 'wf_ledgers', name: 'Ledgers', description: '', activities: [
-      { id: 'act_create_ledgers', name: 'Create Ledger', description: '', sort_order: 0, record_map: 'CREATE',
-        before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'code' }] },
-      // The purge is anchored on the ledger, which survives it and carries the
-      // entry saying what went and why.
-      { id: 'act_purge_bins_ledgers', name: 'Purge Bins', description: '', sort_order: 1, record_map: 'UPDATE',
-        before_hook: null, after_hook: "records.bins.where(code <> 'keep').delete()",
-        attributes: [{ attribute_ref: 'reason' }] },
-    ] },
+    },
+    { id: 'act_create_ledgers', name: 'Create Ledger', description: '', record_map: 'CREATE',
+    before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'code' }] },
+    { id: 'act_purge_bins_ledgers', name: 'Purge Bins', description: '', record_map: 'UPDATE',
+    before_hook: null, after_hook: "records.bins.where(code <> 'keep').delete()",
+    attributes: [{ attribute_ref: 'reason' }] },
+  ],
+  workflows: [
+    { id: 'wf_bins', name: 'Bins', description: '', activities: [{ activity_ref: 'act_create_bins' }] },
+    { id: 'wf_ledgers', name: 'Ledgers', description: '', activities: [{ activity_ref: 'act_create_ledgers' }, { activity_ref: 'act_purge_bins_ledgers' }] },
   ],
 } as unknown as SolutionConfig;
 

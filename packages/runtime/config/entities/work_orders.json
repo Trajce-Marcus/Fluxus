@@ -86,180 +86,198 @@
     "description": "Manage work order records.",
     "activities": [
       {
-        "id": "act_create_work_orders",
-        "name": "Create Work Order",
-        "description": "Raise a new work order against a job.",
-        "sort_order": 0,
-        "record_map": "CREATE",
-        "attributes": [
-          {
-            "attribute_ref": "job_id"
-          },
-          {
-            "attribute_ref": "activity_code"
-          },
-          {
-            "attribute_ref": "problem_code"
-          },
-          {
-            "attribute_ref": "location"
-          },
-          {
-            "attribute_ref": "due_date"
-          },
-          {
-            "attribute_ref": "workgroup_id"
-          }
-        ],
-        "before_hook": null,
-        "after_hook": null
+        "activity_ref": "act_create_work_orders"
       },
       {
-        "id": "act_update_work_orders",
-        "name": "Update Work Order",
-        "description": "Update work order details. Not available once the work order is completed.",
-        "sort_order": 1,
-        "record_map": "UPDATE",
-        "show_condition": "context.record.status <> 'Completed'",
-        "attributes": [
-          {
-            "attribute_ref": "status"
-          },
-          {
-            "attribute_ref": "start_date"
-          },
-          {
-            "attribute_ref": "completed_date",
-            "validation": "value <= now()",
-            "validation_message": "Completed date cannot be in the future"
-          },
-          {
-            "attribute_ref": "location"
-          },
-          {
-            "attribute_ref": "workgroup_id"
-          },
-          {
-            "attribute_ref": "site_photos"
-          }
-        ],
-        "before_hook": null,
-        "after_hook": null
+        "activity_ref": "act_update_work_orders"
       },
       {
-        "id": "act_delete_work_orders",
-        "name": "Delete Work Order",
-        "description": "Delete this work order.",
-        "sort_order": 2,
-        "record_map": "DELETE",
-        "show_condition": "context.record.status <> 'Completed'",
-        "attributes": [
-          {
-            "attribute_ref": "confirm"
-          }
-        ],
-        "before_hook": null,
-        "after_hook": null
+        "activity_ref": "act_delete_work_orders"
       },
       {
-        "id": "act_set_location_work_orders",
-        "name": "Set Location",
-        "description": "Capture the city and suburb for this work order.",
-        "sort_order": 3,
-        "record_map": "UPDATE",
-        "show_condition": "context.record.status <> 'Completed'",
-        "attributes": [
-          {
-            "attribute_ref": "city",
-            "required": true
-          },
-          {
-            "attribute_ref": "suburb",
-            "show_condition": "attributes.city is not null",
-            "required": true
-          }
-        ],
-        "before_hook": null,
-        "after_hook": null
+        "activity_ref": "act_set_location_work_orders"
       },
       {
-        "id": "act_complete_work_orders",
-        "name": "Complete Work Order",
-        "description": "Mark this work order complete. No record_map: the status change is the after hook's job. Availability (not already completed) is the show_condition's job, not the before hook's.",
-        "sort_order": 4,
-        "show_condition": "context.record.status <> 'Completed'",
-        "attributes": [
-          {
-            "attribute_ref": "completed_date",
-            "required": true,
-            "validation": "value <= now()",
-            "validation_message": "Completed date cannot be in the future"
-          }
-        ],
-        "before_hook": [
-          "if context.record.start_date is null or context.record.start_date = '' {",
-          "  warn('Completing a work order that was never started')",
-          "}"
-        ],
-        "after_hook": [
-          "context.record.update({",
-          "  status: 'Completed',",
-          "  completed_date: attributes.completed_date",
-          "})",
-          "queue services.notify.user('Work order ' + context.record.id + ' was completed')"
-        ]
+        "activity_ref": "act_complete_work_orders"
       },
       {
-        "id": "act_dispatch_work_orders",
-        "name": "Dispatch Work Order",
-        "description": "Dispatch this work order to a crew. The crew is a captured list attribute, so the standard capture form opens whether the run comes from an app or the workbench, and validateSubmission checks the choice against the attribute's datasource.",
-        "sort_order": 5,
-        "show_condition": "context.record.status <> 'Dispatched' and context.record.status <> 'Completed'",
-        "attributes": [
-          {
-            "attribute_ref": "crew",
-            "required": true
-          }
-        ],
-        "before_hook": null,
-        "after_hook": [
-          "attributes.wo = context.record.id",
-          "context.record.update({ status: 'Dispatched', crew: attributes.crew })",
-          "services.logger.note('Dispatched ' + context.record.id + ' to ' + attributes.crew)"
-        ]
+        "activity_ref": "act_dispatch_work_orders"
       },
       {
-        "id": "act_get_work_orders",
-        "name": "Get Work Orders",
-        "description": "Answer with the work orders in a given status. The read path (DSL_SPEC §5a): the parameter is an ordinary attribute, and the 'returns' expression is the query — which lives in the model, not in the page that asks.",
-        "sort_order": 7,
-        "record_map": "GET",
-        "attributes": [
-          {
-            "attribute_ref": "status",
-            "required": true
-          }
-        ],
-        "before_hook": null,
-        "after_hook": null,
-        "returns": "records.work_orders.where(status = attributes.status).orderBy(due_date).select(id, location, status, crew, due_date)"
+        "activity_ref": "act_reschedule_work_orders"
       },
       {
-        "id": "act_reschedule_work_orders",
-        "name": "Reschedule Work Order",
-        "description": "Change the due date (app-triggered or workbench, standard capture form).",
-        "sort_order": 6,
-        "record_map": "UPDATE",
-        "show_condition": "context.record.status <> 'Completed'",
-        "attributes": [
-          {
-            "attribute_ref": "due_date",
-            "required": true
-          }
-        ],
-        "before_hook": null,
-        "after_hook": null
+        "activity_ref": "act_get_work_orders"
       }
     ]
-  }
+  },
+  "activities": [
+    {
+      "id": "act_create_work_orders",
+      "name": "Create Work Order",
+      "description": "Raise a new work order against a job.",
+      "record_map": "CREATE",
+      "attributes": [
+        {
+          "attribute_ref": "job_id"
+        },
+        {
+          "attribute_ref": "activity_code"
+        },
+        {
+          "attribute_ref": "problem_code"
+        },
+        {
+          "attribute_ref": "location"
+        },
+        {
+          "attribute_ref": "due_date"
+        },
+        {
+          "attribute_ref": "workgroup_id"
+        }
+      ],
+      "before_hook": null,
+      "after_hook": null
+    },
+    {
+      "id": "act_update_work_orders",
+      "name": "Update Work Order",
+      "description": "Update work order details. Not available once the work order is completed.",
+      "record_map": "UPDATE",
+      "show_condition": "context.record.status <> 'Completed'",
+      "attributes": [
+        {
+          "attribute_ref": "status"
+        },
+        {
+          "attribute_ref": "start_date"
+        },
+        {
+          "attribute_ref": "completed_date",
+          "validation": "value <= now()",
+          "validation_message": "Completed date cannot be in the future"
+        },
+        {
+          "attribute_ref": "location"
+        },
+        {
+          "attribute_ref": "workgroup_id"
+        },
+        {
+          "attribute_ref": "site_photos"
+        }
+      ],
+      "before_hook": null,
+      "after_hook": null
+    },
+    {
+      "id": "act_delete_work_orders",
+      "name": "Delete Work Order",
+      "description": "Delete this work order.",
+      "record_map": "DELETE",
+      "show_condition": "context.record.status <> 'Completed'",
+      "attributes": [
+        {
+          "attribute_ref": "confirm"
+        }
+      ],
+      "before_hook": null,
+      "after_hook": null
+    },
+    {
+      "id": "act_set_location_work_orders",
+      "name": "Set Location",
+      "description": "Capture the city and suburb for this work order.",
+      "record_map": "UPDATE",
+      "show_condition": "context.record.status <> 'Completed'",
+      "attributes": [
+        {
+          "attribute_ref": "city",
+          "required": true
+        },
+        {
+          "attribute_ref": "suburb",
+          "show_condition": "attributes.city is not null",
+          "required": true
+        }
+      ],
+      "before_hook": null,
+      "after_hook": null
+    },
+    {
+      "id": "act_complete_work_orders",
+      "name": "Complete Work Order",
+      "description": "Mark this work order complete. No record_map: the status change is the after hook's job. Availability (not already completed) is the show_condition's job, not the before hook's.",
+      "show_condition": "context.record.status <> 'Completed'",
+      "attributes": [
+        {
+          "attribute_ref": "completed_date",
+          "required": true,
+          "validation": "value <= now()",
+          "validation_message": "Completed date cannot be in the future"
+        }
+      ],
+      "before_hook": [
+        "if context.record.start_date is null or context.record.start_date = '' {",
+        "  warn('Completing a work order that was never started')",
+        "}"
+      ],
+      "after_hook": [
+        "context.record.update({",
+        "  status: 'Completed',",
+        "  completed_date: attributes.completed_date",
+        "})",
+        "queue services.notify.user('Work order ' + context.record.id + ' was completed')"
+      ]
+    },
+    {
+      "id": "act_dispatch_work_orders",
+      "name": "Dispatch Work Order",
+      "description": "Dispatch this work order to a crew. The crew is a captured list attribute, so the standard capture form opens whether the run comes from an app or the workbench, and validateSubmission checks the choice against the attribute's datasource.",
+      "show_condition": "context.record.status <> 'Dispatched' and context.record.status <> 'Completed'",
+      "attributes": [
+        {
+          "attribute_ref": "crew",
+          "required": true
+        }
+      ],
+      "before_hook": null,
+      "after_hook": [
+        "attributes.wo = context.record.id",
+        "context.record.update({ status: 'Dispatched', crew: attributes.crew })",
+        "services.logger.note('Dispatched ' + context.record.id + ' to ' + attributes.crew)"
+      ]
+    },
+    {
+      "id": "act_reschedule_work_orders",
+      "name": "Reschedule Work Order",
+      "description": "Change the due date (app-triggered or workbench, standard capture form).",
+      "record_map": "UPDATE",
+      "show_condition": "context.record.status <> 'Completed'",
+      "attributes": [
+        {
+          "attribute_ref": "due_date",
+          "required": true
+        }
+      ],
+      "before_hook": null,
+      "after_hook": null
+    },
+    {
+      "id": "act_get_work_orders",
+      "name": "Get Work Orders",
+      "description": "Answer with the work orders in a given status. The read path (DSL_SPEC §5a): the parameter is an ordinary attribute, and the 'returns' expression is the query — which lives in the model, not in the page that asks.",
+      "record_map": "GET",
+      "attributes": [
+        {
+          "attribute_ref": "status",
+          "required": true
+        }
+      ],
+      "before_hook": null,
+      "after_hook": null,
+      "returns": "records.work_orders.where(status = attributes.status).orderBy(due_date).select(id, location, status, crew, due_date)"
+    }
+  ]
 }

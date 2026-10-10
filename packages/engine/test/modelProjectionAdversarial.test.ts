@@ -30,11 +30,14 @@ const bare = {
     { id: 'rt_empty', name: 'Empty', workflow_ref: 'wf_empty', custom_fields: [] },
   ],
   attributes: [{ key: 'note', type: 'text' }],
+  activities: [
+    { id: 'act_do_widgets', name: 'Do', attributes: [{ attribute_ref: 'note' }] },
+  ],
   workflows: [
     {
       id: 'wf_widgets',
       name: 'Widgets',
-      activities: [{ id: 'act_do_widgets', name: 'Do', attributes: [{ attribute_ref: 'note' }] }],
+      activities: [{ activity_ref: 'act_do_widgets' }],
     },
     { id: 'wf_empty', name: 'Empty', activities: [] },
   ],
@@ -192,7 +195,7 @@ describe('a hook cannot reach the model at all', () => {
 
   it('a hook naming the model is refused at config-save validation', () => {
     const withHook = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
-    (withHook.workflows[0] as { activities: { before_hook?: string }[] }).activities[0].before_hook =
+    (withHook.activities[0] as { before_hook?: string }).before_hook =
       'if model.record_types.count > 0 { fail(\'no\') }';
     const findings = validateConfig(withHook).filter((f) => f.diagnostic.severity === 'error');
     expect(findings.length).toBeGreaterThan(0);
@@ -237,39 +240,39 @@ describe('derived columns', () => {
     }
   });
 
-  it('record_type_ref is null when no record type points at the workflow', () => {
-    const orphan = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
-    (orphan.workflows as { id: string; name: string; activities: unknown[] }[]).push({
-      id: 'wf_orphan',
-      name: 'Orphan',
-      activities: [{ id: 'act_do_orphans', name: 'Do', attributes: [{ attribute_ref: 'note' }] }],
-    });
-    const row = runOn(orphan, "model.activities.where(id = 'act_do_orphans').select(record_type_ref).first");
-    expect(row).toEqual({ record_type_ref: null });
+  it('an activity no workflow lists is still a row, with no workflow_activities rows', () => {
+    const unused = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    (unused.activities as unknown[]).push({ id: 'act_unused', name: 'Unused', attributes: [{ attribute_ref: 'note' }] });
+    expect(runOn(unused, "model.activities.where(id = 'act_unused').count")).toBe(1);
+    expect(runOn(unused, "model.workflow_activities.where(activity_ref = 'act_unused').count")).toBe(0);
+  });
+
+  it('an unused activity still has its capture list projected', () => {
+    // §5: "One row per entry in an activity's ordered capture list."
+    const unused = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    (unused.activities as unknown[]).push({ id: 'act_unused', name: 'Unused', attributes: [{ attribute_ref: 'note' }] });
+    const rows = runOn(unused, "model.activity_attributes.where(activity_ref = 'act_unused').select(key)");
+    expect(rows).toEqual([{ key: 'note' }]);
   });
 
   it('an orphan workflow\'s activity still has its capture list projected', () => {
-    // §5: "One row per entry in an activity's ordered capture list."
     const orphan = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    (orphan.activities as unknown[]).push({ id: 'act_do_orphans', name: 'Do', attributes: [{ attribute_ref: 'note' }] });
     (orphan.workflows as { id: string; name: string; activities: unknown[] }[]).push({
       id: 'wf_orphan',
       name: 'Orphan',
-      activities: [{ id: 'act_do_orphans', name: 'Do', attributes: [{ attribute_ref: 'note' }] }],
+      activities: [{ activity_ref: 'act_do_orphans' }],
     });
     const rows = runOn(orphan, "model.activity_attributes.where(activity_ref = 'act_do_orphans').select(key)");
     expect(rows).toEqual([{ key: 'note' }]);
   });
 
-  it('record_type_ref is the first by config order when two types share a workflow', () => {
+  it('a shared activity is one activities row and one workflow_activities row per workflow', () => {
     const shared = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
-    (shared.recordTypes as unknown[]).push({
-      id: 'rt_gadgets',
-      name: 'Gadgets',
-      workflow_ref: 'wf_widgets',
-      custom_fields: [],
-    });
-    const row = runOn(shared, "model.activities.where(id = 'act_do_widgets').select(record_type_ref).first");
-    expect(row).toEqual({ record_type_ref: 'rt_widgets' });
+    (shared.workflows[1] as { activities: unknown[] }).activities.push({ activity_ref: 'act_do_widgets' });
+    expect(runOn(shared, "model.activities.where(id = 'act_do_widgets').count")).toBe(1);
+    expect(runOn(shared, "model.workflow_activities.where(activity_ref = 'act_do_widgets').select(workflow_ref)"))
+      .toEqual([{ workflow_ref: 'wf_empty' }, { workflow_ref: 'wf_widgets' }]); // by id
   });
 
   it('params is null when the body does not parse, [] when it takes none', () => {
@@ -319,7 +322,7 @@ describe('inherited resolution behaviour, pinned', () => {
   const withUsage = (usage: Record<string, unknown>, pool: Record<string, unknown>) => {
     const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
     (c as { attributes: unknown[] }).attributes = [{ key: 'note', type: 'text', ...pool }];
-    (c.workflows[0] as { activities: { attributes: unknown[] }[] }).activities[0].attributes = [
+    (c.activities[0] as { attributes: unknown[] }).attributes = [
       { attribute_ref: 'note', ...usage },
     ];
     return c;
@@ -356,7 +359,7 @@ describe('what the chain can and cannot do over the model', () => {
     // model type, so workflow → activities has to be written as a filter.
     expect(() => run('model.workflows.first.activities')).toThrow(/has no field/);
     expect(
-      runOn(bare, "model.activities.where(workflow_ref = 'wf_widgets').count"),
+      runOn(bare, "model.workflow_activities.where(workflow_ref = 'wf_widgets').count"),
     ).toBe(1);
   });
 });
@@ -366,7 +369,7 @@ describe('what the chain can and cannot do over the model', () => {
 describe('capture lists: markers, interleaving, emptiness', () => {
   const withList = (entries: unknown[]) => {
     const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
-    (c.workflows[0] as { activities: { attributes: unknown[] }[] }).activities[0].attributes = entries;
+    (c.activities[0] as { attributes: unknown[] }).attributes = entries;
     return c;
   };
 
@@ -430,8 +433,10 @@ describe('edge configs', () => {
     const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
     (c as { workflows: unknown[] }).workflows = [];
     (c as { recordTypes: unknown[] }).recordTypes = [];
+    (c as { activities: unknown[] }).activities = [];
     expect(runOn(c, 'model.workflows.count')).toBe(0);
     expect(runOn(c, 'model.activities.count')).toBe(0);
+    expect(runOn(c, 'model.workflow_activities.count')).toBe(0);
     expect(runOn(c, 'model.activity_attributes.count')).toBe(0);
   });
 
@@ -572,9 +577,10 @@ describe('the spec\'s column lists', () => {
     ],
     sdm_workflows: ['name', 'description'],
     sdm_activities: [
-      'name', 'description', 'workflow_ref', 'record_type_ref', 'sort_order',
+      'name', 'description',
       'record_map', 'show_condition', 'before_hook', 'after_hook', 'returns',
     ],
+    sdm_workflow_activities: ['workflow_ref', 'activity_ref', 'position'],
     sdm_activity_attributes: [
       'activity_ref', 'position', 'kind', 'key', 'label', 'type', 'required',
       'source', 'show_condition', 'validation', 'validation_message', 'can_waive',
@@ -603,8 +609,8 @@ describe('the spec\'s column lists', () => {
     // which the collection is not keyed by, so it deliberately does not.
     expect(fk('sdm_fields', 'target_ref')).toBe('sdm_record_types');
     expect(fk('sdm_fields', 'target')).toBeNull();
-    expect(fk('sdm_activities', 'workflow_ref')).toBe('sdm_workflows');
-    expect(fk('sdm_activities', 'record_type_ref')).toBe('sdm_record_types');
+    expect(fk('sdm_workflow_activities', 'workflow_ref')).toBe('sdm_workflows');
+    expect(fk('sdm_workflow_activities', 'activity_ref')).toBe('sdm_activities');
     expect(fk('sdm_activity_attributes', 'activity_ref')).toBe('sdm_activities');
   });
 

@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 import type { Store } from './store';
-import type { AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
+import type { ActivityDef, AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
 import { activityHooks, coerceValue, joinScript } from './bridge';
 
 // THE Store in memory: all reference-Store behaviour (workflow resolution,
@@ -16,6 +16,7 @@ export interface MemoryAdapterOptions {
 export class MemoryAdapter implements Store {
   protected recordTypes: RecordTypeDef[];
   protected workflows: Map<string, WorkflowDef>;
+  protected activities: Map<string, ActivityDef>;
   protected records: Map<string, RecordInstance>;
   private listeners: Set<() => void> = new Set();
   private reverseIndex: Map<string, ReverseRefEntry[]>;
@@ -52,33 +53,44 @@ export class MemoryAdapter implements Store {
       if (merged.type !== 'composite') return merged;
       return { ...merged, sub_attributes: (merged.type_config?.attributes ?? []).map(resolveUsage) };
     };
+    // Each pool activity is resolved once, so two workflows listing one
+    // activity hand back the same object.
     let sectionSeq = 0;
+    this.activities = new Map((config.activities ?? []).map(act => {
+      // Hooks may be written as arrays of lines in the JSON — joined here;
+      // absent altogether on a client config, where they resolve to null.
+      const hooks = activityHooks(act);
+      const resolved: ActivityDef = {
+        ...act,
+        before_hook: hooks.before,
+        after_hook: hooks.after,
+        // Same array-of-lines convenience as hooks; absent on a client
+        // config, where the query never leaves the server.
+        returns: joinScript((act as { returns?: string | string[] }).returns),
+        attributes: act.attributes.map(entry =>
+          'attribute_ref' in entry
+            ? resolveUsage(entry)
+            : {
+                key: `_section_${++sectionSeq}`,
+                label: entry.section,
+                description: entry.description ?? '',
+                type: 'section',
+              }
+        ),
+      };
+      return [act.id, resolved];
+    }));
+    // A workflow is its references, filled from the pool in its order.
     this.workflows = new Map(config.workflows.map(wf => [
       wf.id,
       {
-        ...wf,
-        activities: wf.activities.map(act => {
-          // Hooks may be written as arrays of lines in the JSON — joined here;
-          // absent altogether on a client config, where they resolve to null.
-          const hooks = activityHooks(act);
-          return {
-            ...act,
-            before_hook: hooks.before,
-            after_hook: hooks.after,
-            // Same array-of-lines convenience as hooks; absent on a client
-            // config, where the query never leaves the server.
-            returns: joinScript((act as { returns?: string | string[] }).returns),
-            attributes: act.attributes.map(entry =>
-              'attribute_ref' in entry
-                ? resolveUsage(entry)
-                : {
-                    key: `_section_${++sectionSeq}`,
-                    label: entry.section,
-                    description: entry.description ?? '',
-                    type: 'section',
-                  }
-            ),
-          };
+        id: wf.id,
+        name: wf.name,
+        description: wf.description,
+        activities: wf.activities.map(usage => {
+          const act = this.activities.get(usage.activity_ref);
+          if (!act) throw new Error(`Activity not found: ${usage.activity_ref} (workflow ${wf.id})`);
+          return act;
         }),
       },
     ]));
@@ -135,6 +147,11 @@ export class MemoryAdapter implements Store {
   /** Every resolved workflow, orphans included (Store.listWorkflows). */
   listWorkflows(): WorkflowDef[] {
     return [...this.workflows.values()];
+  }
+
+  /** The resolved activity pool, used or not (Store.listActivities). */
+  listActivities(): ActivityDef[] {
+    return [...this.activities.values()];
   }
 
   listRecordTypes(): RecordTypeDef[] {

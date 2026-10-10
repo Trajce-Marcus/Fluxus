@@ -1,59 +1,35 @@
-// SDM Workflows editor: the solution's workflows (SolutionConfig.workflows) and the
-// activities nested under each. A record type binds one workflow; activities
-// are the mutation verbs users run against its records.
+// SDM Workflows editor: the solution's workflows (SolutionConfig.workflows). A
+// record type binds one workflow; a workflow is a named, ordered list of
+// activities from the solution's pool (APPS_AND_INSTANCES §1.6).
 //
-// Slice 2 (lean): id/name/description/sort_order/record_map/show_condition per
-// activity, plus a lean attribute-usage composer — pick a pool attribute,
-// toggle required, insert section headings, reorder. FluxScript overrides
-// (show_condition/validation/can_waive on a usage) stay hand-edited; hooks,
-// `returns` and the activity show_condition are plain textareas (no DSL
-// tooling yet).
-//
-// GET activities became authorable here 2026-08-10: the record map offers GET,
-// which swaps the after hook for the `returns` expression. Until then a page
-// could name a producer no one could write.
+// Here an author picks and orders: add an existing pool activity, remove one
+// from the workflow (it stays in the pool), reorder. Activities themselves are
+// edited in the Activities tab. "New activity" is the shortcut that creates one
+// in the pool and adds it here in one step; its details are then filled in
+// there.
 
-import { useState } from 'react';
-import type {
-  ActivityRawDef,
-  AttributeUsageDef,
-  SolutionConfig,
-  SectionMarkerDef,
-  WorkflowRawDef,
-} from '@fluxus/engine';
-import { readConfig, idProblems, refreshSolutionViews, saveWorkflows, useDirty, useLoadedConfig } from './useSolutionConfig';
+import { useMemo, useState } from 'react';
+import type { SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
+import { readConfig, idProblems, refreshSolutionViews, saveActivities, saveWorkflows, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
-
-type UsageItem = AttributeUsageDef | SectionMarkerDef;
-const isUsage = (it: UsageItem): it is AttributeUsageDef => 'attribute_ref' in it;
-
-// GET is the read path (DSL_SPEC §5a): it answers with a `returns` expression
-// instead of touching storage. Added 2026-08-10 — the editor predated GET
-// activities by three weeks, so a page could name a producer nobody could
-// author (DATA_THROUGH_ACTIVITIES step 2).
-const RECORD_MAPS = ['', 'CREATE', 'UPDATE', 'DELETE', 'GET'] as const;
-
-/** before_hook/after_hook and `returns` may be stored as joined lines; show as text. */
-function hookText(h: string | string[] | null | undefined): string {
-  return Array.isArray(h) ? h.join('\n') : (h ?? '');
-}
 
 export function WorkflowsEditor() {
   const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
   const [selWf, setSelWf] = useState(0);
-  const [selAct, setSelAct] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();
-  // Which remove is armed ('wf' | 'act') — the button asks once before it bites.
-  const [armed, setArmed] = useState<string | null>(null);
+  const [armed, setArmed] = useState(false);
+  const [pick, setPick] = useState('');
 
   const wfs = draft.workflows;
-  const pool = draft.attributes;
   const wf: WorkflowRawDef | undefined = wfs[selWf];
-  const acts = wf?.activities ?? [];
-  const act: ActivityRawDef | undefined = acts[selAct];
+  const refs = wf?.activities ?? [];
+  const byId = useMemo(() => new Map(draft.activities.map((a) => [a.id, a])), [draft]);
+  const savedActivities = useMemo(() => new Set(loaded.activities.map((a) => a.id)), [loaded]);
+  const listed = new Set(refs.map((r) => r.activity_ref));
+  const addable = draft.activities.filter((a) => !listed.has(a.id));
 
   function setWfs(next: WorkflowRawDef[]) {
     setDraft((d) => ({ ...d, workflows: next }));
@@ -66,90 +42,70 @@ export function WorkflowsEditor() {
     setWfs([...wfs, { id: 'wf_', name: '', description: '', activities: [] }]);
     selectWf(wfs.length);
   }
-  /** Selection moves disarm a pending remove (either level). */
   function selectWf(i: number) {
     setSelWf(i);
-    setSelAct(0);
-    setArmed(null);
-  }
-  function selectAct(i: number) {
-    setSelAct(i);
-    setArmed(null);
+    setArmed(false);
+    setPick('');
   }
   function removeWf() {
     setWfs(wfs.filter((_, i) => i !== selWf));
     setSelWf((s) => Math.max(0, s > selWf ? s - 1 : s));
-    setSelAct(0);
-    setArmed(null);
+    setArmed(false);
   }
 
-  function setActs(next: ActivityRawDef[]) {
+  function setRefs(next: WorkflowRawDef['activities']) {
     editWf({ activities: next });
   }
-  function editAct(patch: Partial<ActivityRawDef>) {
-    setActs(acts.map((a, i) => (i === selAct ? { ...a, ...patch } : a)));
-  }
-  /**
-   * Changing the record map moves the fields that are legal with it, so the
-   * draft doesn't carry a combination `validateConfig` will reject on save: a
-   * GET needs `returns` and cannot have an after hook, and `returns` belongs to
-   * nothing else.
-   */
-  function setRecordMap(value: string) {
-    const record_map = (value || undefined) as ActivityRawDef['record_map'];
-    editAct(
-      record_map === 'GET'
-        ? { record_map, after_hook: null }
-        : { record_map, returns: undefined },
-    );
-  }
-  function addAct() {
-    const next: ActivityRawDef = {
-      id: 'act_',
-      name: '',
-      description: '',
-      sort_order: acts.length,
-      attributes: [],
-      before_hook: null,
-      after_hook: null,
-    };
-    setActs([...acts, next]);
-    selectAct(acts.length);
-  }
-  function removeAct() {
-    setActs(acts.filter((_, i) => i !== selAct));
-    setSelAct((s) => Math.max(0, s > selAct ? s - 1 : s));
-    setArmed(null);
-  }
-
-  // ── attribute-usage composer ──
-  const items = (act?.attributes ?? []) as UsageItem[];
-  function setItems(next: UsageItem[]) {
-    editAct({ attributes: next as ActivityRawDef['attributes'] });
-  }
-  function editItem(i: number, it: UsageItem) {
-    setItems(items.map((x, j) => (j === i ? it : x)));
-  }
-  function moveItem(i: number, dir: -1 | 1) {
+  function moveRef(i: number, dir: -1 | 1) {
     const j = i + dir;
-    if (j < 0 || j >= items.length) return;
-    const next = [...items];
+    if (j < 0 || j >= refs.length) return;
+    const next = [...refs];
     [next[i], next[j]] = [next[j], next[i]];
-    setItems(next);
+    setRefs(next);
   }
-  function addUsage() {
-    setItems([...items, { attribute_ref: pool[0]?.key ?? '' }]);
+  function addExisting() {
+    const id = pick || addable[0]?.id;
+    if (!id) return;
+    setRefs([...refs, { activity_ref: id }]);
+    setPick('');
   }
-  function addSection() {
-    setItems([...items, { section: '' }]);
+  /** The shortcut: a new pool activity, listed here at once. Its id and name
+   *  are set here; everything else in the Activities tab. */
+  function addNew() {
+    let n = 1;
+    while (byId.has(`act_new_${n}`)) n++;
+    const id = `act_new_${n}`;
+    setDraft((d) => ({
+      ...d,
+      activities: [...d.activities, { id, name: '', description: '', attributes: [], before_hook: null, after_hook: null }],
+      workflows: d.workflows.map((w, i) => (i === selWf ? { ...w, activities: [...w.activities, { activity_ref: id }] } : w)),
+    }));
+    setDirty(true);
+  }
+  /** A new (unsaved) activity can still be renamed — id and reference together. */
+  function renameNew(oldId: string, patch: { id?: string; name?: string }) {
+    setDraft((d) => ({
+      ...d,
+      activities: d.activities.map((a) => (a.id === oldId ? { ...a, ...patch } : a)),
+      workflows: patch.id === undefined
+        ? d.workflows
+        : d.workflows.map((w) => ({
+            ...w,
+            activities: w.activities.map((r) => (r.activity_ref === oldId ? { activity_ref: patch.id! } : r)),
+          })),
+    }));
+    setDirty(true);
   }
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      // One workflow is one save — an activity edit saves the workflow it
-      // belongs to, which is the change unit the model splits on.
+      // New pool activities before the workflows that list them; nothing is
+      // deleted from the pool here — removing one from a workflow leaves it
+      // there (§1.6, save order).
+      const added = draft.activities.filter((a) => !savedActivities.has(a.id));
+      await saveActivities(loaded.activities, [...loaded.activities, ...added]);
       await saveWorkflows(loaded.workflows, draft.workflows);
       setDirty(false);
       await refreshSolutionViews();
@@ -160,16 +116,12 @@ export function WorkflowsEditor() {
     }
   }
 
-  // Ids are gated at Save only — mid-typing states stay editable. Activity ids
-  // are checked within the selected workflow (that's the scope they live in).
   const wfIdErr = idProblems(wfs.map((w) => w.id));
-  const actIdErr = idProblems(acts.map((a) => a.id));
-  const idErr = [wfIdErr && `Workflows — ${wfIdErr}`, actIdErr && `Activities — ${actIdErr}`].filter(Boolean).join(' · ');
+  const newIdErr = idProblems(draft.activities.map((a) => a.id));
+  const idErr = [wfIdErr && `Workflows — ${wfIdErr}`, newIdErr && `Activities — ${newIdErr}`].filter(Boolean).join(' · ');
 
   return (
     <>
-      {/* Workflows list the inner panel; their activities stay nested in the
-          detail — one panel level, as the shell's frame allows. */}
       <InnerPanel title="Workflows" actions={<button className="panel-btn" onClick={addWf}>New</button>}>
         {wfs.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
         {wfs.map((w, i) => (
@@ -180,7 +132,7 @@ export function WorkflowsEditor() {
       <div className="admin-panel">
         <div className="admin-panel-head">
           <h2 className="admin-title">Workflows</h2>
-          <p className="admin-sub">A workflow bundles the activities that mutate a record type's records. Record types bind one workflow each.</p>
+          <p className="admin-sub">A workflow lists, in order, the activities that can happen to a record type's records. Record types bind one workflow each; activities are defined in the Activities tab.</p>
         </div>
 
         {error && <div className="admin-error">{error}</div>}
@@ -197,92 +149,43 @@ export function WorkflowsEditor() {
 
             <div className="sdm-fields">
               <div className="sdm-fields-head">Activities</div>
-              <div className="sdm-subsplit">
-                <div className="sdm-sublist">
-                  {acts.map((a, i) => (
-                    <button key={i} className={`sdm-list-item${i === selAct ? ' active' : ''}`} onClick={() => selectAct(i)}>
-                      <span className="admin-mono">{a.id || '(new)'}</span>
-                      <span className="sdm-list-sub">{a.name}</span>
-                    </button>
-                  ))}
-                  <button className="admin-btn admin-btn-ghost" onClick={addAct}>+ Add activity</button>
-                </div>
-
-                {act && (
-                  <div className="sdm-detail">
-                    <label className="admin-field"><span>Id</span>
-                      <input className="admin-mono" value={act.id} onChange={(e) => editAct({ id: e.target.value })} placeholder="act_create_assets" /></label>
-                    <label className="admin-field"><span>Name</span>
-                      <input value={act.name} onChange={(e) => editAct({ name: e.target.value })} placeholder="Create asset" /></label>
-                    <label className="admin-field"><span>Description</span>
-                      <input value={act.description} onChange={(e) => editAct({ description: e.target.value })} /></label>
-                    <label className="admin-field"><span>Sort order</span>
-                      <input type="number" value={act.sort_order} onChange={(e) => editAct({ sort_order: Number(e.target.value) })} /></label>
-                    <label className="admin-field"><span>Record map</span>
-                      <select value={act.record_map ?? ''} onChange={(e) => setRecordMap(e.target.value)}>
-                        {RECORD_MAPS.map((m) => <option key={m} value={m}>{m || '(none)'}</option>)}
-                      </select></label>
-                    <label className="admin-field"><span>Show condition (FluxScript)</span>
-                      <textarea className="sdm-code" value={act.show_condition ?? ''} onChange={(e) => editAct({ show_condition: e.target.value || undefined })} placeholder="context.record.status == 'open'" /></label>
-
-                    <div className="sdm-fields">
-                      <div className="sdm-fields-head">Attributes captured</div>
-                      {items.map((it, i) => (
-                        <div key={i} className="sdm-usage-row">
-                          <div className="sdm-usage-move">
-                            <button onClick={() => moveItem(i, -1)} disabled={i === 0}>▲</button>
-                            <button onClick={() => moveItem(i, 1)} disabled={i === items.length - 1}>▼</button>
-                          </div>
-                          {isUsage(it) ? (
-                            <>
-                              <select value={it.attribute_ref} onChange={(e) => editItem(i, { ...it, attribute_ref: e.target.value })}>
-                                {pool.map((p) => <option key={p.key} value={p.key}>{p.key}{p.label ? ` — ${p.label}` : ''}</option>)}
-                              </select>
-                              <label className="admin-check"><input type="checkbox" checked={!!it.required} onChange={(e) => editItem(i, { ...it, required: e.target.checked || undefined })} /> Req</label>
-                            </>
-                          ) : (
-                            <>
-                              <span className="sdm-usage-section">§</span>
-                              <input type="text" value={it.section} onChange={(e) => editItem(i, { ...it, section: e.target.value })} placeholder="Section heading" />
-                            </>
-                          )}
-                          <button className="admin-btn admin-btn-ghost" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button>
-                        </div>
-                      ))}
-                      <div className="sdm-usage-row">
-                        <button className="admin-btn admin-btn-ghost" onClick={addUsage} disabled={pool.length === 0}>+ Attribute</button>
-                        <button className="admin-btn admin-btn-ghost" onClick={addSection}>+ Section</button>
-                      </div>
-                      {pool.length === 0 && <p className="admin-muted">Define pool attributes first (Attributes tab).</p>}
+              {refs.length === 0 && <p className="admin-muted">None yet.</p>}
+              {refs.map((r, i) => {
+                const act = byId.get(r.activity_ref);
+                const isNew = !savedActivities.has(r.activity_ref);
+                return (
+                  <div key={r.activity_ref} className="sdm-usage-row">
+                    <div className="sdm-usage-move">
+                      <button onClick={() => moveRef(i, -1)} disabled={i === 0}>▲</button>
+                      <button onClick={() => moveRef(i, 1)} disabled={i === refs.length - 1}>▼</button>
                     </div>
-
-                    {/* A GET's `returns` IS the activity — the query an app names
-                        instead of carrying it in the page. Its attributes above
-                        are its parameters. */}
-                    {act.record_map === 'GET' && (
-                      <label className="admin-field"><span>Returns (FluxScript expression — what it answers with)</span>
-                        <textarea className="sdm-code" value={hookText(act.returns)} onChange={(e) => editAct({ returns: e.target.value || undefined })}
-                          placeholder="records.work_orders.where(status = attributes.status).select(id, location, status)" /></label>
-                    )}
-
-                    <label className="admin-field"><span>Before hook (FluxScript — validate)</span>
-                      <textarea className="sdm-code" value={hookText(act.before_hook)} onChange={(e) => editAct({ before_hook: e.target.value || null })} /></label>
-                    {act.record_map === 'GET' ? (
-                      <p className="admin-muted">A GET has no after hook — nothing persists, so there is nothing to react to.</p>
+                    {isNew && act ? (
+                      <>
+                        <input type="text" className="admin-mono" value={act.id} onChange={(e) => renameNew(act.id, { id: e.target.value })} placeholder="act_create_assets" />
+                        <input type="text" value={act.name} onChange={(e) => renameNew(act.id, { name: e.target.value })} placeholder="Name" />
+                      </>
                     ) : (
-                      <label className="admin-field"><span>After hook (FluxScript — effects)</span>
-                        <textarea className="sdm-code" value={hookText(act.after_hook)} onChange={(e) => editAct({ after_hook: e.target.value || null })} /></label>
+                      <span className="sdm-ref">
+                        <span className="admin-mono">{r.activity_ref}</span>
+                        <span className="sdm-list-sub">{act ? `${act.name}${act.record_map ? ` · ${act.record_map}` : ''}` : 'not in the pool'}</span>
+                      </span>
                     )}
-
-                    <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'act' ? removeAct() : setArmed('act'))}>
-                      {armed === 'act' ? 'Really delete?' : 'Delete activity'}</button>
+                    <button className="admin-btn admin-btn-ghost" title="Remove from this workflow — it stays in the pool" onClick={() => setRefs(refs.filter((_, j) => j !== i))}>✕</button>
                   </div>
-                )}
+                );
+              })}
+              <div className="sdm-usage-row">
+                <select value={pick} onChange={(e) => setPick(e.target.value)} disabled={addable.length === 0}>
+                  {addable.length === 0 && <option value="">Every pool activity is listed</option>}
+                  {addable.map((a) => <option key={a.id} value={a.id}>{a.id}{a.name ? ` — ${a.name}` : ''}</option>)}
+                </select>
+                <button className="admin-btn admin-btn-ghost" onClick={addExisting} disabled={addable.length === 0}>+ Add</button>
+                <button className="admin-btn admin-btn-ghost" onClick={addNew}>+ New activity</button>
               </div>
             </div>
 
-            <button className="admin-btn admin-btn-ghost" onClick={() => (armed === 'wf' ? removeWf() : setArmed('wf'))}>
-              {armed === 'wf' ? 'Really delete?' : 'Delete workflow'}</button>
+            <button className="admin-btn admin-btn-ghost" onClick={() => (armed ? removeWf() : setArmed(true))}>
+              {armed ? 'Really delete?' : 'Delete workflow'}</button>
           </div>
         )}
 

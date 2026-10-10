@@ -39,11 +39,12 @@ const config: SolutionConfig = {
       { key: 'code', type: 'text' },
     ] },
   ],
+  activities: [
+    { id: 'act_create_widgets', name: 'Create widget', description: '', record_map: 'CREATE', attributes: [{ attribute_ref: 'code' }], before_hook: null, after_hook: null },
+    { id: 'act_log_photos', name: 'Log photos', description: '', attributes: [{ attribute_ref: 'site_photos' }], before_hook: null, after_hook: null },
+  ],
   workflows: [
-    { id: 'wf_widgets', name: 'Widgets', description: '', activities: [
-      { id: 'act_create_widgets', name: 'Create widget', description: '', sort_order: 1, record_map: 'CREATE', attributes: [{ attribute_ref: 'code' }], before_hook: null, after_hook: null },
-      { id: 'act_log_photos', name: 'Log photos', description: '', sort_order: 2, attributes: [{ attribute_ref: 'site_photos' }], before_hook: null, after_hook: null },
-    ] },
+    { id: 'wf_widgets', name: 'Widgets', description: '', activities: [{ activity_ref: 'act_create_widgets' }, { activity_ref: 'act_log_photos' }] },
   ],
 };
 

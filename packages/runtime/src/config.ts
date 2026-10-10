@@ -1,4 +1,4 @@
-import type { SolutionConfig, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
+import type { ActivityRawDef, SolutionConfig, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
 
 // The model the tests run against, and nothing else. The running app never
 // reads it — it fetches its model from the server.
@@ -15,8 +15,9 @@ import type { SolutionConfig, RecordTypeDef, WorkflowRawDef, AttributeDef } from
 // `test/headless.test.ts` (which imports this file too) adds inspection
 // checklists, the only end-to-end exercise of composite attributes.
 //
-// Split one file per entity — a record type and its workflow, always edited as
-// a pair — plus the shared attribute and function pools. Everything merges back
+// Split one file per entity — a record type, its workflow and the pool
+// activities that workflow lists, always edited together — plus the shared
+// attribute and function pools. Everything merges back
 // into one SolutionConfig here; nothing downstream knows about files.
 
 import attributes from '../config/attributes.json';
@@ -35,6 +36,7 @@ import inspectionChecklists from '../config/entities/inspection_checklists.json'
 interface EntityFile {
   recordType: RecordTypeDef;
   workflow: WorkflowRawDef;
+  activities: ActivityRawDef[];
 }
 
 // Order here is display order in the workbench sidebar.
@@ -52,6 +54,7 @@ const entities = [
 
 export const config: SolutionConfig = {
   attributes: attributes as unknown as AttributeDef[],
+  activities: entities.flatMap((e) => e.activities),
   recordTypes: entities.map((e) => e.recordType),
   workflows: entities.map((e) => e.workflow),
   functions: functions as SolutionConfig['functions'],

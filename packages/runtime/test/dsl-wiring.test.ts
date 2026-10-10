@@ -238,8 +238,7 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
   it('activity show_condition may not reference attributes (validated at config load)', async () => {
     const { config, validateConfig, services } = await setup();
     const broken = structuredClone(config);
-    const wf = broken.workflows.find(w => w.id === 'wf_work_orders')!;
-    wf.activities.find(a => a.id === 'act_update_work_orders')!.show_condition =
+    broken.activities.find(a => a.id === 'act_update_work_orders')!.show_condition =
       'attributes.status is not null';
     const findings = validateConfig(broken, services);
     expect(findings.map(f => `${f.where}: ${f.diagnostic.message}`)).toEqual([
@@ -326,8 +325,7 @@ describe('DSL Phase 3 — services through the SDM wiring', () => {
   it('the validator catches unknown service functions and wrong arity in config scripts', async () => {
     const { config, validateConfig, services } = await setup();
     const broken = structuredClone(config);
-    const complete = broken.workflows.find(w => w.id === 'wf_work_orders')!
-      .activities.find(a => a.id === 'act_complete_work_orders')!;
+    const complete = broken.activities.find(a => a.id === 'act_complete_work_orders')!;
     complete.after_hook = "queue services.notify.sms('0400', 'done')";
     const findings = validateConfig(broken, services);
     expect(findings.map(f => f.diagnostic.message)).toEqual([

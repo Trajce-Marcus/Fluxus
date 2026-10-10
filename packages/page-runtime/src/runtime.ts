@@ -111,6 +111,9 @@ export function createPageRuntime(
     return result.data;
   };
 
+  // The first record type whose workflow lists the activity. A shared one has
+  // several, so a caller that runs it on a record takes the type from that
+  // record instead (ComponentContainer).
   const findActivity = (activityId: string): FoundActivity | null => {
     for (const rt of store.listRecordTypes()) {
       const typeDef = store.getRecordTypeDef(rt.id);

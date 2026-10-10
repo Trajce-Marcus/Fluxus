@@ -189,7 +189,6 @@ export interface ClientActivityRawDef {
   id: string;
   name: string;
   description: string;
-  sort_order: number;
   /**
    * How the run touches storage. `GET` is the read path (DSL_SPEC §5a): it
    * writes nothing and answers with its `returns` expression. The client is
@@ -237,7 +236,6 @@ export interface ActivityDef {
   id: string;
   name: string;
   description: string;
-  sort_order: number;
   record_map?: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET';
   /** Availability condition — see ActivityRawDef.show_condition. */
   show_condition?: string;
@@ -248,16 +246,27 @@ export interface ActivityDef {
   returns?: string | null;
 }
 
+/**
+ * One entry in a workflow's list: which pool activity, at this position
+ * (APPS_AND_INSTANCES §1.2). An object rather than a bare id so settings per
+ * workflow can be added later without a reshape, as attribute usages carry
+ * theirs. **Order is the list's order** — an activity shared by two workflows
+ * has no single position of its own, so it carries none.
+ */
+export interface ActivityUsage {
+  activity_ref: string;
+}
+
+/** A workflow is the same on both planes: a name and an ordered list of
+ *  references. What each reference reaches is graded in the pool. */
 export interface ClientWorkflowRawDef {
   id: string;
   name: string;
   description: string;
-  activities: ClientActivityRawDef[];
+  activities: ActivityUsage[];
 }
 
-export interface WorkflowRawDef extends ClientWorkflowRawDef {
-  activities: ActivityRawDef[];
-}
+export type WorkflowRawDef = ClientWorkflowRawDef;
 
 export interface WorkflowDef {
   id: string;
@@ -316,6 +325,12 @@ export interface FunctionDef {
  */
 export interface ClientSolutionConfig {
   attributes: ClientAttributeDef[];
+  /**
+   * The activity pool (APPS_AND_INSTANCES Part 1): every activity, stored once
+   * per solution, which workflows reference by id. On the client's grade only
+   * the activities some shipped workflow uses.
+   */
+  activities: ClientActivityRawDef[];
   recordTypes: ClientRecordTypeDef[];
   workflows: ClientWorkflowRawDef[];
   functions?: FunctionDef[];
@@ -328,6 +343,7 @@ export interface ClientSolutionConfig {
 // unresolved-vs-resolved distinction.
 export interface SolutionConfig extends ClientSolutionConfig {
   attributes: AttributeDef[];
+  activities: ActivityRawDef[];
   recordTypes: RecordTypeDef[];
   workflows: WorkflowRawDef[];
   /** Solution-scoped RBAC role definitions (RBAC_COMPACT). Absent ⇒ RBAC

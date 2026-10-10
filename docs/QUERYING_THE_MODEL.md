@@ -76,6 +76,7 @@ model.fields
 model.attributes
 model.workflows
 model.activities
+model.workflow_activities
 model.activity_attributes
 model.functions
 model.roles
@@ -178,23 +179,33 @@ The solution's pool. `id` is the `key` — the table is keyed
 
 ### `model.workflows`
 
-`id` · `name` · `description`. Activities are their own collection.
+`id` · `name` · `description`. Activities are their own collection, and which
+a workflow lists is `model.workflow_activities`.
+
+### `model.workflow_activities`
+
+Added 2026-10-10. One row per workflow's use of a pool activity.
+
+`id` **synthesised** as `<workflow>.<activity>` (a workflow lists an activity at
+most once) · `workflow_ref` → `model.workflows` · `activity_ref` →
+`model.activities` · `position` (0-based, the workflow's order)
+
+- A workflow's activities are its rows here, ordered by `position`.
+- A record type reaches its activities through its `workflow_ref`:
+  `model.workflow_activities.where(workflow_ref = 'wf_jobs').orderBy(position)`.
 
 ### `model.activities`
 
-`id` · `name` · `description` · `workflow_ref` → `model.workflows` ·
-`record_type_ref` → `model.record_types` · `sort_order` · `record_map` ·
-`show_condition` · `before_hook` · `after_hook` · `returns`
+**Changed 2026-10-10 by the activity pool** (APPS_AND_INSTANCES Part 1).
 
-- `workflow_ref` is **derived from nesting** — activities are stored inside
-  their workflow, not with a pointer to it.
-- `record_type_ref` is **derived by reverse lookup**, workflow → record type.
-  An activity carries no record type, and **nothing enforces one record type per
-  workflow**: `validateConfig.ts` already builds a last-wins map of
-  `workflow_ref → record type`, and `findActivity` can never see an activity in
-  a workflow no record type points at. This projection answers **null** when no
-  record type points at the workflow, and the **first** by config order when
-  more than one does, rather than pretending the relationship is single.
+`id` · `name` · `description` · `record_map` · `show_condition` ·
+`before_hook` · `after_hook` · `returns`
+
+- **One row per pool activity, used or not.** An activity is stored once per
+  solution and may be listed by several workflows, or by none, so it has no
+  single workflow, record type or position. `workflow_ref`, `record_type_ref`
+  and `sort_order` were dropped with that: until 2026-10-10 the first two were
+  derived from nesting and a reverse lookup.
 - `record_map` is null for log-only activities.
 - Hook and `returns` source text is included (§7).
 
@@ -202,10 +213,11 @@ The solution's pool. `id` is the `key` — the table is keyed
 
 One row per entry in an activity's ordered capture list.
 
-Every activity has its list, **including those in a workflow no record type
-points at** — `model.activities` lists them, so a count over this collection
-would otherwise be silently short. That needs `Store.listWorkflows`, added for
-this, since the record-type route cannot reach an orphan workflow.
+Every activity has its list, **including those no record type reaches and,
+since the activity pool, those no workflow lists** — `model.activities` lists
+them, so a count over this collection would otherwise be silently short. That
+needs `Store.listActivities` (2026-10-10; `Store.listWorkflows` before it),
+since the record-type route cannot reach them.
 
 **Projected from the resolved list.** An activity's stored list is
 heterogeneous — attribute usages *and* section markers, the latter carrying no

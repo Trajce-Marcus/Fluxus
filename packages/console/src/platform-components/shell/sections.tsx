@@ -65,6 +65,7 @@ export const SOLUTION_SECTIONS: ConsoleSection[] = [
   { id: 'settings', label: 'Settings', group: SOLUTION_GROUP, render: () => <SolutionSettingsSection /> },
   { id: 'record-types', label: 'Record types', group: SDM_GROUP, render: () => <SdmView tab="record-types" />, canLeave: canLeaveSdm },
   { id: 'attributes', label: 'Attributes', group: SDM_GROUP, render: () => <SdmView tab="attributes" />, canLeave: canLeaveSdm },
+  { id: 'activities', label: 'Activities', group: SDM_GROUP, render: () => <SdmView tab="activities" />, canLeave: canLeaveSdm },
   { id: 'workflows', label: 'Workflows', group: SDM_GROUP, render: () => <SdmView tab="workflows" />, canLeave: canLeaveSdm },
   { id: 'roles', label: 'Roles', group: SDM_GROUP, render: () => <SdmView tab="roles" />, canLeave: canLeaveSdm },
   { id: 'menu', label: 'Menu', group: SDM_GROUP, render: () => <SdmView tab="menu" />, canLeave: canLeaveSdm },

@@ -387,9 +387,11 @@ other's activities, never by reading each other's records.**
 > record type points to one workflow and an app may point to one of its own; an
 > activity runs only through a workflow; an app may change which activities it
 > has but only narrow how each is used. This reverses the 2026-08-08 storage
-> ruling that activities stay inside their workflow. Instances are still being
-> settled. See [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md) (the spec) before
-> building anything from this section.
+> ruling that activities stay inside their workflow. **The pool (Part 1) is
+> BUILT, 2026-10-10** — except its check that an activity may run only on a
+> record whose workflow includes it, deferred by the user. Instances are still
+> being settled. See [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md) (the spec)
+> before building anything from this section.
 
 In short: the model's workflows list every activity that can happen, and an
 **app** is what picks the ones it uses and puts them in front of people (as

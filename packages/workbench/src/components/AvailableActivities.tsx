@@ -17,9 +17,9 @@ export function AvailableActivities({ record, workflow }: Props) {
   // GET excluded (a query answers an app, it is not a button on a record —
   // DSL_SPEC §5a). Availability (activity show_condition) filters against the
   // current record; runActivity re-checks the same rule as the pipeline gate.
+  // In the workflow's order, which is the order its list gives them.
   const activities = workflow.activities
-    .filter(a => a.record_map !== 'CREATE' && a.record_map !== 'GET' && isActivityAvailable(a, record))
-    .sort((a, b) => a.sort_order - b.sort_order);
+    .filter(a => a.record_map !== 'CREATE' && a.record_map !== 'GET' && isActivityAvailable(a, record));
 
   if (activities.length === 0) return null;
 

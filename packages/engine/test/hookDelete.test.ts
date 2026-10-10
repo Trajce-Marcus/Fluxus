@@ -30,15 +30,18 @@ const config = {
         { key: 'parent_id', type: 'fk_ref', label: 'Parent', default: '', fk_record_type: 'rt_wbs_nodes', fk_display_field: 'code' },
       ] },
   ],
-  workflows: [
-    { id: 'wf_projects', name: 'Projects', activities: [{
+  activities: [
+    {
       // Anchored on the project, not on what it deletes — the entry has to
       // outlive the records it names.
-      id: 'act_purge_wbs_projects', name: 'Purge WBS', description: '', sort_order: 0, record_map: 'UPDATE',
+      id: 'act_purge_wbs_projects', name: 'Purge WBS', description: '', record_map: 'UPDATE',
       before_hook: null,
       after_hook: "records.wbs_nodes.where(project_id = context.record.id).delete()",
       attributes: [{ attribute_ref: 'reason' }],
-    }] },
+    },
+  ],
+  workflows: [
+    { id: 'wf_projects', name: 'Projects', activities: [{ activity_ref: 'act_purge_wbs_projects' }] },
     { id: 'wf_wbs_nodes', name: 'WBS', activities: [] },
   ],
 } as unknown as ClientSolutionConfig;
@@ -154,12 +157,16 @@ describe('a hook that deletes', () => {
 describe('the DELETE record map', () => {
   const deleteConfig = {
     ...config,
+    activities: [
+      ...config.activities,
+      {
+        id: 'act_delete_wbs_nodes', name: 'Delete Node', description: '', record_map: 'DELETE',
+        before_hook: null, after_hook: null, attributes: [],
+      },
+    ],
     workflows: [
       (config as unknown as { workflows: unknown[] }).workflows[0],
-      { id: 'wf_wbs_nodes', name: 'WBS', activities: [{
-        id: 'act_delete_wbs_nodes', name: 'Delete Node', description: '', sort_order: 0, record_map: 'DELETE',
-        before_hook: null, after_hook: null, attributes: [],
-      }] },
+      { id: 'wf_wbs_nodes', name: 'WBS', activities: [{ activity_ref: 'act_delete_wbs_nodes' }] },
     ],
   } as unknown as ClientSolutionConfig;
 

@@ -35,11 +35,9 @@ export function AttributesEditor() {
   // up beside it.
   const used = useMemo(() => {
     const keys = new Set<string>();
-    for (const wf of draft.workflows) {
-      for (const act of wf.activities) {
-        for (const usage of act.attributes ?? []) {
-          if ('attribute_ref' in usage) keys.add(usage.attribute_ref);
-        }
+    for (const act of draft.activities) {
+      for (const usage of act.attributes ?? []) {
+        if ('attribute_ref' in usage) keys.add(usage.attribute_ref);
       }
     }
     for (const a of draft.attributes) {

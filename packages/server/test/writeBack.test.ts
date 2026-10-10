@@ -33,23 +33,22 @@ const config = {
         { key: 'qty', type: 'int', label: 'Qty', default: '' },
       ] },
   ],
+  activities: [
+    { id: 'act_create_items', name: 'Create Item', description: '', record_map: 'CREATE',
+    before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'name' }, { attribute_ref: 'qty' }] },
+    { id: 'act_rename_items', name: 'Rename Item', description: '', record_map: 'UPDATE',
+    before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'name' }] },
+    { id: 'act_recount_items', name: 'Recount Item', description: '', record_map: 'UPDATE',
+    before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'qty' }] },
+    { id: 'act_delete_items', name: 'Delete Item', description: '', record_map: 'DELETE',
+    before_hook: null, after_hook: null, attributes: [] },
+    { id: 'act_get_items', name: 'Get Items', description: '', record_map: 'GET',
+    before_hook: null, after_hook: null, attributes: [], returns: 'records.items' },
+    { id: 'act_rename_failing_items', name: 'Rename Item (failing hook)', description: '', record_map: 'UPDATE',
+    before_hook: null, after_hook: "records.items.create({ name: 'side effect' })\nfail('hook refused')", attributes: [{ attribute_ref: 'name' }] },
+  ],
   workflows: [
-    { id: 'wf_items', name: 'Items', description: '', activities: [
-      { id: 'act_create_items', name: 'Create Item', description: '', sort_order: 0, record_map: 'CREATE',
-        before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'name' }, { attribute_ref: 'qty' }] },
-      { id: 'act_rename_items', name: 'Rename Item', description: '', sort_order: 1, record_map: 'UPDATE',
-        before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'name' }] },
-      { id: 'act_recount_items', name: 'Recount Item', description: '', sort_order: 2, record_map: 'UPDATE',
-        before_hook: null, after_hook: null, attributes: [{ attribute_ref: 'qty' }] },
-      // Its after hook always fails: the run is "recorded, but no changes
-      // applied" — the rename and the entry persist, the hook's effects do not.
-      { id: 'act_rename_failing_items', name: 'Rename Item (failing hook)', description: '', sort_order: 5, record_map: 'UPDATE',
-        before_hook: null, after_hook: "records.items.create({ name: 'side effect' })\nfail('hook refused')", attributes: [{ attribute_ref: 'name' }] },
-      { id: 'act_delete_items', name: 'Delete Item', description: '', sort_order: 3, record_map: 'DELETE',
-        before_hook: null, after_hook: null, attributes: [] },
-      { id: 'act_get_items', name: 'Get Items', description: '', sort_order: 4, record_map: 'GET',
-        before_hook: null, after_hook: null, attributes: [], returns: 'records.items' },
-    ] },
+    { id: 'wf_items', name: 'Items', description: '', activities: [{ activity_ref: 'act_create_items' }, { activity_ref: 'act_rename_items' }, { activity_ref: 'act_recount_items' }, { activity_ref: 'act_delete_items' }, { activity_ref: 'act_get_items' }, { activity_ref: 'act_rename_failing_items' }] },
   ],
 } as unknown as SolutionConfig;
 

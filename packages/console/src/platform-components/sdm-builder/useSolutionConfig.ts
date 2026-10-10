@@ -11,7 +11,7 @@
 // a per-solution lock — only the write narrows.
 
 import { useCallback, useState } from 'react';
-import type { AttributeDef, RecordTypeDef, RoleDef, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
+import type { ActivityRawDef, AttributeDef, RecordTypeDef, RoleDef, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
 import type { MenuItem } from '@fluxus/client';
 import { sdmClient, reloadSolution } from '../../sdm-runtime/engine';
 import { shellStore } from '../shell/store';
@@ -66,9 +66,24 @@ export const saveAttributes = (loaded: AttributeDef[], current: AttributeDef[]) 
 export const saveRecordTypes = (loaded: RecordTypeDef[], current: RecordTypeDef[]) =>
   saveEntities(loaded, current, (r) => r.id, (r) => sdmClient.putRecordType(r), (id) => sdmClient.deleteRecordType(id));
 
-/** Activities ride inside their workflow — one workflow is one save. */
-export const saveWorkflows = (loaded: WorkflowRawDef[], current: WorkflowRawDef[]) =>
-  saveEntities(loaded, current, (w) => w.id, (w) => sdmClient.putWorkflow(w), (id) => sdmClient.deleteWorkflow(id));
+/** The activity pool. New and changed activities are put before any delete,
+ *  and a delete fails while a workflow still lists the activity. */
+export const saveActivities = (loaded: ActivityRawDef[], current: ActivityRawDef[]) =>
+  saveEntities(loaded, current, (a) => a.id, (a) => sdmClient.putActivity(a), (id) => sdmClient.deleteActivity(id));
+
+/**
+ * A workflow stores references only. Every per-entity save validates the whole
+ * model, so the order must never pass through an invalid state
+ * (APPS_AND_INSTANCES §1.6): a workflow that only drops activities is saved
+ * before one that adds — when a CREATE moves between workflows, the one losing
+ * it goes first, or for a moment two record types would reach it.
+ */
+export const saveWorkflows = (loaded: WorkflowRawDef[], current: WorkflowRawDef[]) => {
+  const before = new Map(loaded.map((w) => [w.id, new Set(w.activities.map((r) => r.activity_ref))]));
+  const adds = (w: WorkflowRawDef) => w.activities.filter((r) => !before.get(w.id)?.has(r.activity_ref)).length;
+  const ordered = [...current].sort((a, b) => Number(adds(a) > 0) - Number(adds(b) > 0));
+  return saveEntities(loaded, ordered, (w) => w.id, (w) => sdmClient.putWorkflow(w), (id) => sdmClient.deleteWorkflow(id));
+};
 
 export const saveRoles = (loaded: RoleDef[], current: RoleDef[]) =>
   saveEntities(loaded, current, (r) => r.id, (r) => sdmClient.putRole(r), (id) => sdmClient.deleteRole(id));

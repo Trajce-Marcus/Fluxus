@@ -22,6 +22,7 @@ import type {
   SectionMarkerDef,
   SolutionConfig,
 } from '@fluxus/engine';
+import { includedActivityIds } from '@fluxus/engine';
 import type { MenuItem } from './db/schema';
 
 /**
@@ -147,7 +148,6 @@ function clientActivity(act: ClientActivityRawDef): ClientActivityRawDef {
     id: act.id,
     name: act.name,
     description: act.description,
-    sort_order: act.sort_order,
     ...(act.record_map !== undefined ? { record_map: act.record_map } : {}),
     ...(act.show_condition !== undefined ? { show_condition: act.show_condition } : {}),
     attributes: act.attributes.map((entry) =>
@@ -171,21 +171,19 @@ function clientRecordType(rt: ClientRecordTypeDef): ClientRecordTypeDef {
 /** Every FluxScript source that survives the trim — the reachability roots for
  *  named functions below. */
 function shippedExpressions(
-  workflows: ClientWorkflowRawDef[],
+  activities: ClientActivityRawDef[],
   attributes: ClientAttributeDef[],
 ): string[] {
   const sources: string[] = [];
   const push = (source: string | undefined) => {
     if (source) sources.push(source);
   };
-  for (const wf of workflows) {
-    for (const act of wf.activities) {
-      push(act.show_condition);
-      for (const entry of act.attributes) {
-        if (!('attribute_ref' in entry)) continue;
-        push(entry.show_condition);
-        push(entry.validation);
-      }
+  for (const act of activities) {
+    push(act.show_condition);
+    for (const entry of act.attributes) {
+      if (!('attribute_ref' in entry)) continue;
+      push(entry.show_condition);
+      push(entry.validation);
     }
   }
   for (const attr of attributes) {
@@ -258,8 +256,16 @@ export function projectConfig(
       id: wf.id,
       name: wf.name,
       description: wf.description,
-      activities: wf.activities.map(clientActivity),
+      activities: wf.activities.map((usage) => ({ activity_ref: usage.activity_ref })),
     }));
+
+  // The activity pool is trimmed the same way: only activities a shipped
+  // workflow lists. One listed by two shipped workflows is sent once; one no
+  // shipped workflow lists is not sent (APPS_AND_INSTANCES §1.3).
+  const shippedActivityIds = includedActivityIds({ workflows });
+  const activities = config.activities
+    .filter((act) => shippedActivityIds.has(act.id))
+    .map(clientActivity);
 
   // The attribute pool ships by reference, not wholesale: an attribute reached
   // only by a workflow that did not survive describes a form this caller can
@@ -274,20 +280,19 @@ export function projectConfig(
     referenced.add(key);
     for (const sub of attr.type_config?.attributes ?? []) reach(sub.attribute_ref);
   };
-  for (const wf of workflows) {
-    for (const act of wf.activities) {
-      for (const entry of act.attributes) {
-        if ('attribute_ref' in entry) reach(entry.attribute_ref);
-      }
+  for (const act of activities) {
+    for (const entry of act.attributes) {
+      if ('attribute_ref' in entry) reach(entry.attribute_ref);
     }
   }
   const attributes = config.attributes.filter((a) => referenced.has(a.key)).map(clientAttribute);
 
-  const functions = reachableFunctions(config.functions ?? [], shippedExpressions(workflows, attributes));
+  const functions = reachableFunctions(config.functions ?? [], shippedExpressions(activities, attributes));
   const defaultMenu = (config as { default_menu?: MenuItem[] }).default_menu;
 
   return {
     attributes,
+    activities,
     recordTypes: recordTypes.map(clientRecordType),
     workflows,
     // Absent stays absent, as everywhere else in the model.
