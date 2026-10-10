@@ -17,6 +17,8 @@ import { EmptyList, ListHead } from '../shared/UserTabs';
 
 export interface RoleDef { id: string; name: string }
 
+const NOT_OP_ADMIN = 'Only an operation admin can change who is in this operation';
+
 export function OpUsersTable({ operationId, users, roles, assignments, pool, canEdit, busyRow, act, onChanged }: {
   operationId: string;
   users: Grant[];
@@ -45,7 +47,13 @@ export function OpUsersTable({ operationId, users, roles, assignments, pool, can
           Who may open this operation, and what they see once inside. Being listed here lets them in;
           roles decide the rest. The two are separate on purpose.
         </>}
-        action={canEdit ? <button className="admin-btn" onClick={() => setAdd(true)}>Add user</button> : undefined}
+        action={
+          // Drawn either way, greyed for a non-op-admin: a missing button reads
+          // as a missing feature, a greyed one as "not yours to do".
+          <button className="admin-btn" disabled={!canEdit} title={canEdit ? undefined : NOT_OP_ADMIN} onClick={() => setAdd(true)}>
+            Add user
+          </button>
+        }
       />
 
       {users.length === 0 ? (
@@ -70,18 +78,17 @@ export function OpUsersTable({ operationId, users, roles, assignments, pool, can
                       : held.map(roleName).join(', ')}
                   </td>
                   <td>
-                    {canEdit && (
-                      <div className="admin-row">
-                        <button className="admin-link" onClick={() => setEditRoles(u.email)}>Roles</button>
-                        <button
-                          className="admin-link is-danger"
-                          disabled={busyRow === u.email}
-                          onClick={() => void act(u.email, () => consoleClient.removeOpUser(operationId, u.email))}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    )}
+                    <div className="admin-row">
+                      <button className="admin-link" disabled={!canEdit} title={canEdit ? undefined : NOT_OP_ADMIN} onClick={() => setEditRoles(u.email)}>Roles</button>
+                      <button
+                        className="admin-link is-danger"
+                        disabled={!canEdit || busyRow === u.email}
+                        title={canEdit ? undefined : NOT_OP_ADMIN}
+                        onClick={() => void act(u.email, () => consoleClient.removeOpUser(operationId, u.email))}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
