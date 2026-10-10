@@ -120,6 +120,13 @@ for (const driver of DRIVERS) {
       expect(result.value).toBe(4);
     });
 
+    it('a declared field the record lacks reads null in select and in a field read; an undeclared one is still an error (ruling 13)', async () => {
+      expect(await driver.evaluate("records.jobs.where(id = 'j4').select(id, qty, due)", host)).toEqual([{ id: 'j4', qty: null, due: null }]);
+      expect(await driver.evaluate("records.jobs.where(id = 'j4').first.qty", host)).toBeNull();
+      await expect(driver.evaluate("records.jobs.where(id = 'j4').first.nosuch", host)).rejects.toThrow(/has no field 'nosuch'/);
+      await expect(driver.evaluate("records.jobs.where(id = 'j4').select(id, nosuch)", host)).rejects.toThrow(/Unknown name 'nosuch'/);
+    });
+
     it('a list held in a variable is filtered by the same rules, in memory (ruling 8)', async () => {
       const result = await driver.execute(
         `let jobs = records.jobs.where(qty > 0)

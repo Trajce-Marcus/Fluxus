@@ -155,7 +155,7 @@ records.suburbs.where(city_id = attributes.city)
 
 If an SDM field name shadows a root name, the field wins inside the chain and the validator emits a warning at config-save time. ⚑ D8
 
-**By declared field, not by what a record holds** (2026-09-25, SERVER_DATA_LOADING ruling 13). Where the host declares the type's fields (every SDM host does), a bare name that is a declared field always means that field: a record missing the key reads it as null, and an outer variable is reached only by a name the type does not declare. A host that declares no fields keeps the older rule — the record's own keys first, then the outer scope.
+**By declared field, not by what a record holds** (2026-09-25, SERVER_DATA_LOADING ruling 13). Where the host declares the type's fields (every SDM host does), a bare name that is a declared field always means that field: a record missing the key reads it as null, and an outer variable is reached only by a name the type does not declare. A host that declares no fields keeps the older rule — the record's own keys first, then the outer scope. **Everywhere a record is read** (2026-10-11): a field read (`r.field`) and the bare names of `select`, `values` and the other steps that run in memory follow the same rule — before that date they looked only at the keys the record held, so a record created before a field was added threw where it should have read null.
 
 ### 4.2 Chain methods (Phase 1 set)
 

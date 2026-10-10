@@ -963,6 +963,11 @@ class Evaluator {
         }
         return value ?? null;
       }
+      // A declared field the record does not hold reads null (ruling 13): a
+      // record created before the field was added has no key for it, and
+      // the name is already proved real at save. Only an undeclared name is
+      // an error here.
+      if (declaredKey(this.host.records?.declaredFields?.(object.type) ?? null, name) !== null) return null;
       if ((this.host.records?.reverseRef(object.type, name) ?? null) !== null) return NOT_LEAF;
       throw new FluxRuntimeError(`'${object.type}' has no field '${name}'`, pos);
     }
@@ -1411,7 +1416,8 @@ class Evaluator {
     }
   }
 
-  /** Bare-field scope (GRAMMAR §4.1): item fields first, then the outer scope. */
+  /** Bare-field scope (GRAMMAR §4.1): item fields first — a declared field the
+   *  record lacks reads null (ruling 13) — then the outer scope. */
   private itemScope(item: unknown, outer: Scope): Scope {
     return (name) => {
       if (isRecord(item)) {
@@ -1425,6 +1431,7 @@ class Evaluator {
           }
           return { found: true, value: value ?? null };
         }
+        if (declaredKey(this.host.records?.declaredFields?.(item.type) ?? null, name) !== null) return { found: true, value: null };
       } else if (isPlainObject(item)) {
         const key = lookupKey(item, name);
         if (key !== null) return { found: true, value: item[key] ?? null };
