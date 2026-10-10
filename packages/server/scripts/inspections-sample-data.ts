@@ -9,9 +9,10 @@
 // Two parts:
 //   1. Master data — the six files in solutions/inspections/docs/sample-data/,
 //      loaded through each type's create activity; only what is missing.
-//   2. Sample jobs — eight jobs at different stages, with findings. The
+//   2. Sample jobs — ten jobs at different stages, with findings. The
 //      customers, addresses and findings are **invented**; emails are at
-//      example.com. Skipped if the operation already has jobs.
+//      example.com. A job whose address is already in the operation is
+//      skipped, so a later run adds only new sample jobs.
 //
 // No photos: a photo arrives by browser upload, which a script cannot do.
 
@@ -92,6 +93,25 @@ for (const r of csv('defect_categories.csv')) {
 }
 console.log(`  + ${n} defect categories (${categoryIds.size} in all)`);
 
+// Safety hazard stopped being a category on 2026-10-11 — it is a flag on a
+// finding now. Expired, never deleted: old findings keep it as history.
+const safety = (await query<{ id: string; name: string; meaning: string | null; expires_on: string | null }>('act_list_defect_categories'))
+  .find((c) => c.name === 'Safety hazard');
+if (safety && !safety.expires_on) {
+  await run('act_update_defect_categories', { name: safety.name, ...(safety.meaning ? { meaning: safety.meaning } : {}), expires_on: '2026-10-11' }, safety.id);
+  console.log('  ~ Safety hazard category expired');
+}
+
+const restrictionIds = new Map<string, string>(); // name → id
+for (const r of await query<{ id: string; name: string }>('act_list_access_restrictions')) restrictionIds.set(r.name, r.id);
+n = 0;
+for (const r of csv('access_restrictions.csv')) {
+  if (restrictionIds.has(r.name)) continue;
+  restrictionIds.set(r.name, await run('act_create_access_restrictions', { name: r.name }));
+  n++;
+}
+console.log(`  + ${n} access restrictions (${restrictionIds.size} in all)`);
+
 n = 0;
 for (const r of csv('inspection_areas.csv')) {
   if (areaIds.has(r.code)) continue;
@@ -138,19 +158,38 @@ console.log(`  + ${n} defect code reference mappings`);
 
 // ── 2. sample jobs ──────────────────────────────────────────────────────────
 
-const existingJobs = await query<{ id: string }>('act_list_jobs');
-if (existingJobs.length > 0) {
-  console.log(`sample jobs: already loaded (${existingJobs.length} jobs) — skipped`);
-  await closeDb(db);
-  process.exit(0);
-}
+// Resumable by address: a job already in the operation is left alone, so new
+// sample jobs can be added later without touching the ones people have used.
+const existingAddresses = new Set((await query<{ address: string }>('act_list_jobs')).map((j) => j.address));
 
-type Finding = { area: string; location: string; defect?: string; category?: 'Major defect' | 'Minor defect' | 'Safety hazard'; comments?: string };
+type Access = 'Fully inspected' | 'Restricted' | 'Not inspected' | 'Not applicable';
+type Finding = {
+  area: string; location: string; defect?: string; category?: 'Major defect' | 'Minor defect';
+  safety?: boolean; access?: Access; restriction?: string; comments?: string;
+};
+type Facts = {
+  building_type: string; construction: string; roof_cladding: string; footings: string; storeys: string; year_built?: string;
+  occupied: 'true' | 'false'; furnished: string; people_present?: string;
+  water_connected?: 'true' | 'false'; electricity_connected?: 'true' | 'false'; gas_connected?: 'true' | 'false';
+  concealment?: 'true' | 'false'; concealment_note?: string;
+};
+type Assessment = { major_incidence: string; minor_incidence: string; overall_condition: string; overall_assessment: string };
+// Used for the earlier sample jobs, which were written before property facts
+// and the assessment existed — on a fresh database they still need answers.
+const DEFAULT_FACTS: Facts = {
+  building_type: 'House', construction: 'Brick veneer', roof_cladding: 'Concrete tiles', footings: 'Concrete slab', storeys: '1',
+  occupied: 'true', furnished: 'Fully furnished', water_connected: 'true', electricity_connected: 'true', gas_connected: 'true',
+};
+const DEFAULT_ASSESSMENT: Assessment = {
+  major_incidence: 'Typical', minor_incidence: 'Typical', overall_condition: 'Average',
+  overall_assessment: 'In fair condition for its age, with the defects listed.',
+};
 type Stage = 'Requested' | 'Quoted' | 'Accepted' | 'Scheduled' | 'In Progress' | 'Inspected' | 'Cancelled';
 type SampleJob = {
   stage: Stage; customer: string; email: string; address: string; details?: string; notes?: string;
   quote?: string; quoteNotes?: string; scheduledAt?: string; inspector?: string; instructions?: string;
   access?: string; weather?: string; checklist?: string; findings?: Finding[]; cancelReason?: string;
+  facts?: Facts; assessment?: Assessment;
 };
 
 const NO_DEFECTS = (area: string, location: string, comments?: string): Finding => ({ area, location, ...(comments ? { comments } : {}) });
@@ -225,12 +264,62 @@ const JOBS: SampleJob[] = [
       NO_DEFECTS('A03', 'Hot water unit, laundry'),
       NO_DEFECTS('A04', 'All elevations', 'Mud brick in good condition for age.'),
       NO_DEFECTS('A05', 'Double garage'),
-      { area: 'A06', location: 'Rear deck', defect: 'D26', category: 'Safety hazard', comments: 'Handrail loose; deck about 1.5 m above ground.' },
+      { area: 'A06', location: 'Rear deck', defect: 'D26', category: 'Minor defect', safety: true, comments: 'Handrail loose; deck about 1.5 m above ground.' },
       NO_DEFECTS('A07', 'Throughout'),
       NO_DEFECTS('A08', 'Ensuite and main bathroom'),
       NO_DEFECTS('A09', 'Kitchen and laundry'),
       NO_DEFECTS('A10', 'Roof void'),
     ],
+  },
+  {
+    stage: 'In Progress', customer: 'Grace Whitfield', email: 'grace.whitfield@example.com',
+    address: '33 Rattray Road, Montmorency VIC 3094',
+    details: 'Three-bedroom weatherboard on stumps, about 1958, rear deck.', quote: '475.00',
+    scheduledAt: '2026-10-11T09:00:00+11:00', inspector: 'Nick Petrovski',
+    access: 'House and yard. No roof void hatch found.', weather: 'Showers, 14°C',
+    checklist: 'PPE, ladder, torch, moisture meter, camera — all checked.',
+    facts: {
+      building_type: 'House', construction: 'Weatherboard', roof_cladding: 'Metal sheet', footings: 'Stumps', storeys: '1', year_built: '1958',
+      occupied: 'false', furnished: 'Unfurnished', people_present: 'Selling agent',
+      water_connected: 'true', electricity_connected: 'true', gas_connected: 'false',
+    },
+    findings: [
+      NO_DEFECTS('A01', 'Front and rear yards'),
+      { area: 'A02', location: 'Whole roof', access: 'Restricted', restriction: 'Wet or slippery surfaces', defect: 'D17', category: 'Minor defect', comments: 'Viewed from a ladder only. Rust to flashings at the chimney.' },
+      { area: 'A04', location: 'Rear wall', defect: 'D39', category: 'Minor defect', comments: 'Lattice and two posts in contact with soil.' },
+      { area: 'A06', location: 'Rear deck stairs', defect: 'D26', category: 'Minor defect', safety: true, comments: 'Handrail loose at the bottom post.' },
+      { area: 'A10', location: 'Roof void', access: 'Not inspected', restriction: 'No access hatch', comments: 'No hatch found; recommend access be provided.' },
+    ],
+  },
+  {
+    stage: 'Inspected', customer: 'Marco Bianchi', email: 'marco.bianchi@example.com',
+    address: '17 Yarra Street, Heidelberg VIC 3084',
+    details: 'Three-bedroom brick veneer, about 1985, double carport.', quote: '495.00',
+    scheduledAt: '2026-10-09T13:00:00+11:00', inspector: 'Nick Petrovski',
+    access: 'Full access except where noted.', weather: 'Fine, 21°C',
+    checklist: 'PPE, ladder, torch, moisture meter, camera — all checked.',
+    facts: {
+      building_type: 'House', construction: 'Brick veneer', roof_cladding: 'Concrete tiles', footings: 'Concrete slab', storeys: '1', year_built: '1985',
+      occupied: 'true', furnished: 'Fully furnished', people_present: 'Vendor',
+      water_connected: 'true', electricity_connected: 'true', gas_connected: 'true',
+      concealment: 'true', concealment_note: 'Fresh paint over a patch of the laundry ceiling.',
+    },
+    findings: [
+      { area: 'A01', location: 'Side path', defect: 'D40', category: 'Minor defect', comments: 'Paving laid over the slab edge along the south side.' },
+      NO_DEFECTS('A02', 'Whole roof'),
+      NO_DEFECTS('A03', 'Hot water unit, side path'),
+      { area: 'A04', location: 'Rear wall near laundry', defect: 'D37', category: 'Major defect', comments: 'Mud leads on the brickwork below the laundry window.' },
+      { area: 'A05', location: 'Double carport', access: 'Restricted', restriction: 'Vehicles', comments: 'Two cars parked; floor partly seen. No defects in the areas seen.' },
+      { area: 'A06', location: '—', access: 'Not applicable', comments: 'No stairs, pergola, balcony or deck.' },
+      { area: 'A07', location: 'Hallway', defect: 'D30', category: 'Minor defect', safety: true, comments: 'Smoke alarm did not sound when tested.' },
+      { area: 'A08', location: 'Main bathroom', defect: 'D12', category: 'Minor defect', comments: 'Grout cracked along the shower base.' },
+      NO_DEFECTS('A09', 'Kitchen and laundry'),
+      { area: 'A10', location: 'Roof void', access: 'Restricted', restriction: 'Insulation', defect: 'D34', category: 'Minor defect', comments: 'Batts displaced above the hallway.' },
+    ],
+    assessment: {
+      major_incidence: 'Typical', minor_incidence: 'Typical', overall_condition: 'Average',
+      overall_assessment: 'A sound home for its age. The termite workings on the rear wall need a timber pest inspection before the contract becomes binding.',
+    },
   },
   {
     stage: 'Cancelled', customer: 'Liam Murphy', email: 'liam.murphy@example.com',
@@ -246,6 +335,7 @@ const reached = (job: SampleJob, stage: Stage) =>
   job.stage === 'Cancelled' ? ORDER.indexOf(stage) <= ORDER.indexOf('Quoted') : ORDER.indexOf(stage) <= ORDER.indexOf(job.stage);
 
 for (const job of JOBS) {
+  if (existingAddresses.has(job.address)) continue;
   const id = await run('act_create_jobs', {
     customer_name: job.customer, customer_email: job.email, address: job.address,
     ...(job.details ? { details: job.details } : {}), ...(job.notes ? { notes: job.notes } : {}),
@@ -253,17 +343,26 @@ for (const job of JOBS) {
   if (reached(job, 'Quoted')) await run('act_quote_jobs', { quoted_amount: job.quote, ...(job.quoteNotes ? { quote_notes: job.quoteNotes } : {}) }, id);
   if (reached(job, 'Accepted')) await run('act_accept_jobs', {}, id);
   if (reached(job, 'Scheduled')) await run('act_schedule_jobs', { scheduled_at: job.scheduledAt, inspector: job.inspector, ...(job.instructions ? { instructions: job.instructions } : {}) }, id);
-  if (reached(job, 'In Progress')) await run('act_start_jobs', { access: job.access, weather: job.weather, checklist: job.checklist }, id);
+  if (reached(job, 'In Progress')) await run('act_start_jobs', { access: job.access, weather: job.weather, checklist: job.checklist, ...(job.facts ?? DEFAULT_FACTS) }, id);
   for (const f of job.findings ?? []) {
     const defect = f.defect ? defectIds.get(f.defect) : undefined;
     if (f.defect && !defect) throw new Error(`${job.address}: unknown defect ${f.defect}`);
+    const access = f.access ?? 'Fully inspected';
+    const inspected = access === 'Fully inspected' || access === 'Restricted';
+    const restriction = f.restriction ? restrictionIds.get(f.restriction) : undefined;
+    if (f.restriction && !restriction) throw new Error(`${job.address}: unknown restriction ${f.restriction}`);
     await run('act_add_findings', {
-      job: id, area: areaIds.get(f.area), location: f.location, has_defect: defect ? 'true' : 'false',
-      ...(defect ? { defect, category: categoryIds.get(f.category!) } : {}),
+      job: id, area: areaIds.get(f.area), location: f.location, area_access: access,
+      ...(restriction ? { restriction } : {}),
+      ...(inspected ? { has_defect: defect ? 'true' : 'false' } : {}),
+      ...(defect ? { defect, category: categoryIds.get(f.category!), safety_hazard: f.safety ? 'true' : 'false' } : {}),
       ...(f.comments ? { comments: f.comments } : {}),
     });
   }
-  if (reached(job, 'Inspected')) await run('act_finish_jobs', { declaration_confirmed: 'true' }, id);
+  if (reached(job, 'Inspected')) {
+    await run('act_assess_jobs', { ...(job.assessment ?? DEFAULT_ASSESSMENT) }, id);
+    await run('act_finish_jobs', { declaration_confirmed: 'true' }, id);
+  }
   if (job.stage === 'Cancelled') await run('act_cancel_jobs', { cancel_reason: job.cancelReason }, id);
   console.log(`  + ${job.stage.padEnd(11)} ${job.address}${job.findings ? ` (${job.findings.length} findings)` : ''}`);
 }

@@ -25,7 +25,7 @@ const dry = process.argv.includes('--dry');
 
 // ── builders ────────────────────────────────────────────────────────────────
 
-type Slot = { id: string; componentName: string; staticConfig?: Record<string, unknown>; dynamicProps?: Record<string, string>; callbacks?: Record<string, string> };
+type Slot = { id: string; componentName: string; tabName?: string; staticConfig?: Record<string, unknown>; dynamicProps?: Record<string, string>; callbacks?: Record<string, string> };
 
 const pad = (top: number, bottom: number) => ({ top, left: 16, right: 16, bottom });
 const panel = (id: string, top = 10, bottom = 4) => ({ id, size: { type: 'auto' }, padding: pad(top, bottom), children: [], direction: 'vertical', background: '#ffffff' });
@@ -48,6 +48,7 @@ function page(o: { record?: string; header: Slot[]; body: Slot[] }) {
     },
     slotConfigs: Object.fromEntries(slots.map((s) => [s.id, {
       componentName: s.componentName,
+      ...(s.tabName ? { tabName: s.tabName } : {}),
       staticConfig: s.staticConfig ?? {},
       dynamicProps: s.dynamicProps ?? {},
       callbacks: s.callbacks ?? {},
@@ -64,9 +65,9 @@ const activities = (empty: string): Slot =>
   ({ id: 'slot-activities', componentName: 'RecordActivities', staticConfig: { title: 'Actions', emptyMessage: empty }, dynamicProps: { record: 'context.record.id' } });
 
 /** A property/value table over the page's record. */
-const details = (rows: [string, string][]): Slot => ({
-  id: 'slot-details', componentName: 'RecordList',
-  staticConfig: { title: 'Details', columns: [{ key: 'property', label: 'Property', width: 200 }, { key: 'value', label: 'Value' }], newLabel: '', selection: 'none', emptyMessage: 'No details.' },
+const details = (rows: [string, string][], o: { id?: string; title?: string; tabName?: string } = {}): Slot => ({
+  id: o.id ?? 'slot-details', componentName: 'RecordList', ...(o.tabName ? { tabName: o.tabName } : {}),
+  staticConfig: { title: o.title ?? 'Details', columns: [{ key: 'property', label: 'Property', width: 200 }, { key: 'value', label: 'Value' }], newLabel: '', selection: 'none', emptyMessage: 'No details.' },
   dynamicProps: { rows: '[ ' + rows.map(([label, expr], i) => `{ id: 'r${i}', property: '${label}', value: ${expr} }`).join(',\n  ') + ' ]' },
 });
 
@@ -119,7 +120,10 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
     record: 'rt_jobs',
     header: [
       header('{{ context.record.address }}', '{{ context.record.customer_name }} · {{ context.record.status }}'),
+      { id: 'slot-summary', componentName: 'Text', staticConfig: { text: "{{ invoke('act_summarise_findings', { job: context.record.id }) }}", style: 'caption' } },
       activities('Nothing can be done to this job right now.'),
+      // One section at a time (spec, *Pages*): Job, Inspection, Findings.
+      { id: 'slot-tabs', componentName: 'Tabs', staticConfig: { tabMode: 'switch' } },
     ],
     body: [
       details([
@@ -135,20 +139,44 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
         ['Scheduled', 'context.record.scheduled_at'],
         ['Inspector', 'context.record.inspector'],
         ['Instructions', 'context.record.instructions'],
+        ['Cancel reason', 'context.record.cancel_reason'],
+      ], { id: 'slot-job', title: 'Job', tabName: 'Job' }),
+      details([
         ['Access', 'context.record.access'],
         ['Weather', 'context.record.weather'],
         ['Pre-start checklist', 'context.record.checklist'],
+        ['Building type', 'context.record.building_type'],
+        ['Construction', 'context.record.construction'],
+        ['Roof cladding', 'context.record.roof_cladding'],
+        ['Footings', 'context.record.footings'],
+        ['Storeys', 'context.record.storeys'],
+        ['Approximate year built', 'context.record.year_built'],
+        ['Occupied', 'context.record.occupied'],
+        ['Furnished', 'context.record.furnished'],
+        ['People present', 'context.record.people_present'],
+        ['Water connected', 'context.record.water_connected'],
+        ['Electricity connected', 'context.record.electricity_connected'],
+        ['Gas connected', 'context.record.gas_connected'],
+        ['Signs of concealed defects', 'context.record.concealment'],
+        ['Concealment note', 'context.record.concealment_note'],
+      ], { id: 'slot-inspection', title: 'Inspection', tabName: 'Inspection' }),
+      details([
+        ['Major defects, compared with similar homes', 'context.record.major_incidence'],
+        ['Minor defects, compared with similar homes', 'context.record.minor_incidence'],
+        ['Overall condition', 'context.record.overall_condition'],
+        ['Overall assessment', 'context.record.overall_assessment'],
         ['Declaration confirmed', 'context.record.declaration_confirmed'],
-        ['Cancel reason', 'context.record.cancel_reason'],
-      ]),
-      { id: 'slot-findings-new', componentName: 'RunActivity', staticConfig: { label: 'Add finding', target: 'act_add_findings' }, dynamicProps: { record: 'context.record.id' } },
+      ], { id: 'slot-assessment', title: 'Assessment' }),
+      { id: 'slot-findings-new', componentName: 'RunActivity', tabName: 'Findings', staticConfig: { label: 'Add finding', target: 'act_add_findings' }, dynamicProps: { record: 'context.record.id' } },
       {
         id: 'slot-findings', componentName: 'RecordList',
         staticConfig: {
           title: 'Findings', sortable: true,
           columns: [
-            col('sequence', 'Area order', { type: 'int', width: 90 }), col('area', 'Area'), col('location', 'Location'), col('defect', 'Defect'),
-            col('category', 'Category', { width: 130 }), col('photos', 'Photos', { type: 'photo', width: 90 }),
+            col('sequence', 'Area order', { type: 'int', width: 90 }), col('area', 'Area'), col('location', 'Location'),
+            col('area_access', 'Access', { width: 120 }), col('defect', 'Defect'),
+            col('category', 'Category', { width: 120 }), col('safety_hazard', 'Safety hazard', { width: 110 }),
+            col('photos', 'Photos', { type: 'photo', width: 90 }),
             run('Update', 'act_update_findings'), run('Remove', 'act_remove_findings'), open('pages/finding'),
           ],
           newLabel: '', selection: 'one', emptyMessage: 'No findings yet.',
@@ -169,9 +197,12 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
       details([
         ['Inspection area', 'context.record.area.name'],
         ['Location', 'context.record.location'],
+        ['Access', 'context.record.area_access'],
+        ['Restriction', 'context.record.restriction.name'],
         ['Any defects?', 'context.record.has_defect'],
         ['Defect', 'context.record.defect.name'],
         ['Category', 'context.record.category.name'],
+        ['Safety hazard', 'context.record.safety_hazard'],
         ['Comments', 'context.record.comments'],
       ]),
       { id: 'slot-photos', componentName: 'Photos', staticConfig: { title: 'Photos' }, dynamicProps: { value: 'context.record.photos' } },
@@ -194,6 +225,12 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
     title: 'Defect Categories', list: 'act_list_defect_categories', create: 'act_create_defect_categories', newLabel: 'Create category',
     update: 'act_update_defect_categories', empty: 'No categories yet.',
     columns: [col('name', 'Name', { width: 160 }), col('meaning', 'Meaning')],
+  }),
+
+  'pages/access-restrictions': dataPage({
+    title: 'Access Restrictions', list: 'act_list_access_restrictions', create: 'act_create_access_restrictions', newLabel: 'Create restriction',
+    update: 'act_update_access_restrictions', empty: 'No access restrictions yet.',
+    columns: [col('name', 'Name')],
   }),
 
   'pages/code-references': dataPage({
@@ -239,6 +276,7 @@ const MENU = [
   { id: 'menu-inspection-areas', label: 'Inspection Areas', page: 'pages/inspection-areas' },
   { id: 'menu-defects', label: 'Defects', page: 'pages/defects' },
   { id: 'menu-defect-categories', label: 'Defect Categories', page: 'pages/defect-categories' },
+  { id: 'menu-access-restrictions', label: 'Access Restrictions', page: 'pages/access-restrictions' },
   { id: 'menu-code-references', label: 'Code References', page: 'pages/code-references' },
   { id: 'menu-area-defect-mappings', label: 'Area Defect Mappings', page: 'pages/area-defect-mappings' },
   { id: 'menu-defect-code-reference-mappings', label: 'Defect Code Reference Mappings', page: 'pages/defect-code-reference-mappings' },
@@ -276,7 +314,7 @@ if (errors > 0 || dry) { await closeDb(db); process.exit(errors > 0 ? 1 : 0); }
 
 for (const [path, def] of Object.entries(PAGES)) {
   await putPage(db, SOLUTION, path, def);
-  const { version } = await publishPage(db, SOLUTION, path, 'Inspections Part 1 — built by script (inspections-pages.ts).', PUBLISHED_BY);
+  const { version } = await publishPage(db, SOLUTION, path, 'Inspections Part 1 — built by script (inspections-pages.ts); 2026-10-11 revision.', PUBLISHED_BY);
   console.log(`  + ${path} (v${version})`);
 }
 await putDefaultMenu(db, SOLUTION, MENU);

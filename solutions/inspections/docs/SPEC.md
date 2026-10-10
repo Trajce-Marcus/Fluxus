@@ -64,17 +64,29 @@ order:
 
 1. **Inspection area** — one of the areas list.
 2. **Location** — free text, e.g. "Bedroom 1".
-3. **Any defects?** — a true / false dropdown for now; a yes/no control later.
-4. **Defect** — only when true, and then required. A search dialog listing
+3. **Access** — Fully inspected, Restricted, Not inspected or Not applicable
+   (added 2026-10-11). Feeds the report's Access and Restrictions.
+4. **Restriction** — only when Restricted or Not inspected, and then required.
+   One of the access restrictions list (furniture, stored goods, insulation…).
+5. **Any defects?** — only when Fully inspected or Restricted. A true / false
+   dropdown for now; a yes/no control later.
+6. **Defect** — only when true, and then required. A search dialog listing
    **only the defects mapped to the chosen area**. A defect already picked stays
    picked if the area changes (the platform's picker does not clear it), so
    Add Finding and Update Finding **refuse a defect not mapped to the area**.
-5. **Category** — only when true, and then required. One of the defect
-   categories (Major defect, Minor defect, Safety hazard); the inspector
-   chooses, because the same defect can be either (a hairline crack and a
-   10 mm crack are both cracking).
-6. **Photos** — any number, with or without a defect.
-7. **Comments / notes** — with or without a defect.
+7. **Category** — only when true, and then required. Major defect or Minor
+   defect; the inspector chooses, because the same defect can be either (a
+   hairline crack and a 10 mm crack are both cracking).
+8. **Safety hazard** — only when true, and then required; true / false.
+   **Separate from the category** (2026-10-11): a minor defect can also be a
+   safety hazard.
+9. **Photos** — any number, with or without a defect.
+10. **Comments / notes** — with or without a defect.
+
+Timber pest items — evidence of termite damage, borers, timber in contact with
+soil — are **ordinary defects** in the defects list, mapped to areas and
+recorded like any other (2026-10-11). The firm does not do timber pest
+inspections, so there is no separate checklist.
 
 A finding can be reopened and changed (**Update Finding**) or deleted
 altogether (**Remove Finding**, a button on its row) until the inspection is
@@ -83,13 +95,57 @@ trace. Several
 defects in the same area and location are several findings.
 
 **Every area needs at least one finding** before the inspection can be
-finished, even if it is "no defects".
+finished, even if it is "no defects". A finding marked **Not inspected** or
+**Not applicable** counts — an area with no access is recorded as such, never
+as "no defects", and a Subfloor area can be marked Not applicable on a slab
+home.
 
 The job's findings show as a list on the job page — a `RecordList` to start.
 
+## Starting the inspection and the assessment
+
+Added 2026-10-11, for the report's Property and Inspection Information,
+Conclusion and Overall Assessment.
+
+**Start Inspection** captures, on site: access, weather and the pre-start
+checklist (as before), and the **property facts**:
+
+| Fact | Answer |
+| --- | --- |
+| Building type | House, Unit, Townhouse, Apartment |
+| Construction | Brick veneer, Double brick, Weatherboard, Clad frame, Rendered, Mud brick, Other |
+| Roof cladding | Concrete tiles, Terracotta tiles, Metal sheet, Slate, Other |
+| Footings | Concrete slab, Stumps, Strip footings, Other |
+| Storeys | a number |
+| Approximate year built | a number, optional |
+| Occupied | true / false |
+| Furnished | Unfurnished, Partly furnished, Fully furnished |
+| People present | free text, optional |
+| Water, electricity, gas connected | true / false each, optional |
+| Signs of concealed defects | true / false, optional, with a note |
+
+The answer lists are fixed for now; any of them can become master data later.
+**Update Inspection Details** changes them while the inspection is in progress.
+
+**Assessment** records the inspector's judgement, rerunnable while the
+inspection is in progress:
+
+| Question | Answer |
+| --- | --- |
+| Major defects, compared with similar homes | Low, Typical, High |
+| Minor defects, compared with similar homes | Low, Typical, High |
+| Overall condition | Below average, Average, Above average |
+| Overall assessment | free text |
+
+**Finish Inspection refuses** until the Assessment is done.
+
+The defect **counts** — major, minor, safety hazards — are worked out from the
+findings, never entered. A finding recorded before 2026-10-11 with the expired
+"Safety hazard" category counts as a safety hazard.
+
 ## Master data
 
-Four lists and two mappings, used by the walk-through. **Each sample-data file
+Five lists and two mappings, used by the walk-through. **Each sample-data file
 is a record type with its own page**, and that page is where the data is
 entered and maintained. Sample data is in [sample-data/](sample-data/).
 
@@ -105,8 +161,13 @@ record's Update activity.
   Interiors, Bathroom(s), Kitchen & Laundry, Roof Void.
 - **Defects** — anything observable on a walk-through, each with a default
   category.
-- **Defect categories** — Major defect, Minor defect, Safety hazard (AS 4349.1),
-  each with its meaning.
+- **Defect categories** — Major defect and Minor defect, each with its meaning.
+  "Safety hazard" was a category until 2026-10-11 and is now **expired**:
+  safety is its own flag on a finding. Old findings keep it as history.
+- **Access restrictions** — why an area was not fully inspected: furniture and
+  belongings, stored goods, vehicles, insulation, ducting, low clearance, height
+  or safety, vegetation, locked or no key, no access hatch, wet or slippery
+  surfaces. Its own record type and page, like the other lists.
 - **Code references** — code clauses with an extract of their text.
 - **Area ↔ defect** — which defects can be recorded in which area. Drives the
   defect list in Add Finding.
@@ -135,6 +196,13 @@ record's Update activity.
 | `access` | text, multiline | captured at Start Inspection |
 | `weather` | text | captured at Start Inspection |
 | `checklist` | text, multiline | captured at Start Inspection; a brief pre-start checklist |
+| `building_type`, `construction`, `roof_cladding`, `footings` | text (pick list) | captured at Start Inspection |
+| `storeys`, `year_built` | int | captured at Start Inspection |
+| `occupied`, `water_connected`, `electricity_connected`, `gas_connected`, `concealment` | text, `true` / `false` | captured at Start Inspection |
+| `furnished` | text (pick list) | captured at Start Inspection |
+| `people_present`, `concealment_note` | text | captured at Start Inspection |
+| `major_incidence`, `minor_incidence`, `overall_condition` | text (pick list) | captured by Assessment |
+| `overall_assessment` | text, multiline | captured by Assessment |
 | `declaration_confirmed` | text | `true` / `false` (dropdown); captured at Finish Inspection |
 
 ### `rt_findings`
@@ -144,9 +212,12 @@ record's Update activity.
 | `job` | ref → `rt_jobs` | |
 | `area` | ref → `rt_inspection_areas` | |
 | `location` | text | |
-| `has_defect` | text | `true` / `false` (dropdown) |
+| `area_access` | text (pick list) | Fully inspected / Restricted / Not inspected / Not applicable; blank on findings recorded before 2026-10-11 |
+| `restriction` | ref → `rt_access_restrictions` | blank unless Restricted or Not inspected |
+| `has_defect` | text | `true` / `false` (dropdown); blank when not inspected |
 | `defect` | ref → `rt_defects` | blank when no defect |
 | `category` | ref → `rt_defect_categories` | blank when no defect |
+| `safety_hazard` | text | `true` / `false`; blank when no defect |
 | `photos` | photo, multi | |
 | `comments` | text, multiline | |
 
@@ -173,6 +244,13 @@ record's Update activity.
 | --- | --- | --- |
 | `name` | text | |
 | `meaning` | text, multiline | |
+
+### `rt_access_restrictions`
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `name` | text | |
+| `expires_on` | date | |
 
 ### `rt_code_references`
 
@@ -224,8 +302,11 @@ the way existing solutions do it.
 | `act_accept_jobs` | Accept Quote | UPDATE | — | Quoted | Accepted |
 | `act_cancel_jobs` | Cancel Job | UPDATE | reason (required) | not Cancelled or Inspected | Cancelled |
 | `act_schedule_jobs` | Schedule | UPDATE | date/time, inspector's name, instructions | Accepted or Scheduled | Scheduled |
-| `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist | Scheduled | In Progress |
-| `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress, and every area has a finding | Inspected |
+| `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist, and the property facts | Scheduled | In Progress |
+| `act_update_jobs` | Update Inspection Details | UPDATE | the same as Start Inspection | In Progress | unchanged |
+| `act_assess_jobs` | Assessment | UPDATE | major incidence, minor incidence, overall condition, overall assessment | In Progress | unchanged |
+| `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress, every area has a finding, and the Assessment is done | Inspected |
+| `act_summarise_findings` | — | GET | job | — | — (one line of counts for the Job page) |
 | `act_list_jobs` | — | GET | — | — | — |
 
 Schedule is rerun to reschedule. Quote is rerun to change the price. Create's
@@ -256,6 +337,12 @@ before hook checks it and its refusal names the areas still missing.
   defects mapped to `attributes.area`, filtered by the search `term`. It shows
   only when any defects is `true`, and is then required; so is category.
 - **Category** is a reference whose datasource is `act_search_defect_categories`.
+- **Restriction** is a reference whose datasource is
+  `act_search_access_restrictions`.
+- **Hidden answers are cleared** by the hook: when Access is Not inspected or
+  Not applicable, any defects, defect, category and safety hazard are cleared;
+  when Access is Fully inspected or Not applicable, the restriction is cleared;
+  when Any defects? is false, defect, category and safety hazard are cleared.
 - **The before hook refuses** a defect not mapped to the area. Only the
   mapping's expiry is checked, never the area's or the defect's own
   (2026-10-11): a record's own expiry matters only when mappings are put
@@ -271,7 +358,8 @@ before hook checks it and its refusal names the areas still missing.
 
 ### Master data workflows
 
-Areas, defects, defect categories and code references each get the same four,
+Areas, defects, defect categories, access restrictions and code references
+each get the same four,
 e.g. for defects:
 
 | Activity | Display name | Kind | Captures |
@@ -315,12 +403,22 @@ not open.
 1. **Jobs** — list of jobs (address, customer, status, scheduled date,
    inspector), with a button for Create Pre-Purchase Job. The way in, and the
    only place a job is created. A row opens the Job page.
-2. **Job** — header with address and status; the job's activities; its
-   details; its findings as a `RecordList` (area order, area, location, defect,
-   category, photo count), with an Add Finding button, and Update Finding and
-   Remove Finding on each row. A row opens the Finding page. **Findings show in
-   the order entered**; clicking the Area order heading sorts them by area,
-   again reverses, and a third click returns to the order entered.
+2. **Job** — always at the top: the header (address; customer and status), a
+   **summary line of counts** ("Major defects: 3 · Minor defects: 5 · Safety
+   hazards: 1"), the job's activities, and a **tab strip** that shows one
+   section at a time (2026-10-11):
+   - **Job** — customer, email, address, details, notes, quote, schedule,
+     inspector, instructions, cancel reason.
+   - **Inspection** — what Start Inspection captured (access, weather,
+     checklist, property facts), the Assessment, and the declaration.
+   - **Findings** — an Add Finding button, and the findings as a `RecordList`
+     (area order, area, location, access, defect, category, safety hazard,
+     photo count) with Update Finding and Remove Finding on each row. A row
+     opens the Finding page. **Findings show in the order entered**; clicking
+     the Area order heading sorts them by area, again reverses, and a third
+     click returns to the order entered.
+
+   Part 2's report and payment details will most likely be a fourth tab.
 3. **Finding** — one finding with its photos (`Photos`).
 
 One page per sample-data file — the source of that data:
@@ -334,10 +432,11 @@ One page per sample-data file — the source of that data:
 | — | **Code Reference** | one code reference, with its full extract, attribution and link |
 | area_defects.csv | **Area Defect Mappings** | list (area, defect); add; update per row |
 | defect_code_references.csv | **Defect Code Reference Mappings** | list (defect, code reference); add; update per row |
+| access_restrictions.csv | **Access Restrictions** | list (name); create; update per row |
 
 Every data page's list shows the expiry date as a column.
 
-**Menu** (the solution's default menu): Jobs, then the six data pages.
+**Menu** (the solution's default menu): Jobs, then the seven data pages.
 
 ## Decided while writing
 
@@ -348,12 +447,23 @@ Claude's calls, approved by the user 2026-10-10:
 - Schedule is allowed from Accepted or Scheduled only; once started, a job is
   not rescheduled.
 - Codes are unique; the display fields above.
+- (2026-10-11) The property-fact and assessment answer lists; storeys and year
+  built as numbers; utilities as three true/false answers (a script cannot join
+  a list into words for display).
+- (2026-10-11) Update Inspection Details, so property facts can be corrected
+  during the walk-through; Finish Inspection requiring the Assessment.
+- (2026-10-11) The finding's access field is `area_access`, because `access` is
+  already the job's free-text access note.
+- (2026-10-11) The summary line counts by category **name** ("Major defect",
+  "Minor defect"), so renaming a category breaks it.
+- (2026-10-11) No spec review for this change, by the user's decision — a small
+  adjustment to what is built; the cold test still runs.
 - One verb for edits: `update`.
 - The ids in this spec are approved as written.
 
 ## Built — Part 1
 
-Built 2026-10-10 into Neon dev by three scripts in `packages/server/scripts/`:
+Built 2026-10-10 (revised 2026-10-11) into Neon dev by three scripts in `packages/server/scripts/`:
 `inspections-model.ts` (solution `inspections`, operation `inspections-dev`,
 the model), `inspections-pages.ts` (ten pages and the default menu) and
 `inspections-sample-data.ts` (the sample-data files and eight invented jobs at
@@ -379,14 +489,25 @@ falls back to its plain list of pages. Raised, not worked around.
 - **Refining the master data** — more defects, their default categories, and
   how code references are cited for an existing house.
 - **The report** — producing it is [Part 2](#part-2--after-inspected). Its
-  sections 11–16 (Conclusion, Property and Inspection Information, Access and
-  Restrictions, Timber Pest Findings, Conducive Conditions, Overall Assessment)
-  are in neither part; they come later.
-- **Timber pest** findings.
+  structure is not settled. What is settled (2026-10-11): sections 14 Timber
+  Pest Findings and 15 Conducive Conditions are **dropped** (the firm does no
+  timber pest inspections); Conclusion and Overall Assessment come from the
+  Assessment and the counts; Property and Inspection Information from Start
+  Inspection; Access and Restrictions from the findings' access.
+- **Recommendations per finding** — not wanted (2026-10-11); advice goes in the
+  comments.
+- **Cost estimates** — none.
+- **Timber pest inspections** (AS 4349.3) — not offered; timber pest defects are
+  ordinary defects.
 - Mandatory and Independent Stage Inspections.
 
 ## Open
 
+- **Expiry takes effect mid-morning, not at midnight** (found 2026-10-11).
+  Scripts compare dates in UTC, so a record with an expiry date of 11 October
+  stops being offered at 11:00 on 11 October in Melbourne (10:00 outside
+  daylight saving). The platform has no operation time zone for a script to
+  ask. Raised as a platform gap, not worked around.
 - **Code references on old findings.** The report reads a finding's code
   references through the mapping, so changing the mapping later changes what an
   old report would cite. Whether a finding keeps its own copy.
@@ -518,6 +639,8 @@ One record, maintained by the firm.
 | `act_add_findings` Add Finding | the job is In Progress | the job is In Progress or Inspected |
 | `act_update_findings` Update Finding | the job is In Progress | the job is In Progress or Inspected |
 | `act_remove_findings` Remove Finding | In Progress | In Progress or Inspected |
+| `act_update_jobs` Update Inspection Details | In Progress | In Progress or Inspected |
+| `act_assess_jobs` Assessment | In Progress | In Progress or Inspected |
 | `act_quote_jobs` Quote | not Cancelled or Inspected | not Cancelled, Inspected, Report Ready, Awaiting Payment or Paid |
 
 #### `wf_jobs` gains

@@ -78,6 +78,8 @@ const field = (key: string, label: string, type = 'text', fk?: { rt: string; dis
 const text = (key: string, label: string, description = '', multiline = false) =>
   ({ key, label, description, type: 'text', ...(multiline ? { type_config: { multiline: true } } : {}) });
 const TRUE_FALSE = { datasource: "['true', 'false']" };
+const pick = (key: string, label: string, values: string[]) =>
+  ({ key, label, description: '', type: 'list', type_config: { datasource: `[${values.map((v) => `'${v}'`).join(', ')}]` } });
 
 const ATTRIBUTES = [
   // jobs
@@ -96,17 +98,43 @@ const ATTRIBUTES = [
   text('weather', 'Weather'),
   text('checklist', 'Pre-start checklist', '', true),
   { key: 'declaration_confirmed', label: 'I confirm the inspection was carried out as recorded', description: '', type: 'list', type_config: TRUE_FALSE },
+  // property facts (Start Inspection) — fixed answer lists for now (spec,
+  // *Starting the inspection and the assessment*)
+  pick('building_type', 'Building type', ['House', 'Unit', 'Townhouse', 'Apartment']),
+  pick('construction', 'Construction', ['Brick veneer', 'Double brick', 'Weatherboard', 'Clad frame', 'Rendered', 'Mud brick', 'Other']),
+  pick('roof_cladding', 'Roof cladding', ['Concrete tiles', 'Terracotta tiles', 'Metal sheet', 'Slate', 'Other']),
+  pick('footings', 'Footings', ['Concrete slab', 'Stumps', 'Strip footings', 'Other']),
+  { key: 'storeys', label: 'Storeys', description: '', type: 'int' },
+  { key: 'year_built', label: 'Approximate year built', description: '', type: 'int' },
+  { key: 'occupied', label: 'Occupied', description: '', type: 'list', type_config: TRUE_FALSE },
+  pick('furnished', 'Furnished', ['Unfurnished', 'Partly furnished', 'Fully furnished']),
+  text('people_present', 'People present', 'e.g. vendor, agent, buyer'),
+  { key: 'water_connected', label: 'Water connected', description: '', type: 'list', type_config: TRUE_FALSE },
+  { key: 'electricity_connected', label: 'Electricity connected', description: '', type: 'list', type_config: TRUE_FALSE },
+  { key: 'gas_connected', label: 'Gas connected', description: '', type: 'list', type_config: TRUE_FALSE },
+  { key: 'concealment', label: 'Signs of concealed defects', description: '', type: 'list', type_config: TRUE_FALSE },
+  text('concealment_note', 'Concealment note', 'What was seen.', true),
+  // assessment
+  pick('major_incidence', 'Major defects, compared with similar homes', ['Low', 'Typical', 'High']),
+  pick('minor_incidence', 'Minor defects, compared with similar homes', ['Low', 'Typical', 'High']),
+  pick('overall_condition', 'Overall condition', ['Below average', 'Average', 'Above average']),
+  text('overall_assessment', 'Overall assessment', '', true),
 
   // findings
   { key: 'job', label: 'Job', description: 'The job the finding belongs to. Taken from the Job page, never asked for.', type: 'reference', type_config: { fk_record_type: 'rt_jobs' } },
   { key: 'area', label: 'Inspection area', description: '', type: 'reference',
     type_config: { fk_record_type: 'rt_inspection_areas', datasource: "invoke('act_search_inspection_areas', { term: term })" } },
   text('location', 'Location', 'e.g. Bedroom 1'),
+  // `area_access`, not `access`: `access` is the job's free-text access note.
+  pick('area_access', 'Access', ['Fully inspected', 'Restricted', 'Not inspected', 'Not applicable']),
+  { key: 'restriction', label: 'Restriction', description: 'Why the area was not fully inspected.', type: 'reference',
+    type_config: { fk_record_type: 'rt_access_restrictions', datasource: "invoke('act_search_access_restrictions', { term: term })" } },
   { key: 'has_defect', label: 'Any defects?', description: '', type: 'list', type_config: TRUE_FALSE },
   { key: 'defect', label: 'Defect', description: 'Only the defects mapped to the chosen area.', type: 'reference',
     type_config: { fk_record_type: 'rt_defects', datasource: "invoke('act_search_area_defects', { area: attributes.area, term: term })" } },
   { key: 'category', label: 'Category', description: '', type: 'reference',
     type_config: { fk_record_type: 'rt_defect_categories', datasource: "invoke('act_search_defect_categories', { term: term })" } },
+  { key: 'safety_hazard', label: 'Safety hazard', description: 'Separate from the category — a minor defect can be a safety hazard.', type: 'list', type_config: TRUE_FALSE },
   { key: 'photos', label: 'Photos', description: '', type: 'photo', type_config: { multi: true } },
   text('comments', 'Comments', '', true),
 
@@ -161,23 +189,47 @@ const RECORD_TYPES = [
     field('access', 'Access'),
     field('weather', 'Weather'),
     field('checklist', 'Pre-start checklist'),
+    field('building_type', 'Building type'),
+    field('construction', 'Construction'),
+    field('roof_cladding', 'Roof cladding'),
+    field('footings', 'Footings'),
+    field('storeys', 'Storeys', 'int'),
+    field('year_built', 'Approximate year built', 'int'),
+    field('occupied', 'Occupied'),
+    field('furnished', 'Furnished'),
+    field('people_present', 'People present'),
+    field('water_connected', 'Water connected'),
+    field('electricity_connected', 'Electricity connected'),
+    field('gas_connected', 'Gas connected'),
+    field('concealment', 'Signs of concealed defects'),
+    field('concealment_note', 'Concealment note'),
+    field('major_incidence', 'Major defects, compared with similar homes'),
+    field('minor_incidence', 'Minor defects, compared with similar homes'),
+    field('overall_condition', 'Overall condition'),
+    field('overall_assessment', 'Overall assessment'),
     field('declaration_confirmed', 'Declaration confirmed'),
   ] },
   { id: 'rt_findings', name: 'Findings', description: 'In this area, at this location, this defect (or none), with photos and comments.', workflow_ref: 'wf_findings', custom_fields: [
     field('job', 'Job', 'fk_ref', { rt: 'rt_jobs', display: 'address' }),
     field('area', 'Inspection area', 'fk_ref', { rt: 'rt_inspection_areas', display: 'name' }),
     field('location', 'Location'),
+    field('area_access', 'Access'),
+    field('restriction', 'Restriction', 'fk_ref', { rt: 'rt_access_restrictions', display: 'name' }),
     field('has_defect', 'Any defects?'),
     field('defect', 'Defect', 'fk_ref', { rt: 'rt_defects', display: 'name' }),
     field('category', 'Category', 'fk_ref', { rt: 'rt_defect_categories', display: 'name' }),
+    field('safety_hazard', 'Safety hazard'),
     field('photos', 'Photos', 'photo'),
     field('comments', 'Comments'),
   ] },
   { id: 'rt_inspection_areas', name: 'Inspection Areas', description: 'The walk-through areas, in report order.', workflow_ref: 'wf_inspection_areas', custom_fields: [
     field('code', 'Code'), field('name', 'Name'), field('sequence', 'Order', 'int'), EXPIRES,
   ] },
-  { id: 'rt_defect_categories', name: 'Defect Categories', description: 'AS 4349.1 — major defect, minor defect, safety hazard.', workflow_ref: 'wf_defect_categories', custom_fields: [
+  { id: 'rt_defect_categories', name: 'Defect Categories', description: 'Major defect and minor defect. Safety is a separate flag on a finding.', workflow_ref: 'wf_defect_categories', custom_fields: [
     field('name', 'Name'), field('meaning', 'Meaning'), EXPIRES,
+  ] },
+  { id: 'rt_access_restrictions', name: 'Access Restrictions', description: 'Why an area was not fully inspected.', workflow_ref: 'wf_access_restrictions', custom_fields: [
+    field('name', 'Name'), EXPIRES,
   ] },
   { id: 'rt_defects', name: 'Defects', description: 'Anything observable on a walk-through.', workflow_ref: 'wf_defects', custom_fields: [
     field('code', 'Code'), field('name', 'Name'), field('description', 'Description'),
@@ -200,6 +252,15 @@ const RECORD_TYPES = [
 // ── jobs ────────────────────────────────────────────────────────────────────
 
 const status = (s: string) => `context.record.update({ status: '${s}' })`;
+
+/** What Start Inspection asks, and Update Inspection Details corrects. */
+const INSPECTION_DETAILS = (): Usage[] => [
+  use('access'), use('weather'), use('checklist'),
+  req('building_type'), req('construction'), req('roof_cladding'), req('footings'), req('storeys'), use('year_built'),
+  req('occupied'), req('furnished'), use('people_present'),
+  use('water_connected'), use('electricity_connected'), use('gas_connected'),
+  use('concealment'), use('concealment_note', { show_condition: "attributes.concealment = 'true'" }),
+];
 
 const JOB_ACTIVITIES = [
   act({
@@ -240,10 +301,22 @@ const JOB_ACTIVITIES = [
   }),
   act({
     id: 'act_start_jobs', name: 'Start Inspection', record_map: 'UPDATE',
-    description: 'On site: access, weather and the pre-start checklist.',
+    description: 'On site: access, weather, the pre-start checklist and the property facts.',
     show_condition: "context.record.status = 'Scheduled'",
-    attributes: [use('access'), use('weather'), use('checklist')],
+    attributes: INSPECTION_DETAILS(),
     after_hook: status('In Progress'),
+  }),
+  act({
+    id: 'act_update_jobs', name: 'Update Inspection Details', record_map: 'UPDATE',
+    description: 'Corrects what Start Inspection captured.',
+    show_condition: "context.record.status = 'In Progress'",
+    attributes: INSPECTION_DETAILS(),
+  }),
+  act({
+    id: 'act_assess_jobs', name: 'Assessment', record_map: 'UPDATE',
+    description: "The inspector's judgement: incidence of defects, overall condition, overall assessment. Rerunnable.",
+    show_condition: "context.record.status = 'In Progress'",
+    attributes: [req('major_incidence'), req('minor_incidence'), req('overall_condition'), req('overall_assessment')],
   }),
   act({
     id: 'act_finish_jobs', name: 'Finish Inspection', record_map: 'UPDATE',
@@ -251,6 +324,9 @@ const JOB_ACTIVITIES = [
     show_condition: "context.record.status = 'In Progress'",
     attributes: [req('declaration_confirmed', { validation: "value = 'true'", validation_message: 'Confirm the declaration to finish the inspection.' })],
     before_hook: [
+      'if context.record.major_incidence is null or context.record.minor_incidence is null or context.record.overall_condition is null or context.record.overall_assessment is null {',
+      "  fail('Complete the Assessment before finishing the inspection.')",
+      '}',
       "let missing = ''",
       `for each a in records.inspection_areas.where(${UNEXPIRED} and not (id in records.findings.where(job = context.record.id).values(area))).orderBy(sequence) {`,
       "  missing = iif(missing = '', a.name, missing + ', ' + a.name)",
@@ -270,16 +346,32 @@ const JOB_ACTIVITIES = [
 
 // ── findings ────────────────────────────────────────────────────────────────
 
-const DEFECT_SHOWN = "attributes.has_defect = 'true'";
+const INSPECTED = "(attributes.area_access = 'Fully inspected' or attributes.area_access = 'Restricted')";
+const RESTRICTED = "(attributes.area_access = 'Restricted' or attributes.area_access = 'Not inspected')";
+const DEFECT_SHOWN = `${INSPECTED} and attributes.has_defect = 'true'`;
 const MAPPED = `records.area_defects.where(area = attributes.area and defect = attributes.defect and ${UNEXPIRED}).count = 0`;
 const NOT_MAPPED_MESSAGE = "fail('That defect is not listed for this area. Pick one from the defects for the chosen area.')";
-const CLEAR_DEFECT = `if attributes.has_defect = 'false' {\n  context.record.update({ defect: null, category: null })\n}`;
+// Hidden answers are cleared, so a finding that changes its answers does not
+// keep stale ones.
+const CLEAR_HIDDEN = [
+  `if not ${INSPECTED} {`,
+  '  context.record.update({ has_defect: null, defect: null, category: null, safety_hazard: null })',
+  "} else if attributes.has_defect = 'false' {",
+  '  context.record.update({ defect: null, category: null, safety_hazard: null })',
+  '}',
+  `if not ${RESTRICTED} {`,
+  '  context.record.update({ restriction: null })',
+  '}',
+].join('\n');
 const FINDING_QUESTIONS = (): Usage[] => [
   req('area'),
   req('location'),
-  req('has_defect'),
+  req('area_access'),
+  req('restriction', { show_condition: RESTRICTED }),
+  req('has_defect', { show_condition: INSPECTED }),
   req('defect', { show_condition: DEFECT_SHOWN }),
   req('category', { show_condition: DEFECT_SHOWN }),
+  req('safety_hazard', { show_condition: DEFECT_SHOWN }),
   use('photos'),
   use('comments'),
 ];
@@ -299,11 +391,11 @@ const FINDING_ACTIVITIES = [
       "if job.status <> 'In Progress' {",
       "  fail('Findings can be added only while the inspection is in progress.')",
       '}',
-      "if attributes.has_defect = 'true' and " + MAPPED + ' {',
+      `if ${DEFECT_SHOWN} and ` + MAPPED + ' {',
       '  ' + NOT_MAPPED_MESSAGE,
       '}',
     ].join('\n'),
-    after_hook: CLEAR_DEFECT,
+    after_hook: CLEAR_HIDDEN,
   }),
   act({
     id: 'act_update_findings', name: 'Update Finding', record_map: 'UPDATE',
@@ -313,13 +405,13 @@ const FINDING_ACTIVITIES = [
     // The mapping check applies only when the area or defect is being changed,
     // so an old finding whose defect has since expired can still be updated.
     before_hook: [
-      "if attributes.has_defect = 'true' and (attributes.area <> context.record.area or attributes.defect <> context.record.defect) {",
+      `if ${DEFECT_SHOWN} and (attributes.area <> context.record.area or attributes.defect <> context.record.defect) {`,
       '  if ' + MAPPED + ' {',
       '    ' + NOT_MAPPED_MESSAGE,
       '  }',
       '}',
     ].join('\n'),
-    after_hook: CLEAR_DEFECT,
+    after_hook: CLEAR_HIDDEN,
   }),
   act({
     id: 'act_remove_findings', name: 'Remove Finding', record_map: 'DELETE',
@@ -332,7 +424,19 @@ const FINDING_ACTIVITIES = [
     // Area order is the `sequence` column, sorted by clicking its heading.
     description: "One job's findings, in the order entered.",
     attributes: [use('job')],
-    returns: 'records.findings.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, defect: defect.name, category: category.name, photos, comments)',
+    returns: 'records.findings.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, area_access, restriction: restriction.name, defect: defect.name, category: category.name, safety_hazard, photos, comments)',
+  }),
+  act({
+    id: 'act_summarise_findings', name: 'Summarise Findings', record_map: 'GET',
+    // Counts by category NAME — renaming a category breaks this. A finding
+    // recorded with the expired "Safety hazard" category counts as a hazard.
+    description: "One line of counts for the Job page: major defects, minor defects, safety hazards.",
+    attributes: [use('job')],
+    returns: [
+      "'Major defects: ' + records.findings.where(job = attributes.job and category in records.defect_categories.where(name = 'Major defect').values(id)).count +",
+      "' · Minor defects: ' + records.findings.where(job = attributes.job and category in records.defect_categories.where(name = 'Minor defect').values(id)).count +",
+      "' · Safety hazards: ' + records.findings.where(job = attributes.job and (safety_hazard = 'true' or category in records.defect_categories.where(name = 'Safety hazard').values(id))).count",
+    ].join('\n'),
   }),
 ];
 
@@ -393,6 +497,12 @@ const CATEGORY_ACTIVITIES = masterData({
   plural: 'defect_categories', singular: 'Category', pluralName: 'Categories', collection: 'defect_categories',
   fields: ['name', 'meaning'], required: ['name'],
   listSelect: 'id, name, meaning, expires_on', orderBy: 'name',
+  searchFields: ['name'], searchSelect: 'id, name', uniqueCode: false,
+});
+const RESTRICTION_ACTIVITIES = masterData({
+  plural: 'access_restrictions', singular: 'Restriction', collection: 'access_restrictions',
+  fields: ['name'], required: ['name'],
+  listSelect: 'id, name, expires_on', orderBy: 'name',
   searchFields: ['name'], searchSelect: 'id, name', uniqueCode: false,
 });
 const DEFECT_ACTIVITIES = masterData({
@@ -477,6 +587,7 @@ const WORKFLOWS: [ReturnType<typeof flow>, ReturnType<typeof act>[]][] = [
   [flow('wf_findings', 'Findings', 'Recording what the walk-through found.', FINDING_ACTIVITIES), FINDING_ACTIVITIES],
   [flow('wf_inspection_areas', 'Inspection Areas', 'Maintaining the areas.', AREA_ACTIVITIES), AREA_ACTIVITIES],
   [flow('wf_defect_categories', 'Defect Categories', 'Maintaining the categories.', CATEGORY_ACTIVITIES), CATEGORY_ACTIVITIES],
+  [flow('wf_access_restrictions', 'Access Restrictions', 'Maintaining the access restrictions.', RESTRICTION_ACTIVITIES), RESTRICTION_ACTIVITIES],
   [flow('wf_defects', 'Defects', 'Maintaining the defects.', [...DEFECT_ACTIVITIES, SEARCH_AREA_DEFECTS]), [...DEFECT_ACTIVITIES, SEARCH_AREA_DEFECTS]],
   [flow('wf_code_references', 'Code References', 'Maintaining the code references.', CODE_REFERENCE_ACTIVITIES), CODE_REFERENCE_ACTIVITIES],
   [flow('wf_area_defects', 'Area Defect Mappings', 'Which defects can be recorded in which area.', AREA_DEFECT_ACTIVITIES), AREA_DEFECT_ACTIVITIES],

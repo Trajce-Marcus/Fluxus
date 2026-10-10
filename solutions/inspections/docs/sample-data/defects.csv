@@ -35,3 +35,8 @@ D33,Relief valve drain not discharging safely,"Relief or expansion valve drain m
 D34,Ceiling insulation missing or displaced,Gaps in insulation or batts disturbed by trades.,Minor defect
 D35,Roof framing damaged or altered,"Cut, cracked or sagging rafters, struts or purlins.",Major defect
 D36,Evidence of roof leaks in roof space,"Water stains on framing, sarking or top of ceiling linings.",Major defect
+D37,Evidence of termite damage or workings,"Mud leads, termite workings, or damaged or hollow-sounding timber.",Major defect
+D38,Borer damage to timber,"Exit holes or frass in flooring, framing or other seasoned timber.",Minor defect
+D39,Timber in contact with soil,"Posts, sleepers, fences or framing touching the ground.",Minor defect
+D40,Slab edge covered,"Paving, soil or garden beds covering the slab edge, hiding termite entry.",Minor defect
+D41,Garden beds or mulch against walls,"Watered garden beds or mulch built up against the house.",Minor defect

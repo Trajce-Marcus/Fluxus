@@ -11,6 +11,7 @@ are placeholders, not field names.
 | `code_references.csv` | Code clauses with an extract of their text |
 | `area_defects.csv` | Which defects can be recorded in which area |
 | `defect_code_references.csv` | Which code clauses relate to which defect |
+| `access_restrictions.csv` | Why an area was not fully inspected (added 2026-10-11) |
 
 ## About the code references
 
@@ -29,9 +30,17 @@ are placeholders, not field names.
 
 ## About the categories
 
+**Safety hazard is no longer a category** (2026-10-11): safety is its own flag
+on a finding, so "Safety hazard" is expired in the app and kept only as
+history. It stays in `defect_categories.csv`, and as the default category of the
+defects that had it, until the master data is refined.
+
 Each defect's category is a suggested default. Whether a particular finding is
 major or minor is judged on site — a hairline crack and a 10 mm crack are the
 same defect.
 
-Termite and timber pest items are left out: the timber pest sections are not
-part of the walk-through capture.
+**Timber pest items are ordinary defects** (2026-10-11): D37–D41 (termite
+damage, borers, timber touching soil, covered slab edge, garden beds against
+walls), mapped to the areas where they are seen. The firm does no timber pest
+inspections, so there is no separate checklist. Written for this sample, not
+checked against AS 4349.3.
