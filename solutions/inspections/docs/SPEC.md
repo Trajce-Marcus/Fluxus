@@ -402,11 +402,15 @@ search term — the Add Finding defect dialog.
 
 ## Roles
 
-**Ignored for now** (2026-10-10). No activity checks a role in this build.
-When roles come back: activities have no role setting, so each check goes in
-the activity's show condition, and the Inspector needs read access to jobs,
-findings, areas, defects and the area mapping, or Add Finding's pickers will
-not open.
+**Being set up by the user in the Console** (2026-10-11). The platform is now
+strict — a solution with no roles shows nothing (BLUEPRINT, *Access*) — so
+until roles exist the operation shows nothing in the Runtime. For each role:
+the record types it may read (Inspectors need jobs, findings, inspection areas,
+defects, defect categories, access restrictions and the area mapping, or Add
+Finding's pickers will not open), the pages it may open (Page Access), the
+menu items it sees, and the users who hold it (the operation's Users screen).
+Actions follow the page; one is restricted further only in its availability
+condition.
 
 ## Pages
 
