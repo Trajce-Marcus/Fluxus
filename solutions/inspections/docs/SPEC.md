@@ -101,7 +101,7 @@ expires; clearing the date brings a record back. The date is set through the
 record's Update activity.
 
 - **Inspection areas** — the ten walk-through areas: Site, Roof and Gutter, Hot
-  Water System, Exterior, Garage – Carport, Stairs – Pergola – Balconies – Decks,
+  Water System, Exterior, Garage - Carport, Stairs - Pergola - Balconies - Decks,
   Interiors, Bathroom(s), Kitchen & Laundry, Roof Void.
 - **Defects** — anything observable on a walk-through, each with a default
   category.
@@ -256,7 +256,10 @@ before hook checks it and its refusal names the areas still missing.
   defects mapped to `attributes.area`, filtered by the search `term`. It shows
   only when any defects is `true`, and is then required; so is category.
 - **Category** is a reference whose datasource is `act_search_defect_categories`.
-- **The before hook refuses** a defect not mapped to the area.
+- **The before hook refuses** a defect not mapped to the area. Only the
+  mapping's expiry is checked, never the area's or the defect's own
+  (2026-10-11): a record's own expiry matters only when mappings are put
+  together.
 - **Remove Finding** is the platform's delete: it asks for confirmation, then
   the finding and its history go, leaving no trace.
 - **Expired master data:** the defect search offers only unexpired defects
@@ -313,9 +316,11 @@ not open.
    inspector), with a button for Create Pre-Purchase Job. The way in, and the
    only place a job is created. A row opens the Job page.
 2. **Job** — header with address and status; the job's activities; its
-   details; its findings as a `RecordList` (area, location, defect, category,
-   photo count), with an Add Finding button, and Update Finding and Remove
-   Finding on each row. A row opens the Finding page.
+   details; its findings as a `RecordList` (area order, area, location, defect,
+   category, photo count), with an Add Finding button, and Update Finding and
+   Remove Finding on each row. A row opens the Finding page. **Findings show in
+   the order entered**; clicking the Area order heading sorts them by area,
+   again reverses, and a third click returns to the order entered.
 3. **Finding** — one finding with its photos (`Photos`).
 
 One page per sample-data file — the source of that data:

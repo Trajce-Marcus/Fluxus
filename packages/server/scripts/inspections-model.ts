@@ -328,9 +328,11 @@ const FINDING_ACTIVITIES = [
   }),
   act({
     id: 'act_list_findings', name: 'List Findings', record_map: 'GET',
-    description: "One job's findings, in area order.",
+    // In the order entered — ids are UUIDv7, so they sort by creation time.
+    // Area order is the `sequence` column, sorted by clicking its heading.
+    description: "One job's findings, in the order entered.",
     attributes: [use('job')],
-    returns: 'records.findings.where(job = attributes.job).select(id, area: area.name, sequence: area.sequence, location, defect: defect.name, category: category.name, photos, comments)',
+    returns: 'records.findings.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, defect: defect.name, category: category.name, photos, comments)',
   }),
 ];
 

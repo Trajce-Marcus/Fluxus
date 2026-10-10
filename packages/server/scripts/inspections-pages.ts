@@ -147,7 +147,7 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
         staticConfig: {
           title: 'Findings', sortable: true,
           columns: [
-            col('sequence', '#', { type: 'int', width: 50 }), col('area', 'Area'), col('location', 'Location'), col('defect', 'Defect'),
+            col('sequence', 'Area order', { type: 'int', width: 90 }), col('area', 'Area'), col('location', 'Location'), col('defect', 'Defect'),
             col('category', 'Category', { width: 130 }), col('photos', 'Photos', { type: 'photo', width: 90 }),
             run('Update', 'act_update_findings'), run('Remove', 'act_remove_findings'), open('pages/finding'),
           ],
