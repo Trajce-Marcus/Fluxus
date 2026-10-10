@@ -22,6 +22,7 @@ import type {
 } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveActivities, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
+import { initialSelection, useItemGuard } from './useItemGuard';
 
 type UsageItem = AttributeUsageDef | SectionMarkerDef;
 const isUsage = (it: UsageItem): it is AttributeUsageDef => 'attribute_ref' in it;
@@ -49,7 +50,7 @@ export function workflowsUsing(config: SolutionConfig): Map<string, string[]> {
 export function ActivitiesEditor() {
   const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
-  const [sel, setSel] = useState(0);
+  const [sel, setSel] = useState(() => initialSelection('activities', draft.activities, (a) => a.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();
@@ -87,9 +88,11 @@ export function ActivitiesEditor() {
         : { record_map, returns: undefined },
     );
   }
-  function addAct() {
-    setActs([...acts, { id: 'act_', name: '', description: '', attributes: [], before_hook: null, after_hook: null }]);
-    select(acts.length);
+  /** `discarded`: the draft was just reset, so build on what is stored. */
+  function addAct(discarded = false) {
+    const base = discarded ? loaded.activities : acts;
+    setActs([...base, { id: 'act_', name: '', description: '', attributes: [], before_hook: null, after_hook: null }]);
+    select(base.length);
   }
   function removeAct() {
     setActs(acts.filter((_, i) => i !== sel));
@@ -113,15 +116,17 @@ export function ActivitiesEditor() {
     setItems(next);
   }
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await saveActivities(loaded.activities, draft.activities);
       setDirty(false);
       await refreshSolutionViews();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -129,12 +134,29 @@ export function ActivitiesEditor() {
 
   const idErr = idProblems(acts.map((a) => a.id));
 
+  // One activity at a time: moving off one with unsaved changes asks first.
+  const { guard, prompt } = useItemGuard('activities', {
+    dirty,
+    canSave: !idErr,
+    save,
+    discard: () => {
+      setDraft(structuredClone(loaded));
+      setDirty(false);
+    },
+  });
+  function requestSelect(i: number) {
+    if (i === sel) return;
+    const id = acts[i].id;
+    guard(id, (discarded) => select(discarded ? Math.max(0, loaded.activities.findIndex((a) => a.id === id)) : i));
+  }
+
   return (
     <>
-      <InnerPanel title="Activities" actions={<button className="panel-btn" onClick={addAct}>New</button>}>
+      {prompt}
+      <InnerPanel title="Activities" actions={<button className="panel-btn" onClick={() => guard(null, addAct)}>New</button>}>
         {acts.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
         {acts.map((a, i) => (
-          <PanelItem key={i} name={a.name || '(unnamed)'} sub={a.id || '(new)'} active={i === sel} onClick={() => select(i)} />
+          <PanelItem key={i} name={a.name || '(unnamed)'} sub={a.id || '(new)'} active={i === sel} onClick={() => requestSelect(i)} />
         ))}
       </InnerPanel>
 

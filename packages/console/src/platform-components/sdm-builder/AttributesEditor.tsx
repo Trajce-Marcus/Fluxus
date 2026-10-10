@@ -13,13 +13,14 @@ import { useMemo, useState } from 'react';
 import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveAttributes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
+import { initialSelection, useItemGuard } from './useItemGuard';
 
 const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'geopoint', 'reference', 'list', 'photo', 'file'];
 
 export function AttributesEditor() {
   const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
-  const [sel, setSel] = useState(0);
+  const [sel, setSel] = useState(() => initialSelection('attributes', draft.attributes, (a) => a.key));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();
@@ -56,9 +57,11 @@ export function AttributesEditor() {
   function editCfg(patch: Record<string, unknown>) {
     edit({ type_config: { ...cur!.type_config, ...patch } });
   }
-  function add() {
-    setAttrs([...attrs, { key: '', label: '', description: '', type: 'text' }]);
-    setSel(attrs.length);
+  /** `discarded`: the draft was just reset, so build on what is stored. */
+  function add(discarded = false) {
+    const base = discarded ? loaded.attributes : attrs;
+    setAttrs([...base, { key: '', label: '', description: '', type: 'text' }]);
+    setSel(base.length);
   }
   function remove(i: number) {
     setAttrs(attrs.filter((_, j) => j !== i));
@@ -69,23 +72,42 @@ export function AttributesEditor() {
   // it, so empties and duplicates are gated here rather than sent.
   const idErr = idProblems(attrs.map((a) => a.key));
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await saveAttributes(loaded.attributes, draft.attributes);
       setDirty(false);
       await refreshSolutionViews();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
+  // One attribute at a time: moving off one with unsaved changes asks first.
+  const { guard, prompt } = useItemGuard('attributes', {
+    dirty,
+    canSave: !idErr,
+    save,
+    discard: () => {
+      setDraft(structuredClone(loaded));
+      setDirty(false);
+    },
+  });
+  function requestSelect(i: number) {
+    if (i === sel) return;
+    const key = attrs[i].key;
+    guard(key, (discarded) => setSel(discarded ? Math.max(0, loaded.attributes.findIndex((a) => a.key === key)) : i));
+  }
+
   return (
     <>
-      <InnerPanel title="Attributes" actions={<button className="panel-btn" onClick={add}>New</button>}>
+      {prompt}
+      <InnerPanel title="Attributes" actions={<button className="panel-btn" onClick={() => guard(null, add)}>New</button>}>
         {attrs.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
         {attrs.map((a, i) => (
           <PanelItem
@@ -93,7 +115,7 @@ export function AttributesEditor() {
             name={a.key || '(new)'}
             sub={<>{a.type}{a.key && !used.has(a.key) && <span className="panel-item-flag"> · unused</span>}</>}
             active={i === sel}
-            onClick={() => setSel(i)}
+            onClick={() => requestSelect(i)}
           />
         ))}
       </InnerPanel>

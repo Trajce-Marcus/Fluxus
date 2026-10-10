@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import type { SolutionConfig, RoleDef } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveRoles, useDirty, useLoadedConfig } from './useSolutionConfig';
+import { useItemGuard } from './useItemGuard';
 
 /** `role_dispatchers` from "Dispatchers" — the §1 id convention. */
 function roleId(name: string): string {
@@ -69,19 +70,37 @@ export function RolesEditor() {
     setConfirmDelete(null);
   }
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await saveRoles(loaded.access?.roles ?? [], roles);
       setDirty(false);
       await refreshSolutionViews();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
+
+  // One role at a time: starting on another role — New, Edit or Delete —
+  // while a change is unsaved asks first. A role is edited in its dialog, so
+  // there is no selection to land on after a Save; the action is clicked again.
+  const { guard, prompt } = useItemGuard('roles', {
+    dirty,
+    canSave: !idErr,
+    save,
+    discard: () => {
+      setDraft(structuredClone(loaded));
+      setDirty(false);
+    },
+  });
+  /** The role as stored when the draft was just thrown away, else as drafted. */
+  const current = (role: RoleDef, discarded: boolean) =>
+    discarded ? (loaded.access?.roles ?? []).find((r) => r.id === role.id) : role;
 
   // Creating: the id follows the name until the user types one.
   const dialogId = dialog && !dialog.original && !dialog.id ? roleId(dialog.name) : dialog?.id ?? '';
@@ -96,7 +115,7 @@ export function RolesEditor() {
             Role definitions for this solution — pages and menu items reference them; operations assign them to users.
           </p>
         </div>
-        <button className="admin-btn" onClick={openNew}>New role</button>
+        <button className="admin-btn" onClick={() => guard(null, openNew)}>New role</button>
       </div>
 
       {error && <div className="admin-error">{error}</div>}
@@ -116,8 +135,8 @@ export function RolesEditor() {
                 <td className="admin-mono">{r.id}</td>
                 <td className="admin-muted">{r.description ?? '—'}</td>
                 <td className="admin-row-actions">
-                  <button className="admin-link" onClick={() => openEdit(r)}>Edit</button>
-                  <button className="admin-link" onClick={() => setConfirmDelete(r)}>Delete</button>
+                  <button className="admin-link" onClick={() => guard(null, (d) => { const role = current(r, d); if (role) openEdit(role); })}>Edit</button>
+                  <button className="admin-link" onClick={() => guard(null, (d) => { const role = current(r, d); if (role) setConfirmDelete(role); })}>Delete</button>
                 </td>
               </tr>
             ))}
@@ -131,6 +150,7 @@ export function RolesEditor() {
         </button>
       </div>
 
+      {prompt}
       {dialog && (
         <div className="admin-overlay" onClick={() => setDialog(null)}>
           <div className="admin-modal" onClick={(e) => e.stopPropagation()}>

@@ -12,11 +12,12 @@ import { useMemo, useState } from 'react';
 import type { SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveActivities, saveWorkflows, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
+import { initialSelection, useItemGuard } from './useItemGuard';
 
 export function WorkflowsEditor() {
   const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
-  const [selWf, setSelWf] = useState(0);
+  const [selWf, setSelWf] = useState(() => initialSelection('workflows', draft.workflows, (w) => w.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();
@@ -38,9 +39,11 @@ export function WorkflowsEditor() {
   function editWf(patch: Partial<WorkflowRawDef>) {
     setWfs(wfs.map((w, i) => (i === selWf ? { ...w, ...patch } : w)));
   }
-  function addWf() {
-    setWfs([...wfs, { id: 'wf_', name: '', description: '', activities: [] }]);
-    selectWf(wfs.length);
+  /** `discarded`: the draft was just reset, so build on what is stored. */
+  function addWf(discarded = false) {
+    const base = discarded ? loaded.workflows : wfs;
+    setWfs([...base, { id: 'wf_', name: '', description: '', activities: [] }]);
+    selectWf(base.length);
   }
   function selectWf(i: number) {
     setSelWf(i);
@@ -97,7 +100,7 @@ export function WorkflowsEditor() {
     setDirty(true);
   }
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
@@ -109,8 +112,10 @@ export function WorkflowsEditor() {
       await saveWorkflows(loaded.workflows, draft.workflows);
       setDirty(false);
       await refreshSolutionViews();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -120,12 +125,32 @@ export function WorkflowsEditor() {
   const newIdErr = idProblems(draft.activities.map((a) => a.id));
   const idErr = [wfIdErr && `Workflows — ${wfIdErr}`, newIdErr && `Activities — ${newIdErr}`].filter(Boolean).join(' · ');
 
+  // One workflow at a time: moving off one with unsaved changes asks first.
+  // (A new activity made with the shortcut saves with its workflow.)
+  const { guard, prompt } = useItemGuard('workflows', {
+    dirty,
+    canSave: !idErr,
+    save,
+    discard: () => {
+      setDraft(structuredClone(loaded));
+      setDirty(false);
+      setArmed(false);
+      setPick('');
+    },
+  });
+  function requestSelect(i: number) {
+    if (i === selWf) return;
+    const id = wfs[i].id;
+    guard(id, (discarded) => selectWf(discarded ? Math.max(0, loaded.workflows.findIndex((w) => w.id === id)) : i));
+  }
+
   return (
     <>
-      <InnerPanel title="Workflows" actions={<button className="panel-btn" onClick={addWf}>New</button>}>
+      {prompt}
+      <InnerPanel title="Workflows" actions={<button className="panel-btn" onClick={() => guard(null, addWf)}>New</button>}>
         {wfs.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
         {wfs.map((w, i) => (
-          <PanelItem key={i} name={w.name || '(unnamed)'} sub={w.id || '(new)'} active={i === selWf} onClick={() => selectWf(i)} />
+          <PanelItem key={i} name={w.name || '(unnamed)'} sub={w.id || '(new)'} active={i === selWf} onClick={() => requestSelect(i)} />
         ))}
       </InnerPanel>
 

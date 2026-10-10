@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { SolutionConfig, CustomFieldDef, RecordTypeDef } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveRecordTypes, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
+import { initialSelection, useItemGuard } from './useItemGuard';
 
 const FIELD_TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'geopoint', 'fk_ref'];
 
@@ -23,7 +24,7 @@ interface NewDraft { id: string; name: string; description: string; workflow_ref
 export function RecordTypesEditor() {
   const loaded = useLoadedConfig();
   const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
-  const [sel, setSel] = useState(0);
+  const [sel, setSel] = useState(() => initialSelection('record-types', draft.recordTypes, (r) => r.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();
@@ -74,15 +75,17 @@ export function RecordTypesEditor() {
     setArmed(false);
   }
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await saveRecordTypes(loaded.recordTypes, draft.recordTypes);
       setDirty(false);
       await refreshSolutionViews();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -94,6 +97,23 @@ export function RecordTypesEditor() {
   }
 
   const idErr = idProblems(rts.map((r) => r.id));
+
+  // One record type at a time: moving off one with unsaved changes asks first.
+  const { guard, prompt } = useItemGuard('record-types', {
+    dirty,
+    canSave: !idErr,
+    save,
+    discard: () => {
+      setDraft(structuredClone(loaded));
+      setDirty(false);
+      setArmed(false);
+    },
+  });
+  function requestSelect(i: number) {
+    if (i === sel) return;
+    const id = rts[i].id;
+    guard(id, (discarded) => select(discarded ? Math.max(0, loaded.recordTypes.findIndex((r) => r.id === id)) : i));
+  }
 
   // The dialog's id follows the name until the user types one of their own.
   const dialogId = dialog && !dialog.id ? recordTypeId(dialog.name) : dialog?.id ?? '';
@@ -110,14 +130,14 @@ export function RecordTypesEditor() {
     <>
       {/* The list is the shell's inner panel (M17); it lists the *draft*, so a
           rename or an addition shows before it is saved. */}
-      <InnerPanel title="Record types" actions={<button className="panel-btn" onClick={openNew}>New</button>}>
+      <InnerPanel title="Record types" actions={<button className="panel-btn" onClick={() => guard(null, openNew)}>New</button>}>
         {rts.length > 0 && (
           <input className="panel-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search record types…" />
         )}
         {rts.length === 0 && <p className="panel-empty">None yet — New adds one.</p>}
         {rts.length > 0 && shown.length === 0 && <p className="panel-empty">No match for “{filter.trim()}”.</p>}
         {shown.map(({ r, i }) => (
-          <PanelItem key={i} name={r.name || '(unnamed)'} sub={r.id || '(new)'} active={i === sel} onClick={() => select(i)} />
+          <PanelItem key={i} name={r.name || '(unnamed)'} sub={r.id || '(new)'} active={i === sel} onClick={() => requestSelect(i)} />
         ))}
       </InnerPanel>
 
@@ -222,6 +242,7 @@ export function RecordTypesEditor() {
       {/* Creation is a popup over the list, never an inline blank row (ruled
           2026-08-04) — and it collects the fields the engine requires up front
           rather than appending an invalid type and hoping. */}
+      {prompt}
       {dialog && (
         <div className="admin-overlay" onClick={() => setDialog(null)}>
           <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
