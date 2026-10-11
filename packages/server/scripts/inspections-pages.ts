@@ -8,7 +8,7 @@
 // finally the menu is written. Idempotent: each page is an upsert, each run
 // publishes a new version. Pass --dry to check without writing.
 
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MemoryAdapter } from '@fluxus/engine';
 import { createDb, closeDb } from '../src/db/client';
 import { getSolutionConfig, publishPage, putDefaultMenu, putPage } from '../src/host';
@@ -97,7 +97,7 @@ function dataPage(o: { title: string; list: string; create: string; newLabel: st
 
 // ── pages ───────────────────────────────────────────────────────────────────
 
-const PAGES: Record<string, ReturnType<typeof page>> = {
+export const PAGES: Record<string, ReturnType<typeof page>> = {
   'pages/jobs': page({
     header: [header('Jobs')],
     body: [{
@@ -228,6 +228,25 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
     columns: [col('name', 'Name', { width: 160 }), col('meaning', 'Meaning')],
   }),
 
+  // Not a master-data page: inspectors have start and finish dates, no expiry.
+  'pages/inspectors': page({
+    header: [header('Inspectors')],
+    body: [{
+      id: 'slot-main', componentName: 'RecordList',
+      staticConfig: {
+        title: 'Inspectors', search: true, sortable: true, columnFilters: true,
+        columns: [
+          col('name', 'Name'), col('email', 'Email'),
+          col('start_date', 'Start date', DATE), col('finish_date', 'Finish date', DATE),
+          run('Update', 'act_update_inspectors'),
+        ],
+        newLabel: 'Create inspector', emptyMessage: 'No inspectors yet.',
+      },
+      dynamicProps: { rows: "invoke('act_list_inspectors', {})" },
+      callbacks: { onNew: "services.activities.run('act_create_inspectors', null)" },
+    }],
+  }),
+
   'pages/code-references': dataPage({
     title: 'Code References', list: 'act_list_code_references', create: 'act_create_code_references', newLabel: 'Create code reference',
     update: 'act_update_code_references', empty: 'No code references yet.',
@@ -266,8 +285,9 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
   }),
 };
 
-const MENU = [
+export const MENU = [
   { id: 'menu-jobs', label: 'Jobs', page: 'pages/jobs' },
+  { id: 'menu-inspectors', label: 'Inspectors', page: 'pages/inspectors' },
   { id: 'menu-inspection-areas', label: 'Inspection Areas', page: 'pages/inspection-areas' },
   { id: 'menu-defects', label: 'Defects', page: 'pages/defects' },
   { id: 'menu-defect-categories', label: 'Defect Categories', page: 'pages/defect-categories' },
@@ -278,39 +298,43 @@ const MENU = [
 
 // ── check, then write ───────────────────────────────────────────────────────
 
-const db = await createDb();
-const config = await getSolutionConfig(db, SOLUTION);
-const adapter = new MemoryAdapter(config);
+// Run only when invoked directly: the one-off scripts import the definitions
+// above and write them per entity, so the user's Console edits survive.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  const db = await createDb();
+  const config = await getSolutionConfig(db, SOLUTION);
+  const adapter = new MemoryAdapter(config);
 
-const host = {
-  validateExpression: (s: string) => validatePageExpression(config, s),
-  validateExpressionWithoutRecords: (s: string) => validatePageExpressionWithoutRecords(config, s),
-  validateCallback: (s: string) => validatePageCallback(config, s),
-  findActivity: (id: string) => {
-    const a = config.activities.find((x) => x.id === id);
-    return a ? { activity: a } : null;
-  },
-  findRecordType: (id: string) => {
-    try { return adapter.getRecordTypeDef(id) as never; } catch { return null; }
-  },
-};
+  const host = {
+    validateExpression: (s: string) => validatePageExpression(config, s),
+    validateExpressionWithoutRecords: (s: string) => validatePageExpressionWithoutRecords(config, s),
+    validateCallback: (s: string) => validatePageCallback(config, s),
+    findActivity: (id: string) => {
+      const a = config.activities.find((x) => x.id === id);
+      return a ? { activity: a } : null;
+    },
+    findRecordType: (id: string) => {
+      try { return adapter.getRecordTypeDef(id) as never; } catch { return null; }
+    },
+  };
 
-let errors = 0;
-for (const [path, def] of Object.entries(PAGES)) {
-  const findings = validatePage(host as never, def as never);
-  for (const f of findings) {
-    console.log(`${path}: ${f.diagnostic.severity} ${f.where}: ${f.diagnostic.message}`);
-    if (f.diagnostic.severity === 'error') errors++;
+  let errors = 0;
+  for (const [path, def] of Object.entries(PAGES)) {
+    const findings = validatePage(host as never, def as never);
+    for (const f of findings) {
+      console.log(`${path}: ${f.diagnostic.severity} ${f.where}: ${f.diagnostic.message}`);
+      if (f.diagnostic.severity === 'error') errors++;
+    }
   }
-}
-console.log(`${Object.keys(PAGES).length} pages checked — ${errors} error(s)`);
-if (errors > 0 || dry) { await closeDb(db); process.exit(errors > 0 ? 1 : 0); }
+  console.log(`${Object.keys(PAGES).length} pages checked — ${errors} error(s)`);
+  if (errors > 0 || dry) { await closeDb(db); process.exit(errors > 0 ? 1 : 0); }
 
-for (const [path, def] of Object.entries(PAGES)) {
-  await putPage(db, SOLUTION, path, def);
-  const { version } = await publishPage(db, SOLUTION, path, 'Inspections Part 1 — built by script (inspections-pages.ts); 2026-10-11 revision.', PUBLISHED_BY);
-  console.log(`  + ${path} (v${version})`);
+  for (const [path, def] of Object.entries(PAGES)) {
+    await putPage(db, SOLUTION, path, def);
+    const { version } = await publishPage(db, SOLUTION, path, 'Inspections Part 1 — built by script (inspections-pages.ts); 2026-10-11 revision.', PUBLISHED_BY);
+    console.log(`  + ${path} (v${version})`);
+  }
+  await putDefaultMenu(db, SOLUTION, MENU);
+  console.log('menu written');
+  await closeDb(db);
 }
-await putDefaultMenu(db, SOLUTION, MENU);
-console.log('menu written');
-await closeDb(db);

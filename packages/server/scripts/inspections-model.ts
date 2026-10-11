@@ -24,7 +24,7 @@
 //   - an expired record is one whose `expires_on` has passed: every picker's
 //     GET says `(expires_on is null or expires_on > now())`.
 
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { SolutionConfig } from '@fluxus/engine';
 import { createEngine, MemoryAdapter, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import { createDb, closeDb } from '../src/db/client';
@@ -167,6 +167,11 @@ const ATTRIBUTES = [
   { key: 'code_reference', label: 'Code reference', description: '', type: 'reference',
     type_config: { fk_record_type: 'rt_code_references', datasource: "invoke('act_search_code_references', { term: term })" } },
 
+  // inspectors (2026-10-11)
+  text('email', 'Email', 'The email they sign in with — how the platform knows the signed-in person is this inspector.'),
+  { key: 'start_date', label: 'Start date', description: 'From this date they are offered when scheduling.', type: 'date' },
+  { key: 'finish_date', label: 'Finish date', description: 'From this date they are no longer offered. Blank: still working.', type: 'date' },
+
   // picker search box
   text('term', 'Search term', "A record picker's search box."),
 ];
@@ -232,6 +237,9 @@ const RECORD_TYPES = [
   ] },
   { id: 'rt_defect_categories', name: 'Defect Categories', description: 'Major defect and minor defect. Safety is a separate flag on a finding.', workflow_ref: 'wf_defect_categories', custom_fields: [
     field('name', 'Name'), field('meaning', 'Meaning'), EXPIRES,
+  ] },
+  { id: 'rt_inspectors', name: 'Inspectors', description: 'Who can be scheduled to a job, and the email they sign in with.', workflow_ref: 'wf_inspectors', custom_fields: [
+    field('name', 'Name'), field('email', 'Email'), field('start_date', 'Start date', 'date'), field('finish_date', 'Finish date', 'date'),
   ] },
   { id: 'rt_defects', name: 'Defects', description: 'Anything observable on a walk-through.', workflow_ref: 'wf_defects', custom_fields: [
     field('code', 'Code'), field('name', 'Name'), field('description', 'Description'),
@@ -538,6 +546,43 @@ const SEARCH_AREA_DEFECTS = act({
   returns: `records.defects.where(${UNEXPIRED} and id in records.area_defects.where(area = attributes.area and ${UNEXPIRED}).values(defect) and ${TERM('name', 'code')}).orderBy(code).select(id, code, name)`,
 });
 
+// ── inspectors ──────────────────────────────────────────────────────────────
+
+// Current: started, and not yet finished — the same reading as an expiry date.
+const CURRENT_INSPECTOR = '(start_date <= now() and (finish_date is null or finish_date > now()))';
+// One inspector per email: the email is what matches the signed-in person.
+const UNIQUE_EMAIL = (update: boolean) => [
+  `if records.inspectors.where(email = attributes.email${update ? ' and id <> context.record.id' : ''}).count > 0 {`,
+  "  fail('Another inspector already has the email ' + attributes.email + '.')",
+  '}',
+].join('\n');
+const INSPECTOR_ACTIVITIES = [
+  act({
+    id: 'act_create_inspectors', name: 'Create Inspector', record_map: 'CREATE',
+    description: 'Adds an inspector.',
+    show_condition: 'context.record is null',
+    attributes: [req('name'), req('email'), req('start_date'), use('finish_date')],
+    before_hook: UNIQUE_EMAIL(false),
+  }),
+  act({
+    id: 'act_update_inspectors', name: 'Update Inspector', record_map: 'UPDATE',
+    description: 'Changes an inspector, or sets the date they finish.',
+    attributes: [req('name'), req('email'), req('start_date'), use('finish_date')],
+    before_hook: UNIQUE_EMAIL(true),
+  }),
+  act({
+    id: 'act_list_inspectors', name: 'List Inspectors', record_map: 'GET',
+    description: 'Every inspector, finished included, for the Inspectors page.',
+    returns: 'records.inspectors.orderBy(name).select(id, name, email, start_date, finish_date)',
+  }),
+  act({
+    id: 'act_search_inspectors', name: 'Search Inspectors', record_map: 'GET',
+    description: 'Current inspectors matching a search term — the Schedule picker.',
+    attributes: [use('term')],
+    returns: `records.inspectors.where(${CURRENT_INSPECTOR} and ${TERM('name')}).orderBy(name).select(id, name)`,
+  }),
+];
+
 // ── mappings ────────────────────────────────────────────────────────────────
 
 const AREA_DEFECT_ACTIVITIES = [
@@ -598,13 +643,14 @@ const WORKFLOWS: [ReturnType<typeof flow>, ReturnType<typeof act>[]][] = [
   [flow('wf_findings', 'Findings', 'Recording what the walk-through found.', FINDING_ACTIVITIES), FINDING_ACTIVITIES],
   [flow('wf_inspection_areas', 'Inspection Areas', 'Maintaining the areas.', AREA_ACTIVITIES), AREA_ACTIVITIES],
   [flow('wf_defect_categories', 'Defect Categories', 'Maintaining the categories.', CATEGORY_ACTIVITIES), CATEGORY_ACTIVITIES],
+  [flow('wf_inspectors', 'Inspectors', 'Maintaining the inspectors.', INSPECTOR_ACTIVITIES), INSPECTOR_ACTIVITIES],
   [flow('wf_defects', 'Defects', 'Maintaining the defects.', [...DEFECT_ACTIVITIES, SEARCH_AREA_DEFECTS]), [...DEFECT_ACTIVITIES, SEARCH_AREA_DEFECTS]],
   [flow('wf_code_references', 'Code References', 'Maintaining the code references.', CODE_REFERENCE_ACTIVITIES), CODE_REFERENCE_ACTIVITIES],
   [flow('wf_area_defects', 'Area Defect Mappings', 'Which defects can be recorded in which area.', AREA_DEFECT_ACTIVITIES), AREA_DEFECT_ACTIVITIES],
   [flow('wf_defect_code_references', 'Defect Code Reference Mappings', 'Which code clauses relate to which defect.', DEFECT_CODE_REFERENCE_ACTIVITIES), DEFECT_CODE_REFERENCE_ACTIVITIES],
 ];
 
-const CONFIG = {
+export const CONFIG = {
   attributes: ATTRIBUTES,
   activities: WORKFLOWS.flatMap(([, acts]) => acts),
   recordTypes: RECORD_TYPES,
@@ -621,35 +667,39 @@ function validateLocally(config: SolutionConfig): string[] {
   return engine.validateConfig().map((f) => `${f.diagnostic.severity.toUpperCase()} ${f.where}: ${f.diagnostic.message}`);
 }
 
-const findings = validateLocally(CONFIG);
-for (const f of findings) console.log(f);
-console.log(`${CONFIG.recordTypes.length} record types, ${CONFIG.workflows.length} workflows, ${CONFIG.activities.length} activities, ${CONFIG.attributes.length} attributes — ${findings.length === 0 ? 'clean' : `${findings.length} finding(s)`}`);
-if (findings.some((f) => f.startsWith('ERROR'))) process.exit(1);
-if (dry) process.exit(0);
+// Run only when invoked directly: the one-off scripts import the definitions
+// above and write them per entity, so the user's Console edits survive.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  const findings = validateLocally(CONFIG);
+  for (const f of findings) console.log(f);
+  console.log(`${CONFIG.recordTypes.length} record types, ${CONFIG.workflows.length} workflows, ${CONFIG.activities.length} activities, ${CONFIG.attributes.length} attributes — ${findings.length === 0 ? 'clean' : `${findings.length} finding(s)`}`);
+  if (findings.some((f) => f.startsWith('ERROR'))) process.exit(1);
+  if (dry) process.exit(0);
 
-// ── write ───────────────────────────────────────────────────────────────────
+  // ── write ───────────────────────────────────────────────────────────────────
 
-const db = await createDb();
-console.log(`database: ${process.env.DATABASE_URL ? 'DATABASE_URL (Neon)' : 'PGlite'}`);
+  const db = await createDb();
+  console.log(`database: ${process.env.DATABASE_URL ? 'DATABASE_URL (Neon)' : 'PGlite'}`);
 
-if (!(await listSolutions(db)).some((s) => s.id === SOLUTION)) {
-  await createSolution(db, { id: SOLUTION, name: SOLUTION_NAME, createdBy: FIRST_ADMIN });
-  console.log(`solution  + ${SOLUTION}`);
-}
-if (!(await listOperations(db)).some((o) => o.id === OPERATION)) {
-  await createOperation(db, { id: OPERATION, solutionId: SOLUTION, name: OPERATION_NAME });
-  console.log(`operation + ${OPERATION}`);
-}
+  if (!(await listSolutions(db)).some((s) => s.id === SOLUTION)) {
+    await createSolution(db, { id: SOLUTION, name: SOLUTION_NAME, createdBy: FIRST_ADMIN });
+    console.log(`solution  + ${SOLUTION}`);
+  }
+  if (!(await listOperations(db)).some((o) => o.id === OPERATION)) {
+    await createOperation(db, { id: OPERATION, solutionId: SOLUTION, name: OPERATION_NAME });
+    console.log(`operation + ${OPERATION}`);
+  }
 
-const existing = await getSolutionConfig(db, SOLUTION);
-if (existing.recordTypes.length > 0 && !replace) {
-  console.error(`'${SOLUTION}' already has a model (${existing.recordTypes.length} record types). Not replacing it — pass --replace to overwrite, which deletes anything absent from this script.`);
+  const existing = await getSolutionConfig(db, SOLUTION);
+  if (existing.recordTypes.length > 0 && !replace) {
+    console.error(`'${SOLUTION}' already has a model (${existing.recordTypes.length} record types). Not replacing it — pass --replace to overwrite, which deletes anything absent from this script.`);
+    await closeDb(db);
+    process.exit(1);
+  }
+
+  // Keep a menu already written by inspections-pages.ts across a --replace.
+  const menu = (existing as { default_menu?: unknown }).default_menu;
+  await putConfig(db, SOLUTION, { ...CONFIG, ...(menu ? { default_menu: menu } : {}) } as SolutionConfig);
+  console.log('model written');
   await closeDb(db);
-  process.exit(1);
 }
-
-// Keep a menu already written by inspections-pages.ts across a --replace.
-const menu = (existing as { default_menu?: unknown }).default_menu;
-await putConfig(db, SOLUTION, { ...CONFIG, ...(menu ? { default_menu: menu } : {}) } as SolutionConfig);
-console.log('model written');
-await closeDb(db);

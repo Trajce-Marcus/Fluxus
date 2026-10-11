@@ -186,7 +186,33 @@ record's Update activity.
 - **Defect ↔ code reference** — which clauses relate to which defect. Used by the
   report, later.
 
+## Inspectors
+
+Added 2026-10-11. The people who can be scheduled to a job, kept as records:
+name, email, start date and finish date.
+
+- **The email is how the platform knows the inspector.** The person signed in
+  is known only by the email they sign in with, so an inspector record matches
+  whoever signs in with its email. It is typed in and **not checked** against
+  the operation's users (the user's call, 2026-10-11: too much building for
+  now). A mistyped email means the inspector simply matches nobody.
+- **One inspector per email** — Create and Update Inspector refuse an email
+  another inspector has.
+- **Current** inspectors — started, and not yet at their finish date — are the
+  ones offered when scheduling. From the finish date they are no longer offered,
+  the same reading as an expiry date (and the same mid-morning effect, *Open*).
+  Inspectors are never deleted.
+
 ## Record types
+
+### `rt_inspectors`
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `name` | text | |
+| `email` | text | the email they sign in with; unique |
+| `start_date` | date | offered for scheduling from this date |
+| `finish_date` | date | no longer offered from this date; blank: still working |
 
 ### `rt_jobs`
 
@@ -363,6 +389,15 @@ before hook checks it and its refusal names the areas still missing.
 - **Defect and category are cleared** by the hook when any defects is `false`,
   so a finding that changes its answer does not keep a stale defect.
 
+### `wf_inspectors`
+
+| Activity | Display name | Kind | Captures |
+| --- | --- | --- | --- |
+| `act_create_inspectors` | Create Inspector | CREATE | name, email, start date (required); finish date |
+| `act_update_inspectors` | Update Inspector | UPDATE | the same |
+| `act_list_inspectors` | — | GET | — (every inspector, finished included — the page) |
+| `act_search_inspectors` | — | GET | search term (current only — the Schedule picker) |
+
 ### Master data workflows
 
 Areas, defects, defect categories and code references
@@ -448,7 +483,13 @@ One page per sample-data file — the source of that data:
 
 Every data page's list shows the expiry date as a column.
 
-**Menu** (the solution's default menu): Jobs, then the six data pages.
+**Inspectors** — list (name, email, start date, finish date); create; update per
+row. No expiry column: inspectors finish instead.
+
+**Menu** (the solution's default menu): Jobs, Inspectors, then the six data
+pages. Built 2026-10-11 with the access the user had set up for the others: the
+Inspectors page and its menu item are Admin's; Admin and Inspector read
+inspectors (an inspector's Job page shows the inspector's name).
 
 ## Decided while writing
 
