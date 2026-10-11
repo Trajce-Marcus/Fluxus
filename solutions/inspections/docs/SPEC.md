@@ -334,10 +334,10 @@ the way existing solutions do it.
 | `act_accept_jobs` | Accept Quote | UPDATE | — | Quoted | Accepted |
 | `act_cancel_jobs` | Cancel Job | UPDATE | reason (required) | not Cancelled or Inspected | Cancelled |
 | `act_schedule_jobs` | Schedule | UPDATE | date/time, inspector (a current inspector, from `act_search_inspectors`), instructions | Accepted or Scheduled | Scheduled |
-| `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist | Scheduled | In Progress |
-| `act_update_jobs` | Inspection Details | UPDATE | the property facts; access, weather, checklist (optional) | In Progress | unchanged |
-| `act_assess_jobs` | Assessment | UPDATE | major incidence, minor incidence, overall condition, overall assessment | In Progress | unchanged |
-| `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress, every area has a finding, the Assessment is done, and the required property facts are filled in | Inspected |
+| `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist | Scheduled; the assigned inspector or an Admin | In Progress |
+| `act_update_jobs` | Inspection Details | UPDATE | the property facts; access, weather, checklist (optional) | In Progress; the assigned inspector or an Admin | unchanged |
+| `act_assess_jobs` | Assessment | UPDATE | major incidence, minor incidence, overall condition, overall assessment | In Progress; the assigned inspector or an Admin | unchanged |
+| `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress; the assigned inspector or an Admin; every area has a finding, the Assessment is done, and the required property facts are filled in | Inspected |
 | `act_summarise_findings` | — | GET | job | — | — (one line of counts for the Job page) |
 | `act_list_jobs` | — | GET | — | — | — (every job for an Admin; otherwise only the jobs assigned to the signed-in inspector) |
 
@@ -348,6 +348,22 @@ deleted, so the count only grows.
 
 
 
+**The inspection steps are the assigned inspector's or an Admin's** (ruled and
+built 2026-10-11). Start Inspection, Inspection Details, Assessment, Finish
+Inspection and the three finding actions run only for the inspector the job is
+assigned to — matched on the email they sign in with, ignoring case — or a
+holder of `role_admin`:
+`'role_admin' in context.user.roles or lower(<job>.inspector.email) = lower(context.user.email)`.
+It is part of each action's availability condition, so the server neither
+offers nor runs it for anyone else
+([ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)). Two
+exceptions: Add Finding is a CREATE, which runs with no record, so its before
+hook checks the job named and refuses with "Only the inspector assigned to this
+job, or an Admin, can add findings."; and Update Finding and Remove Finding are
+buttons on the findings list's rows, which are not asked about — they still
+show to others, and the server refuses them when clicked. Applied live by
+`scripts/inspections-assigned-inspector.ts`, one activity at a time.
+
 **Finish Inspection needs a finding for every area** — at least one finding on
 the job for each unexpired record in the areas list, "no defects" findings included. The
 before hook checks it and its refusal names the areas still missing.
@@ -356,16 +372,17 @@ before hook checks it and its refusal names the areas still missing.
 
 | Activity | Display name | Kind | Captures | Allowed when |
 | --- | --- | --- | --- | --- |
-| `act_add_findings` | Add Finding | CREATE | job, area, location, any defects, defect, category, photos, comments | the job is In Progress |
-| `act_update_findings` | Update Finding | UPDATE | the same, except job | the job is In Progress |
-| `act_remove_findings` | Remove Finding | DELETE | — | the job is In Progress |
+| `act_add_findings` | Add Finding | CREATE | job, area, location, any defects, defect, category, photos, comments | the job is In Progress; the job's assigned inspector or an Admin |
+| `act_update_findings` | Update Finding | UPDATE | the same, except job | the job is In Progress; the job's assigned inspector or an Admin |
+| `act_remove_findings` | Remove Finding | DELETE | — | the job is In Progress; the job's assigned inspector or an Admin |
 | `act_list_findings` | — | GET | for one job | — |
 
 - **The job is filled from the page** — Add Finding's `job` takes the Job
   page's record (`source: 'context.page.record.id'`, as the projects
   solution's WBS create does). The list's own add button cannot fill it. A
-  CREATE has no anchor record, so "the job is In Progress" is checked by the
-  before hook against the job named, not by a show condition.
+  CREATE has no anchor record, so "the job is In Progress" and "the assigned
+  inspector or an Admin" are checked by the before hook against the job
+  named, not by a show condition.
 - **Area** is a reference whose datasource is `act_search_inspection_areas`.
 - **Defect** is a reference whose datasource is `act_search_area_defects`: the
   defects mapped to `attributes.area`, filtered by the search `term`. It shows

@@ -265,6 +265,12 @@ const RECORD_TYPES = [
 
 const status = (s: string) => `context.record.update({ status: '${s}' })`;
 
+/** Who may run the inspection steps (2026-10-11): the job's assigned
+ *  inspector — matched on the email they sign in with — or an Admin. `job`
+ *  is the expression reaching the job. */
+const ASSIGNED = (job: string) =>
+  `('role_admin' in context.user.roles or lower(${job}.inspector.email) = lower(context.user.email))`;
+
 /** What Inspection Details asks: the property facts (required) and Start
  *  Inspection's three answers (optional, to correct them). */
 const INSPECTION_DETAILS = (): Usage[] => [
@@ -323,7 +329,7 @@ const JOB_ACTIVITIES = [
   act({
     id: 'act_start_jobs', name: 'Start Inspection', record_map: 'UPDATE',
     description: 'On site: access, weather and the pre-start checklist.',
-    show_condition: "context.record.status = 'Scheduled'",
+    show_condition: `context.record.status = 'Scheduled' and ${ASSIGNED('context.record')}`,
     attributes: [use('access'), use('weather'), use('checklist')],
     after_hook: status('In Progress'),
   }),
@@ -333,19 +339,19 @@ const JOB_ACTIVITIES = [
     // what Start Inspection captured.
     id: 'act_update_jobs', name: 'Inspection Details', record_map: 'UPDATE',
     description: 'The property facts, and corrections to access, weather and the checklist. Rerunnable.',
-    show_condition: "context.record.status = 'In Progress'",
+    show_condition: `context.record.status = 'In Progress' and ${ASSIGNED('context.record')}`,
     attributes: INSPECTION_DETAILS(),
   }),
   act({
     id: 'act_assess_jobs', name: 'Assessment', record_map: 'UPDATE',
     description: "The inspector's judgement: incidence of defects, overall condition, overall assessment. Rerunnable.",
-    show_condition: "context.record.status = 'In Progress'",
+    show_condition: `context.record.status = 'In Progress' and ${ASSIGNED('context.record')}`,
     attributes: [req('major_incidence'), req('minor_incidence'), req('overall_condition'), req('overall_assessment')],
   }),
   act({
     id: 'act_finish_jobs', name: 'Finish Inspection', record_map: 'UPDATE',
     description: 'Ends the walk-through. Every area needs at least one finding.',
-    show_condition: "context.record.status = 'In Progress'",
+    show_condition: `context.record.status = 'In Progress' and ${ASSIGNED('context.record')}`,
     attributes: [req('declaration_confirmed', { validation: "value = 'true'", validation_message: 'Confirm the declaration to finish the inspection.' })],
     before_hook: [
       'if context.record.major_incidence is null or context.record.minor_incidence is null or context.record.overall_condition is null or context.record.overall_assessment is null {',
@@ -411,13 +417,16 @@ const FINDING_ACTIVITIES = [
   act({
     id: 'act_add_findings', name: 'Add Finding', record_map: 'CREATE',
     description: 'Records one finding on the job whose page it is added from.',
-    // A CREATE has no anchor, so the job's status is checked here against the
-    // job named, not by a show condition.
+    // A CREATE has no anchor, so who may add and the job's status are checked
+    // here against the job named, not by a show condition.
     attributes: [use('job', { source: 'context.page.record.id' }), ...FINDING_QUESTIONS()],
     before_hook: [
       'let job = records.jobs.where(id = attributes.job).first',
       'if job is null {',
       "  fail('Add a finding from its job.')",
+      '}',
+      `if not ${ASSIGNED('job')} {`,
+      "  fail('Only the inspector assigned to this job, or an Admin, can add findings.')",
       '}',
       "if job.status <> 'In Progress' {",
       "  fail('Findings can be added only while the inspection is in progress.')",
@@ -431,7 +440,7 @@ const FINDING_ACTIVITIES = [
   act({
     id: 'act_update_findings', name: 'Update Finding', record_map: 'UPDATE',
     description: 'Changes a finding while the inspection is in progress.',
-    show_condition: "context.record.job.status = 'In Progress'",
+    show_condition: `context.record.job.status = 'In Progress' and ${ASSIGNED('context.record.job')}`,
     attributes: FINDING_QUESTIONS(),
     // The mapping check applies only when the area or defect is being changed,
     // so an old finding whose defect has since expired can still be updated.
@@ -447,7 +456,7 @@ const FINDING_ACTIVITIES = [
   act({
     id: 'act_remove_findings', name: 'Remove Finding', record_map: 'DELETE',
     description: 'Deletes the finding. The report is still being compiled, so it leaves no trace.',
-    show_condition: "context.record.job.status = 'In Progress'",
+    show_condition: `context.record.job.status = 'In Progress' and ${ASSIGNED('context.record.job')}`,
   }),
   act({
     id: 'act_list_findings', name: 'List Findings', record_map: 'GET',
