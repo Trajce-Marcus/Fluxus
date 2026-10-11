@@ -8,15 +8,19 @@
 
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { opUsers, userRoles } from '../db/schema';
+import { opUsers, userRoles, users } from '../db/schema';
 import { DEFAULT_ORG_ID, normaliseEmail, type Grant } from './types';
 import { assertInPool } from './org-admins';
 import { isOpAdmin } from './op-admins';
 
-export async function listOpUsers(db: Db, operationId: string, orgId = DEFAULT_ORG_ID): Promise<Grant[]> {
+/** Who may enter, with each person's name from the organisation's pool — the
+ *  grant itself carries only the email, and a list of bare addresses does not
+ *  say who anyone is. */
+export async function listOpUsers(db: Db, operationId: string, orgId = DEFAULT_ORG_ID): Promise<(Grant & { name: string | null })[]> {
   const rows = await db
-    .select({ email: opUsers.email })
+    .select({ email: opUsers.email, name: users.name })
     .from(opUsers)
+    .leftJoin(users, and(eq(users.orgId, opUsers.orgId), eq(users.email, opUsers.email)))
     .where(and(eq(opUsers.orgId, orgId), eq(opUsers.operationId, operationId)));
   return rows.sort((a, b) => a.email.localeCompare(b.email));
 }

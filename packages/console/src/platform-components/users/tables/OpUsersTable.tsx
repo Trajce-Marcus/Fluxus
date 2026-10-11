@@ -21,7 +21,7 @@ const NOT_OP_ADMIN = 'Only an operation admin can change who is in this operatio
 
 export function OpUsersTable({ operationId, users, roles, assignments, pool, canEdit, busyRow, act, onChanged }: {
   operationId: string;
-  users: Grant[];
+  users: (Grant & { name: string | null })[];
   /** Role definitions from the linked solution. */
   roles: RoleDef[];
   assignments: { email: string; roleIds: string[] }[];
@@ -64,7 +64,7 @@ export function OpUsersTable({ operationId, users, roles, assignments, pool, can
       ) : (
         <table className="admin-table">
           <thead>
-            <tr><th>Email</th><th>Roles</th><th /></tr>
+            <tr><th>Email</th><th>Name</th><th>Roles</th><th /></tr>
           </thead>
           <tbody>
             {users.map((u) => {
@@ -72,6 +72,7 @@ export function OpUsersTable({ operationId, users, roles, assignments, pool, can
               return (
                 <tr key={u.email}>
                   <td className="admin-mono">{u.email}</td>
+                  <td>{u.name ?? <span className="admin-muted">—</span>}</td>
                   <td>
                     {held.length === 0
                       ? <span className="admin-muted">No roles — enters and sees nothing</span>

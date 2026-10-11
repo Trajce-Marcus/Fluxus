@@ -19,7 +19,7 @@ import { useUserScreen } from './shared/useUserScreen';
 interface OperationUsersData {
   opAdmin: boolean;
   orgAdmin: boolean;
-  users: Grant[];
+  users: (Grant & { name: string | null })[];
   admins: OpAdminRow[];
   roles: RoleDef[];
   assignments: { email: string; roleIds: string[] }[];

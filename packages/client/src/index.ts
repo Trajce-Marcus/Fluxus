@@ -412,7 +412,7 @@ export class ConsoleClient {
   }
 
   /** Who may enter an operation — the op admin's list. */
-  listOpUsers(operationId: string): Promise<Grant[]> {
+  listOpUsers(operationId: string): Promise<(Grant & { name: string | null })[]> {
     return this.trpc.opUsers.list.query({ operationId });
   }
   /** Refuses an address that is not in the organisation: the pool is the only

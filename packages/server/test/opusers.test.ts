@@ -77,10 +77,10 @@ describe('the pool is the only way in', () => {
     await expect(addOpUser(db, { operationId: OP, email: 'nobody@example.com' })).rejects.toThrow(/not in this organisation/i);
   });
 
-  it('an invited user can be added, and appears in the op list', async () => {
+  it('an invited user can be added, and appears in the op list with their name', async () => {
     await inviteUser(db, { email: 'user@example.com', name: 'Op User' });
     await addOpUser(db, { operationId: OP, email: 'user@example.com' });
-    expect(await listOpUsers(db, OP)).toEqual([{ email: 'user@example.com' }]);
+    expect(await listOpUsers(db, OP)).toEqual([{ email: 'user@example.com', name: 'Op User' }]);
   });
 
   it('email is normalised, so one person cannot become two', async () => {
