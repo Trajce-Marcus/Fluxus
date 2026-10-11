@@ -1,5 +1,5 @@
 import { useState, useEffect, createElement, useCallback, useMemo } from 'react';
-import type { ActivityDef, RecordInstance, RunActivityResult } from '@fluxus/engine';
+import { RecordAccessDeniedError, type ActivityDef, type RecordInstance, type RunActivityResult } from '@fluxus/engine';
 import type { ComponentManifest } from './manifest';
 import type { SlotConfig } from './pageDef';
 import type { PageRuntime } from './runtime';
@@ -63,6 +63,11 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   const [filledText, setFilledText] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
+  // The section's content follows a reference to a record this person may not
+  // read (2026-10-12). It says so in its own place, rather than drawing a blank
+  // that reads as "there is none" — the user's call; every other failure still
+  // goes to the page's error banner.
+  const [denied, setDenied] = useState(false);
   const [pendingForm, setPendingForm] = useState<PendingForm | null>(null);
 
   // Tell the page when this component is loading. The callback is stable (the
@@ -267,10 +272,15 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
             }),
         );
         if (cancelled) return;
+        setDenied(false);
         setDynamicData(Object.fromEntries(entries));
         setFilledText(Object.fromEntries(texts));
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof RecordAccessDeniedError) {
+          setDenied(true);
+          return;
+        }
         onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
       } finally {
         if (!cancelled) setLoading(false);
@@ -281,6 +291,14 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   }, [JSON.stringify(pageCtx.page), config, refreshTick]);
 
   if (hidden) return null;
+
+  if (denied && !loading) {
+    return (
+      <div role="status" style={{ padding: '8px 2px', color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic' }}>
+        Record access denied
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -41,7 +41,15 @@ src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storag
                      hosts refresh after a server-side run (backend stage 2);
                      mergeRecords() adds or replaces some without touching the
                      rest (2026-08-16) — how a host that was never handed the
-                     partition fills its snapshot as it goes
+                     partition fills its snapshot as it goes. Both take the
+                     ids the server **withheld** (2026-10-12): getRecord on one
+                     throws RecordAccessDeniedError ("Record access denied"),
+                     and the records host's getById passes it on instead of
+                     reading it as null, so following a reference to it says
+                     so — a record merely not held still reads as null
+                     (test/withheldRecords.test.ts)
+src/errors.ts        — RecordAccessDeniedError: a record exists but this
+                     caller may not read it
 src/attributeTypes.ts — the attribute type registry (files, photos, scalars,
                      geopoint): per-type descriptor field schemas + accepted
                      type_config keys, read by the client uploader,

@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from 'uuid';
 import type { Store } from './store';
 import type { ActivityDef, AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
 import { activityHooks, coerceValue, joinScript } from './bridge';
+import { RecordAccessDeniedError } from './errors';
 
 // THE Store in memory: all reference-Store behaviour (workflow resolution,
 // constraint checks, staged mutation halves) with no storage attached. Browser
@@ -9,6 +10,7 @@ import { activityHooks, coerceValue, joinScript } from './bridge';
 // immediately. The server does not hold records in one any more
 // (SERVER_DATA_LOADING step 2): its database store uses one, empty, for the
 // model, and shapes new records with `shapeNewRecord` below.
+
 export interface MemoryAdapterOptions {
   initialRecords?: Iterable<readonly [string, RecordInstance]>;
 }
@@ -109,6 +111,15 @@ export class MemoryAdapter implements Store {
     this.records = new Map(options.initialRecords ?? []);
   }
 
+  /**
+   * Records the server would not send this caller — a reference to a record
+   * of a type they may not read (2026-10-12). Reading one throws
+   * `RecordAccessDeniedError` rather than reporting it missing, so a page
+   * says "Record access denied" where it would have shown it, instead of a
+   * blank that reads as "there is none".
+   */
+  private withheld = new Set<string>();
+
   /** Persistence hook, called after every mutation — no-op in memory. */
   protected persist(): void {}
 
@@ -118,9 +129,11 @@ export class MemoryAdapter implements Store {
 
   // Swap the whole snapshot and notify subscribers — how a client host
   // refreshes after a server-side activity run without changing the adapter
-  // (or engine) identity its UI is wired to.
-  replaceRecords(records: Iterable<readonly [string, RecordInstance]>): void {
+  // (or engine) identity its UI is wired to. `withheld` replaces the set of
+  // records the server would not send (see `withheld` below).
+  replaceRecords(records: Iterable<readonly [string, RecordInstance]>, withheld: Iterable<string> = []): void {
     this.records = new Map(records);
+    this.withheld = new Set([...withheld].filter((id) => !this.records.has(id)));
     this.persist();
     this.notify();
   }
@@ -129,8 +142,12 @@ export class MemoryAdapter implements Store {
   // was NOT handed the whole partition fills its snapshot as it goes: a page's
   // anchor record, the one type a grid is showing. `replaceRecords` is the
   // other half of the pair and stays the whole-snapshot swap.
-  mergeRecords(records: Iterable<readonly [string, RecordInstance]>): void {
-    for (const [id, record] of records) this.records.set(id, record);
+  mergeRecords(records: Iterable<readonly [string, RecordInstance]>, withheld: Iterable<string> = []): void {
+    for (const [id, record] of records) {
+      this.records.set(id, record);
+      this.withheld.delete(id);
+    }
+    for (const id of withheld) if (!this.records.has(id)) this.withheld.add(id);
     this.persist();
     this.notify();
   }
@@ -172,7 +189,10 @@ export class MemoryAdapter implements Store {
 
   getRecord(recordId: string): RecordInstance {
     const r = this.records.get(recordId);
-    if (!r) throw new Error(`Record not found: ${recordId}`);
+    if (!r) {
+      if (this.withheld.has(recordId)) throw new RecordAccessDeniedError(recordId);
+      throw new Error(`Record not found: ${recordId}`);
+    }
     return r;
   }
 

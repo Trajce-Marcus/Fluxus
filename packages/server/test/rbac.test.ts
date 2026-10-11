@@ -73,8 +73,11 @@ describe('record-type read filter (default deny, enforced when configured)', () 
     expect(rows.map((r) => r.id).sort()).toEqual(['A1']); // rt_beta + rt_gamma hidden
   });
 
-  it('get denies an unreadable record as not-found', async () => {
-    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'B1' })).rejects.toThrow(/not found/i);
+  // Access denied, not not-found, since 2026-10-12 (the user's ruling: showing
+  // nothing misleads more than saying access is denied).
+  it('get refuses an unreadable record as access denied, and a missing one as not found', async () => {
+    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'B1' })).rejects.toThrow('Record access denied');
+    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'NO_SUCH' })).rejects.toThrow(/not found/i);
     const a = await enforced(u1).records.get({ operationId: OP, recordId: 'A1' });
     expect(a.id).toBe('A1');
   });
@@ -85,13 +88,13 @@ describe('record-type read filter (default deny, enforced when configured)', () 
   });
 
   it('a type with no access.read is denied (default deny)', async () => {
-    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'G1' })).rejects.toThrow(/not found/i);
+    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'G1' })).rejects.toThrow('Record access denied');
   });
 
-  it('running an activity on an unreadable anchor is not-found (before the gate)', async () => {
+  it('running an activity on an unreadable anchor is access denied (before the gate)', async () => {
     await expect(
       enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_beta', recordId: 'B1', attributes: { note: 'x' } }),
-    ).rejects.toThrow(/not found/i);
+    ).rejects.toThrow('Record access denied');
   });
 
   it('running an activity on a readable anchor proceeds', async () => {

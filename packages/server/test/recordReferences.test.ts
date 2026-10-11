@@ -1,7 +1,8 @@
 // `records.get` sends the records a record points at (2026-10-12): two levels
-// of references, readable ones only, so a page that holds only its own record
-// can show `context.record.area.name` and a form can name what a reference
-// holds.
+// of references, readable ones only, with those it may not read named as
+// withheld — so a page that holds only its own record can show
+// `context.record.area.name`, a form can name what a reference holds, and a
+// withheld one says "Record access denied".
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
@@ -64,10 +65,16 @@ describe('records.get — the records a record points at', () => {
     expect(got.references.map((r) => r.id).sort()).toEqual(['J1', 'O1']);
   });
 
-  it('leaves out a record the caller may not read, and a reference to a missing one', async () => {
+  it('names a record the caller may not read as withheld, and skips a reference to a missing one', async () => {
     const got = await as().records.get({ operationId: OP, recordId: 'F1' });
     expect(got.references.map((r) => r.id)).not.toContain('L1');
+    expect(got.withheld).toEqual(['L1']);
     expect(got.references.map((r) => r.id)).not.toContain('NO_SUCH');
+    expect(got.withheld).not.toContain('NO_SUCH');
+  });
+
+  it('refuses a record the caller may not read as access denied', async () => {
+    await expect(as().records.get({ operationId: OP, recordId: 'L1' })).rejects.toThrow('Record access denied');
   });
 
   it('sends a referenced record whole, so its fields can be read', async () => {

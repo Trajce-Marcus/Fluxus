@@ -42,8 +42,9 @@
 
 ## Enforcement
 - `records.partition`/`list`: filter to readable types → visible-subset snapshot.
-- `records.get`: deny ⇒ **not-found** (never forbidden).
-- `activities.run`: gate is the run check; unreadable anchor ⇒ not-found, checked before gate. CREATE: `context.record` null.
+- `records.get`: deny ⇒ **"Record access denied"** (FORBIDDEN) since 2026-10-12; a missing record is still not-found. *Reversed: deny ⇒ not-found (never forbidden), the first cut — see BLUEPRINT* Access. It also sends the records the one asked for points at, two levels, readable ones only, naming the rest as `withheld`.
+- `activities.run` / `activities.query`: gate is the run check; unreadable anchor ⇒ "Record access denied", checked before gate (not-found until 2026-10-12). CREATE: `context.record` null.
+- `page.activities`: an unreadable record answers an empty list — it shows what you can do, not the record.
 - `config.put`, the per-entity model writes (`config.putAttribute` … `putDefaultMenu`) and page save: require **sol admin**; user/role administration is the owner, org-admin and op-admin tiers (see *Administration*).
 - Hooks run with model authority (full partition, `SECURITY DEFINER` semantics).
 

@@ -17,6 +17,7 @@ import type {
 } from './types';
 import type { Savepoint, WaitingStore } from './store';
 import { mapMaybe, settle, type MaybePromise } from './maybe';
+import { RecordAccessDeniedError } from './errors';
 
 /**
  * `context.user` when no authenticated user is injected — the auth-unconfigured
@@ -173,7 +174,10 @@ export function buildRecordsHost(adapter: WaitingStore, config: ClientSolutionCo
           try {
             const record = (yield adapter.getRecord(String(id))) as RecordInstance;
             return record.typeRef === fullId(type) ? toDslRecord(record) : null;
-          } catch {
+          } catch (err) {
+            // A record withheld from this caller is not a missing one: the
+            // reader is told, rather than shown a blank (2026-10-12).
+            if (err instanceof RecordAccessDeniedError) throw err;
             return null;
           }
         })(),

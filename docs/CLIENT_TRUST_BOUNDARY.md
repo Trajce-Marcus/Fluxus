@@ -334,8 +334,9 @@ which already exists.
   waivers are rejected.
 - **Unknown attribute keys are dropped** by exact-key mapping — the defence
   against smuggling extra fields into a write, already in place.
-- **Anchor readability is checked before the gate**, and denied as *not-found*
-  so a hidden record is indistinguishable from a missing one.
+- **Anchor readability is checked before the gate**, and denied as "Record
+  access denied" (2026-10-12; as *not-found* before, so that a hidden record
+  was indistinguishable from a missing one — reversed, BLUEPRINT *Access*).
 
 ### Gap 1 — `callbackData: z.unknown()` (the sharpest)
 

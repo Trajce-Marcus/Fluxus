@@ -10,6 +10,7 @@ export type { Engine, EngineOptions, ActivityAvailability, RunActivityOptions } 
 
 export type { ModelStore, Savepoint, Store, WaitingStore } from './store';
 export { MemoryAdapter, coerceFieldValues, shapeNewRecord, uniqueValues } from './memoryAdapter';
+export { RecordAccessDeniedError } from './errors';
 export type { MemoryAdapterOptions } from './memoryAdapter';
 
 export { buildGeoModule } from './services/geo';

@@ -63,14 +63,17 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    record, or one type, **merged** into the snapshot through the new
    `MemoryAdapter.mergeRecords` rather than replacing it. `records.get` and
    `records.list` already existed server-side and are RBAC-filtered, so a
-   record the caller may not read comes back as not-found — the fetch is the
+   record the caller may not read is refused ("Record access denied" since
+   2026-10-12, not-found before) — the fetch is the
    authorisation check as well as the load. These are what a host with no
    partition reaches for: a page's anchor record, the record a component's
    callback named, and (later) the type a grid is showing.
    **`fetchRecord` merges the records it points at too** (2026-10-12) —
    `records.get`'s `references`, two levels, readable ones only — so a page's
    expressions and a form's reference labels can follow a reference from the
-   record they hold.
+   record they hold. The references it may not read (`withheld`) are passed to
+   `mergeRecords`, so following one throws `RecordAccessDeniedError`; `refresh`
+   replaces them with the re-read's.
 2. **`refresh()`** — with the partition, re-fetch the lot into the *same*
    adapter via `MemoryAdapter.replaceRecords` (identity stable, subscribers
    notified). With `records: 'none'` there is no partition to re-fetch, so it

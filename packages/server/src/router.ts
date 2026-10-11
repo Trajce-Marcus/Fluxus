@@ -148,8 +148,10 @@ type RecordRow = typeof records.$inferSelect;
  * REFERENCE_DEPTH levels — sent with a record so a page that holds only its own
  * record can still show `context.record.area.name`, and a form can name what a
  * reference holds (2026-10-12). Only records the caller may read, by the same
- * readable-types answer as the record itself; a reference to a missing record
- * is skipped. The roots themselves are never repeated.
+ * readable-types answer as the record itself; one that exists but may not be
+ * read is **withheld** — named, so the page can say access is denied rather
+ * than show a blank — and not followed further. A reference to a missing
+ * record is skipped. The roots themselves are never repeated.
  */
 async function referencedRecords(
   db: AppContext['db'],
@@ -157,13 +159,14 @@ async function referencedRecords(
   config: SolutionConfig,
   readable: Set<string> | null,
   roots: RecordRow[],
-): Promise<RecordRow[]> {
+): Promise<{ found: RecordRow[]; withheld: string[] }> {
   const refFields = new Map(config.recordTypes.map((rt) => [
     rt.id,
     rt.custom_fields.filter((cf) => cf.type === 'fk_ref').map((cf) => cf.key),
   ]));
   const seen = new Set(roots.map((r) => r.id));
   const found: RecordRow[] = [];
+  const withheld: string[] = [];
   let level = roots;
   for (let depth = 0; depth < REFERENCE_DEPTH && level.length > 0; depth++) {
     const ids = new Set<string>();
@@ -176,12 +179,18 @@ async function referencedRecords(
     if (ids.size === 0) break;
     const rows = await db.select().from(records)
       .where(and(eq(records.operationId, operationId), inArray(records.id, [...ids])));
+    for (const r of rows) seen.add(r.id);
     level = rows.filter((r) => readable === null || readable.has(r.typeRef));
-    for (const r of level) seen.add(r.id);
     found.push(...level);
+    withheld.push(...rows.filter((r) => !level.includes(r)).map((r) => r.id));
   }
-  return found;
+  return { found, withheld };
 }
+
+/** A record that exists but may not be read (2026-10-12, the user's ruling,
+ *  reversing "denied reads as not found"): showing nothing misleads more than
+ *  saying access is denied. A record that does not exist is still not found. */
+const accessDenied = () => new TRPCError({ code: 'FORBIDDEN', message: 'Record access denied' });
 
 /** Whether a file's mime/extension satisfies a `file` attribute's `accept` list. */
 function matchesAccept(accept: string[], mime: string, name: string): boolean {
@@ -898,20 +907,21 @@ export const appRouter = t.router({
             .select()
             .from(records)
             .where(and(eq(records.operationId, input.operationId), eq(records.id, input.recordId)));
-          // Deny reads as not-found (RBAC_COMPACT): a hidden record and a
-          // missing one are indistinguishable to the caller.
-          if (rows.length === 0 || (readable !== null && !readable.has(rows[0].typeRef))) {
+          if (rows.length === 0) {
             throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
           }
+          if (readable !== null && !readable.has(rows[0].typeRef)) throw accessDenied();
           const r = rows[0];
           const op = await getOperation(ctx.db, input.operationId);
           const config = await getSolutionConfig(ctx.db, op.solutionId);
-          const references = await referencedRecords(ctx.db, input.operationId, config, readable, [r]);
+          const { found, withheld } = await referencedRecords(ctx.db, input.operationId, config, readable, [r]);
           return {
             id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory,
             // What it points at, so the browser can follow a reference without
-            // a round trip per field (see referencedRecords).
-            references: references.map((x) => ({ id: x.id, typeRef: x.typeRef, customFields: x.customFields, activityHistory: x.activityHistory })),
+            // a round trip per field, and what it points at that this caller
+            // may not read (see referencedRecords).
+            references: found.map((x) => ({ id: x.id, typeRef: x.typeRef, customFields: x.customFields, activityHistory: x.activityHistory })),
+            withheld,
           };
         } catch (err) {
           rethrow(err);
@@ -964,13 +974,11 @@ export const appRouter = t.router({
             let anchorRecord = null;
             if (input.recordId) {
               anchorRecord = await host.store.getRecord(input.recordId); // throws → BAD_REQUEST via rethrow
-              // Unreadable anchor ⇒ not-found, checked BEFORE the run gate
-              // (RBAC_COMPACT): the caller can't tell a hidden record from a
-              // missing one. Reuses the already-loaded config + resolved roles.
+              // Unreadable anchor ⇒ access denied, checked BEFORE the run gate
+              // (2026-10-12; not-found before). Reuses the already-loaded
+              // config + resolved roles.
               const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
-              if (readable !== null && !readable.has(anchorRecord.typeRef)) {
-                throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
-              }
+              if (readable !== null && !readable.has(anchorRecord.typeRef)) throw accessDenied();
             }
 
             const issues = await withSpan('validate', activity.id, () =>
@@ -1059,9 +1067,7 @@ export const appRouter = t.router({
           if (input.recordId) {
             anchorRecord = await host.store.getRecord(input.recordId);
             const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
-            if (readable !== null && !readable.has(anchorRecord.typeRef)) {
-              throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
-            }
+            if (readable !== null && !readable.has(anchorRecord.typeRef)) throw accessDenied();
           }
 
           const issues = await withSpan('validate', activity.id, () =>

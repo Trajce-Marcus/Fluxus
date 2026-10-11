@@ -918,18 +918,21 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * The records it points at come with it, two levels deep and readable ones
    * only (2026-10-12), and are merged too: a page holding only its own record
    * could not otherwise show `context.record.area.name`, nor a form name what
-   * a reference holds.
+   * a reference holds. Those it points at but may not read are marked
+   * withheld, so following one says "Record access denied" instead of reading
+   * as blank. A record the caller may not read at all is refused the same way.
    */
   async fetchRecord(recordId: string): Promise<RecordInstance> {
-    const { references, ...record } = await this.readRecord(recordId);
+    const { references, withheld, ...record } = await this.readRecord(recordId);
     this.roots.add(record.id);
-    this.adapter.mergeRecords([record, ...references].map((r) => [r.id, r] as const));
+    this.adapter.mergeRecords([record, ...references].map((r) => [r.id, r] as const), withheld);
     return record;
   }
 
-  private async readRecord(recordId: string): Promise<RecordInstance & { references: RecordInstance[] }> {
-    const read = (await this.trpc.records.get.query({ operationId: this.operationId, recordId })) as RecordInstance & { references?: RecordInstance[] };
-    return { ...read, references: read.references ?? [] };
+  private async readRecord(recordId: string): Promise<RecordInstance & { references: RecordInstance[]; withheld: string[] }> {
+    const read = (await this.trpc.records.get.query({ operationId: this.operationId, recordId })) as
+      RecordInstance & { references?: RecordInstance[]; withheld?: string[] };
+    return { ...read, references: read.references ?? [], withheld: read.withheld ?? [] };
   }
 
   /**
@@ -965,12 +968,14 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     const ids = [...this.roots];
     const reads = await Promise.all(ids.map((recordId) => this.readRecord(recordId).catch(() => null)));
     const held: RecordInstance[] = [];
+    const withheld: string[] = [];
     reads.forEach((read, i) => {
       if (read === null) { this.roots.delete(ids[i]); return; }
-      const { references, ...record } = read;
+      const { references, withheld: denied, ...record } = read;
       held.push(...references, record);
+      withheld.push(...denied);
     });
-    this.adapter.replaceRecords(held.map((r) => [r.id, r] as const));
+    this.adapter.replaceRecords(held.map((r) => [r.id, r] as const), withheld);
   }
 
   /**

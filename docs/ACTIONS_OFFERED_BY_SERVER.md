@@ -215,7 +215,10 @@ Claude's proposals, each decided by the user on 2026-10-11:
 
 - **The call is `page.activities`** — the user's name, in place of Claude's
   `activities.available`.
-- **An unreadable record answers an empty list** — approved.
+- **An unreadable record answers an empty list** — approved. Kept when the
+  rest of the platform moved to "Record access denied" on 2026-10-12: the list
+  shows what you can do, and is not a request for the record (the user's
+  distinction).
 - **The Console workbench switches too** — approved.
 
 ## Review

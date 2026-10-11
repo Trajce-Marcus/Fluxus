@@ -12,7 +12,8 @@ Today a role reads every record of a type or none: the record type's read list.
 A **read condition** narrows one role's read of one record type to the records
 for which an expression is true. The server checks it on every record it hands
 out directly: a page opening its record, a list or partition fetch, and the
-record an action runs on. A record that fails reads as not found. GETs and hooks
+record an action runs on. A record that fails answers "Record access denied"
+(not found when this was written; reversed 2026-10-12, BLUEPRINT *Access*). GETs and hooks
 are unchanged: they read every record, as today, and a GET's author filters what
 it returns.
 
@@ -22,7 +23,9 @@ it returns.
   page (the user's idea, for ad hoc page rules) is parked for apps Part 2, when
   the server learns which page a call comes from.
 - **Hidden reads as not found**, exactly like a record that does not exist —
-  what `records.get` already answers for an unreadable type.
+  what `records.get` already answers for an unreadable type. *Reversed
+  2026-10-12:* a record not let through answers "Record access denied", as an
+  unreadable type now does.
 - **GETs stay outside access control.** A GET that returns protected records
   filters them itself.
 - **Built together with its first user**: the inspections Inspectors record type
@@ -98,10 +101,10 @@ Every place the server hands records to a caller directly:
 
 | Where | Today | With read conditions |
 | --- | --- | --- |
-| `records.get` — a page opening its record, a page following a reference; since 2026-10-12 also the records it points at (`references`, two levels) | not found if the type is unreadable; an unreadable referenced record is left out | also not found if no held role lets the record through; a referenced record not let through is left out |
+| `records.get` — a page opening its record, a page following a reference; since 2026-10-12 also the records it points at (`references`, two levels) | access denied if the type is unreadable; an unreadable referenced record is named as withheld | also access denied if no held role lets the record through; a referenced record not let through is named as withheld |
 | `records.list` — one type's records | empty if the type is unreadable | only the records let through |
 | `records.partition` — the Console workbench | readable types only | and, within them, only the records let through |
-| `activities.run` with a record | not found if unreadable, checked before the availability gate | also not found if the record is not let through |
+| `activities.run` with a record | access denied if unreadable, checked before the availability gate | also access denied if the record is not let through |
 | `activities.query` (a GET) with a record | the same | the same |
 | `page.activities` with a record (added 2026-10-11, [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md)) | an empty list if the type is unreadable | also an empty list if the record is not let through |
 
@@ -176,8 +179,8 @@ needs a small addition.
    Correct the comment beside it that still says a solution with no roles reads
    open (strict since 2026-10-11).
 2. **Validator:** the three save checks in §7, and refusing `invoke`.
-3. **Server:** the one read check of §4, used by all six places. Not-found
-   answers keep their present shape and wording.
+3. **Server:** the one read check of §4, used by all six places. Refusals keep
+   their present shape and wording ("Record access denied" since 2026-10-12).
 4. **Console:** the condition box, and keeping `access` whole when the read list
    is edited.
 5. **Tests:** §10.
@@ -190,9 +193,9 @@ needs a small addition.
 - A role without a condition reads every record; with one, only the matching
   records — for `get`, `list` and `partition`.
 - Two held roles, one with a condition and one without: every record.
-- A record not let through: `get` answers exactly as for a missing id;
-  `activities.run` and `activities.query` with it answer not found, before the
-  availability gate.
+- A record not let through: `get`, `activities.run` and `activities.query`
+  with it answer "Record access denied", before the availability gate; a
+  missing id still answers not found.
 - A condition following references (finding → job → inspector).
 - A condition that errors hides the record and logs a warning; one that
   answers anything but `true` hides it.

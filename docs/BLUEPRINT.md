@@ -128,12 +128,31 @@ and the server refuses them when run. The user's wider aim: the server does
 more of the work before a page reaches the browser, for needs not yet
 identified.
 
+**Built — a record you may not read says so (ruled and built 2026-10-12).**
+A record that exists but that the caller may not read answers **"Record access
+denied"**; only a record that does not exist answers "not found". It applies
+where a record is asked for: opening one (a page by link, a record fetched by
+id), running an action on one, and a record pointing at one the caller may not
+read — the server names that reference as withheld, and the page shows "Record
+access denied" in the section that would have shown it. Lists are unchanged —
+they are lists of what you may see, and simply leave out the rest — and so is
+the list of actions a record offers, which answers empty for a record you may
+not read: it shows what you can do, and is not a request for the record (the
+user's distinction).
+
+**Reversed 2026-10-12: "denied reads as not found"** (RBAC_COMPACT, 2026-07).
+A hidden record and a missing one were made indistinguishable, so that a
+refusal never confirmed a record existed. Dropped by the user's ruling:
+showing nothing misleads more than showing that access is denied — found on
+the inspections Quote tab, where an inspector would have seen blanks that read
+as "no quote".
+
 **Direction — read conditions (agreed 2026-10-11, spec
 [RECORD_READ_CONDITIONS](RECORD_READ_CONDITIONS.md), not built).** A role's read of a
 record type can be narrowed to the records an expression lets through, e.g.
 an inspector reads only the jobs assigned to them. The server applies it
-wherever it hands records out directly, and a record not let through reads as
-not found. GETs and hooks stay outside it and filter for themselves. This takes
+wherever it hands records out directly, and a record not let through answers
+"Record access denied" (not found until 2026-10-12, above). GETs and hooks stay outside it and filter for themselves. This takes
 up the per-record read access that RBAC left out of its first cut "until a real
 modelling need appears"; the inspections solution is that need. A condition on
 opening a page, for ad hoc page rules, was considered in the same discussion and

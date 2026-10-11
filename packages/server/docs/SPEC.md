@@ -412,7 +412,7 @@ takes `operationId?` (both default `demo/sdm`):
   lives on the server grade of the model and `projectConfig` cannot copy it).
   The parameters are the activity's attributes and go through the same
   `validateSubmission`. `recordId` is optional and, when given, is read-gated
-  like any anchor (unreadable ⇒ not-found). Authorisation is the activity's own
+  like any anchor (unreadable ⇒ "Record access denied"). Authorisation is the activity's own
   `show_condition`, with no second filter over the answer — see the engine SPEC
   for why. **Logged light** on the anchor when one is given: parameters,
   caller, outcome, duration, never the answer; anchorless reads leave no trace.
@@ -461,10 +461,14 @@ takes `operationId?` (both default `demo/sdm`):
   (`REFERENCE_DEPTH`), readable ones only, a reference to a missing record
   skipped. A Runtime page holds only its own record, so without them
   `context.record.area.name` read null and a form showed a reference's id
-  instead of its name. Tests: `test/recordReferences.test.ts`.
+  instead of its name. A referenced record the caller may not read is named in
+  **`withheld`** (and not followed further), so the browser can say "Record
+  access denied" where it would have shown it. Tests:
+  `test/recordReferences.test.ts`.
   **RBAC stage 1**: all three apply the record-type read filter (below) — a
-  deny reads as not-found on `get`, and unreadable types drop out of
-  `partition`/`list`.
+  deny answers "Record access denied" on `get` (FORBIDDEN, since 2026-10-12;
+  not-found before, reversed by the user — BLUEPRINT *Access*), a missing record
+  not-found, and unreadable types drop out of `partition`/`list`.
 - **`config.get` / `config.put`** `{ solutionId?, config }` — the **design
   plane's** door: the whole model, hooks and access rules included, because
   authoring them is the job. Since 2026-08-09 `get` requires **sol admin** like
@@ -577,7 +581,7 @@ rev 6 §0). What the server implements:
   (`computeReadable` returns the empty set — strict, 2026-10-11, reversing the
   adoption posture; `pageOpenable` likewise opens no page). It is **default deny** — a type is readable only if its
   `access.read` lists a role the caller holds. Applied by `records.*`, by
-  the `activities.run` anchor check (unreadable anchor ⇒ not-found, *before*
+  the `activities.run` anchor check (unreadable anchor ⇒ "Record access denied", *before*
   the run gate), by `page.activities` (an unreadable record offers nothing,
   2026-10-11), and since 2026-08-09 by `projectConfig` — one answer
   (`computeReadable`, `src/projection.ts`) governing both halves of a snapshot,
