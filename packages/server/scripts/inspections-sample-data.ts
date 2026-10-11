@@ -18,7 +18,9 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { and, eq } from 'drizzle-orm';
 import { createDb, closeDb } from '../src/db/client';
+import { records } from '../src/db/schema';
 import { appRouter } from '../src/router';
 
 if (!process.env.DATABASE_URL) {
@@ -163,7 +165,10 @@ console.log(`  + ${n} inspectors (${inspectorIds.size} in all)`);
 
 // Resumable by address: a job already in the operation is left alone, so new
 // sample jobs can be added later without touching the ones people have used.
-const existingAddresses = new Set((await query<{ address: string }>('act_list_jobs')).map((j) => j.address));
+// Read from the table, not act_list_jobs: that GET shows a caller only the jobs
+// assigned to them (2026-10-11), and this script runs as nobody in particular.
+const existingAddresses = new Set((await db.select({ f: records.customFields }).from(records)
+  .where(and(eq(records.operationId, OPERATION), eq(records.typeRef, 'rt_jobs')))).map((r) => String(r.f.address)));
 
 type Access = 'Fully inspected' | 'Restricted' | 'Not inspected' | 'Not applicable';
 type Finding = {

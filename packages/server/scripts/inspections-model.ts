@@ -366,8 +366,12 @@ const JOB_ACTIVITIES = [
   }),
   act({
     id: 'act_list_jobs', name: 'List Jobs', record_map: 'GET',
-    description: 'Every job, for the Jobs page.',
-    returns: 'records.jobs.orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector: inspector.name)',
+    // Admins see every job; anyone else only the jobs assigned to them — the
+    // inspector whose email they signed in with (2026-10-11). This is the
+    // list only: a job opened by link still shows until read conditions exist
+    // (docs/RECORD_READ_CONDITIONS.md).
+    description: 'The Jobs page: every job for an Admin, otherwise only the jobs assigned to the signed-in inspector.',
+    returns: "records.jobs.where('role_admin' in context.user.roles or inspector.email = context.user.email).orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector: inspector.name)",
   }),
 ];
 

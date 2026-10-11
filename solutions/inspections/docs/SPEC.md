@@ -339,7 +339,7 @@ the way existing solutions do it.
 | `act_assess_jobs` | Assessment | UPDATE | major incidence, minor incidence, overall condition, overall assessment | In Progress | unchanged |
 | `act_finish_jobs` | Finish Inspection | UPDATE | declaration confirmed (must be `true`) | In Progress, every area has a finding, the Assessment is done, and the required property facts are filled in | Inspected |
 | `act_summarise_findings` | — | GET | job | — | — (one line of counts for the Job page) |
-| `act_list_jobs` | — | GET | — | — | — |
+| `act_list_jobs` | — | GET | — | — | — (every job for an Admin; otherwise only the jobs assigned to the signed-in inspector) |
 
 Schedule is rerun to reschedule. Quote is rerun to change the price. Create's
 hook sets `job_type` to "Pre-Purchase Inspection" and the **job number**: the
@@ -449,6 +449,11 @@ condition.
 1. **Jobs** — list of jobs (job number, address, customer, status, scheduled
    date, inspector), with a button for Create Pre-Purchase Job. The way in, and the
    only place a job is created. A row opens the Job page.
+   **An Admin sees every job; anyone else only the jobs assigned to them**
+   (2026-10-11) — the jobs whose inspector has the email they signed in with.
+   The filter is in the list's GET, so it holds on the server. It is the list
+   only: a job opened by a link still shows, until read conditions are built
+   ([RECORD_READ_CONDITIONS](../../../docs/RECORD_READ_CONDITIONS.md)).
 2. **Job** — always at the top: the header (job number and address; customer
    and status), a
    **summary line of counts** ("Major defects: 3 · Minor defects: 5 · Safety
