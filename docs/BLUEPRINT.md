@@ -114,7 +114,7 @@ roles and covers pages with no record type; a run with no instance is refused.
 Not treated as a gap until then (the user's call).
 
 **Direction — the server decides which actions are offered (agreed
-2026-10-11, not specced).** Today the browser evaluates an action's
+2026-10-11, spec [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md), not built).** Today the browser evaluates an action's
 availability condition to decide whether to draw its button, and the server
 evaluates it again when the action runs. In the Runtime the browser has no
 signed-in user (no email, no roles), so a condition about the user hides the
