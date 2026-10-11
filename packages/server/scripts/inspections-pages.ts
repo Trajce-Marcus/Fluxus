@@ -194,7 +194,6 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
     header: [
       header('{{ context.record.area.name }} — {{ context.record.location }}', '{{ context.record.job.job_no }} · {{ context.record.job.address }}'),
       activities('This area inspection can no longer be changed.'),
-      { id: 'slot-open-job', componentName: 'OpenPage', staticConfig: { label: 'View job', target: 'pages/job' }, dynamicProps: { record: 'context.record.job' } },
     ],
     body: [
       details([
@@ -227,7 +226,6 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
     header: [
       header('{{ context.record.defect.name }}', '{{ context.record.area_inspection.area.name }} — {{ context.record.area_inspection.location }} · {{ context.record.area_inspection.job.job_no }}'),
       activities('This finding can no longer be changed.'),
-      { id: 'slot-open-area-inspection', componentName: 'OpenPage', staticConfig: { label: 'View area inspection', target: 'pages/area-inspection' }, dynamicProps: { record: 'context.record.area_inspection' } },
     ],
     body: [
       details([

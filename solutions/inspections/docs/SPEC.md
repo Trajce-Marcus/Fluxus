@@ -522,11 +522,12 @@ condition.
 
    Part 2's report and payment details will most likely be a fourth tab.
 3. **Area Inspection** (2026-10-12) — the area, location, outcome,
-   restriction, comments and photos, its actions, a View job link, then an Add
-   finding button and its findings as a `RecordList` (defect, category, safety
+   restriction, comments and photos, its actions, then an Add finding button and its findings as a `RecordList` (defect, category, safety
    hazard, photos) with Update, Remove and Open on each row.
-4. **Finding** — one defect with its photos (`Photos`), and a View area
-   inspection link.
+4. **Finding** — one defect with its photos (`Photos`).
+
+   Neither page links back up (2026-10-12, the user's call): the header's back
+   arrow does it.
 
 One page per sample-data file — the source of that data:
 
