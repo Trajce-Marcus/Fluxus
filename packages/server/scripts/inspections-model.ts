@@ -122,22 +122,23 @@ const ATTRIBUTES = [
   pick('overall_condition', 'Overall condition', ['Below average', 'Average', 'Above average']),
   text('overall_assessment', 'Overall assessment', '', true),
 
-  // findings
-  { key: 'job', label: 'Job', description: 'The job the finding belongs to. Taken from the Job page, never asked for.', type: 'reference', type_config: { fk_record_type: 'rt_jobs' } },
+  // area inspections and findings
+  { key: 'job', label: 'Job', description: 'The job an area inspection belongs to. Taken from the Job page, never asked for.', type: 'reference', type_config: { fk_record_type: 'rt_jobs' } },
   { key: 'area', label: 'Inspection area', description: '', type: 'reference',
     type_config: { fk_record_type: 'rt_inspection_areas', datasource: "invoke('act_search_inspection_areas', { term: term })" } },
   text('location', 'Location', 'e.g. Bedroom 1'),
-  // `area_access`, not `access`: `access` is the job's free-text access note.
-  pick('area_access', 'Access', ['Fully inspected', 'Restricted', 'Not inspected', 'Not applicable']),
+  // What came of inspecting an area (2026-10-12) — replaces Access and "Any
+  // defects?"; the values are OUTCOMES below.
+  pick('outcome', 'Outcome', ['Inspected – defects', 'Inspected – no defects', 'Cannot inspect', 'Not applicable']),
   // A pick list, not a record type (2026-10-11): the user asked for a pick list
   // and a record type of names only was more than the job needed.
   { ...pick('restriction', 'Restriction', [
     'Furniture and belongings', 'Stored goods', 'Vehicles', 'Insulation', 'Ducting', 'Low clearance',
     'Height or safety', 'Vegetation', 'Locked or no key', 'No access hatch', 'Wet or slippery surfaces',
-  ]), description: 'Why the area was not fully inspected.' },
-  { key: 'has_defect', label: 'Any defects?', description: '', type: 'list', type_config: TRUE_FALSE },
-  { key: 'defect', label: 'Defect', description: 'Only the defects mapped to the chosen area.', type: 'reference',
-    type_config: { fk_record_type: 'rt_defects', datasource: "invoke('act_search_area_defects', { area: attributes.area, term: term })" } },
+  ]), description: 'Why the area could not be fully inspected.' },
+  { key: 'area_inspection', label: 'Area inspection', description: 'The area inspection a finding belongs to. Taken from the Area Inspection page, never asked for.', type: 'reference', type_config: { fk_record_type: 'rt_area_inspections' } },
+  { key: 'defect', label: 'Defect', description: "Only the defects mapped to the area inspection's area.", type: 'reference',
+    type_config: { fk_record_type: 'rt_defects', datasource: "invoke('act_search_area_defects', { area_inspection: attributes.area_inspection, term: term })" } },
   { key: 'category', label: 'Category', description: '', type: 'reference',
     type_config: { fk_record_type: 'rt_defect_categories', datasource: "invoke('act_search_defect_categories', { term: term })" } },
   { key: 'safety_hazard', label: 'Safety hazard', description: 'Separate from the category — a minor defect can be a safety hazard.', type: 'list', type_config: TRUE_FALSE },
@@ -221,13 +222,17 @@ const RECORD_TYPES = [
     field('overall_assessment', 'Overall assessment'),
     field('declaration_confirmed', 'Declaration confirmed'),
   ] },
-  { id: 'rt_findings', name: 'Findings', description: 'In this area, at this location, this defect (or none), with photos and comments.', workflow_ref: 'wf_findings', custom_fields: [
+  { id: 'rt_area_inspections', name: 'Area Inspections', description: 'One area at one location, and what came of inspecting it — its findings sit under it.', workflow_ref: 'wf_area_inspections', custom_fields: [
     field('job', 'Job', 'fk_ref', { rt: 'rt_jobs', display: 'address' }),
     field('area', 'Inspection area', 'fk_ref', { rt: 'rt_inspection_areas', display: 'name' }),
     field('location', 'Location'),
-    field('area_access', 'Access'),
+    field('outcome', 'Outcome'),
     field('restriction', 'Restriction'),
-    field('has_defect', 'Any defects?'),
+    field('photos', 'Photos', 'photo'),
+    field('comments', 'Comments'),
+  ] },
+  { id: 'rt_findings', name: 'Findings', description: 'One defect found in an area inspection, with photos and comments.', workflow_ref: 'wf_findings', custom_fields: [
+    field('area_inspection', 'Area inspection', 'fk_ref', { rt: 'rt_area_inspections', display: 'location' }),
     field('defect', 'Defect', 'fk_ref', { rt: 'rt_defects', display: 'name' }),
     field('category', 'Category', 'fk_ref', { rt: 'rt_defect_categories', display: 'name' }),
     field('safety_hazard', 'Safety hazard'),
@@ -350,7 +355,7 @@ const JOB_ACTIVITIES = [
   }),
   act({
     id: 'act_finish_jobs', name: 'Finish Inspection', record_map: 'UPDATE',
-    description: 'Ends the walk-through. Every area needs at least one finding.',
+    description: 'Ends the walk-through. Every area needs at least one area inspection.',
     show_condition: `context.record.status = 'In Progress' and ${ASSIGNED('context.record')}`,
     attributes: [req('declaration_confirmed', { validation: "value = 'true'", validation_message: 'Confirm the declaration to finish the inspection.' })],
     before_hook: [
@@ -361,11 +366,11 @@ const JOB_ACTIVITIES = [
       "  fail('Fill in the property facts in Inspection Details before finishing the inspection.')",
       '}',
       "let missing = ''",
-      `for each a in records.inspection_areas.where(${UNEXPIRED} and not (id in records.findings.where(job = context.record.id).values(area))).orderBy(sequence) {`,
+      `for each a in records.inspection_areas.where(${UNEXPIRED} and not (id in records.area_inspections.where(job = context.record.id).values(area))).orderBy(sequence) {`,
       "  missing = iif(missing = '', a.name, missing + ', ' + a.name)",
       '}',
       "if missing <> '' {",
-      "  fail('Every area needs at least one finding, even if it has no defects. Still missing: ' + missing + '.')",
+      "  fail('Every area needs at least one area inspection, whatever its outcome. Still missing: ' + missing + '.')",
       '}',
     ].join('\n'),
     after_hook: status('Inspected'),
@@ -381,90 +386,177 @@ const JOB_ACTIVITIES = [
   }),
 ];
 
-// ── findings ────────────────────────────────────────────────────────────────
+// ── area inspections and findings ───────────────────────────────────────────
 
-const INSPECTED = "(attributes.area_access = 'Fully inspected' or attributes.area_access = 'Restricted')";
-const RESTRICTED = "(attributes.area_access = 'Restricted' or attributes.area_access = 'Not inspected')";
-const DEFECT_SHOWN = `${INSPECTED} and attributes.has_defect = 'true'`;
-const MAPPED = `records.area_defects.where(area = attributes.area and defect = attributes.defect and ${UNEXPIRED}).count = 0`;
-const NOT_MAPPED_MESSAGE = "fail('That defect is not listed for this area. Pick one from the defects for the chosen area.')";
-// Hidden answers are cleared, so a finding that changes its answers does not
-// keep stale ones.
-const CLEAR_HIDDEN = [
-  `if not ${INSPECTED} {`,
-  '  context.record.update({ has_defect: null, defect: null, category: null, safety_hazard: null })',
-  "} else if attributes.has_defect = 'false' {",
-  '  context.record.update({ defect: null, category: null, safety_hazard: null })',
-  '}',
-  `if not ${RESTRICTED} {`,
-  '  context.record.update({ restriction: null })',
+// Two levels (2026-10-12): an area inspection is one area at one location and
+// what came of looking at it; a finding is one defect found there. Splitting
+// them means three defects in Bedroom 1 are one area inspection with three
+// findings, instead of Bedroom 1 typed three times.
+const OUTCOMES = ['Inspected – defects', 'Inspected – no defects', 'Cannot inspect', 'Not applicable'];
+const WITH_DEFECTS = OUTCOMES[0];
+const CANNOT_INSPECT = OUTCOMES[2];
+const NOT_APPLICABLE = OUTCOMES[3];
+const NEEDS_RESTRICTION = [
+  `if attributes.outcome = '${CANNOT_INSPECT}' and attributes.restriction is null {`,
+  "  fail('Say why the area could not be inspected.')",
   '}',
 ].join('\n');
-const FINDING_QUESTIONS = (): Usage[] => [
+// Not applicable has no restriction: the area is not there to be restricted.
+const CLEAR_RESTRICTION = `if attributes.outcome = '${NOT_APPLICABLE}' {\n  context.record.update({ restriction: null })\n}`;
+const AREA_INSPECTION_QUESTIONS = (): Usage[] => [
   req('area'),
   req('location'),
-  req('area_access'),
-  req('restriction', { show_condition: RESTRICTED }),
-  req('has_defect', { show_condition: INSPECTED }),
-  req('defect', { show_condition: DEFECT_SHOWN }),
-  req('category', { show_condition: DEFECT_SHOWN }),
-  req('safety_hazard', { show_condition: DEFECT_SHOWN }),
+  req('outcome'),
+  use('restriction', { show_condition: `attributes.outcome is not null and attributes.outcome <> '${NOT_APPLICABLE}'` }),
   use('photos'),
   use('comments'),
 ];
+const IN_PROGRESS_FOR = (job: string) => `${job}.status = 'In Progress' and ${ASSIGNED(job)}`;
+
+const AREA_INSPECTION_ACTIVITIES = [
+  act({
+    id: 'act_add_area_inspections', name: 'Add Area Inspection', record_map: 'CREATE',
+    description: 'Records one area at one location, and what came of inspecting it.',
+    // Only where there is no record, so it is not offered among an area
+    // inspection's own actions — its button is on the Job page. A CREATE runs
+    // with no anchor, so who may add and the job's status are checked in the
+    // before hook against the job named.
+    show_condition: 'context.record is null',
+    attributes: [use('job', { source: 'context.page.record.id' }), ...AREA_INSPECTION_QUESTIONS()],
+    before_hook: [
+      'let job = records.jobs.where(id = attributes.job).first',
+      'if job is null {',
+      "  fail('Add an area inspection from its job.')",
+      '}',
+      `if not ${ASSIGNED('job')} {`,
+      "  fail('Only the inspector assigned to this job, or an Admin, can add area inspections.')",
+      '}',
+      "if job.status <> 'In Progress' {",
+      "  fail('Area inspections can be added only while the inspection is in progress.')",
+      '}',
+      NEEDS_RESTRICTION,
+    ].join('\n'),
+    after_hook: CLEAR_RESTRICTION,
+  }),
+  act({
+    id: 'act_update_area_inspections', name: 'Update Area Inspection', record_map: 'UPDATE',
+    description: 'Changes an area inspection while the inspection is in progress.',
+    show_condition: IN_PROGRESS_FOR('context.record.job'),
+    attributes: AREA_INSPECTION_QUESTIONS(),
+    // Its findings were recorded against this area and this outcome, so
+    // neither changes under them.
+    before_hook: [
+      NEEDS_RESTRICTION,
+      'if context.record.findings.count > 0 {',
+      `  if attributes.outcome <> '${WITH_DEFECTS}' {`,
+      "    fail('This area inspection has findings. Remove them before changing the outcome.')",
+      '  }',
+      '  if attributes.area <> context.record.area {',
+      "    fail('This area inspection has findings. Remove them before changing the area.')",
+      '  }',
+      '}',
+    ].join('\n'),
+    after_hook: CLEAR_RESTRICTION,
+  }),
+  act({
+    id: 'act_remove_area_inspections', name: 'Remove Area Inspection', record_map: 'DELETE',
+    description: 'Deletes the area inspection. The report is still being compiled, so it leaves no trace.',
+    show_condition: IN_PROGRESS_FOR('context.record.job'),
+    before_hook: [
+      'if context.record.findings.count > 0 {',
+      "  fail('Remove the findings of this area inspection first.')",
+      '}',
+    ].join('\n'),
+  }),
+  act({
+    id: 'act_list_area_inspections', name: 'List Area Inspections', record_map: 'GET',
+    // In the order entered — ids are UUIDv7, so they sort by creation time.
+    description: "One job's area inspections, in the order entered, with how many findings each has.",
+    attributes: [use('job')],
+    returns: 'records.area_inspections.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, outcome, restriction, finding_count: findingCount(id), photos, comments)',
+  }),
+];
+
+// A select names the row's fields, not the row, so its findings are counted
+// by a function given the row's id: inside the query, `area_inspection` is the
+// finding's field and the parameter is a name findings do not declare.
+const FUNCTIONS = [
+  {
+    id: 'fn_finding_count', name: 'findingCount',
+    description: 'How many findings an area inspection has — the Findings tab shows it on each row.',
+    body: 'function findingCount(areaInspection) { return records.findings.where(area_inspection = areaInspection).count }',
+  },
+];
+
+const FINDING_QUESTIONS = (): Usage[] => [
+  req('defect'),
+  req('category'),
+  req('safety_hazard'),
+  use('photos'),
+  use('comments'),
+];
+const MAPPED = (defect: string) =>
+  `records.area_defects.where(area in records.area_inspections.where(id = attributes.area_inspection).values(area) and defect = ${defect} and ${UNEXPIRED}).count = 0`;
+const NOT_MAPPED_MESSAGE = "fail('That defect is not listed for this area. Pick one from the defects for the area.')";
 
 const FINDING_ACTIVITIES = [
   act({
     id: 'act_add_findings', name: 'Add Finding', record_map: 'CREATE',
-    description: 'Records one finding on the job whose page it is added from.',
-    // A CREATE has no anchor, so who may add and the job's status are checked
-    // here against the job named, not by a show condition.
-    attributes: [use('job', { source: 'context.page.record.id' }), ...FINDING_QUESTIONS()],
+    description: 'Records one defect on the area inspection whose page it is added from.',
+    // Only where there is no record, so it is not offered among a finding's
+    // own actions — its button is on the Area Inspection page. A CREATE runs
+    // with no anchor, so who may add, the job's status and the outcome are
+    // checked in the before hook against the area inspection named.
+    show_condition: 'context.record is null',
+    attributes: [use('area_inspection', { source: 'context.page.record.id' }), ...FINDING_QUESTIONS()],
     before_hook: [
-      'let job = records.jobs.where(id = attributes.job).first',
-      'if job is null {',
-      "  fail('Add a finding from its job.')",
+      'let ai = records.area_inspections.where(id = attributes.area_inspection).first',
+      'if ai is null {',
+      "  fail('Add a finding from its area inspection.')",
       '}',
-      `if not ${ASSIGNED('job')} {`,
+      `if not ${ASSIGNED('ai.job')} {`,
       "  fail('Only the inspector assigned to this job, or an Admin, can add findings.')",
       '}',
-      "if job.status <> 'In Progress' {",
+      "if ai.job.status <> 'In Progress' {",
       "  fail('Findings can be added only while the inspection is in progress.')",
       '}',
-      `if ${DEFECT_SHOWN} and ` + MAPPED + ' {',
+      `if ai.outcome <> '${WITH_DEFECTS}' {`,
+      `  fail('Findings can be added only to an area inspected with defects. Change its outcome to ${WITH_DEFECTS} first.')`,
+      '}',
+      `if ${MAPPED('attributes.defect')} {`,
       '  ' + NOT_MAPPED_MESSAGE,
       '}',
     ].join('\n'),
-    after_hook: CLEAR_HIDDEN,
   }),
   act({
     id: 'act_update_findings', name: 'Update Finding', record_map: 'UPDATE',
     description: 'Changes a finding while the inspection is in progress.',
-    show_condition: `context.record.job.status = 'In Progress' and ${ASSIGNED('context.record.job')}`,
-    attributes: FINDING_QUESTIONS(),
-    // The mapping check applies only when the area or defect is being changed,
-    // so an old finding whose defect has since expired can still be updated.
+    show_condition: IN_PROGRESS_FOR('context.record.area_inspection.job'),
+    // The area inspection is never asked: it rides along hidden, filled from
+    // the finding, so the defect picker knows which area's defects to offer.
+    // A hidden question is not submitted.
+    attributes: [use('area_inspection', { show_condition: 'false' }), ...FINDING_QUESTIONS()],
+    // The mapping check applies only when the defect is being changed, so an
+    // old finding whose defect has since expired can still be updated.
     before_hook: [
-      `if ${DEFECT_SHOWN} and (attributes.area <> context.record.area or attributes.defect <> context.record.defect) {`,
-      '  if ' + MAPPED + ' {',
+      'if attributes.defect <> context.record.defect {',
+      `  if ${MAPPED('attributes.defect').replace('attributes.area_inspection', 'context.record.area_inspection')} {`,
       '    ' + NOT_MAPPED_MESSAGE,
       '  }',
       '}',
     ].join('\n'),
-    after_hook: CLEAR_HIDDEN,
   }),
   act({
     id: 'act_remove_findings', name: 'Remove Finding', record_map: 'DELETE',
     description: 'Deletes the finding. The report is still being compiled, so it leaves no trace.',
-    show_condition: `context.record.job.status = 'In Progress' and ${ASSIGNED('context.record.job')}`,
+    show_condition: IN_PROGRESS_FOR('context.record.area_inspection.job'),
   }),
   act({
     id: 'act_list_findings', name: 'List Findings', record_map: 'GET',
     // In the order entered — ids are UUIDv7, so they sort by creation time.
-    // Area order is the `sequence` column, sorted by clicking its heading.
-    description: "One job's findings, in the order entered.",
-    attributes: [use('job')],
-    returns: 'records.findings.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, area_access, restriction, defect: defect.name, category: category.name, safety_hazard, photos, comments)',
+    description: "One area inspection's findings, in the order entered.",
+    attributes: [use('area_inspection')],
+    returns: 'records.findings.where(area_inspection = attributes.area_inspection).orderBy(id).select(id, defect: defect.name, category: category.name, safety_hazard, photos, comments)',
   }),
   act({
     id: 'act_summarise_findings', name: 'Summarise Findings', record_map: 'GET',
@@ -473,9 +565,9 @@ const FINDING_ACTIVITIES = [
     description: "One line of counts for the Job page: major defects, minor defects, safety hazards.",
     attributes: [use('job')],
     returns: [
-      "'Major defects: ' + records.findings.where(job = attributes.job and category in records.defect_categories.where(name = 'Major defect').values(id)).count +",
-      "' · Minor defects: ' + records.findings.where(job = attributes.job and category in records.defect_categories.where(name = 'Minor defect').values(id)).count +",
-      "' · Safety hazards: ' + records.findings.where(job = attributes.job and (safety_hazard = 'true' or category in records.defect_categories.where(name = 'Safety hazard').values(id))).count",
+      "'Major defects: ' + records.findings.where(area_inspection in records.area_inspections.where(job = attributes.job).values(id) and category in records.defect_categories.where(name = 'Major defect').values(id)).count +",
+      "' · Minor defects: ' + records.findings.where(area_inspection in records.area_inspections.where(job = attributes.job).values(id) and category in records.defect_categories.where(name = 'Minor defect').values(id)).count +",
+      "' · Safety hazards: ' + records.findings.where(area_inspection in records.area_inspections.where(job = attributes.job).values(id) and (safety_hazard = 'true' or category in records.defect_categories.where(name = 'Safety hazard').values(id))).count",
     ].join('\n'),
   }),
 ];
@@ -552,13 +644,13 @@ const CODE_REFERENCE_ACTIVITIES = masterData({
   searchFields: ['code', 'title', 'clause'], searchSelect: 'id, code, title', uniqueCode: true,
 });
 
-// The defect search for Add Finding: unexpired defects through unexpired
-// mappings to the chosen area.
+// The defect search for a finding: unexpired defects through unexpired
+// mappings to its area inspection's area.
 const SEARCH_AREA_DEFECTS = act({
   id: 'act_search_area_defects', name: 'Search Area Defects', record_map: 'GET',
-  description: 'Unexpired defects mapped to an area, matching a search term — the Add Finding defect picker.',
-  attributes: [use('area'), use('term')],
-  returns: `records.defects.where(${UNEXPIRED} and id in records.area_defects.where(area = attributes.area and ${UNEXPIRED}).values(defect) and ${TERM('name', 'code')}).orderBy(code).select(id, code, name)`,
+  description: "Unexpired defects mapped to an area inspection's area, matching a search term — the finding's defect picker.",
+  attributes: [use('area_inspection'), use('term')],
+  returns: `records.defects.where(${UNEXPIRED} and id in records.area_defects.where(area in records.area_inspections.where(id = attributes.area_inspection).values(area) and ${UNEXPIRED}).values(defect) and ${TERM('name', 'code')}).orderBy(code).select(id, code, name)`,
 });
 
 // ── inspectors ──────────────────────────────────────────────────────────────
@@ -655,7 +747,8 @@ const flow = (id: string, name: string, description: string, acts: { id: string 
 
 const WORKFLOWS: [ReturnType<typeof flow>, ReturnType<typeof act>[]][] = [
   [flow('wf_jobs', 'Jobs', 'A pre-purchase inspection from request to Inspected.', JOB_ACTIVITIES), JOB_ACTIVITIES],
-  [flow('wf_findings', 'Findings', 'Recording what the walk-through found.', FINDING_ACTIVITIES), FINDING_ACTIVITIES],
+  [flow('wf_area_inspections', 'Area Inspections', 'Recording each area inspected, and its outcome.', AREA_INSPECTION_ACTIVITIES), AREA_INSPECTION_ACTIVITIES],
+  [flow('wf_findings', 'Findings', 'Recording the defects found in an area inspection.', FINDING_ACTIVITIES), FINDING_ACTIVITIES],
   [flow('wf_inspection_areas', 'Inspection Areas', 'Maintaining the areas.', AREA_ACTIVITIES), AREA_ACTIVITIES],
   [flow('wf_defect_categories', 'Defect Categories', 'Maintaining the categories.', CATEGORY_ACTIVITIES), CATEGORY_ACTIVITIES],
   [flow('wf_inspectors', 'Inspectors', 'Maintaining the inspectors.', INSPECTOR_ACTIVITIES), INSPECTOR_ACTIVITIES],
@@ -670,7 +763,7 @@ export const CONFIG = {
   activities: WORKFLOWS.flatMap(([, acts]) => acts),
   recordTypes: RECORD_TYPES,
   workflows: WORKFLOWS.map(([wf]) => wf),
-  functions: [],
+  functions: FUNCTIONS,
 } as unknown as SolutionConfig;
 
 // ── validate locally, the same check the server runs at save ────────────────

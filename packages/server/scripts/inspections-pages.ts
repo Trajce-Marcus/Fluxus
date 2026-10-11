@@ -123,7 +123,7 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
       { id: 'slot-summary', componentName: 'Text', staticConfig: { text: "{{ invoke('act_summarise_findings', { job: context.record.id }) }}", style: 'caption' } },
       activities('Nothing can be done to this job right now.'),
       // One section at a time (spec, *Pages*): Job, Inspection, Findings.
-      { id: 'slot-tabs', componentName: 'Tabs', staticConfig: { tabMode: 'switch' } },
+      { id: 'slot-tabs', componentName: 'Tabs', staticConfig: { tabMode: 'scroll' } },
     ],
     body: [
       details([
@@ -168,21 +168,56 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
         ['Overall assessment', 'context.record.overall_assessment'],
         ['Declaration confirmed', 'context.record.declaration_confirmed'],
       ], { id: 'slot-assessment', title: 'Assessment' }),
-      { id: 'slot-findings-new', componentName: 'RunActivity', tabName: 'Findings', staticConfig: { label: 'Add finding', target: 'act_add_findings' }, dynamicProps: { record: 'context.record.id' } },
+      // The Findings tab lists the job's area inspections (2026-10-12): each
+      // area at a location and its outcome, with its findings a click away.
+      { id: 'slot-findings-new', componentName: 'RunActivity', tabName: 'Findings', staticConfig: { label: 'Add area inspection', target: 'act_add_area_inspections' }, dynamicProps: { record: 'context.record.id' } },
       {
         id: 'slot-findings', componentName: 'RecordList',
         staticConfig: {
-          title: 'Findings', sortable: true,
+          title: 'Area inspections', sortable: true,
           columns: [
-            col('sequence', 'Area order', { type: 'int', width: 90 }), col('area', 'Area'), col('location', 'Location'),
-            col('area_access', 'Access', { width: 120 }), col('defect', 'Defect'),
-            col('category', 'Category', { width: 120 }), col('safety_hazard', 'Safety hazard', { width: 110 }),
+            col('sequence', 'No.', { type: 'int', width: 20 }), col('area', 'Area'), col('location', 'Location'),
+            col('outcome', 'Outcome', { width: 160 }), col('restriction', 'Restriction', { width: 140 }),
+            col('finding_count', 'Findings', { type: 'int', width: 80 }),
+            col('photos', 'Photos', { type: 'photo', width: 90 }),
+            run('Update', 'act_update_area_inspections'), run('Remove', 'act_remove_area_inspections'), open('pages/area-inspection'),
+          ],
+          newLabel: '', selection: 'one', emptyMessage: 'No area inspections yet.',
+        },
+        dynamicProps: { rows: "invoke('act_list_area_inspections', { job: context.record.id })" },
+      },
+    ],
+  }),
+
+  'pages/area-inspection': page({
+    record: 'rt_area_inspections',
+    header: [
+      header('{{ context.record.area.name }} — {{ context.record.location }}', '{{ context.record.job.job_no }} · {{ context.record.job.address }}'),
+      activities('This area inspection can no longer be changed.'),
+      { id: 'slot-open-job', componentName: 'OpenPage', staticConfig: { label: 'View job', target: 'pages/job' }, dynamicProps: { record: 'context.record.job' } },
+    ],
+    body: [
+      details([
+        ['Inspection area', 'context.record.area.name'],
+        ['Location', 'context.record.location'],
+        ['Outcome', 'context.record.outcome'],
+        ['Restriction', 'context.record.restriction'],
+        ['Comments', 'context.record.comments'],
+      ]),
+      { id: 'slot-photos', componentName: 'Photos', staticConfig: { title: 'Photos' }, dynamicProps: { value: 'context.record.photos' } },
+      { id: 'slot-findings-new', componentName: 'RunActivity', staticConfig: { label: 'Add finding', target: 'act_add_findings' }, dynamicProps: { record: 'context.record.id' } },
+      {
+        id: 'slot-findings', componentName: 'RecordList',
+        staticConfig: {
+          title: 'Findings',
+          columns: [
+            col('defect', 'Defect'), col('category', 'Category', { width: 120 }), col('safety_hazard', 'Safety hazard', { width: 110 }),
             col('photos', 'Photos', { type: 'photo', width: 90 }),
             run('Update', 'act_update_findings'), run('Remove', 'act_remove_findings'), open('pages/finding'),
           ],
           newLabel: '', selection: 'one', emptyMessage: 'No findings yet.',
         },
-        dynamicProps: { rows: "invoke('act_list_findings', { job: context.record.id })" },
+        dynamicProps: { rows: "invoke('act_list_findings', { area_inspection: context.record.id })" },
       },
     ],
   }),
@@ -190,17 +225,12 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
   'pages/finding': page({
     record: 'rt_findings',
     header: [
-      header('{{ context.record.area.name }} — {{ context.record.location }}', '{{ context.record.job.job_no }} · {{ context.record.job.address }}'),
+      header('{{ context.record.defect.name }}', '{{ context.record.area_inspection.area.name }} — {{ context.record.area_inspection.location }} · {{ context.record.area_inspection.job.job_no }}'),
       activities('This finding can no longer be changed.'),
-      { id: 'slot-open-job', componentName: 'OpenPage', staticConfig: { label: 'View job', target: 'pages/job' }, dynamicProps: { record: 'context.record.job' } },
+      { id: 'slot-open-area-inspection', componentName: 'OpenPage', staticConfig: { label: 'View area inspection', target: 'pages/area-inspection' }, dynamicProps: { record: 'context.record.area_inspection' } },
     ],
     body: [
       details([
-        ['Inspection area', 'context.record.area.name'],
-        ['Location', 'context.record.location'],
-        ['Access', 'context.record.area_access'],
-        ['Restriction', 'context.record.restriction'],
-        ['Any defects?', 'context.record.has_defect'],
         ['Defect', 'context.record.defect.name'],
         ['Category', 'context.record.category.name'],
         ['Safety hazard', 'context.record.safety_hazard'],

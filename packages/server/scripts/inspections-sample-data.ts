@@ -9,10 +9,15 @@
 // Two parts:
 //   1. Master data — the six files in solutions/inspections/docs/sample-data/,
 //      loaded through each type's create activity; only what is missing.
-//   2. Sample jobs — ten jobs at different stages, with findings. The
-//      customers, addresses and findings are **invented**; emails are at
-//      example.com. A job whose address is already in the operation is
-//      skipped, so a later run adds only new sample jobs.
+//   2. Sample jobs — ten jobs at different stages, with area inspections and
+//      the findings under them (two levels since 2026-10-12). The customers,
+//      addresses and findings are **invented**; emails are at example.com. A
+//      job whose address is already in the operation is skipped, so a later
+//      run adds only new sample jobs.
+//
+// Runs as the Console login, an Admin of the operation: the inspection steps
+// are the assigned inspector's or an Admin's (2026-10-11), and a caller with
+// no user is neither.
 //
 // No photos: a photo arrives by browser upload, which a script cannot do.
 
@@ -20,8 +25,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { createDb, closeDb } from '../src/db/client';
-import { records } from '../src/db/schema';
+import { records, users } from '../src/db/schema';
 import { appRouter } from '../src/router';
+import { createDbRolesResolver } from '../src/auth';
 
 if (!process.env.DATABASE_URL) {
   try { process.loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); } catch { /* PGlite */ }
@@ -30,8 +36,19 @@ if (!process.env.DATABASE_URL) {
 const OPERATION = 'inspections-dev';
 const DATA = fileURLToPath(new URL('../../../solutions/inspections/docs/sample-data/', import.meta.url));
 
+const ADMIN_EMAIL = 't_tosevski@yahoo.com.au';
+
 const db = await createDb();
-const caller = appRouter.createCaller({ db });
+// The signed-in identity the server would build: entries record its id as
+// their author, so it is the auth id once they have signed in.
+const [admin] = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL));
+if (!admin) throw new Error(`${ADMIN_EMAIL} is not a user`);
+const caller = appRouter.createCaller({
+  db,
+  user: { id: admin.authUserId ?? ADMIN_EMAIL, name: admin.name ?? ADMIN_EMAIL, email: ADMIN_EMAIL, roles: [] },
+  roles: createDbRolesResolver(db),
+  authConfigured: true,
+});
 
 type Attrs = Record<string, unknown>;
 async function run(activityId: string, attributes: Attrs = {}, recordId?: string): Promise<string> {
@@ -170,11 +187,9 @@ console.log(`  + ${n} inspectors (${inspectorIds.size} in all)`);
 const existingAddresses = new Set((await db.select({ f: records.customFields }).from(records)
   .where(and(eq(records.operationId, OPERATION), eq(records.typeRef, 'rt_jobs')))).map((r) => String(r.f.address)));
 
-type Access = 'Fully inspected' | 'Restricted' | 'Not inspected' | 'Not applicable';
-type Finding = {
-  area: string; location: string; defect?: string; category?: 'Major defect' | 'Minor defect';
-  safety?: boolean; access?: Access; restriction?: string; comments?: string;
-};
+type Outcome = 'Inspected – defects' | 'Inspected – no defects' | 'Cannot inspect' | 'Not applicable';
+type Finding = { defect: string; category: 'Major defect' | 'Minor defect'; safety?: boolean; comments?: string };
+type AreaInspection = { area: string; location: string; outcome: Outcome; restriction?: string; comments?: string; findings?: Finding[] };
 type Facts = {
   building_type: string; construction: string; roof_cladding: string; footings: string; storeys: string; year_built?: string;
   occupied: 'true' | 'false'; furnished: string; people_present?: string;
@@ -196,11 +211,15 @@ type Stage = 'Requested' | 'Quoted' | 'Accepted' | 'Scheduled' | 'In Progress' |
 type SampleJob = {
   stage: Stage; customer: string; email: string; address: string; details?: string; notes?: string;
   quote?: string; quoteNotes?: string; scheduledAt?: string; inspector?: string; instructions?: string;
-  access?: string; weather?: string; checklist?: string; findings?: Finding[]; cancelReason?: string;
+  access?: string; weather?: string; checklist?: string; areas?: AreaInspection[]; cancelReason?: string;
   facts?: Facts; assessment?: Assessment;
 };
 
-const NO_DEFECTS = (area: string, location: string, comments?: string): Finding => ({ area, location, ...(comments ? { comments } : {}) });
+const NO_DEFECTS = (area: string, location: string, comments?: string): AreaInspection =>
+  ({ area, location, outcome: 'Inspected – no defects', ...(comments ? { comments } : {}) });
+/** One area at one location with the defects found there. */
+const DEFECTS = (area: string, location: string, findings: Finding[], extra: Partial<AreaInspection> = {}): AreaInspection =>
+  ({ area, location, outcome: 'Inspected – defects', findings, ...extra });
 
 const JOBS: SampleJob[] = [
   {
@@ -232,11 +251,11 @@ const JOBS: SampleJob[] = [
     scheduledAt: '2026-10-10T10:00:00+11:00', inspector: 'Nick Petrovski', instructions: 'Vendor at home.',
     access: 'Full access to house and garage. Roof void hatch in hallway.', weather: 'Fine, 19°C',
     checklist: 'PPE, ladder, torch, moisture meter, camera — all checked.',
-    findings: [
-      { area: 'A01', location: 'Rear yard', defect: 'D21', category: 'Minor defect', comments: 'Ground falls towards the rear wall; ponding near laundry door after recent rain.' },
+    areas: [
+      DEFECTS('A01', 'Rear yard', [{ defect: 'D21', category: 'Minor defect', comments: 'Ground falls towards the rear wall; ponding near laundry door after recent rain.' }]),
       NO_DEFECTS('A02', 'Whole roof', 'Concrete tiles in fair condition for age.'),
-      { area: 'A04', location: 'North wall', defect: 'D02', category: 'Major defect', comments: 'Stepped cracking through mortar joints, up to 3 mm, from window sill to ground.' },
-      { area: 'A07', location: 'Bedroom 2', defect: 'D01', category: 'Minor defect', comments: 'Hairline crack above the door frame.' },
+      DEFECTS('A04', 'North wall', [{ defect: 'D02', category: 'Major defect', comments: 'Stepped cracking through mortar joints, up to 3 mm, from window sill to ground.' }]),
+      DEFECTS('A07', 'Bedroom 2', [{ defect: 'D01', category: 'Minor defect', comments: 'Hairline crack above the door frame.' }]),
     ],
   },
   {
@@ -246,17 +265,20 @@ const JOBS: SampleJob[] = [
     scheduledAt: '2026-10-08T09:30:00+11:00', inspector: 'Nick Petrovski',
     access: 'Full access. Subfloor not inspected — no access hatch found.', weather: 'Overcast, 15°C',
     checklist: 'PPE, ladder, torch, moisture meter, camera — all checked.',
-    findings: [
+    areas: [
       NO_DEFECTS('A01', 'Front and rear yards'),
-      { area: 'A02', location: 'Rear valley', defect: 'D19', category: 'Minor defect', comments: 'Gutter corroded at the downpipe outlet.' },
+      DEFECTS('A02', 'Rear valley', [{ defect: 'D19', category: 'Minor defect', comments: 'Gutter corroded at the downpipe outlet.' }]),
       NO_DEFECTS('A03', 'Hot water unit, side path', 'Gas storage unit, about 8 years old.'),
-      { area: 'A04', location: 'East wall', defect: 'D28', category: 'Minor defect', comments: 'Two weatherboards decayed near the ground line.' },
+      DEFECTS('A04', 'East wall', [{ defect: 'D28', category: 'Minor defect', comments: 'Two weatherboards decayed near the ground line.' }]),
       NO_DEFECTS('A05', 'Carport'),
       NO_DEFECTS('A06', 'Front porch'),
-      { area: 'A07', location: 'Lounge', defect: 'D01', category: 'Minor defect', comments: 'Cornice crack along the north wall.' },
-      { area: 'A08', location: 'Main bathroom', defect: 'D10', category: 'Major defect', comments: 'Moisture readings high at the base of the shower wall; tiles drummy.' },
+      DEFECTS('A07', 'Lounge', [{ defect: 'D01', category: 'Minor defect', comments: 'Cornice crack along the north wall.' }]),
+      DEFECTS('A08', 'Main bathroom', [
+        { defect: 'D10', category: 'Major defect', comments: 'Moisture readings high at the base of the shower wall; tiles drummy.' },
+        { defect: 'D12', category: 'Minor defect', comments: 'Grout cracked along the shower base.' },
+      ], { comments: 'Shower recess is the original tiled base.' }),
       NO_DEFECTS('A09', 'Kitchen and laundry'),
-      { area: 'A10', location: 'Roof void', defect: 'D36', category: 'Major defect', comments: 'Water staining on the timbers below the rear valley.' },
+      DEFECTS('A10', 'Roof void', [{ defect: 'D36', category: 'Major defect', comments: 'Water staining on the timbers below the rear valley.' }]),
     ],
   },
   {
@@ -266,13 +288,13 @@ const JOBS: SampleJob[] = [
     scheduledAt: '2026-10-06T08:30:00+11:00', inspector: 'Nick Petrovski',
     access: 'Full access to house; shed locked.', weather: 'Fine, 22°C',
     checklist: 'PPE, ladder, torch, moisture meter, camera — all checked.',
-    findings: [
-      { area: 'A01', location: 'Driveway', defect: 'D21', category: 'Major defect', comments: 'Surface water from the driveway runs towards the house; no grated drain.' },
+    areas: [
+      DEFECTS('A01', 'Driveway', [{ defect: 'D21', category: 'Major defect', comments: 'Surface water from the driveway runs towards the house; no grated drain.' }]),
       NO_DEFECTS('A02', 'Whole roof'),
       NO_DEFECTS('A03', 'Hot water unit, laundry'),
       NO_DEFECTS('A04', 'All elevations', 'Mud brick in good condition for age.'),
       NO_DEFECTS('A05', 'Double garage'),
-      { area: 'A06', location: 'Rear deck', defect: 'D26', category: 'Minor defect', safety: true, comments: 'Handrail loose; deck about 1.5 m above ground.' },
+      DEFECTS('A06', 'Rear deck', [{ defect: 'D26', category: 'Minor defect', safety: true, comments: 'Handrail loose; deck about 1.5 m above ground.' }]),
       NO_DEFECTS('A07', 'Throughout'),
       NO_DEFECTS('A08', 'Ensuite and main bathroom'),
       NO_DEFECTS('A09', 'Kitchen and laundry'),
@@ -291,12 +313,13 @@ const JOBS: SampleJob[] = [
       occupied: 'false', furnished: 'Unfurnished', people_present: 'Selling agent',
       water_connected: 'true', electricity_connected: 'true', gas_connected: 'false',
     },
-    findings: [
+    areas: [
       NO_DEFECTS('A01', 'Front and rear yards'),
-      { area: 'A02', location: 'Whole roof', access: 'Restricted', restriction: 'Wet or slippery surfaces', defect: 'D17', category: 'Minor defect', comments: 'Viewed from a ladder only. Rust to flashings at the chimney.' },
-      { area: 'A04', location: 'Rear wall', defect: 'D39', category: 'Minor defect', comments: 'Lattice and two posts in contact with soil.' },
-      { area: 'A06', location: 'Rear deck stairs', defect: 'D26', category: 'Minor defect', safety: true, comments: 'Handrail loose at the bottom post.' },
-      { area: 'A10', location: 'Roof void', access: 'Not inspected', restriction: 'No access hatch', comments: 'No hatch found; recommend access be provided.' },
+      DEFECTS('A02', 'Whole roof', [{ defect: 'D17', category: 'Minor defect', comments: 'Rust to flashings at the chimney.' }],
+        { restriction: 'Wet or slippery surfaces', comments: 'Viewed from a ladder only.' }),
+      DEFECTS('A04', 'Rear wall', [{ defect: 'D39', category: 'Minor defect', comments: 'Lattice and two posts in contact with soil.' }]),
+      DEFECTS('A06', 'Rear deck stairs', [{ defect: 'D26', category: 'Minor defect', safety: true, comments: 'Handrail loose at the bottom post.' }]),
+      { area: 'A10', location: 'Roof void', outcome: 'Cannot inspect', restriction: 'No access hatch', comments: 'No hatch found; recommend access be provided.' },
     ],
   },
   {
@@ -312,17 +335,17 @@ const JOBS: SampleJob[] = [
       water_connected: 'true', electricity_connected: 'true', gas_connected: 'true',
       concealment: 'true', concealment_note: 'Fresh paint over a patch of the laundry ceiling.',
     },
-    findings: [
-      { area: 'A01', location: 'Side path', defect: 'D40', category: 'Minor defect', comments: 'Paving laid over the slab edge along the south side.' },
+    areas: [
+      DEFECTS('A01', 'Side path', [{ defect: 'D40', category: 'Minor defect', comments: 'Paving laid over the slab edge along the south side.' }]),
       NO_DEFECTS('A02', 'Whole roof'),
       NO_DEFECTS('A03', 'Hot water unit, side path'),
-      { area: 'A04', location: 'Rear wall near laundry', defect: 'D37', category: 'Major defect', comments: 'Mud leads on the brickwork below the laundry window.' },
-      { area: 'A05', location: 'Double carport', access: 'Restricted', restriction: 'Vehicles', comments: 'Two cars parked; floor partly seen. No defects in the areas seen.' },
-      { area: 'A06', location: '—', access: 'Not applicable', comments: 'No stairs, pergola, balcony or deck.' },
-      { area: 'A07', location: 'Hallway', defect: 'D30', category: 'Minor defect', safety: true, comments: 'Smoke alarm did not sound when tested.' },
-      { area: 'A08', location: 'Main bathroom', defect: 'D12', category: 'Minor defect', comments: 'Grout cracked along the shower base.' },
+      DEFECTS('A04', 'Rear wall near laundry', [{ defect: 'D37', category: 'Major defect', comments: 'Mud leads on the brickwork below the laundry window.' }]),
+      { area: 'A05', location: 'Double carport', outcome: 'Inspected – no defects', restriction: 'Vehicles', comments: 'Two cars parked; floor partly seen. No defects in the areas seen.' },
+      { area: 'A06', location: '—', outcome: 'Not applicable', comments: 'No stairs, pergola, balcony or deck.' },
+      DEFECTS('A07', 'Hallway', [{ defect: 'D30', category: 'Minor defect', safety: true, comments: 'Smoke alarm did not sound when tested.' }]),
+      DEFECTS('A08', 'Main bathroom', [{ defect: 'D12', category: 'Minor defect', comments: 'Grout cracked along the shower base.' }]),
       NO_DEFECTS('A09', 'Kitchen and laundry'),
-      { area: 'A10', location: 'Roof void', access: 'Restricted', restriction: 'Insulation', defect: 'D34', category: 'Minor defect', comments: 'Batts displaced above the hallway.' },
+      DEFECTS('A10', 'Roof void', [{ defect: 'D34', category: 'Minor defect', comments: 'Batts displaced above the hallway.' }], { restriction: 'Insulation' }),
     ],
     assessment: {
       major_incidence: 'Typical', minor_incidence: 'Typical', overall_condition: 'Average',
@@ -355,27 +378,29 @@ for (const job of JOBS) {
     await run('act_start_jobs', { access: job.access, weather: job.weather, checklist: job.checklist }, id);
     await run('act_update_jobs', { ...(job.facts ?? DEFAULT_FACTS) }, id);
   }
-  for (const f of job.findings ?? []) {
-    const defect = f.defect ? defectIds.get(f.defect) : undefined;
-    if (f.defect && !defect) throw new Error(`${job.address}: unknown defect ${f.defect}`);
-    const access = f.access ?? 'Fully inspected';
-    const inspected = access === 'Fully inspected' || access === 'Restricted';
-    // A pick list since 2026-10-11 — the name is the value; the activity
-    // refuses one that is not on the list.
-    await run('act_add_findings', {
-      job: id, area: areaIds.get(f.area), location: f.location, area_access: access,
-      ...(f.restriction ? { restriction: f.restriction } : {}),
-      ...(inspected ? { has_defect: defect ? 'true' : 'false' } : {}),
-      ...(defect ? { defect, category: categoryIds.get(f.category!), safety_hazard: f.safety ? 'true' : 'false' } : {}),
-      ...(f.comments ? { comments: f.comments } : {}),
+  let findings = 0;
+  for (const a of job.areas ?? []) {
+    const areaInspection = await run('act_add_area_inspections', {
+      job: id, area: areaIds.get(a.area), location: a.location, outcome: a.outcome,
+      ...(a.restriction ? { restriction: a.restriction } : {}),
+      ...(a.comments ? { comments: a.comments } : {}),
     });
+    for (const f of a.findings ?? []) {
+      const defect = defectIds.get(f.defect);
+      if (!defect) throw new Error(`${job.address}: unknown defect ${f.defect}`);
+      await run('act_add_findings', {
+        area_inspection: areaInspection, defect, category: categoryIds.get(f.category), safety_hazard: f.safety ? 'true' : 'false',
+        ...(f.comments ? { comments: f.comments } : {}),
+      });
+      findings++;
+    }
   }
   if (reached(job, 'Inspected')) {
     await run('act_assess_jobs', { ...(job.assessment ?? DEFAULT_ASSESSMENT) }, id);
     await run('act_finish_jobs', { declaration_confirmed: 'true' }, id);
   }
   if (job.stage === 'Cancelled') await run('act_cancel_jobs', { cancel_reason: job.cancelReason }, id);
-  console.log(`  + ${job.stage.padEnd(11)} ${job.address}${job.findings ? ` (${job.findings.length} findings)` : ''}`);
+  console.log(`  + ${job.stage.padEnd(11)} ${job.address}${job.areas ? ` (${job.areas.length} area inspections, ${findings} findings)` : ''}`);
 }
 
 console.log('sample data loaded');

@@ -54,55 +54,63 @@ Status changes only through the activities' hooks.
 
 ## The walk-through
 
-Between Start Inspection and Finish Inspection the inspector records
-**findings**. A finding says: in this area, at this location, there was this
-defect (or none), with photos and comments. The inspector reports on every area
-inspected, whether it had defects or not.
+Between Start Inspection and Finish Inspection the inspector records what they
+found, in **two levels** (2026-10-12, the user's design):
 
-**Add Finding** is one form, not one question per screen. The questions, in
-order:
+- an **area inspection** — one area at one location, and what came of
+  inspecting it (its **outcome**), with photos and comments about the area as a
+  whole;
+- under it, the **findings** — one defect each, with its own photos and
+  comments.
+
+So three defects in Bedroom 1 are one area inspection with three findings,
+rather than Bedroom 1 typed three times. Until 2026-10-12 a finding held both
+(area, location, access, "any defects?" and one defect); the levels were split
+and the old findings deleted with the sample jobs, by the user's call.
+
+**Add Area Inspection** (from the Job page's Findings tab) asks, in order:
 
 1. **Inspection area** — one of the areas list.
 2. **Location** — free text, e.g. "Bedroom 1".
-3. **Access** — Fully inspected, Restricted, Not inspected or Not applicable
-   (added 2026-10-11). Feeds the report's Access and Restrictions.
-4. **Restriction** — only when Restricted or Not inspected, and then required.
-   A pick list: Furniture and belongings, Stored goods, Vehicles, Insulation,
-   Ducting, Low clearance, Height or safety, Vegetation, Locked or no key, No
-   access hatch, Wet or slippery surfaces.
-5. **Any defects?** — only when Fully inspected or Restricted. A true / false
-   dropdown for now; a yes/no control later.
-6. **Defect** — only when true, and then required. A search dialog listing
-   **only the defects mapped to the chosen area**. A defect already picked stays
-   picked if the area changes (the platform's picker does not clear it), so
-   Add Finding and Update Finding **refuse a defect not mapped to the area**.
-7. **Category** — only when true, and then required. Major defect or Minor
-   defect; the inspector chooses, because the same defect can be either (a
-   hairline crack and a 10 mm crack are both cracking).
-8. **Safety hazard** — only when true, and then required; true / false.
-   **Separate from the category** (2026-10-11): a minor defect can also be a
-   safety hazard.
-9. **Photos** — any number, with or without a defect.
-10. **Comments / notes** — with or without a defect.
+3. **Outcome** — Inspected – defects, Inspected – no defects, Cannot inspect or
+   Not applicable. It replaces the old Access and "Any defects?" questions.
+   **Not applicable** is an area the property does not have (no garage, a
+   subfloor on a slab), so that Finish's every-area rule can be met without
+   calling it inspected or uninspectable.
+4. **Restriction** — shown for every outcome except Not applicable; **required
+   for Cannot inspect**, optional for the two Inspected outcomes (an area
+   inspected only partly). A pick list: Furniture and belongings, Stored goods,
+   Vehicles, Insulation, Ducting, Low clearance, Height or safety, Vegetation,
+   Locked or no key, No access hatch, Wet or slippery surfaces.
+5. **Photos** and 6. **Comments** — about the area as a whole.
+
+**Add Finding** (from the Area Inspection page) asks:
+
+1. **Defect** — required. A search dialog listing **only the defects mapped to
+   the area inspection's area**; the before hook also refuses one that is not.
+2. **Category** — required. Major defect or Minor defect; the inspector
+   chooses, because the same defect can be either (a hairline crack and a
+   10 mm crack are both cracking).
+3. **Safety hazard** — required; true / false. **Separate from the category**
+   (2026-10-11): a minor defect can also be a safety hazard.
+4. **Photos** and 5. **Comments**.
+
+Findings can be added only to an area inspection whose outcome is **Inspected
+– defects**, and while it has findings its outcome and area cannot be changed
+and it cannot be removed — remove the findings first.
 
 Timber pest items — evidence of termite damage, borers, timber in contact with
 soil — are **ordinary defects** in the defects list, mapped to areas and
 recorded like any other (2026-10-11). The firm does not do timber pest
 inspections, so there is no separate checklist.
 
-A finding can be reopened and changed (**Update Finding**) or deleted
-altogether (**Remove Finding**, a button on its row) until the inspection is
-finished — the report is still being compiled, so a removed finding leaves no
-trace. Several
-defects in the same area and location are several findings.
+Area inspections and findings can be changed (**Update …**) or deleted
+altogether (**Remove …**, a button on each row) until the inspection is
+finished — the report is still being compiled, so a removed one leaves no
+trace.
 
-**Every area needs at least one finding** before the inspection can be
-finished, even if it is "no defects". A finding marked **Not inspected** or
-**Not applicable** counts — an area with no access is recorded as such, never
-as "no defects", and a Subfloor area can be marked Not applicable on a slab
-home.
-
-The job's findings show as a list on the job page — a `RecordList` to start.
+**Every area needs at least one area inspection** before the inspection can be
+finished, whatever its outcome.
 
 ## Starting the inspection and the assessment
 
@@ -244,19 +252,28 @@ name, email, start date and finish date.
 | `overall_assessment` | text, multiline | captured by Assessment |
 | `declaration_confirmed` | text | `true` / `false` (dropdown); captured at Finish Inspection |
 
-### `rt_findings`
+### `rt_area_inspections` (2026-10-12)
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
-| `job` | ref → `rt_jobs` | |
+| `job` | ref → `rt_jobs` | taken from the Job page |
 | `area` | ref → `rt_inspection_areas` | |
 | `location` | text | |
-| `area_access` | text (pick list) | Fully inspected / Restricted / Not inspected / Not applicable; blank on findings recorded before 2026-10-11 |
-| `restriction` | text (pick list) | blank unless Restricted or Not inspected |
-| `has_defect` | text | `true` / `false` (dropdown); blank when not inspected |
-| `defect` | ref → `rt_defects` | blank when no defect |
-| `category` | ref → `rt_defect_categories` | blank when no defect |
-| `safety_hazard` | text | `true` / `false`; blank when no defect |
+| `outcome` | text (pick list) | Inspected – defects / Inspected – no defects / Cannot inspect / Not applicable |
+| `restriction` | text (pick list) | required for Cannot inspect; cleared for Not applicable |
+| `photos` | photo, multi | |
+| `comments` | text, multiline | |
+
+Read by Admin and Inspector, as findings are.
+
+### `rt_findings` (one defect each since 2026-10-12)
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `area_inspection` | ref → `rt_area_inspections` | taken from the Area Inspection page |
+| `defect` | ref → `rt_defects` | |
+| `category` | ref → `rt_defect_categories` | |
+| `safety_hazard` | text | `true` / `false` |
 | `photos` | photo, multi | |
 | `comments` | text, multiline | |
 
@@ -364,47 +381,62 @@ buttons on the findings list's rows, which are not asked about — they still
 show to others, and the server refuses them when clicked. Applied live by
 `scripts/inspections-assigned-inspector.ts`, one activity at a time.
 
-**Finish Inspection needs a finding for every area** — at least one finding on
-the job for each unexpired record in the areas list, "no defects" findings included. The
-before hook checks it and its refusal names the areas still missing.
+**Finish Inspection needs an area inspection for every area** — at least one
+on the job for each unexpired record in the areas list, whatever its outcome
+(2026-10-12; a finding for every area before). The before hook checks it and
+its refusal names the areas still missing.
+
+### `wf_area_inspections` (2026-10-12)
+
+| Activity | Display name | Kind | Captures | Allowed when |
+| --- | --- | --- | --- | --- |
+| `act_add_area_inspections` | Add Area Inspection | CREATE | job, area, location, outcome, restriction, photos, comments | the job is In Progress; the job's assigned inspector or an Admin |
+| `act_update_area_inspections` | Update Area Inspection | UPDATE | the same, except job | the job is In Progress; the job's assigned inspector or an Admin |
+| `act_remove_area_inspections` | Remove Area Inspection | DELETE | — | the job is In Progress; the job's assigned inspector or an Admin; no findings |
+| `act_list_area_inspections` | — | GET | for one job, with each one's finding count | — |
+
+- **The job is filled from the page** — Add Area Inspection's `job` takes the
+  Job page's record (`source: 'context.page.record.id'`). A CREATE has no
+  anchor record, so "the job is In Progress" and "the assigned inspector or an
+  Admin" are checked by the before hook against the job named. Its availability
+  condition is `context.record is null`, so it is not offered among an area
+  inspection's own actions.
+- **Cannot inspect needs a restriction** (before hook); **Not applicable
+  clears it** (after hook).
+- **While it has findings** (`context.record.findings.count > 0`), Update
+  refuses a change of outcome away from Inspected – defects or a change of
+  area, and Remove refuses outright.
+- **The finding count** in the list comes from a named function,
+  `findingCount(areaInspection)`: a `select` names the row's fields, not the
+  row, so a reverse reference cannot be written there.
 
 ### `wf_findings`
 
 | Activity | Display name | Kind | Captures | Allowed when |
 | --- | --- | --- | --- | --- |
-| `act_add_findings` | Add Finding | CREATE | job, area, location, any defects, defect, category, photos, comments | the job is In Progress; the job's assigned inspector or an Admin |
-| `act_update_findings` | Update Finding | UPDATE | the same, except job | the job is In Progress; the job's assigned inspector or an Admin |
+| `act_add_findings` | Add Finding | CREATE | area inspection, defect, category, safety hazard, photos, comments | the job is In Progress; the job's assigned inspector or an Admin; the outcome is Inspected – defects |
+| `act_update_findings` | Update Finding | UPDATE | defect, category, safety hazard, photos, comments | the job is In Progress; the job's assigned inspector or an Admin |
 | `act_remove_findings` | Remove Finding | DELETE | — | the job is In Progress; the job's assigned inspector or an Admin |
-| `act_list_findings` | — | GET | for one job | — |
+| `act_list_findings` | — | GET | for one area inspection | — |
+| `act_summarise_findings` | — | GET | job | — (one line of counts for the Job page) |
 
-- **The job is filled from the page** — Add Finding's `job` takes the Job
-  page's record (`source: 'context.page.record.id'`, as the projects
-  solution's WBS create does). The list's own add button cannot fill it. A
-  CREATE has no anchor record, so "the job is In Progress" and "the assigned
-  inspector or an Admin" are checked by the before hook against the job
-  named, not by a show condition.
-- **Area** is a reference whose datasource is `act_search_inspection_areas`.
+- **The area inspection is filled from the page** — Add Finding's
+  `area_inspection` takes the Area Inspection page's record. Its checks are in
+  the before hook, against the area inspection named; its availability
+  condition is `context.record is null`, as for Add Area Inspection.
+- **Update Finding carries the area inspection hidden** (`show_condition:
+  'false'`), filled from the finding, so the defect picker knows which area's
+  defects to offer. A hidden question is not submitted.
 - **Defect** is a reference whose datasource is `act_search_area_defects`: the
-  defects mapped to `attributes.area`, filtered by the search `term`. It shows
-  only when any defects is `true`, and is then required; so is category.
+  unexpired defects mapped, by unexpired mappings, to the area inspection's
+  area, filtered by the search `term`.
 - **Category** is a reference whose datasource is `act_search_defect_categories`.
-- **Restriction** is a pick list of the reasons.
-- **Hidden answers are cleared** by the hook: when Access is Not inspected or
-  Not applicable, any defects, defect, category and safety hazard are cleared;
-  when Access is Fully inspected or Not applicable, the restriction is cleared;
-  when Any defects? is false, defect, category and safety hazard are cleared.
 - **The before hook refuses** a defect not mapped to the area. Only the
   mapping's expiry is checked, never the area's or the defect's own
-  (2026-10-11): a record's own expiry matters only when mappings are put
-  together.
-- **Remove Finding** is the platform's delete: it asks for confirmation, then
-  the finding and its history go, leaving no trace.
-- **Expired master data:** the defect search offers only unexpired defects
-  through unexpired mappings. The "defect not mapped to the area" refusal
-  applies only when the area or defect is being changed, so an old finding
-  whose defect has since expired can still be updated.
-- **Defect and category are cleared** by the hook when any defects is `false`,
-  so a finding that changes its answer does not keep a stale defect.
+  (2026-10-11). On Update it applies only when the defect is being changed, so
+  an old finding whose defect has since expired can still be updated.
+- **Remove** is the platform's delete: it asks for confirmation, then the
+  record and its history go, leaving no trace.
 
 ### `wf_inspectors`
 
@@ -481,15 +513,20 @@ condition.
    - **Inspection** — access, weather, checklist and the property facts
      (Start Inspection and Inspection Details), the Assessment, and the
      declaration.
-   - **Findings** — an Add Finding button, and the findings as a `RecordList`
-     (area order, area, location, access, defect, category, safety hazard,
-     photo count) with Update Finding and Remove Finding on each row. A row
-     opens the Finding page. **Findings show in the order entered**; clicking
-     the Area order heading sorts them by area, again reverses, and a third
-     click returns to the order entered.
+   - **Findings** — an Add area inspection button, and the job's area
+     inspections as a `RecordList` titled Area inspections (No. — the area's
+     order, area, location, outcome, restriction, how many findings, photos)
+     with Update and Remove on each row and Open to its Area Inspection page.
+     **They show in the order entered**; clicking the No. heading sorts them by
+     area. The tab keeps the name Findings (the user's call, 2026-10-12).
 
    Part 2's report and payment details will most likely be a fourth tab.
-3. **Finding** — one finding with its photos (`Photos`).
+3. **Area Inspection** (2026-10-12) — the area, location, outcome,
+   restriction, comments and photos, its actions, a View job link, then an Add
+   finding button and its findings as a `RecordList` (defect, category, safety
+   hazard, photos) with Update, Remove and Open on each row.
+4. **Finding** — one defect with its photos (`Photos`), and a View area
+   inspection link.
 
 One page per sample-data file — the source of that data:
 
@@ -532,8 +569,12 @@ Claude's calls, approved by the user 2026-10-10:
   a list into words for display).
 - (2026-10-11) Finish Inspection requiring the Assessment and the required
   property facts.
-- (2026-10-11) The finding's access field is `area_access`, because `access` is
-  already the job's free-text access note.
+- (2026-10-11) The finding's access field was `area_access`, because `access`
+  is already the job's free-text access note. Replaced by the area
+  inspection's `outcome` (2026-10-12).
+- (2026-10-12) While an area inspection has findings, its outcome cannot move
+  off Inspected – defects and its area cannot change — its findings were
+  recorded against both.
 - (2026-10-11) The summary line counts by category **name** ("Major defect",
   "Minor defect"), so renaming a category breaks it.
 - (2026-10-11) No spec review for this change, by the user's decision — a small
@@ -546,8 +587,14 @@ Claude's calls, approved by the user 2026-10-10:
 Built 2026-10-10 (revised 2026-10-11) into Neon dev by three scripts in `packages/server/scripts/`:
 `inspections-model.ts` (solution `inspections`, operation `inspections-dev`,
 the model), `inspections-pages.ts` (ten pages and the default menu) and
-`inspections-sample-data.ts` (the sample-data files and eight invented jobs at
+`inspections-sample-data.ts` (the sample-data files and ten invented jobs at
 every Part 1 stage, all through activities; no photos).
+
+**Two levels, 2026-10-12** — applied live by `inspections-area-inspections.ts`
+(one transaction: the old jobs and findings deleted with their reporting rows,
+then the model per entity, then the Job, Area Inspection and Finding pages,
+the Job page keeping the user's own layout). The sample jobs were then
+reloaded, as the Console login (an Admin), by `inspections-sample-data.ts`.
 
 **Known gap — the Runtime menu.** With sign-in on, the Runtime shows a menu
 item only to someone holding one of its roles, even when the solution declares
@@ -556,8 +603,8 @@ falls back to its plain list of pages. Raised, not worked around.
 
 ## Out of this spec
 
-- **Prefilling** the next finding's area and location from the previous one,
-  and the category from the defect's default. Wanted later. Needs a platform
+- **Prefilling** a finding's category from the defect's default (the area and
+  location no longer repeat — they are the area inspection's). Wanted later. Needs a platform
   addition: a question's starting value from an expression. None exists.
 - **A signature** at Finish Inspection — a confirmation stands in for now.
 - **Cards** for findings in place of the `RecordList`.
@@ -568,7 +615,8 @@ falls back to its plain list of pages. Raised, not worked around.
   Pest Findings and 15 Conducive Conditions are **dropped** (the firm does no
   timber pest inspections); Conclusion and Overall Assessment come from the
   Assessment and the counts; Property and Inspection Information from Start
-  Inspection; Access and Restrictions from the findings' access.
+  Inspection; Access and Restrictions from the area inspections' outcome and
+  restriction.
 - **Recommendations per finding** — not wanted (2026-10-11); advice goes in the
   comments.
 - **Cost estimates** — none.
