@@ -113,6 +113,17 @@ role-checked. Part 2 makes every run carry its app instance, which holds the
 roles and covers pages with no record type; a run with no instance is refused.
 Not treated as a gap until then (the user's call).
 
+**Direction — read conditions (agreed 2026-10-11, spec
+[RECORD_READ_CONDITIONS](RECORD_READ_CONDITIONS.md), not built).** A role's read of a
+record type can be narrowed to the records an expression lets through, e.g.
+an inspector reads only the jobs assigned to them. The server applies it
+wherever it hands records out directly, and a record not let through reads as
+not found. GETs and hooks stay outside it and filter for themselves. This takes
+up the per-record read access that RBAC left out of its first cut "until a real
+modelling need appears"; the inspections solution is that need. A condition on
+opening a page, for ad hoc page rules, was considered in the same discussion and
+parked for apps Part 2.
+
 ## Deleting — *Built and Direction* (ruled 2026-09-21)
 
 **Built.** The DSL has `delete()` — `r.delete()`, or
