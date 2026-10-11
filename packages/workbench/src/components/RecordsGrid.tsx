@@ -25,7 +25,8 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     getRecordTypeData,
     getRecordTypeDef,
     runActivity,
-    isActivityAvailable,
+    offeredActivities,
+    snapshotVersion,
     uploads,
   } = useWorkbench();
 
@@ -72,6 +73,25 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
   const pickerMode = !!onRecordSelected;
   const typeDef = typeId ? getRecordTypeDef(typeId) : selectedRecordType;
 
+  // Whether the type's create is offered — the server decides, with no record
+  // (`page.activities`), and asks again whenever the snapshot refreshes. Held
+  // with the type it was for, so a newly selected type shows no New button
+  // until its own answer arrives.
+  const askTypeId = !pickerMode && operationId ? typeDef?.id ?? null : null;
+  const [createOffered, setCreateOffered] = useState<{ typeId: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!askTypeId) return;
+    let cancelled = false;
+    offeredActivities({ typeId: askTypeId }).then(
+      (list) => { if (!cancelled) setCreateOffered({ typeId: askTypeId, ids: new Set(list.map(a => a.id)) }); },
+      (err: unknown) => {
+        console.error('[workbench] could not ask whether a create is offered', err);
+        if (!cancelled) setCreateOffered({ typeId: askTypeId, ids: new Set() });
+      },
+    );
+    return () => { cancelled = true; };
+  }, [offeredActivities, askTypeId, snapshotVersion]);
+
   // No operation, no records — and no create/import either: every activity
   // writes into a partition, and there isn't one until you pick it.
   if (!operationId) {
@@ -92,11 +112,14 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
 
   const allRecords = getRecordTypeData(typeDef.id);
   const customFields = typeDef.custom_fields;
-  // CREATE has no anchor: its availability condition sees context.record = null
+  // CREATE has no anchor: the server evaluated its condition with
+  // context.record = null, as its run gate will.
   const foundCreate = !pickerMode
     ? typeDef.workflow?.activities.find(a => a.record_map === 'CREATE')
     : undefined;
-  const createActivity = foundCreate && isActivityAvailable(foundCreate, null) ? foundCreate : undefined;
+  const createActivity = foundCreate && createOffered?.typeId === typeDef.id && createOffered.ids.has(foundCreate.id)
+    ? foundCreate
+    : undefined;
 
   // Filter
   const filtered = searchTerm

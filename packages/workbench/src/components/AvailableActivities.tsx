@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useWorkbench } from '../WorkbenchContext';
 import { AttributesForm } from '@fluxus/page-runtime';
 import { Modal } from './Modal';
-import type { ActivityDef, RecordInstance, WorkflowDef } from '@fluxus/engine';
+import type { ActivityDef, ActivityOption, RecordInstance, WorkflowDef } from '@fluxus/engine';
 
 interface Props {
   record: RecordInstance;
@@ -10,16 +10,32 @@ interface Props {
 }
 
 export function AvailableActivities({ record, workflow }: Props) {
-  const { runActivity, isActivityAvailable } = useWorkbench();
+  const { runActivity, offeredActivities, snapshotVersion } = useWorkbench();
   const [activeActivity, setActiveActivity] = useState<ActivityDef | null>(null);
+  // The answer, with the record it was for — so a newly selected record draws
+  // nothing until its own answer arrives, rather than the last one's buttons.
+  const [offered, setOffered] = useState<{ recordId: string; list: ActivityOption[] } | null>(null);
 
-  // Record-level activities: CREATE excluded (no anchor; lives in the grid),
-  // GET excluded (a query answers an app, it is not a button on a record —
-  // DSL_SPEC §5a). Availability (activity show_condition) filters against the
-  // current record; runActivity re-checks the same rule as the pipeline gate.
-  // In the workflow's order, which is the order its list gives them.
+  // The server decides what is offered (`page.activities`), with the
+  // designer's real roles; it re-checks the same rule when the action runs.
+  // Asked again whenever the snapshot refreshes, which it does after every run.
+  useEffect(() => {
+    let cancelled = false;
+    offeredActivities({ recordId: record.id }).then(
+      (list) => { if (!cancelled) setOffered({ recordId: record.id, list }); },
+      (err: unknown) => {
+        console.error('[workbench] could not ask which actions are offered', err);
+        if (!cancelled) setOffered({ recordId: record.id, list: [] });
+      },
+    );
+    return () => { cancelled = true; };
+  }, [offeredActivities, record.id, snapshotVersion]);
+
+  // CREATE left out (it runs with no record — that is the grid's button), and
+  // the server never offers a GET. In the workflow's order, as answered.
+  const offeredIds = new Set(offered?.recordId === record.id ? offered.list.map(a => a.id) : []);
   const activities = workflow.activities
-    .filter(a => a.record_map !== 'CREATE' && a.record_map !== 'GET' && isActivityAvailable(a, record));
+    .filter(a => a.record_map !== 'CREATE' && offeredIds.has(a.id));
 
   if (activities.length === 0) return null;
 

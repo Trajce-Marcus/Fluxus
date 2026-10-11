@@ -1,6 +1,6 @@
 # Actions offered by the server — spec
 
-**Status:** spec, not built. Agreed 2026-10-11 (BLUEPRINT *Access*, "the server
+**Status:** BUILT 2026-10-11. Agreed 2026-10-11 (BLUEPRINT *Access*, "the server
 decides which actions are offered"); found while building the inspections
 assigned-inspector checks. Claude's three proposals were settled by the user the
 same day (*Settled*, at the end). Cold-reviewed 2026-10-11; the findings are

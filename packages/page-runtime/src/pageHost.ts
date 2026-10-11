@@ -65,7 +65,7 @@ export interface AttributeSeed {
   records: string[];
 }
 
-import type { ActivityOption } from './availableActivities';
+import type { ActivityOption } from '@fluxus/engine';
 
 /** What the rendering host (ComponentContainer) supplies per component instance. */
 export interface PageServiceHandlers {
@@ -92,13 +92,15 @@ export interface PageServiceHandlers {
   openPage(page: string, record: unknown): void;
   /**
    * Which activities apply to a record right now (2026-09-14) — the workflow's
-   * record-level acts, minus the ones their `show_condition` rules out.
+   * record-level acts, minus the ones their `show_condition` rules out. The
+   * server answers (`page.activities`, ACTIONS_OFFERED_BY_SERVER), with the
+   * signed-in user; the browser has no conditions to evaluate.
    *
    * A **component** door, not a script one: it is deliberately absent from
    * `buildPageServices` below, so no FluxScript can call it. A script asking
    * the model what it may do is a read, and reads go through GET activities
    * (DATA_THROUGH_ACTIVITIES). This is the host answering a component that
-   * draws buttons, from what the host already holds.
+   * draws buttons.
    */
   listActivities(record: unknown): Promise<ActivityOption[]>;
   /**

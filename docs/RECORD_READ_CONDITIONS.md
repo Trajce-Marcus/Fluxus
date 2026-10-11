@@ -103,11 +103,12 @@ Every place the server hands records to a caller directly:
 | `records.partition` — the Console workbench | readable types only | and, within them, only the records let through |
 | `activities.run` with a record | not found if unreadable, checked before the availability gate | also not found if the record is not let through |
 | `activities.query` (a GET) with a record | the same | the same |
+| `page.activities` with a record (added 2026-10-11, [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md)) | an empty list if the type is unreadable | also an empty list if the record is not let through |
 
-One function answers for all five, beside `computeReadable`
+One function answers for all six, beside `computeReadable`
 (`server/src/projection.ts`): for the caller's roles and each record type,
 **every record**, **none**, or **these conditions, any one of which lets a
-record through**. The five places ask it instead of the readable-types set.
+record through**. The six places ask it instead of the readable-types set.
 
 `records.*` today reads the database directly, without the engine. When a
 condition applies, they build the same per-request engine the activities use
@@ -175,7 +176,7 @@ needs a small addition.
    Correct the comment beside it that still says a solution with no roles reads
    open (strict since 2026-10-11).
 2. **Validator:** the three save checks in §7, and refusing `invoke`.
-3. **Server:** the one read check of §4, used by all five places. Not-found
+3. **Server:** the one read check of §4, used by all six places. Not-found
    answers keep their present shape and wording.
 4. **Console:** the condition box, and keeping `access` whole when the read list
    is edited.

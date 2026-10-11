@@ -196,15 +196,6 @@ export interface ClientActivityRawDef {
    * itself; `returns` lives on the server grade below.
    */
   record_map?: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET';
-  /**
-   * FluxScript availability condition: whether this activity is offered (UI)
-   * or invocable (pipeline gate — server-authoritative once the backend
-   * lands). Evaluated before capture begins, so `attributes` is not available;
-   * `context.record` is the anchor (null for CREATE). Unlike the attribute
-   * setting of the same name, evaluation errors FAIL CLOSED — a broken access
-   * rule must not wave the activity through.
-   */
-  show_condition?: string;
   /** Ordered capture list: attribute usages plus presentation section markers. */
   attributes: (AttributeUsageDef | SectionMarkerDef)[];
 }
@@ -216,6 +207,17 @@ export interface ClientActivityRawDef {
  * either grade.
  */
 export interface ActivityRawDef extends ClientActivityRawDef {
+  /**
+   * FluxScript availability condition: whether this activity is offered
+   * (`page.activities`) and invocable (the pipeline gate). Evaluated before
+   * capture begins, so `attributes` is not available; `context.record` is the
+   * anchor (null for CREATE when it runs). Unlike the attribute setting of the
+   * same name, evaluation errors FAIL CLOSED — a broken access rule must not
+   * wave the activity through. Server grade since ACTIONS_OFFERED_BY_SERVER:
+   * the server answers which actions are offered, so the browser never needs
+   * the condition.
+   */
+  show_condition?: string;
   /** FluxScript, validate-only: may fail()/warn(), never mutates (DSL_SPEC §6). */
   before_hook: string | string[] | null;
   /** FluxScript, effects: mutations staged and committed atomically (DSL_SPEC §7). */
@@ -229,6 +231,13 @@ export interface ActivityRawDef extends ClientActivityRawDef {
    * (DATA_THROUGH_ACTIVITIES).
    */
   returns?: string | string[];
+}
+
+/** One action offered on a record, in the order its workflow lists it — what
+ *  `engine.offeredActivities` and `page.activities` answer. */
+export interface ActivityOption {
+  id: string;
+  name: string;
 }
 
 // Resolved activity (attributes resolved from the standalone collection, hook lines joined)

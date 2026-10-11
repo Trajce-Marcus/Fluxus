@@ -6,7 +6,7 @@
 
 import { attributeFieldRef } from './attributeTypes';
 import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Call, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
-import type { ClientActivityRawDef, ClientSolutionConfig } from './types';
+import type { ActivityRawDef, ClientActivityRawDef, ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
@@ -291,9 +291,12 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
         out.push({ where, diagnostic });
       }
     };
-    // Availability condition: evaluated before capture, so `attributes` is banned
-    if (activity.show_condition) {
-      check(`${activity.id} show_condition`, activity.show_condition, undefined, ['attributes']);
+    // Availability condition: evaluated before capture, so `attributes` is
+    // banned. Server grade only (ACTIONS_OFFERED_BY_SERVER), so absent on a
+    // client config, which simply has none to check.
+    const availability = (activity as Partial<ActivityRawDef>).show_condition;
+    if (availability) {
+      check(`${activity.id} show_condition`, availability, undefined, ['attributes']);
     }
     for (const usage of activity.attributes) {
       if (!('attribute_ref' in usage)) continue;

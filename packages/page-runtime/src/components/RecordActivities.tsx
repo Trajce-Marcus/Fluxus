@@ -7,11 +7,11 @@
 // is offered — so a frozen WBS simply stops offering the acts it refuses, and
 // nobody has to keep a page in step with a model.
 //
-// It is the workbench's `AvailableActivities` as a page component. The
-// difference is where the list comes from: the workbench holds the whole
-// operation's records and evaluates locally, while a page asks its host
-// (`services.listActivities`), which fetches the record and evaluates with the
-// same expression host everything else on the page uses.
+// It is the workbench's `AvailableActivities` as a page component. Both ask
+// the server which actions are offered (`page.activities`,
+// ACTIONS_OFFERED_BY_SERVER) — here through the host
+// (`services.listActivities`) — because only the server has the conditions and
+// the signed-in user to evaluate them with.
 //
 // This does not reopen the 2026-08-26 ruling that a control shows whether or
 // not it is wired. That ruling is about **wiring** — the author's omission,
@@ -21,7 +21,7 @@
 import { useEffect, useState } from 'react';
 import type { PropSchema } from '../manifest';
 import type { PageServiceHandlers } from '../pageHost';
-import type { ActivityOption } from '../availableActivities';
+import type { ActivityOption } from '@fluxus/engine';
 import { actionCss } from './actionComponents';
 
 interface Props {
@@ -51,9 +51,9 @@ function RecordActivitiesComponent({ title, record, emptyMessage, services }: Pr
   const [asked, setAsked] = useState(false);
 
   // Re-asked whenever the record changes — and after a run, because
-  // ComponentContainer re-evaluates a component's props once an activity
-  // completes, which is what makes "Approve WBS" disappear the moment the WBS
-  // is approved.
+  // ComponentContainer hands over a new `listActivities` whenever any run on
+  // the page lands (its `refreshTick`), which is what makes "Approve WBS"
+  // disappear the moment the WBS is approved.
   useEffect(() => {
     let cancelled = false;
     void (async () => {

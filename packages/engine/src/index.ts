@@ -75,6 +75,7 @@ export type { Finding } from './validateConfig';
 export type {
   ActivityDef,
   ActivityHistoryEntry,
+  ActivityOption,
   ActivityRawDef,
   ActivityUsage,
   AttributeDef,

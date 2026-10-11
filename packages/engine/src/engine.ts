@@ -6,7 +6,7 @@
 // toasts, console channels) stay with the host.
 
 import { evaluateExpression, evaluateExpressionAsync, executeScriptAsync, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ActivityDef, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
+import type { ActivityDef, ActivityOption, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
 import type { Store, WaitingStore } from './store';
 import { blockingReferences, buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
 import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
@@ -78,18 +78,32 @@ function landingFields(activity: ActivityDef, typeId: string): Map<string, strin
  * log, the `invoke` in-flight set) that relies on runs not interleaving.
  *
  * Two kinds of function (SERVER_DATA_LOADING §4.2). **Immediate** — the
- * browser's: `activityAvailability`, `isActivityAvailable`, `evaluate`; they
- * need a store that answers immediately. **Waiting** — the server's, and its
- * scripts' and tests': everything returning a promise; they take either store.
+ * browser's: `evaluate`; it needs a store that answers immediately.
+ * **Waiting** — the server's, and its scripts' and tests': everything
+ * returning a promise; they take either store. Availability is waiting only
+ * since the server decides which actions are offered
+ * (ACTIONS_OFFERED_BY_SERVER) — the browser no longer has the conditions.
  */
 export interface Engine<S extends WaitingStore = Store> {
   readonly store: S;
-  /** Availability gate result — see ActivityRawDef.show_condition. */
-  activityAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null): ActivityAvailability;
-  isActivityAvailable(activity: ActivityDef, anchorRecord: RecordInstance | null): boolean;
-  /** `activityAvailability`, waiting on the store — the server's gate. */
+  /** Availability gate result — see ActivityRawDef.show_condition. The
+   *  server's gate, waiting on the store. */
   activityAvailabilityAsync(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<ActivityAvailability>;
   isActivityAvailableAsync(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<boolean>;
+  /**
+   * Which of a workflow's activities are offered, in its order
+   * (ACTIONS_OFFERED_BY_SERVER §2.1) — what `page.activities` answers.
+   *
+   * - **About a record:** every activity but a GET. A CREATE's condition sees
+   *   the record it is offered on, as a page always did, although the CREATE
+   *   then runs with none — that is what lets `context.record is null` keep a
+   *   create action off a record's own page.
+   * - **No record** (a record type's create button): CREATEs only, with
+   *   `context.record` null — exactly what their run gate sees.
+   *
+   * Each condition is this engine's gate: strictly `true`, failing closed.
+   */
+  offeredActivities(activities: ActivityDef[], record: RecordInstance | null): Promise<ActivityOption[]>;
   runActivity(
     activity: ActivityDef,
     captured: Record<string, unknown>,
@@ -207,19 +221,6 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   // `true` makes the activity available. Evaluation errors FAIL CLOSED (unlike
   // attribute show_conditions, which leave the input visible): this is an access
   // rule, and a broken gate must not wave the activity through.
-  function activityAvailability(
-    activity: ActivityDef,
-    anchorRecord: RecordInstance | null
-  ): ActivityAvailability {
-    if (!activity.show_condition) return { available: true };
-    try {
-      const result = evaluateExpression(activity.show_condition, availabilityHost(activity, anchorRecord));
-      return { available: result === true };
-    } catch (err) {
-      return failedClosed(activity, err);
-    }
-  }
-
   async function activityAvailabilityAsync(
     activity: ActivityDef,
     anchorRecord: RecordInstance | null
@@ -231,6 +232,20 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     } catch (err) {
       return failedClosed(activity, err);
     }
+  }
+
+  // One condition after another, not together: they share the store's record
+  // cache, so conditions following the same reference (a finding's job) read
+  // it once instead of racing to read it several times.
+  async function offeredActivities(activities: ActivityDef[], record: RecordInstance | null): Promise<ActivityOption[]> {
+    const candidates = activities.filter((a) => (record ? a.record_map !== 'GET' : a.record_map === 'CREATE'));
+    const offered: ActivityOption[] = [];
+    for (const activity of candidates) {
+      if ((await activityAvailabilityAsync(activity, record)).available) {
+        offered.push({ id: activity.id, name: activity.name });
+      }
+    }
+    return offered;
   }
 
   function availabilityHost(activity: ActivityDef, anchorRecord: RecordInstance | null) {
@@ -608,10 +623,9 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
 
   return {
     store,
-    activityAvailability,
-    isActivityAvailable: (activity, anchorRecord) => activityAvailability(activity, anchorRecord).available,
     activityAvailabilityAsync,
     isActivityAvailableAsync: async (activity, anchorRecord) => (await activityAvailabilityAsync(activity, anchorRecord)).available,
+    offeredActivities,
     runActivity,
     runQuery,
     invoke: (activityId, params, anchorRecord) => invoke(activityId, params, anchorRecord),

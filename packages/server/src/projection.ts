@@ -145,15 +145,16 @@ function clientAttribute(attr: ClientAttributeDef): ClientAttributeDef {
   };
 }
 
-/** The form definition and what decides whether it is offered — never the
- *  hooks, which are the whole prize (§2). */
+/** The form definition — never the hooks, which are the whole prize (§2),
+ *  and never the availability condition: the server answers which actions are
+ *  offered (`page.activities`, ACTIONS_OFFERED_BY_SERVER), so the browser has
+ *  no use for it. */
 function clientActivity(act: ClientActivityRawDef): ClientActivityRawDef {
   return {
     id: act.id,
     name: act.name,
     description: act.description,
     ...(act.record_map !== undefined ? { record_map: act.record_map } : {}),
-    ...(act.show_condition !== undefined ? { show_condition: act.show_condition } : {}),
     attributes: act.attributes.map((entry) =>
       'attribute_ref' in entry
         ? clientUsage(entry)
@@ -183,7 +184,6 @@ function shippedExpressions(
     if (source) sources.push(source);
   };
   for (const act of activities) {
-    push(act.show_condition);
     for (const entry of act.attributes) {
       if (!('attribute_ref' in entry)) continue;
       push(entry.show_condition);

@@ -22,6 +22,7 @@ This package is UI over two contracts it does not own: the **SDM schema** ([`@fl
 - **The component builds its own engine** from the client it is handed: `createEngine` over `client.adapter` + `client.config`, notify + geo modules, optional `user` for `ctx.user` parity. Rebuilt when the host re-scopes the client.
 - **Nothing above `<Workbench>` knows the record state exists.** `WorkbenchContext` holds selected type, selected record, `runActivity` and the adapter reads; the host's shell state stays the host's. That mixing *was* the coupling M15 broke.
 - `runActivity` is async: it round-trips `client.runActivity` → server `activities.run` → partition re-fetch, then applies the workbench's UI reactions (deselect a deleted record via the result's `recordId`, console the returned after-hook warnings).
+- **Which actions are offered is the server's answer** (2026-10-11, [ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)). `offeredActivities({ recordId } | { typeId })` in the context calls `page.activities` through the client; the server evaluates each action's condition with the designer's **real roles in the chosen operation** (until then the Console handed the workbench `roles: []`, so role conditions were false for everyone). `isActivityAvailable` is gone from the context. `AvailableActivities` and the grid's create button ask asynchronously — nothing is drawn until the answer for *that* record or type arrives — and ask again on every snapshot refresh (`snapshotVersion`, bumped by the adapter subscription, which a run's partition re-fetch triggers). The local engine still evaluates the capture form's own conditions and datasources.
 - Two separate gets on type selection, kept separate for the future CQRS split: `getRecordTypeDef(typeId)` (def + workflow → grid columns, CREATE discovery, activity strip) and `getRecordTypeData(typeId)` (instances → grid rows).
 
 **Styling travels in the tree, not in a stylesheet import.** `Workbench.tsx` exports its css as a string and renders `<style>{css}</style>` inside its own subtree (also exported as `workbenchCss` for a host with its own injection channel). A `.css` file import was the first cut and was **wrong**: the Console mounts its shell in a **shadow root**, which a bundler-injected document-level stylesheet never reaches. The failure mode was quiet — the workbench rendered its data as near-black text (`#0f172a`) on the Console's `#1e1e1e` shell with no background of its own, so it read as "no data". Same reasoning as `PageView`'s `<style>{pageRendererCss}</style>`; a `<style>` element applies in both a shadow root and the light DOM. All rules are scoped under `.workbench`. Known cosmetic: the workbench is light and the Console is dark — a themed workbench waits on the branding config (CONSOLE_RUNTIME_SPEC §10).
@@ -33,10 +34,13 @@ This package is UI over two contracts it does not own: the **SDM schema** ([`@fl
 ├── OperationPicker (side menu, above the types — whose data am I looking at)
 ├── RecordTypeList (its own nav pane — retired from the Runtime shell at M15)
 ├── RecordsGrid — sort, search, count, CSV import/export, FK links, CREATE launch
+│   (the first CREATE, shown when the server offers it with no record)
 └── RecordView — owns back/forward nav state (viewedTypeId derived from record.typeRef)
-    ├── AvailableActivities (record-level; CREATE excluded — it has no anchor
-    │   record; GET excluded — a query answers an app, not a button on a record;
-    │   in the workflow's order — no sort_order since the activity pool, 2026-10-10)
+    ├── AvailableActivities (what the server offers on the record; CREATE
+    │   excluded — it runs with no anchor record, so the server would refuse it
+    │   here; GET never offered — a query answers an app, not a button on a
+    │   record; in the workflow's order — no sort_order since the activity
+    │   pool, 2026-10-10)
     ├── RecordDetails (read-only custom fields; FKs via FkDisplay asLink)
     ├── RelatedRecords (reverse-FK index)
     └── ActivityHistoryList

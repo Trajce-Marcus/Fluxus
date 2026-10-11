@@ -58,6 +58,7 @@ const config: SolutionConfig = {
     { id: 'fn_crewnames', name: 'crewnames', description: 'crew list', body: 'function crewnames() { return ["A"] }' },
     { id: 'fn_pricing', name: 'pricing', description: 'margin', body: 'function pricing() { return rate() * 2 }' },
     { id: 'fn_rate', name: 'rate', description: 'the rate', body: 'function rate() { return 42 }' },
+    { id: 'fn_available', name: 'available', description: 'the gate', body: 'function available() { return true }' },
   ],
 };
 
@@ -87,6 +88,23 @@ describe('projectConfig — what never leaves the server', () => {
     }
     // …including the open posture, where every row survives the row cut.
     expect(allKeys(projectConfig(config, { roles: [], enforced: false })).has('after_hook')).toBe(false);
+  });
+
+  // The server answers which actions are offered (`page.activities`,
+  // ACTIONS_OFFERED_BY_SERVER), so an action's own condition stays with it. A
+  // question's condition is the form's, and still ships.
+  it('carries no action availability condition, but keeps a question\'s', () => {
+    const withQuestion = {
+      ...config,
+      activities: config.activities.map((a, i) => (i === 0
+        ? { ...a, attributes: [{ attribute_ref: 'note', show_condition: 'true' }] }
+        : a)),
+    };
+    for (const act of projectConfig(withQuestion, { roles: ['role_a', 'role_b'], enforced: true }).activities) {
+      expect('show_condition' in act).toBe(false);
+    }
+    const usage = projectConfig(withQuestion, { roles: ['role_a'], enforced: true }).activities[0].attributes[0];
+    expect(usage).toEqual({ attribute_ref: 'note', show_condition: 'true' });
   });
 
   it('carries no access rules — neither the role defs nor who may read what', () => {
@@ -177,9 +195,8 @@ describe('projectConfig — what the client does need', () => {
     expect(note?.validation_message).toBe('required');
   });
 
-  it('keeps the form definition and the availability condition', () => {
+  it('keeps the form definition', () => {
     const act = asRoleA().activities[0];
-    expect(act.show_condition).toBe('available()');
     expect(act.attributes.map((a) => ('attribute_ref' in a ? a.attribute_ref : a.section)))
       .toEqual(['note', 'site_photos', 'crew', 'bundle']);
   });
@@ -199,7 +216,8 @@ describe('projectConfig — what the client does need', () => {
 
   it('ships a function a shipped expression calls, and nothing else', () => {
     // `crewnames` is the crew datasource; `pricing`/`rate` are reachable only
-    // from a hook, so they stay where the hook stayed.
+    // from a hook, and `available` only from an action's availability
+    // condition, so they stay where the hook and the condition stayed.
     expect(asRoleA().functions?.map((f) => f.name)).toEqual(['crewnames']);
   });
 

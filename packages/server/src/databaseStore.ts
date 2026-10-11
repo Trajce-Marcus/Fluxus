@@ -255,6 +255,14 @@ export class DatabaseStore implements WaitingStore {
   // ── Reads ───────────────────────────────────────────────────────────────────
 
   async getRecord(recordId: string): Promise<RecordInstance> {
+    const record = await this.findRecord(recordId);
+    if (!record) throw new Error(`Record not found: ${recordId}`);
+    return record;
+  }
+
+  /** `getRecord` for a caller to whom a missing record is an answer, not a
+   *  failure — `page.activities`, which answers it with an empty list. */
+  async findRecord(recordId: string): Promise<RecordInstance | null> {
     const held = this.held.get(recordId);
     if (held) return held;
     const rows = await this.run(
@@ -263,8 +271,7 @@ export class DatabaseStore implements WaitingStore {
         .from(records)
         .where(and(eq(records.operationId, this.operationId), eq(records.id, recordId))),
     );
-    if (rows.length === 0) throw new Error(`Record not found: ${recordId}`);
-    return this.hold(rows[0]);
+    return rows.length === 0 ? null : this.hold(rows[0]);
   }
 
   /**

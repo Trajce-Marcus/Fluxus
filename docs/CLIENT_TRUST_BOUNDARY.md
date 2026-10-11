@@ -194,7 +194,7 @@ on.
 |---|---|---|
 | attributes | `key`, `label`, `description`, `type`, display config, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | presign / storage gating config (`max_size_mb`, `max_count`) |
 | record types | `id`, `name`, `id_field`, custom field keys + labels | `access.read`; **unreadable types entirely** |
-| activities (the pool, since 2026-10-10) | `id`, `name`, `description`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely**; unrunnable activities — any no shipped workflow lists |
+| activities (the pool, since 2026-10-10) | `id`, `name`, `description`, form definition (its questions' `show_condition` included) | **`before_hook` and `after_hook` entirely**; the activity's own `show_condition` (since 2026-10-11 — the server answers which actions are offered, `page.activities`, [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md)); unrunnable activities — any no shipped workflow lists |
 | workflows | `id`, `name`, and their ordered `{ activity_ref }` list | — |
 | functions | those reachable from a shipped expression | the rest |
 | roles | — | **the whole `access.roles` block**; the client gets its own roles from `me` |
@@ -267,7 +267,8 @@ the runtime plane hands it a `ClientSolutionConfig`, so its parameter type
 widens to the narrow one. Hooks arrive absent, which is already a legal state
 (`before_hook: null`), and safe: **the client never executes hooks** — scripts
 and persistence are server-side by ruling, and the client evaluates
-expressions only (`show_condition`, `validation`, datasources). The Console is
+expressions only (a form's `show_condition`s, `validation`, datasources — an
+action's availability is the server's since 2026-10-11). The Console is
 unaffected: it still receives the full model through `config.get`.
 
 **The storage split helps.** Now that the model is rows rather than one blob,

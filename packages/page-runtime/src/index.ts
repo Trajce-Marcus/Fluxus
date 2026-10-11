@@ -34,8 +34,6 @@ export {
   toOffsetIso,
 } from './capture/attributeWidgets';
 export { componentManifests } from './componentManifests';
-export { availableActivities } from './availableActivities';
-export type { ActivityOption, ConditionEvaluator } from './availableActivities';
 export { OpenPage, RunActivity } from './components/actionComponents';
 export { AppHeader } from './components/AppHeader';
 export { Contributions } from './components/Contributions';

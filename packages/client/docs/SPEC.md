@@ -87,6 +87,15 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    record data changed, and the light entry the read produces is of no interest
    to the browser that caused it, so refreshing would double the round trips of
    every page that reads.
+4a. **`pageActivities(items)`** (2026-10-11,
+   [ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)) —
+   `page.activities` on the server: which actions each item offers the
+   signed-in user, an item being `{ recordId }` (its actions) or `{ typeId }`
+   (its CREATEs, with no record — a create button). One `{ id, name }` list
+   per item, in the order asked; an unreadable record answers an empty list,
+   as a missing one does. The browser draws what comes back: the client's
+   model no longer carries actions' availability conditions. Its callers are
+   the page runtime's `listActivities` and the workbench.
 5. **`savePage(path, def)` / `deletePage(path)`** (backend stage 3) — mutate
    the local `pages` map first, then round-trip `pages.put`/`pages.delete`, so
    host reads of the page set stay synchronous. Defs are opaque `unknown`

@@ -159,8 +159,9 @@ src/router.ts          — the tRPC router: orgs.get/putProfile,
                          operations.list/get/create/putConfig,
                          config.get/getForOperation/put
                          + the per-entity model writes (putAttribute…
-                         putDefaultMenu), pages.*, records.*, activities.run,
-                         files.*, perf.* (routers/perf.ts);
+                         putDefaultMenu), pages.*, page.activities,
+                         records.*, activities.run, files.*, perf.*
+                         (routers/perf.ts);
                          DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
 src/services/blob.ts   — the blob-store seam (R2): the ONLY module touching the
                          S3 client; presign helpers, key generation, cost
@@ -415,6 +416,23 @@ takes `operationId?` (both default `demo/sdm`):
   `show_condition`, with no second filter over the answer — see the engine SPEC
   for why. **Logged light** on the anchor when one is given: parameters,
   caller, outcome, duration, never the answer; anchorless reads leave no trace.
+- **`page.activities`** `{ operationId?, items: ({ recordId } | { typeId })[] }`
+  → `ActivityOption[][]` (`{ id, name }`, one list per item, in the order
+  asked) — which actions each item offers the caller (built 2026-10-11,
+  [ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)).
+  `page` is the group for what the server prepares for a page, apart from
+  `pages`, which holds page definitions; the Console workbench asks it too.
+  The caller's user is resolved as for every operation call (entry gate,
+  roles), and the rule is the engine's `offeredActivities`: a **record**
+  offers every non-GET action whose `show_condition` is strictly `true` with
+  that record as `context.record` (a CREATE's included); a **record type**
+  offers its CREATEs, evaluated with no record, as their run gate sees them.
+  A record the caller may not read, a missing one and an unknown type all
+  answer an empty list — the read check of the `activities.run` anchor
+  (`DatabaseStore.findRecord`, which answers null instead of throwing). A
+  record type has no read check, as a CREATE's run has none. The browser no
+  longer receives the conditions (*What the client is given*). Tests:
+  `test/pageActivities.test.ts`.
 - **`files.presignUpload`** `{ solutionId?, attributeKey, name, mime, size, hash?,
   photo metadata? }` → `{ storageKey, uploadUrl, thumbKey?, thumbUploadUrl? }`
   / **`files.presignGet`** `{ solutionId?, key }` → `{ url }` — the blob upload/read
@@ -554,7 +572,8 @@ rev 6 §0). What the server implements:
   adoption posture; `pageOpenable` likewise opens no page). It is **default deny** — a type is readable only if its
   `access.read` lists a role the caller holds. Applied by `records.*`, by
   the `activities.run` anchor check (unreadable anchor ⇒ not-found, *before*
-  the run gate), and since 2026-08-09 by `projectConfig` — one answer
+  the run gate), by `page.activities` (an unreadable record offers nothing,
+  2026-10-11), and since 2026-08-09 by `projectConfig` — one answer
   (`computeReadable`, `src/projection.ts`) governing both halves of a snapshot,
   the data and the model. Activity `run` itself is the engine's existing
   availability gate reading `context.user.roles`.
@@ -729,7 +748,7 @@ somebody deliberately exposes them. This is the rule the whole module rests on.
 |---|---|---|
 | attributes | `key`, `label`, `description`, `type`, display config, `max_count`, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | the presign gate (`max_size_mb`); attributes no surviving form reaches, and pool orphans |
 | record types | `id`, `name`, `description`, `workflow_ref`, custom field key + label + type + FK wiring | `access.read`; storage constraints (`required`/`unique`/`immutable`/`indexed`/`default`); **unreadable types entirely** |
-| activities (the pool) | `id`, `name`, `description`, `record_map`, form definition, `show_condition` | **`before_hook` and `after_hook` entirely**; any activity no surviving workflow lists (one listed by two is sent once) |
+| activities (the pool) | `id`, `name`, `description`, `record_map`, form definition (its questions' `show_condition` included) | **`before_hook` and `after_hook` entirely**; the activity's own `show_condition` (2026-10-11 — `page.activities` answers which actions are offered, so the browser has no use for it; a function only those conditions call stops shipping); any activity no surviving workflow lists (one listed by two is sent once) |
 | workflows | `id`, `name`, `description`, and their ordered `{ activity_ref }` list | workflows serving no surviving record type |
 | functions | those reachable from a shipped expression, transitively | the rest — including every hook-only helper |
 | roles | — | **the whole `access` block**; the client gets its own roles from `me` |

@@ -5,7 +5,6 @@ import type { SlotConfig } from './pageDef';
 import type { PageRuntime } from './runtime';
 import { ActivityFormModal } from './ActivityFormModal';
 import { fill, hasHoles, holes } from './interpolate';
-import { availableActivities } from './availableActivities';
 import { NO_TABS, type PageTabs } from './pageTabs';
 import {
   packCallbackData,
@@ -193,22 +192,22 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   }, [runtime, onError, manifest.name]);
 
   // Which activities apply to a record — asked by a component that draws them,
-  // never by a script (pageHost, `listActivities`). The record is fetched the
-  // same way a run's anchor is: the browser may hold no records at all, and the
-  // fetch is also the authorisation check.
+  // never by a script (pageHost, `listActivities`). The server decides, with
+  // the signed-in user (`page.activities`, ACTIONS_OFFERED_BY_SERVER); the
+  // browser no longer has the conditions. A record the caller may not read
+  // answers an empty list.
+  //
+  // It depends on `refreshTick` on purpose: the page bumps it whenever any
+  // component's run lands, which hands the component a new `listActivities`
+  // and so makes it ask again — "Approve WBS" disappears the moment the WBS is
+  // approved, whichever component ran it.
   const listActivities = useCallback(async (record: unknown) => {
     const id = record === null || record === undefined || record === '' ? null : String(record);
-    const anchor = id === (pageCtx.record?.id ?? null) && pageCtx.record
-      ? pageCtx.record
-      : id ? await runtime.client.fetchRecord(id) : null;
-    if (!anchor) return [];
-    const found = runtime.findRecordType(anchor.typeRef);
-    if (!found) return [];
-    return availableActivities(
-      found.workflow.activities,
-      (source) => runtime.evaluateExpression(source, { ...pageCtx, record: anchor }),
-    );
-  }, [runtime, pageCtx]);
+    if (!id) return [];
+    const [offered] = await runtime.client.pageActivities([{ recordId: id }]);
+    return offered ?? [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, refreshTick]);
 
   // Handlers behind services.page (UI-local effects) and services.activities
   // (host-neutral activity runs) for this component instance.

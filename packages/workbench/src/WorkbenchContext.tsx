@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { createEngine, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import type {
+  ActivityOption,
   ContextUser,
   Engine,
   RecordTypeDef,
@@ -18,9 +19,11 @@ import { buildNotifyModule } from './services/notify';
 // The workbench's own state (CONSOLE_RUNTIME_SPEC §4, M15). Everything
 // record-shaped lives here — selected record type, selected record, activity
 // runs — and nothing above <Workbench> knows these exist. The host hands over a
-// connected FluxusClient; the local engine that evaluates expressions (show
-// conditions, datasources, availability) synchronously against the fetched
-// snapshot is built here, per mounted workbench, from that client.
+// connected FluxusClient; the local engine that evaluates the capture form's
+// expressions (question conditions, datasources) synchronously against the
+// fetched snapshot is built here, per mounted workbench, from that client.
+// Which actions are offered is not among them: the server answers that
+// (`page.activities`, ACTIONS_OFFERED_BY_SERVER).
 
 interface WorkbenchContextValue {
   /** The operation whose partition is on screen — `null` = none picked yet, so
@@ -51,9 +54,16 @@ interface WorkbenchContextValue {
   /** File/photo upload surface (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the
    *  client's UploadService, scope pre-bound; injected into capture widgets. */
   uploads: UploadService;
-  // Activity-level show_condition (availability): drives UI visibility; the
-  // same rule is re-checked inside runActivity as the pipeline gate.
-  isActivityAvailable: (activity: ActivityDef, anchorRecord: RecordInstance | null) => boolean;
+  /**
+   * Which actions the server offers — on a record (`{ recordId }`), or with
+   * no record on a record type (`{ typeId }`, its CREATEs). Decided there with
+   * the designer's real roles in this operation; the same rule is re-checked
+   * when an action runs.
+   */
+  offeredActivities: (item: { recordId: string } | { typeId: string }) => Promise<ActivityOption[]>;
+  /** Bumped whenever the snapshot refreshes (after every run) — when the
+   *  offered lists ask again. */
+  snapshotVersion: number;
   // Resolves a stored fk_ref id to a human-readable label (§SDM_Change §6).
   resolveDisplayLabel: (fkRecordType: string, fkDisplayField: string | undefined, rawId: string) => string;
   // Returns the fk_display_field for an attribute key on a record type via key-matching (§SDM_Change §7).
@@ -89,7 +99,7 @@ export interface WorkbenchProviderProps {
 }
 
 export function WorkbenchProvider({ client, user, operationId = null, operations = [], onSelectOperation, operationError, children }: WorkbenchProviderProps) {
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
@@ -193,6 +203,11 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
     resolveAttributeTarget: (typeId, attrKey) => adapter.resolveAttributeTarget(typeId, attrKey),
   }), [engine, client, uploads, adapter]);
 
+  const offeredActivities = useCallback(
+    async (item: { recordId: string } | { typeId: string }) => (await client.pageActivities([item]))[0] ?? [],
+    [client],
+  );
+
   // Thin host wrapper over the server pipeline: the server runs the activity
   // (gate, hooks, persistence) and the client refreshes the snapshot; the
   // workbench reacts — deselect a deleted record, console the warnings
@@ -245,7 +260,8 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
       getRecordTypeDef,
       getRecordAndType,
       runActivity,
-      isActivityAvailable: (activity, anchorRecord) => engine.isActivityAvailable(activity, anchorRecord),
+      offeredActivities,
+      snapshotVersion: tick,
       resolveDisplayLabel,
       resolveAttributeDisplayField,
       getReverseRefs,

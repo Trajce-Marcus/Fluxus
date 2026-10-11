@@ -9,7 +9,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { FkPointer } from '@fluxus/dsl';
-import { AfterHookFailedError, DEMO_USER, isUploadType, validateSubmission, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
+import { AfterHookFailedError, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -559,6 +559,58 @@ export const appRouter = t.router({
           await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
           return await rollbackConfig(ctx.db, input.solutionId, input.version, `Rollback to v${input.version}`, publishedBy);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
+  // What the server prepares for a page (ACTIONS_OFFERED_BY_SERVER) — apart
+  // from `pages`, which holds page definitions. The Console workbench asks it
+  // too, although it is not a page.
+  page: t.router({
+    /**
+     * Which actions each item offers the caller, decided here with the real
+     * user, by the engine's own gate (`offeredActivities`). The browser draws
+     * what comes back; it no longer has the conditions.
+     *
+     * An item is a record (its actions) or a record type (its CREATEs, with no
+     * record — a create button). A record the caller may not read answers an
+     * empty list, exactly as a missing one does — the check `activities.run`
+     * applies to its record. A record type has no read check, as a CREATE's
+     * run has none.
+     */
+    activities: t.procedure
+      .input(
+        z.object({
+          operationId: operationInput,
+          items: z.array(z.union([
+            z.object({ recordId: z.string().min(1) }),
+            z.object({ typeId: z.string().min(1) }),
+          ])),
+        }),
+      )
+      .query(async ({ ctx, input }): Promise<ActivityOption[][]> => {
+        try {
+          const user = await resolveUser(ctx, input.operationId);
+          const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+          const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
+          const workflowOf = (typeId: string): ActivityDef[] | null => {
+            try { return host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
+          };
+          // One item after another: they share the request's record cache.
+          const answers: ActivityOption[][] = [];
+          for (const item of input.items) {
+            if ('recordId' in item) {
+              const record = await host.store.findRecord(item.recordId);
+              const activities = record && (readable === null || readable.has(record.typeRef)) ? workflowOf(record.typeRef) : null;
+              answers.push(activities ? await host.engine.offeredActivities(activities, record) : []);
+            } else {
+              const activities = workflowOf(item.typeId);
+              answers.push(activities ? await host.engine.offeredActivities(activities, null) : []);
+            }
+          }
+          return answers;
         } catch (err) {
           rethrow(err);
         }

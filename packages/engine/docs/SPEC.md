@@ -89,13 +89,17 @@ the system log, the `invoke` in-flight set — that relies on runs not
 interleaving.
 
 **Two kinds of function (2026-09-25, SERVER_DATA_LOADING step 2).** The
-**immediate** ones — `activityAvailability`, `isActivityAvailable`,
-`evaluate` — are the browser's, and need a store that answers immediately (a
-`MemoryAdapter`). The **waiting** ones return promises and take either store:
-`runActivity`, `runQuery`, `invoke`, `validateSubmission`, and the waiting forms
+**immediate** one — `evaluate` — is the browser's, and needs a store that
+answers immediately (a `MemoryAdapter`). The **waiting** ones return promises
+and take either store: `runActivity`, `runQuery`, `invoke`,
+`validateSubmission`, `offeredActivities`, and the waiting forms
 `activityAvailabilityAsync`, `isActivityAvailableAsync`, `evaluateAsync`. Only
 the server, its scripts and tests call the waiting ones; the gate inside
-`runActivity`/`runQuery` uses the waiting form. `createEngine` is generic over
+`runActivity`/`runQuery` uses the waiting form. Availability had immediate
+forms too (`activityAvailability`, `isActivityAvailable`) until the server
+took over deciding which actions are offered (2026-10-11,
+ACTIONS_OFFERED_BY_SERVER): the browser no longer has the conditions, so they
+were removed. `createEngine` is generic over
 the store (`Engine<S>`), so `engine.store` keeps its type — a browser host's
 `MemoryAdapter`, the server's `DatabaseStore`.
 
@@ -110,10 +114,20 @@ the store (`Engine<S>`), so `engine.store` keeps its type — a browser host's
 - `engine.runQuery(activity, captured, anchorRecord)` — the read pipeline; see
   "GET activities" below. Refuses anything that is not a GET. Records the run
   on the anchor, logged light.
-- `engine.activityAvailability(activity, anchorRecord)` /
-  `isActivityAvailable(...)` — the activity-level `show_condition` gate,
-  fail-closed. UIs use it to hide; `runActivity` re-checks it as the
+- `engine.activityAvailabilityAsync(activity, anchorRecord)` /
+  `isActivityAvailableAsync(...)` — the activity-level `show_condition` gate,
+  strictly `true`, fail-closed. `runActivity`/`runQuery` check it as the
   enforcement point (headless callers skip the UI).
+- `engine.offeredActivities(activities, record)` — which of a workflow's
+  activities are offered, in its order: what the server's `page.activities`
+  answers (ACTIONS_OFFERED_BY_SERVER, 2026-10-11). **About a record:** every
+  activity but a GET, each through the gate above with that record as
+  `context.record` — a CREATE's condition included, although the CREATE then
+  runs with none, which is what lets `context.record is null` keep a create
+  action off a record's own page. **No record** (a create button): CREATEs
+  only, with `context.record` null, as their run gate sees. Conditions are
+  evaluated one after another so they share the store's record cache. Returns
+  `ActivityOption[]` (`{ id, name }`). Tests: `test/offeredActivities.test.ts`.
 - `engine.evaluate(source, scriptContext)` — expression evaluation (datasources,
   show conditions) against the live store with the four roots injected.
 - `engine.validateConfig()` / `engine.reportConfigFindings()` — every
@@ -360,7 +374,7 @@ plane is given — and a full grade that **extends** it:
 ```
 ClientSolutionConfig      ← SolutionConfig      (adds access.roles)
 ClientRecordTypeDef       ← RecordTypeDef       (adds access.read + storage constraints)
-ClientActivityRawDef      ← ActivityRawDef      (adds before_hook / after_hook)
+ClientActivityRawDef      ← ActivityRawDef      (adds before_hook / after_hook / returns / show_condition)
 ClientAttributeTypeConfig ← AttributeTypeConfig (adds max_count / max_size_mb)
 ClientCustomFieldDef · ClientAttributeDef · ClientWorkflowRawDef (= WorkflowRawDef:
 a workflow is references only, the same on both planes)

@@ -9,6 +9,7 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
 import type {
+  ActivityOption,
   ActivityRawDef,
   AttributeDef,
   ClientSolutionConfig,
@@ -990,6 +991,18 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       recordId: input.recordId,
       attributes: input.attributes ?? {},
     })) as QueryActivityResult;
+  }
+
+  /**
+   * Which actions each item offers the signed-in user — the server decides,
+   * with the real user, and the browser draws what comes back
+   * (ACTIONS_OFFERED_BY_SERVER). An item is a record (its actions) or a record
+   * type (its CREATEs, with no record — a create button). One answer per
+   * item, in the order asked; a record the caller may not read answers an
+   * empty list, as a missing one does.
+   */
+  async pageActivities(items: ({ recordId: string } | { typeId: string })[]): Promise<ActivityOption[][]> {
+    return await this.trpc.page.activities.query({ operationId: this.operationId, items });
   }
 
   /**
