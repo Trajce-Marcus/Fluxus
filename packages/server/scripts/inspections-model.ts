@@ -377,7 +377,7 @@ const JOB_ACTIVITIES = [
     // list only: a job opened by link still shows until read conditions exist
     // (docs/RECORD_READ_CONDITIONS.md).
     description: 'The Jobs page: every job for an Admin, otherwise only the jobs assigned to the signed-in inspector.',
-    returns: "records.jobs.where('role_admin' in context.user.roles or inspector.email = context.user.email).orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector: inspector.name)",
+    returns: "records.jobs.where('role_admin' in context.user.roles or lower(inspector.email) = lower(context.user.email)).orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector: inspector.name)",
   }),
 ];
 

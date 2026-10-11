@@ -467,8 +467,8 @@ condition.
    date, inspector), with a button for Create Pre-Purchase Job. The way in, and the
    only place a job is created. A row opens the Job page.
    **An Admin sees every job; anyone else only the jobs assigned to them**
-   (2026-10-11) — the jobs whose inspector has the email they signed in with.
-   The filter is in the list's GET, so it holds on the server. It is the list
+   (2026-10-11) — the jobs whose inspector has the email they signed in with,
+   ignoring capital letters, as the inspection steps do. The filter is in the list's GET, so it holds on the server. It is the list
    only: a job opened by a link still shows, until read conditions are built
    ([RECORD_READ_CONDITIONS](../../../docs/RECORD_READ_CONDITIONS.md)).
 2. **Job** — always at the top: the header (job number and address; customer
