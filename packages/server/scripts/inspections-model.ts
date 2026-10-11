@@ -190,8 +190,8 @@ const RECORD_TYPES = [
     field('address', 'Address'),
     field('details', 'Details'),
     field('notes', 'Notes'),
-    field('quoted_amount', 'Quoted amount', 'decimal'),
-    field('quote_notes', 'Quote notes'),
+    // The quote is its own record (2026-10-12), read by Admins only.
+    field('quote', 'Quote', 'fk_ref', { rt: 'rt_quotes', display: 'quoted_amount' }),
     field('cancel_reason', 'Cancel reason'),
     field('scheduled_at', 'Scheduled', 'datetime'),
     field('inspector', 'Inspector', 'fk_ref', { rt: 'rt_inspectors', display: 'name' }),
@@ -218,6 +218,11 @@ const RECORD_TYPES = [
     field('overall_condition', 'Overall condition'),
     field('overall_assessment', 'Overall assessment'),
     field('declaration_confirmed', 'Declaration confirmed'),
+  ] },
+  { id: 'rt_quotes', name: 'Quotes', description: "A job's price. Its own record so that only Admins read it — later the quote itself.", workflow_ref: 'wf_quotes', custom_fields: [
+    field('job', 'Job', 'fk_ref', { rt: 'rt_jobs', display: 'job_no' }),
+    field('quoted_amount', 'Quoted amount', 'decimal'),
+    field('quote_notes', 'Quote notes'),
   ] },
   { id: 'rt_area_inspections', name: 'Area Inspections', description: 'One area at one location, and what came of inspecting it — its findings sit under it.', workflow_ref: 'wf_area_inspections', custom_fields: [
     field('job', 'Job', 'fk_ref', { rt: 'rt_jobs', display: 'address' }),
@@ -299,14 +304,11 @@ const JOB_ACTIVITIES = [
       "let seq = '' + records.jobs.count",
       "let padded = iif(len(seq) = 1, '000' + seq, iif(len(seq) = 2, '00' + seq, iif(len(seq) = 3, '0' + seq, seq)))",
       "context.record.update({ job_no: 'J-' + padded })",
+      // Every job has its quote record from the start, so Quote is always an
+      // update — and a re-quote starts from the figures already there.
+      'let quote = records.quotes.create({ job: context.record.id })',
+      'context.record.update({ quote: quote.id })',
     ].join('\n'),
-  }),
-  act({
-    id: 'act_quote_jobs', name: 'Quote', record_map: 'UPDATE',
-    description: 'Records the price. Rerun to change it; a re-quote does not undo an acceptance.',
-    show_condition: "context.record.status <> 'Cancelled' and context.record.status <> 'Inspected'",
-    attributes: [req('quoted_amount'), use('quote_notes')],
-    after_hook: `if context.record.status = 'Requested' {\n  ${status('Quoted')}\n}`,
   }),
   act({
     id: 'act_accept_jobs', name: 'Accept Quote', record_map: 'UPDATE',
@@ -380,6 +382,21 @@ const JOB_ACTIVITIES = [
     // (docs/RECORD_READ_CONDITIONS.md).
     description: 'The Jobs page: every job for an Admin, otherwise only the jobs assigned to the signed-in inspector.',
     returns: "records.jobs.where('role_admin' in context.user.roles or lower(inspector.email) = lower(context.user.email)).orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector: inspector.name)",
+  }),
+];
+
+// ── quotes ──────────────────────────────────────────────────────────────────
+
+// Quote moved from the job to its own record (2026-10-12) so that inspectors
+// cannot read it: the record type reads to Admins only, so the server neither
+// sends an inspector the quote nor offers them Quote.
+const QUOTE_ACTIVITIES = [
+  act({
+    id: 'act_update_quotes', name: 'Quote', record_map: 'UPDATE',
+    description: 'Records the price. Rerun to change it; a re-quote does not undo an acceptance.',
+    show_condition: "'role_admin' in context.user.roles and context.record.job.status <> 'Cancelled' and context.record.job.status <> 'Inspected'",
+    attributes: [req('quoted_amount'), use('quote_notes')],
+    after_hook: "if context.record.job.status = 'Requested' {\n  context.record.job.update({ status: 'Quoted' })\n}",
   }),
 ];
 
@@ -744,6 +761,7 @@ const flow = (id: string, name: string, description: string, acts: { id: string 
 
 const WORKFLOWS: [ReturnType<typeof flow>, ReturnType<typeof act>[]][] = [
   [flow('wf_jobs', 'Jobs', 'A pre-purchase inspection from request to Inspected.', JOB_ACTIVITIES), JOB_ACTIVITIES],
+  [flow('wf_quotes', 'Quotes', "Pricing a job.", QUOTE_ACTIVITIES), QUOTE_ACTIVITIES],
   [flow('wf_area_inspections', 'Area Inspections', 'Recording each area inspected, and its outcome.', AREA_INSPECTION_ACTIVITIES), AREA_INSPECTION_ACTIVITIES],
   [flow('wf_findings', 'Findings', 'Recording the defects found in an area inspection.', FINDING_ACTIVITIES), FINDING_ACTIVITIES],
   [flow('wf_inspection_areas', 'Inspection Areas', 'Maintaining the areas.', AREA_ACTIVITIES), AREA_ACTIVITIES],

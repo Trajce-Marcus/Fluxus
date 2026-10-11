@@ -122,7 +122,7 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
       header('{{ context.record.job_no }} · {{ context.record.address }}', '{{ context.record.customer_name }} · {{ context.record.status }}'),
       { id: 'slot-summary', componentName: 'Text', staticConfig: { text: "{{ invoke('act_summarise_findings', { job: context.record.id }) }}", style: 'caption' } },
       activities('Nothing can be done to this job right now.'),
-      // One section at a time (spec, *Pages*): Job, Inspection, Findings.
+      // One section at a time (spec, *Pages*): Job, Quote, Inspection, Findings.
       { id: 'slot-tabs', componentName: 'Tabs', staticConfig: { tabMode: 'scroll' } },
     ],
     body: [
@@ -135,13 +135,19 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
         ['Address', 'context.record.address'],
         ['Details', 'context.record.details'],
         ['Notes', 'context.record.notes'],
-        ['Quoted amount', 'context.record.quoted_amount'],
-        ['Quote notes', 'context.record.quote_notes'],
         ['Scheduled', 'context.record.scheduled_at'],
         ['Inspector', 'context.record.inspector.name'],
         ['Instructions', 'context.record.instructions'],
         ['Cancel reason', 'context.record.cancel_reason'],
       ], { id: 'slot-job', title: 'Job', tabName: 'Job' }),
+      // The quote is its own record, read by Admins only (2026-10-12): an
+      // inspector's browser is never sent it, so this tab says "Record access
+      // denied" for them, and the server offers them no Quote action.
+      details([
+        ['Quoted amount', 'context.record.quote.quoted_amount'],
+        ['Quote notes', 'context.record.quote.quote_notes'],
+      ], { id: 'slot-quote', title: 'Quote', tabName: 'Quote' }),
+      { id: 'slot-quote-actions', componentName: 'RecordActivities', staticConfig: { title: '', emptyMessage: '' }, dynamicProps: { record: 'context.record.quote' } },
       details([
         ['Access', 'context.record.access'],
         ['Weather', 'context.record.weather'],

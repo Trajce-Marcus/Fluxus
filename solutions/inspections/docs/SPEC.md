@@ -234,8 +234,7 @@ name, email, start date and finish date.
 | `address` | text | |
 | `details` | text, multiline | |
 | `notes` | text, multiline | |
-| `quoted_amount` | decimal, 2 places | |
-| `quote_notes` | text, multiline | |
+| `quote` | ref → `rt_quotes` | the job's quote, made with the job by Create's hook (2026-10-12; `quoted_amount` and `quote_notes` were fields on the job until then) |
 | `cancel_reason` | text, multiline | |
 | `scheduled_at` | datetime | |
 | `inspector` | ref → `rt_inspectors` | one per job; picked from the current inspectors (typed in as a name until 2026-10-11) |
@@ -251,6 +250,21 @@ name, email, start date and finish date.
 | `major_incidence`, `minor_incidence`, `overall_condition` | text (pick list) | captured by Assessment |
 | `overall_assessment` | text, multiline | captured by Assessment |
 | `declaration_confirmed` | text | `true` / `false` (dropdown); captured at Finish Inspection |
+
+### `rt_quotes` (2026-10-12)
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `job` | ref → `rt_jobs` | |
+| `quoted_amount` | decimal, 2 places | |
+| `quote_notes` | text, multiline | |
+
+**Read by Admin only** — the reason it is its own record (the user's design,
+2026-10-12): an inspector is never sent a job's quote. Opened directly it
+answers "Record access denied"; on the Job page its tab says the same
+(BLUEPRINT *Access*). Later it will hold the quote itself. The jobs that
+existed when it was introduced were given theirs directly, carrying their
+amount and notes; their history keeps what was entered then.
 
 ### `rt_area_inspections` (2026-10-12)
 
@@ -347,7 +361,6 @@ the way existing solutions do it.
 | Activity | Display name | Kind | Captures | Allowed when | Status after |
 | --- | --- | --- | --- | --- | --- |
 | `act_create_jobs` | Create Pre-Purchase Job | CREATE | customer name, customer email (required), address, details, notes | only where there is no record — the Jobs page | Requested |
-| `act_quote_jobs` | Quote | UPDATE | quoted amount, quote notes | not Cancelled or Inspected | Quoted from Requested; otherwise unchanged |
 | `act_accept_jobs` | Accept Quote | UPDATE | — | Quoted | Accepted |
 | `act_cancel_jobs` | Cancel Job | UPDATE | reason (required) | not Cancelled or Inspected | Cancelled |
 | `act_schedule_jobs` | Schedule | UPDATE | date/time, inspector (a current inspector, from `act_search_inspectors`), instructions | Accepted or Scheduled | Scheduled |
@@ -358,10 +371,20 @@ the way existing solutions do it.
 | `act_summarise_findings` | — | GET | job | — | — (one line of counts for the Job page) |
 | `act_list_jobs` | — | GET | — | — | — (every job for an Admin; otherwise only the jobs assigned to the signed-in inspector) |
 
-Schedule is rerun to reschedule. Quote is rerun to change the price. Create's
-hook sets `job_type` to "Pre-Purchase Inspection" and the **job number**: the
-count of jobs, the new one included, padded to four digits. Jobs are never
-deleted, so the count only grows.
+Schedule is rerun to reschedule. Create's hook sets `job_type` to
+"Pre-Purchase Inspection", the **job number** — the count of jobs, the new one
+included, padded to four digits; jobs are never deleted, so the count only
+grows — and makes the job's **quote record**.
+
+### `wf_quotes` (2026-10-12)
+
+| Activity | Display name | Kind | Captures | Allowed when | Job status after |
+| --- | --- | --- | --- | --- | --- |
+| `act_update_quotes` | Quote | UPDATE | quoted amount, quote notes | an Admin; the job not Cancelled or Inspected | Quoted from Requested; otherwise unchanged |
+
+Quote is rerun to change the price, and starts from the figures already there.
+It moved off the job (`act_quote_jobs`, deleted) onto the quote record, so it
+appears on the Job page's Quote tab, offered to Admins only.
 
 
 
@@ -508,8 +531,11 @@ condition.
    **summary line of counts** ("Major defects: 3 · Minor defects: 5 · Safety
    hazards: 1"), the job's activities, and a **tab strip** that shows one
    section at a time (2026-10-11):
-   - **Job** — customer, email, address, details, notes, quote, schedule,
+   - **Job** — customer, email, address, details, notes, schedule,
      inspector, instructions, cancel reason.
+   - **Quote** (2026-10-12) — the quoted amount and notes, and the Quote
+     action. An inspector is not sent the quote: the tab says "Record access
+     denied" and offers nothing.
    - **Inspection** — access, weather, checklist and the property facts
      (Start Inspection and Inspection Details), the Assessment, and the
      declaration.
@@ -765,7 +791,7 @@ One record, maintained by the firm.
 | `act_remove_findings` Remove Finding | In Progress | In Progress or Inspected |
 | `act_update_jobs` Inspection Details | In Progress | In Progress or Inspected |
 | `act_assess_jobs` Assessment | In Progress | In Progress or Inspected |
-| `act_quote_jobs` Quote | not Cancelled or Inspected | not Cancelled, Inspected, Report Ready, Awaiting Payment or Paid |
+| `act_update_quotes` Quote (on the quote record since 2026-10-12) | an Admin; not Cancelled or Inspected | not Cancelled, Inspected, Report Ready, Awaiting Payment or Paid |
 
 #### `wf_jobs` gains
 

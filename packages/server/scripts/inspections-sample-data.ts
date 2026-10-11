@@ -371,7 +371,11 @@ for (const job of JOBS) {
     customer_name: job.customer, customer_email: job.email, address: job.address,
     ...(job.details ? { details: job.details } : {}), ...(job.notes ? { notes: job.notes } : {}),
   });
-  if (reached(job, 'Quoted')) await run('act_quote_jobs', { quoted_amount: job.quote, ...(job.quoteNotes ? { quote_notes: job.quoteNotes } : {}) }, id);
+  if (reached(job, 'Quoted')) {
+    // The quote is its own record, made with the job (2026-10-12).
+    const quote = String((await caller.records.get({ operationId: OPERATION, recordId: id })).customFields.quote);
+    await run('act_update_quotes', { quoted_amount: job.quote, ...(job.quoteNotes ? { quote_notes: job.quoteNotes } : {}) }, quote);
+  }
   if (reached(job, 'Accepted')) await run('act_accept_jobs', {}, id);
   if (reached(job, 'Scheduled')) await run('act_schedule_jobs', { scheduled_at: job.scheduledAt, inspector: inspectorIds.get(job.inspector!), ...(job.instructions ? { instructions: job.instructions } : {}) }, id);
   if (reached(job, 'In Progress')) {
