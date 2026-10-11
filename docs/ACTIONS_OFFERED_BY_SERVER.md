@@ -2,8 +2,9 @@
 
 **Status:** spec, not built. Agreed 2026-10-11 (BLUEPRINT *Access*, "the server
 decides which actions are offered"); found while building the inspections
-assigned-inspector checks. Ready for cold review. Three choices are Claude's
-proposals awaiting the user's confirmation (*Decisions to confirm*, at the end).
+assigned-inspector checks. Ready for cold review, which the user wants in a
+new session. Claude's three proposals were settled by the user the same day
+(*Settled*, at the end).
 
 ## What this changes, in one paragraph
 
@@ -43,7 +44,10 @@ own user with roles stubbed empty (`runtime/src/host.ts`).
 
 ### 2.1 The server answers which actions are offered
 
-One new server call (name a proposal: `activities.available`):
+One new server call, **`page.activities`** (the user's name). `page` is a new
+group of calls for what the server prepares for a page — the user's wider aim —
+and is separate from `pages`, which holds page definitions. The Console
+workbench calls it too, although it is not a page.
 
 - **Asks** for one or more anchors, each either a **record** (its actions) or a
   **record type with no record yet** (the actions offered with no record — what
@@ -62,7 +66,7 @@ One new server call (name a proposal: `activities.available`):
   - a condition that errors hides its action and is logged — it fails closed,
     as the run gate does.
 - **A record the caller may not read** answers an empty list, never an error
-  that tells it apart from a missing record (proposal). The check is the one
+  that tells it apart from a missing record. The check is the one
   `activities.run` applies to its record today, so read conditions, when
   built, apply here too.
 - **Batched** so a list can ask for all its rows at once later. The first users
@@ -76,7 +80,7 @@ One new server call (name a proposal: `activities.available`):
   evaluating. `RecordActivities` draws what comes back, and asks again after an
   action runs, as it does now.
 - **Console workbench:** `AvailableActivities` and `RecordsGrid`'s create
-  button ask the server (proposal: included, so there is one rule everywhere).
+  button ask the server, so there is one rule everywhere.
   Both become asynchronous: nothing is drawn until the answer arrives.
   `isActivityAvailable` leaves the workbench context.
 - **`availableActivities.ts`** leaves the page runtime; its rule now lives in
@@ -162,12 +166,11 @@ conditions following references read each record once.
 - Runtime page: the Actions list shows what the server answered. Workbench:
   the actions and the create button follow the server.
 
-## Decisions to confirm
+## Settled
 
-Claude's proposals; none is ruled yet.
+Claude's proposals, each decided by the user on 2026-10-11:
 
-- **The call's name, `activities.available`** (2.1).
-- **An unreadable record answers an empty list** rather than an error (2.1).
-- **The Console workbench switches too** (2.2), so one rule decides
-  everywhere; otherwise the workbench would keep evaluating in the browser,
-  where conditions about the user also fail.
+- **The call is `page.activities`** — the user's name, in place of Claude's
+  `activities.available`.
+- **An unreadable record answers an empty list** — approved.
+- **The Console workbench switches too** — approved.
