@@ -649,6 +649,13 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * re-fetches the whole partition or only the records already in hand.
    */
   private recordsMode: 'partition' | 'none' = 'partition';
+  /**
+   * The records fetched directly — by id or by type — which `refresh` re-reads
+   * when there is no partition. The records they point at arrive with each read
+   * (`records.get`'s `references`) and are not roots themselves, so following
+   * references never grows what is held.
+   */
+  private readonly roots = new Set<string>();
 
   /**
    * Design-plane connect (CONSOLE_RUNTIME_SPEC §3): bind to a solution to author
@@ -907,11 +914,22 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * component's callback named). Merges rather than replaces, so a host may
    * hold several at once. A record the caller may not read comes back as
    * not-found, deliberately indistinguishable from a missing one.
+   *
+   * The records it points at come with it, two levels deep and readable ones
+   * only (2026-10-12), and are merged too: a page holding only its own record
+   * could not otherwise show `context.record.area.name`, nor a form name what
+   * a reference holds.
    */
   async fetchRecord(recordId: string): Promise<RecordInstance> {
-    const record = (await this.trpc.records.get.query({ operationId: this.operationId, recordId })) as RecordInstance;
-    this.adapter.mergeRecords([[record.id, record] as const]);
+    const { references, ...record } = await this.readRecord(recordId);
+    this.roots.add(record.id);
+    this.adapter.mergeRecords([record, ...references].map((r) => [r.id, r] as const));
     return record;
+  }
+
+  private async readRecord(recordId: string): Promise<RecordInstance & { references: RecordInstance[] }> {
+    const read = (await this.trpc.records.get.query({ operationId: this.operationId, recordId })) as RecordInstance & { references?: RecordInstance[] };
+    return { ...read, references: read.references ?? [] };
   }
 
   /**
@@ -922,6 +940,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    */
   async fetchRecords(typeId: string): Promise<RecordInstance[]> {
     const rows = (await this.trpc.records.list.query({ operationId: this.operationId, typeId })) as RecordInstance[];
+    for (const r of rows) this.roots.add(r.id);
     this.adapter.mergeRecords(rows.map((r) => [r.id, r] as const));
     return rows;
   }
@@ -931,9 +950,10 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * re-render.
    *
    * With the partition, that is one re-fetch of the lot. With `records: 'none'`
-   * there is no partition to re-fetch, so it refreshes exactly what the host
-   * has already been given — typically the one record the page is about — and
-   * drops any that no longer read back (deleted, or no longer readable).
+   * there is no partition to re-fetch, so it re-reads exactly the records the
+   * host fetched — typically the one record the page is about — with the
+   * records they point at, and drops any that no longer read back (deleted, or
+   * no longer readable).
    */
   async refresh(): Promise<void> {
     if (this.recordsMode === 'partition') {
@@ -941,15 +961,16 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       this.adapter.replaceRecords(partition.map((r) => [r.id, r] as const));
       return;
     }
-    const held = this.adapter.allRecords().map((r) => r.id);
-    if (held.length === 0) return;
-    const rows = await Promise.all(
-      held.map((recordId) =>
-        (this.trpc.records.get.query({ operationId: this.operationId, recordId }) as Promise<RecordInstance>)
-          .catch(() => null),
-      ),
-    );
-    this.adapter.replaceRecords(rows.filter((r): r is RecordInstance => r !== null).map((r) => [r.id, r] as const));
+    if (this.roots.size === 0) return;
+    const ids = [...this.roots];
+    const reads = await Promise.all(ids.map((recordId) => this.readRecord(recordId).catch(() => null)));
+    const held: RecordInstance[] = [];
+    reads.forEach((read, i) => {
+      if (read === null) { this.roots.delete(ids[i]); return; }
+      const { references, ...record } = read;
+      held.push(...references, record);
+    });
+    this.adapter.replaceRecords(held.map((r) => [r.id, r] as const));
   }
 
   /**

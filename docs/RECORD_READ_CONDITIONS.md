@@ -98,7 +98,7 @@ Every place the server hands records to a caller directly:
 
 | Where | Today | With read conditions |
 | --- | --- | --- |
-| `records.get` — a page opening its record, a page following a reference | not found if the type is unreadable | also not found if no held role lets the record through |
+| `records.get` — a page opening its record, a page following a reference; since 2026-10-12 also the records it points at (`references`, two levels) | not found if the type is unreadable; an unreadable referenced record is left out | also not found if no held role lets the record through; a referenced record not let through is left out |
 | `records.list` — one type's records | empty if the type is unreadable | only the records let through |
 | `records.partition` — the Console workbench | readable types only | and, within them, only the records let through |
 | `activities.run` with a record | not found if unreadable, checked before the availability gate | also not found if the record is not let through |

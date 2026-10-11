@@ -456,6 +456,12 @@ takes `operationId?` (both default `demo/sdm`):
   every run (backend stage 2; client-side expression evaluation stays local,
   scripts and persistence are server-side). App-level reads become GET
   activities when §5a lands — records.* is infrastructure, not the app API.
+  **`records.get` also sends `references`** (2026-10-12): the records the one
+  asked for points at, following its reference fields two levels deep
+  (`REFERENCE_DEPTH`), readable ones only, a reference to a missing record
+  skipped. A Runtime page holds only its own record, so without them
+  `context.record.area.name` read null and a form showed a reference's id
+  instead of its name. Tests: `test/recordReferences.test.ts`.
   **RBAC stage 1**: all three apply the record-type read filter (below) — a
   deny reads as not-found on `get`, and unreadable types drop out of
   `partition`/`list`.

@@ -67,12 +67,18 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    authorisation check as well as the load. These are what a host with no
    partition reaches for: a page's anchor record, the record a component's
    callback named, and (later) the type a grid is showing.
+   **`fetchRecord` merges the records it points at too** (2026-10-12) —
+   `records.get`'s `references`, two levels, readable ones only — so a page's
+   expressions and a form's reference labels can follow a reference from the
+   record they hold.
 2. **`refresh()`** — with the partition, re-fetch the lot into the *same*
    adapter via `MemoryAdapter.replaceRecords` (identity stable, subscribers
    notified). With `records: 'none'` there is no partition to re-fetch, so it
-   re-reads exactly the records already in hand — typically the one the page is
-   about — and drops any that no longer read back (deleted, or no longer
-   readable).
+   re-reads the records the host **fetched** — typically the one the page is
+   about — with the records they point at, and drops any that no longer read
+   back (deleted, or no longer readable). Only what was fetched directly is
+   re-read (2026-10-12): the records that came along as references are not
+   re-read on their own, so following references never grows what is held.
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`
    on the server (availability gate, hooks, persistence, reporting projection
    all server-side), then `refresh()`. Refresh runs even when the call throws,

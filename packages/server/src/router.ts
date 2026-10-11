@@ -7,7 +7,7 @@
 
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { FkPointer } from '@fluxus/dsl';
 import { AfterHookFailedError, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
@@ -135,6 +135,52 @@ async function readableTypeIds(ctx: AppContext, operationId: string): Promise<{ 
   const op = await getOperation(ctx.db, operationId);
   const config = await getSolutionConfig(ctx.db, op.solutionId);
   return { user, readable: computeReadable(ctx.authConfigured, config, user.roles) };
+}
+
+/** How far `records.get` follows references: two levels covers a page that
+ *  reads `context.record.area_inspection.job.job_no`. */
+const REFERENCE_DEPTH = 2;
+
+type RecordRow = typeof records.$inferSelect;
+
+/**
+ * The records `roots` point at, following reference fields up to
+ * REFERENCE_DEPTH levels — sent with a record so a page that holds only its own
+ * record can still show `context.record.area.name`, and a form can name what a
+ * reference holds (2026-10-12). Only records the caller may read, by the same
+ * readable-types answer as the record itself; a reference to a missing record
+ * is skipped. The roots themselves are never repeated.
+ */
+async function referencedRecords(
+  db: AppContext['db'],
+  operationId: string,
+  config: SolutionConfig,
+  readable: Set<string> | null,
+  roots: RecordRow[],
+): Promise<RecordRow[]> {
+  const refFields = new Map(config.recordTypes.map((rt) => [
+    rt.id,
+    rt.custom_fields.filter((cf) => cf.type === 'fk_ref').map((cf) => cf.key),
+  ]));
+  const seen = new Set(roots.map((r) => r.id));
+  const found: RecordRow[] = [];
+  let level = roots;
+  for (let depth = 0; depth < REFERENCE_DEPTH && level.length > 0; depth++) {
+    const ids = new Set<string>();
+    for (const row of level) {
+      for (const key of refFields.get(row.typeRef) ?? []) {
+        const value = row.customFields[key];
+        if (typeof value === 'string' && value !== '' && !seen.has(value)) ids.add(value);
+      }
+    }
+    if (ids.size === 0) break;
+    const rows = await db.select().from(records)
+      .where(and(eq(records.operationId, operationId), inArray(records.id, [...ids])));
+    level = rows.filter((r) => readable === null || readable.has(r.typeRef));
+    for (const r of level) seen.add(r.id);
+    found.push(...level);
+  }
+  return found;
 }
 
 /** Whether a file's mime/extension satisfies a `file` attribute's `accept` list. */
@@ -858,7 +904,15 @@ export const appRouter = t.router({
             throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
           }
           const r = rows[0];
-          return { id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory };
+          const op = await getOperation(ctx.db, input.operationId);
+          const config = await getSolutionConfig(ctx.db, op.solutionId);
+          const references = await referencedRecords(ctx.db, input.operationId, config, readable, [r]);
+          return {
+            id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory,
+            // What it points at, so the browser can follow a reference without
+            // a round trip per field (see referencedRecords).
+            references: references.map((x) => ({ id: x.id, typeRef: x.typeRef, customFields: x.customFields, activityHistory: x.activityHistory })),
+          };
         } catch (err) {
           rethrow(err);
         }
