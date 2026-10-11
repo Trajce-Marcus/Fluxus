@@ -146,6 +146,19 @@ for (const r of csv('defect_code_references.csv')) {
 }
 console.log(`  + ${n} defect code reference mappings`);
 
+// The one inspector the sample jobs are scheduled to (2026-10-11), with the
+// email the user gave for him.
+const INSPECTORS = [{ name: 'Nick Petrovski', email: 'trajce.toshevski@gmail.com', start_date: '2026-10-04' }];
+const inspectorIds = new Map<string, string>(); // name → id
+for (const i of await query<{ id: string; name: string }>('act_list_inspectors')) inspectorIds.set(i.name, i.id);
+n = 0;
+for (const i of INSPECTORS) {
+  if (inspectorIds.has(i.name)) continue;
+  inspectorIds.set(i.name, await run('act_create_inspectors', i));
+  n++;
+}
+console.log(`  + ${n} inspectors (${inspectorIds.size} in all)`);
+
 // ── 2. sample jobs ──────────────────────────────────────────────────────────
 
 // Resumable by address: a job already in the operation is left alone, so new
@@ -332,7 +345,7 @@ for (const job of JOBS) {
   });
   if (reached(job, 'Quoted')) await run('act_quote_jobs', { quoted_amount: job.quote, ...(job.quoteNotes ? { quote_notes: job.quoteNotes } : {}) }, id);
   if (reached(job, 'Accepted')) await run('act_accept_jobs', {}, id);
-  if (reached(job, 'Scheduled')) await run('act_schedule_jobs', { scheduled_at: job.scheduledAt, inspector: job.inspector, ...(job.instructions ? { instructions: job.instructions } : {}) }, id);
+  if (reached(job, 'Scheduled')) await run('act_schedule_jobs', { scheduled_at: job.scheduledAt, inspector: inspectorIds.get(job.inspector!), ...(job.instructions ? { instructions: job.instructions } : {}) }, id);
   if (reached(job, 'In Progress')) {
     await run('act_start_jobs', { access: job.access, weather: job.weather, checklist: job.checklist }, id);
     await run('act_update_jobs', { ...(job.facts ?? DEFAULT_FACTS) }, id);

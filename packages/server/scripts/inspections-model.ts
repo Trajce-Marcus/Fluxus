@@ -92,7 +92,9 @@ const ATTRIBUTES = [
   text('quote_notes', 'Quote notes', '', true),
   text('cancel_reason', 'Reason', 'Why the job is cancelled.', true),
   { key: 'scheduled_at', label: 'Date and time', description: 'When the inspection is booked.', type: 'datetime' },
-  text('inspector', 'Inspector', "The inspector's name."),
+  // One of the current inspectors (2026-10-11); typed in as a name before.
+  { key: 'inspector', label: 'Inspector', description: 'One of the current inspectors.', type: 'reference',
+    type_config: { fk_record_type: 'rt_inspectors', datasource: "invoke('act_search_inspectors', { term: term })" } },
   text('instructions', 'Instructions', '', true),
   text('access', 'Access', 'Access to the property on the day.', true),
   text('weather', 'Weather'),
@@ -194,7 +196,7 @@ const RECORD_TYPES = [
     field('quote_notes', 'Quote notes'),
     field('cancel_reason', 'Cancel reason'),
     field('scheduled_at', 'Scheduled', 'datetime'),
-    field('inspector', 'Inspector'),
+    field('inspector', 'Inspector', 'fk_ref', { rt: 'rt_inspectors', display: 'name' }),
     field('instructions', 'Instructions'),
     field('access', 'Access'),
     field('weather', 'Weather'),
@@ -365,7 +367,7 @@ const JOB_ACTIVITIES = [
   act({
     id: 'act_list_jobs', name: 'List Jobs', record_map: 'GET',
     description: 'Every job, for the Jobs page.',
-    returns: 'records.jobs.orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector)',
+    returns: 'records.jobs.orderBy(scheduled_at desc).select(id, job_no, address, customer_name, status, scheduled_at, inspector: inspector.name)',
   }),
 ];
 

@@ -138,7 +138,7 @@ export const PAGES: Record<string, ReturnType<typeof page>> = {
         ['Quoted amount', 'context.record.quoted_amount'],
         ['Quote notes', 'context.record.quote_notes'],
         ['Scheduled', 'context.record.scheduled_at'],
-        ['Inspector', 'context.record.inspector'],
+        ['Inspector', 'context.record.inspector.name'],
         ['Instructions', 'context.record.instructions'],
         ['Cancel reason', 'context.record.cancel_reason'],
       ], { id: 'slot-job', title: 'Job', tabName: 'Job' }),

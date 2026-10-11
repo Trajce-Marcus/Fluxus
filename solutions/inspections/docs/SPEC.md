@@ -230,7 +230,7 @@ name, email, start date and finish date.
 | `quote_notes` | text, multiline | |
 | `cancel_reason` | text, multiline | |
 | `scheduled_at` | datetime | |
-| `inspector` | text | the inspector's name, typed in; one per job |
+| `inspector` | ref → `rt_inspectors` | one per job; picked from the current inspectors (typed in as a name until 2026-10-11) |
 | `instructions` | text, multiline | |
 | `access` | text, multiline | captured at Start Inspection |
 | `weather` | text | captured at Start Inspection |
@@ -333,7 +333,7 @@ the way existing solutions do it.
 | `act_quote_jobs` | Quote | UPDATE | quoted amount, quote notes | not Cancelled or Inspected | Quoted from Requested; otherwise unchanged |
 | `act_accept_jobs` | Accept Quote | UPDATE | — | Quoted | Accepted |
 | `act_cancel_jobs` | Cancel Job | UPDATE | reason (required) | not Cancelled or Inspected | Cancelled |
-| `act_schedule_jobs` | Schedule | UPDATE | date/time, inspector's name, instructions | Accepted or Scheduled | Scheduled |
+| `act_schedule_jobs` | Schedule | UPDATE | date/time, inspector (a current inspector, from `act_search_inspectors`), instructions | Accepted or Scheduled | Scheduled |
 | `act_start_jobs` | Start Inspection | UPDATE | access, weather, checklist | Scheduled | In Progress |
 | `act_update_jobs` | Inspection Details | UPDATE | the property facts; access, weather, checklist (optional) | In Progress | unchanged |
 | `act_assess_jobs` | Assessment | UPDATE | major incidence, minor incidence, overall condition, overall assessment | In Progress | unchanged |
@@ -486,6 +486,11 @@ Every data page's list shows the expiry date as a column.
 **Inspectors** — list (name, email, start date, finish date); create; update per
 row. No expiry column: inspectors finish instead.
 
+When Schedule became a pick list (2026-10-11), the seven jobs with "Nick
+Petrovski" typed in were pointed at his inspector record, written directly;
+their history keeps the typed name. His start date, 2026-10-04, was Claude's
+choice — the day the solution started, before any of his jobs.
+
 **Menu** (the solution's default menu): Jobs, Inspectors, then the six data
 pages. Built 2026-10-11 with the access the user had set up for the others: the
 Inspectors page and its menu item are Admin's; Admin and Inspector read
@@ -534,11 +539,6 @@ falls back to its plain list of pages. Raised, not worked around.
   addition: a question's starting value from an expression. None exists.
 - **A signature** at Finish Inspection — a confirmation stands in for now.
 - **Cards** for findings in place of the `RecordList`.
-- **Picking the inspector from a list.** For now the name is typed in. A form
-  cannot list the operation's users — users are platform data, not records, and
-  no datasource reaches them — so a pick list needs either a list of inspectors
-  kept as records in the solution, or a platform addition that offers the
-  operation's users with a role.
 - **Refining the master data** — more defects, their default categories, and
   how code references are cited for an existing house.
 - **The report** — producing it is [Part 2](#part-2--after-inspected). Its
