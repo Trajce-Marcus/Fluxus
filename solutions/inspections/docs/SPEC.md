@@ -79,9 +79,9 @@ and the old findings deleted with the sample jobs, by the user's call.
    calling it inspected or uninspectable.
 4. **Restriction** — shown for every outcome except Not applicable; **required
    for Cannot inspect**, optional for the two Inspected outcomes (an area
-   inspected only partly). A pick list: Furniture and belongings, Stored goods,
-   Vehicles, Insulation, Ducting, Low clearance, Height or safety, Vegetation,
-   Locked or no key, No access hatch, Wet or slippery surfaces.
+   inspected only partly). **Free text** (2026-10-12, the user's call), in the
+   inspector's own words; a pick list of eleven reasons from 2026-10-11, and a
+   record type before that.
 5. **Photos** and 6. **Comments** — about the area as a whole.
 
 **Add Finding** (from the Area Inspection page) asks:
@@ -260,7 +260,7 @@ name, email, start date and finish date.
 | `area` | ref → `rt_inspection_areas` | |
 | `location` | text | |
 | `outcome` | text (pick list) | Inspected – defects / Inspected – no defects / Cannot inspect / Not applicable |
-| `restriction` | text (pick list) | required for Cannot inspect; cleared for Not applicable |
+| `restriction` | text, multiline | free text; required for Cannot inspect; cleared for Not applicable |
 | `photos` | photo, multi | |
 | `comments` | text, multiline | |
 

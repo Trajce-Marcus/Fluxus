@@ -130,12 +130,9 @@ const ATTRIBUTES = [
   // What came of inspecting an area (2026-10-12) — replaces Access and "Any
   // defects?"; the values are OUTCOMES below.
   pick('outcome', 'Outcome', ['Inspected – defects', 'Inspected – no defects', 'Cannot inspect', 'Not applicable']),
-  // A pick list, not a record type (2026-10-11): the user asked for a pick list
-  // and a record type of names only was more than the job needed.
-  { ...pick('restriction', 'Restriction', [
-    'Furniture and belongings', 'Stored goods', 'Vehicles', 'Insulation', 'Ducting', 'Low clearance',
-    'Height or safety', 'Vegetation', 'Locked or no key', 'No access hatch', 'Wet or slippery surfaces',
-  ]), description: 'Why the area could not be fully inspected.' },
+  // Free text (2026-10-12, the user's call) — a pick list from 2026-10-11, a
+  // record type before that.
+  text('restriction', 'Restriction', 'Why the area could not be fully inspected.', true),
   { key: 'area_inspection', label: 'Area inspection', description: 'The area inspection a finding belongs to. Taken from the Area Inspection page, never asked for.', type: 'reference', type_config: { fk_record_type: 'rt_area_inspections' } },
   { key: 'defect', label: 'Defect', description: "Only the defects mapped to the area inspection's area.", type: 'reference',
     type_config: { fk_record_type: 'rt_defects', datasource: "invoke('act_search_area_defects', { area_inspection: attributes.area_inspection, term: term })" } },
