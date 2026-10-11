@@ -184,10 +184,10 @@ record's Update activity.
 - **Access restrictions** — *reversed 2026-10-11, no longer master data.* They
   were built as their own record type and page; the user had asked for a pick
   list, and a record type holding only names was more than the job needed. They
-  are now a pick list on the finding (Add Finding, question 4), changed by
-  editing the model in the Console. The four findings that had one were given
-  the reason's name in place of the record's id; their history keeps the id
-  entered at the time.
+  became a pick list on the finding, and on 2026-10-12 free text on the area
+  inspection (the user's call). The four findings that had one were given the
+  reason's name in place of the record's id; their history keeps the id entered
+  at the time.
 - **Code references** — code clauses with an extract of their text.
 - **Area ↔ defect** — which defects can be recorded in which area. Drives the
   defect list in Add Finding.
