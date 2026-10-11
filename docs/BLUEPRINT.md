@@ -113,6 +113,18 @@ role-checked. Part 2 makes every run carry its app instance, which holds the
 roles and covers pages with no record type; a run with no instance is refused.
 Not treated as a gap until then (the user's call).
 
+**Direction — the server decides which actions are offered (agreed
+2026-10-11, not specced).** Today the browser evaluates an action's
+availability condition to decide whether to draw its button, and the server
+evaluates it again when the action runs. In the Runtime the browser has no
+signed-in user (no email, no roles), so a condition about the user hides the
+button from everyone. Instead the server answers which actions a record offers
+the caller, with the real user, and the browser draws only those; the browser
+stops receiving actions' availability conditions. A form's own question
+conditions stay in the browser, since they react to typing. The user's wider
+aim: the server does more of the work before a page reaches the browser, for
+needs not yet identified.
+
 **Direction — read conditions (agreed 2026-10-11, spec
 [RECORD_READ_CONDITIONS](RECORD_READ_CONDITIONS.md), not built).** A role's read of a
 record type can be narrowed to the records an expression lets through, e.g.
