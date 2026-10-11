@@ -67,7 +67,9 @@ order:
 3. **Access** — Fully inspected, Restricted, Not inspected or Not applicable
    (added 2026-10-11). Feeds the report's Access and Restrictions.
 4. **Restriction** — only when Restricted or Not inspected, and then required.
-   One of the access restrictions list (furniture, stored goods, insulation…).
+   A pick list: Furniture and belongings, Stored goods, Vehicles, Insulation,
+   Ducting, Low clearance, Height or safety, Vegetation, Locked or no key, No
+   access hatch, Wet or slippery surfaces.
 5. **Any defects?** — only when Fully inspected or Restricted. A true / false
    dropdown for now; a yes/no control later.
 6. **Defect** — only when true, and then required. A search dialog listing
@@ -171,10 +173,13 @@ record's Update activity.
 - **Defect categories** — Major defect and Minor defect, each with its meaning.
   "Safety hazard" was a category until 2026-10-11 and is now **expired**:
   safety is its own flag on a finding. Old findings keep it as history.
-- **Access restrictions** — why an area was not fully inspected: furniture and
-  belongings, stored goods, vehicles, insulation, ducting, low clearance, height
-  or safety, vegetation, locked or no key, no access hatch, wet or slippery
-  surfaces. Its own record type and page, like the other lists.
+- **Access restrictions** — *reversed 2026-10-11, no longer master data.* They
+  were built as their own record type and page; the user had asked for a pick
+  list, and a record type holding only names was more than the job needed. They
+  are now a pick list on the finding (Add Finding, question 4), changed by
+  editing the model in the Console. The four findings that had one were given
+  the reason's name in place of the record's id; their history keeps the id
+  entered at the time.
 - **Code references** — code clauses with an extract of their text.
 - **Area ↔ defect** — which defects can be recorded in which area. Drives the
   defect list in Add Finding.
@@ -221,7 +226,7 @@ record's Update activity.
 | `area` | ref → `rt_inspection_areas` | |
 | `location` | text | |
 | `area_access` | text (pick list) | Fully inspected / Restricted / Not inspected / Not applicable; blank on findings recorded before 2026-10-11 |
-| `restriction` | ref → `rt_access_restrictions` | blank unless Restricted or Not inspected |
+| `restriction` | text (pick list) | blank unless Restricted or Not inspected |
 | `has_defect` | text | `true` / `false` (dropdown); blank when not inspected |
 | `defect` | ref → `rt_defects` | blank when no defect |
 | `category` | ref → `rt_defect_categories` | blank when no defect |
@@ -252,13 +257,6 @@ record's Update activity.
 | --- | --- | --- |
 | `name` | text | |
 | `meaning` | text, multiline | |
-
-### `rt_access_restrictions`
-
-| Attribute | Type | Notes |
-| --- | --- | --- |
-| `name` | text | |
-| `expires_on` | date | |
 
 ### `rt_code_references`
 
@@ -347,8 +345,7 @@ before hook checks it and its refusal names the areas still missing.
   defects mapped to `attributes.area`, filtered by the search `term`. It shows
   only when any defects is `true`, and is then required; so is category.
 - **Category** is a reference whose datasource is `act_search_defect_categories`.
-- **Restriction** is a reference whose datasource is
-  `act_search_access_restrictions`.
+- **Restriction** is a pick list of the reasons.
 - **Hidden answers are cleared** by the hook: when Access is Not inspected or
   Not applicable, any defects, defect, category and safety hazard are cleared;
   when Access is Fully inspected or Not applicable, the restriction is cleared;
@@ -368,7 +365,7 @@ before hook checks it and its refusal names the areas still missing.
 
 ### Master data workflows
 
-Areas, defects, defect categories, access restrictions and code references
+Areas, defects, defect categories and code references
 each get the same four,
 e.g. for defects:
 
@@ -406,7 +403,7 @@ search term — the Add Finding defect dialog.
 strict — a solution with no roles shows nothing (BLUEPRINT, *Access*) — so
 until roles exist the operation shows nothing in the Runtime. For each role:
 the record types it may read (Inspectors need jobs, findings, inspection areas,
-defects, defect categories, access restrictions and the area mapping, or Add
+defects, defect categories and the area mapping, or Add
 Finding's pickers will not open), the pages it may open (Page Access), the
 menu items it sees, and the users who hold it (the operation's Users screen).
 Actions follow the page; one is restricted further only in its availability
@@ -448,11 +445,10 @@ One page per sample-data file — the source of that data:
 | — | **Code Reference** | one code reference, with its full extract, attribution and link |
 | area_defects.csv | **Area Defect Mappings** | list (area, defect); add; update per row |
 | defect_code_references.csv | **Defect Code Reference Mappings** | list (defect, code reference); add; update per row |
-| access_restrictions.csv | **Access Restrictions** | list (name); create; update per row |
 
 Every data page's list shows the expiry date as a column.
 
-**Menu** (the solution's default menu): Jobs, then the seven data pages.
+**Menu** (the solution's default menu): Jobs, then the six data pages.
 
 ## Decided while writing
 

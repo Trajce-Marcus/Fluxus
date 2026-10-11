@@ -199,7 +199,7 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
         ['Inspection area', 'context.record.area.name'],
         ['Location', 'context.record.location'],
         ['Access', 'context.record.area_access'],
-        ['Restriction', 'context.record.restriction.name'],
+        ['Restriction', 'context.record.restriction'],
         ['Any defects?', 'context.record.has_defect'],
         ['Defect', 'context.record.defect.name'],
         ['Category', 'context.record.category.name'],
@@ -226,12 +226,6 @@ const PAGES: Record<string, ReturnType<typeof page>> = {
     title: 'Defect Categories', list: 'act_list_defect_categories', create: 'act_create_defect_categories', newLabel: 'Create category',
     update: 'act_update_defect_categories', empty: 'No categories yet.',
     columns: [col('name', 'Name', { width: 160 }), col('meaning', 'Meaning')],
-  }),
-
-  'pages/access-restrictions': dataPage({
-    title: 'Access Restrictions', list: 'act_list_access_restrictions', create: 'act_create_access_restrictions', newLabel: 'Create restriction',
-    update: 'act_update_access_restrictions', empty: 'No access restrictions yet.',
-    columns: [col('name', 'Name')],
   }),
 
   'pages/code-references': dataPage({
@@ -277,7 +271,6 @@ const MENU = [
   { id: 'menu-inspection-areas', label: 'Inspection Areas', page: 'pages/inspection-areas' },
   { id: 'menu-defects', label: 'Defects', page: 'pages/defects' },
   { id: 'menu-defect-categories', label: 'Defect Categories', page: 'pages/defect-categories' },
-  { id: 'menu-access-restrictions', label: 'Access Restrictions', page: 'pages/access-restrictions' },
   { id: 'menu-code-references', label: 'Code References', page: 'pages/code-references' },
   { id: 'menu-area-defect-mappings', label: 'Area Defect Mappings', page: 'pages/area-defect-mappings' },
   { id: 'menu-defect-code-reference-mappings', label: 'Defect Code Reference Mappings', page: 'pages/defect-code-reference-mappings' },

@@ -11,7 +11,6 @@ are placeholders, not field names.
 | `code_references.csv` | Code clauses with an extract of their text |
 | `area_defects.csv` | Which defects can be recorded in which area |
 | `defect_code_references.csv` | Which code clauses relate to which defect |
-| `access_restrictions.csv` | Why an area was not fully inspected (added 2026-10-11) |
 
 ## About the code references
 

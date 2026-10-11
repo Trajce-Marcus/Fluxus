@@ -127,8 +127,12 @@ const ATTRIBUTES = [
   text('location', 'Location', 'e.g. Bedroom 1'),
   // `area_access`, not `access`: `access` is the job's free-text access note.
   pick('area_access', 'Access', ['Fully inspected', 'Restricted', 'Not inspected', 'Not applicable']),
-  { key: 'restriction', label: 'Restriction', description: 'Why the area was not fully inspected.', type: 'reference',
-    type_config: { fk_record_type: 'rt_access_restrictions', datasource: "invoke('act_search_access_restrictions', { term: term })" } },
+  // A pick list, not a record type (2026-10-11): the user asked for a pick list
+  // and a record type of names only was more than the job needed.
+  { ...pick('restriction', 'Restriction', [
+    'Furniture and belongings', 'Stored goods', 'Vehicles', 'Insulation', 'Ducting', 'Low clearance',
+    'Height or safety', 'Vegetation', 'Locked or no key', 'No access hatch', 'Wet or slippery surfaces',
+  ]), description: 'Why the area was not fully inspected.' },
   { key: 'has_defect', label: 'Any defects?', description: '', type: 'list', type_config: TRUE_FALSE },
   { key: 'defect', label: 'Defect', description: 'Only the defects mapped to the chosen area.', type: 'reference',
     type_config: { fk_record_type: 'rt_defects', datasource: "invoke('act_search_area_defects', { area: attributes.area, term: term })" } },
@@ -215,7 +219,7 @@ const RECORD_TYPES = [
     field('area', 'Inspection area', 'fk_ref', { rt: 'rt_inspection_areas', display: 'name' }),
     field('location', 'Location'),
     field('area_access', 'Access'),
-    field('restriction', 'Restriction', 'fk_ref', { rt: 'rt_access_restrictions', display: 'name' }),
+    field('restriction', 'Restriction'),
     field('has_defect', 'Any defects?'),
     field('defect', 'Defect', 'fk_ref', { rt: 'rt_defects', display: 'name' }),
     field('category', 'Category', 'fk_ref', { rt: 'rt_defect_categories', display: 'name' }),
@@ -228,9 +232,6 @@ const RECORD_TYPES = [
   ] },
   { id: 'rt_defect_categories', name: 'Defect Categories', description: 'Major defect and minor defect. Safety is a separate flag on a finding.', workflow_ref: 'wf_defect_categories', custom_fields: [
     field('name', 'Name'), field('meaning', 'Meaning'), EXPIRES,
-  ] },
-  { id: 'rt_access_restrictions', name: 'Access Restrictions', description: 'Why an area was not fully inspected.', workflow_ref: 'wf_access_restrictions', custom_fields: [
-    field('name', 'Name'), EXPIRES,
   ] },
   { id: 'rt_defects', name: 'Defects', description: 'Anything observable on a walk-through.', workflow_ref: 'wf_defects', custom_fields: [
     field('code', 'Code'), field('name', 'Name'), field('description', 'Description'),
@@ -440,7 +441,7 @@ const FINDING_ACTIVITIES = [
     // Area order is the `sequence` column, sorted by clicking its heading.
     description: "One job's findings, in the order entered.",
     attributes: [use('job')],
-    returns: 'records.findings.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, area_access, restriction: restriction.name, defect: defect.name, category: category.name, safety_hazard, photos, comments)',
+    returns: 'records.findings.where(job = attributes.job).orderBy(id).select(id, area: area.name, sequence: area.sequence, location, area_access, restriction, defect: defect.name, category: category.name, safety_hazard, photos, comments)',
   }),
   act({
     id: 'act_summarise_findings', name: 'Summarise Findings', record_map: 'GET',
@@ -513,12 +514,6 @@ const CATEGORY_ACTIVITIES = masterData({
   plural: 'defect_categories', singular: 'Category', pluralName: 'Categories', collection: 'defect_categories',
   fields: ['name', 'meaning'], required: ['name'],
   listSelect: 'id, name, meaning, expires_on', orderBy: 'name',
-  searchFields: ['name'], searchSelect: 'id, name', uniqueCode: false,
-});
-const RESTRICTION_ACTIVITIES = masterData({
-  plural: 'access_restrictions', singular: 'Restriction', collection: 'access_restrictions',
-  fields: ['name'], required: ['name'],
-  listSelect: 'id, name, expires_on', orderBy: 'name',
   searchFields: ['name'], searchSelect: 'id, name', uniqueCode: false,
 });
 const DEFECT_ACTIVITIES = masterData({
@@ -603,7 +598,6 @@ const WORKFLOWS: [ReturnType<typeof flow>, ReturnType<typeof act>[]][] = [
   [flow('wf_findings', 'Findings', 'Recording what the walk-through found.', FINDING_ACTIVITIES), FINDING_ACTIVITIES],
   [flow('wf_inspection_areas', 'Inspection Areas', 'Maintaining the areas.', AREA_ACTIVITIES), AREA_ACTIVITIES],
   [flow('wf_defect_categories', 'Defect Categories', 'Maintaining the categories.', CATEGORY_ACTIVITIES), CATEGORY_ACTIVITIES],
-  [flow('wf_access_restrictions', 'Access Restrictions', 'Maintaining the access restrictions.', RESTRICTION_ACTIVITIES), RESTRICTION_ACTIVITIES],
   [flow('wf_defects', 'Defects', 'Maintaining the defects.', [...DEFECT_ACTIVITIES, SEARCH_AREA_DEFECTS]), [...DEFECT_ACTIVITIES, SEARCH_AREA_DEFECTS]],
   [flow('wf_code_references', 'Code References', 'Maintaining the code references.', CODE_REFERENCE_ACTIVITIES), CODE_REFERENCE_ACTIVITIES],
   [flow('wf_area_defects', 'Area Defect Mappings', 'Which defects can be recorded in which area.', AREA_DEFECT_ACTIVITIES), AREA_DEFECT_ACTIVITIES],

@@ -102,16 +102,6 @@ if (safety && !safety.expires_on) {
   console.log('  ~ Safety hazard category expired');
 }
 
-const restrictionIds = new Map<string, string>(); // name → id
-for (const r of await query<{ id: string; name: string }>('act_list_access_restrictions')) restrictionIds.set(r.name, r.id);
-n = 0;
-for (const r of csv('access_restrictions.csv')) {
-  if (restrictionIds.has(r.name)) continue;
-  restrictionIds.set(r.name, await run('act_create_access_restrictions', { name: r.name }));
-  n++;
-}
-console.log(`  + ${n} access restrictions (${restrictionIds.size} in all)`);
-
 n = 0;
 for (const r of csv('inspection_areas.csv')) {
   if (areaIds.has(r.code)) continue;
@@ -352,11 +342,11 @@ for (const job of JOBS) {
     if (f.defect && !defect) throw new Error(`${job.address}: unknown defect ${f.defect}`);
     const access = f.access ?? 'Fully inspected';
     const inspected = access === 'Fully inspected' || access === 'Restricted';
-    const restriction = f.restriction ? restrictionIds.get(f.restriction) : undefined;
-    if (f.restriction && !restriction) throw new Error(`${job.address}: unknown restriction ${f.restriction}`);
+    // A pick list since 2026-10-11 — the name is the value; the activity
+    // refuses one that is not on the list.
     await run('act_add_findings', {
       job: id, area: areaIds.get(f.area), location: f.location, area_access: access,
-      ...(restriction ? { restriction } : {}),
+      ...(f.restriction ? { restriction: f.restriction } : {}),
       ...(inspected ? { has_defect: defect ? 'true' : 'false' } : {}),
       ...(defect ? { defect, category: categoryIds.get(f.category!), safety_hazard: f.safety ? 'true' : 'false' } : {}),
       ...(f.comments ? { comments: f.comments } : {}),
