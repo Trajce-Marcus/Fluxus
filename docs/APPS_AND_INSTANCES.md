@@ -1,27 +1,94 @@
-# Apps and instances — spec
+# The activity pool and apps — spec
 
-**Status:** **Part 1 (the activity pool) BUILT 2026-10-10**, except the run
-check in §1.5, which the user deferred. Part 2 not built; decisions still open
-(§ Decisions needed). Built from the exploration in
+**Status:** **Part 1 (the activity pool) BUILT 2026-10-10.** Its run check
+(§1.5) was deferred then, and is now step 1 of Part 2 (ruled 2026-10-15).
+**Part 2 (apps) re-specified 2026-10-15**, not built; it is built in four
+steps, each checked before the next (§2.9). **Cold-reviewed 2026-10-16: step 1
+can be built; steps 2–4 are not ready.** Start from § Cold review 2026-10-16 —
+seven decisions await the user, then the spec is revised. Built from the exploration in
 [ideas/apps-and-instances.md](ideas/apps-and-instances.md) and the user's
-rulings of 2026-10-04 (below). Two build parts, built and checked one at a
-time: **Part 1, the activity pool**, then **Part 2, apps and instances**.
+rulings of 2026-10-04 and 2026-10-15 (below).
 
-## What this changes, in one paragraph
+**The word "instance" is retired (2026-10-15).** What it named — a page set up
+in one operation — is now called the **app**. The file keeps its name so
+existing links work. Text written before 2026-10-15 (the ideas note, the
+2026-10-04 rulings below) uses the old words: there, "app" means the page and
+"instance" means the app.
 
-Activities move out of workflows into one list per solution, the **activity
-pool**. A workflow lists the pool activities it uses, in order, so one activity
-can serve several record types. An activity runs only through a workflow. A
-**page is an app**, and may have a workflow of its own. An app with a record
-type gets that type's workflow plus its own, and may remove activities from
-either. An app with no record type has only its own. An **instance** is
-an app set up for one operation: a record of the platform's own record type
-`rt_sys_apps`, holding label, roles, menu placement and settings. The
-operation's instances are its menu. Every page run carries its instance; a page
-with no record of its own runs against the instance record, so its runs leave
-history there.
+## In short
 
-## Rulings this spec rests on (user, 2026-10-04)
+Activities live in one list per solution, the **activity pool**, and a
+workflow lists the pool activities it uses, in order (Part 1, built). A
+**page** is a definition the author builds and publishes. An **app** is a page
+set up in one operation — what end users open, for example a water scheduler
+and a sewer scheduler built from one page. Each app is a record of the
+platform's own record type `rt_sys_apps`, holding its page, label, menu
+placement, roles and settings; the operation's apps that have a label are its
+menu. A page registers the record types it works with and may have a workflow
+of its own. The app offers each registered type's workflow, plus the page's own
+workflow for runs with no record, which run on the app. The page may add a
+condition to any of those activities, and it must pass along with the
+activity's own. Every run carries its app, and the server checks all of it.
+
+## Rulings
+
+### 2026-10-15 (this revision)
+
+Who decided is marked: **the user's** ruling, or **Claude's** suggestion that
+the user agreed to.
+
+- **A page is the definition; an app is a page set up in an operation** —
+  what users use, for example a water scheduler and a sewer scheduler built
+  from one page. The user's. "Instance" is retired as ambiguous (the user's);
+  a run carries `appId` and the URL `app=` (names the user proposed).
+- **A page registers the record types it works with.** The app's activities
+  are those types' workflows plus the page's own workflow. Registering record
+  types rather than workflows was Claude's suggestion, agreed in the playback:
+  a run names a record, whose type the server knows, and the type brings its
+  current workflow.
+- **Conditions instead of a remove list.** Which activities are available
+  changes with state, so the page adds a condition per activity rather than
+  listing activities to remove (the user's). The page's condition is added to
+  the activity's own and both must pass; with none, the activity's own decides
+  (the user's). It is one more expression per activity, beside the existing
+  one — not a shared list of named conditions ticked against activities (the
+  user's choice, for now; each condition converts later to one named row with
+  one tick).
+- So **an activity added later to a registered type's workflow appears on every
+  app that registers the type**, unless a condition hides it (Claude raised it;
+  the user agreed).
+- **The page's own activities run only on the app, for now** (the user's). An
+  action only one page offers on another type's records — a manager-only
+  reopen of a shift report — goes in that type's workflow, with a condition.
+- **An activity runs only on records of a type whose workflow includes it** —
+  "no question, must not pass" (the user's). Built as step 1, and it applies
+  in the Console's DSL Editor too (Claude's suggestion, agreed).
+- **A run with no app is refused, except from the Console** (Claude's
+  suggestion, agreed). This settles a disagreement: BLUEPRINT said such runs
+  are refused, while this spec had allowed them for the workbench and outside
+  callers.
+- **Every page an operation uses is an app**, including pages reached only from
+  other pages (the user's; Claude had suggested that such pages run under the
+  app that opened them). The operation decides which pages it uses; if it sets
+  up a page that opens another, it sets up that one too.
+- **The menu is fields on the app** (label, group, order). An app with no label
+  is not on the menu but keeps its settings (Claude's suggestion, agreed).
+- **Opening a page that has several apps** picks the first, by group and order,
+  that the caller may use (Claude's suggestion in the earlier draft, agreed).
+- **The app's roles and the page's roles must both pass** (Claude's suggestion
+  in the earlier draft, agreed).
+- **No removing an app in Part 2** (the user's).
+- **Apps are not created, changed or deleted by activities.** The page's own
+  workflow has no CREATE, UPDATE or DELETE, unlike a record type's; an app is
+  added in the Console (the user's, raised after the first draft of this
+  revision).
+- **Four build steps**, each working on its own (Claude's suggestion, agreed):
+  §2.9.
+
+### 2026-10-04
+
+*Written before the renaming: here "app" means the page and "instance" means
+the app. Where a later ruling changed one, it says so.*
 
 - **A workflow is a named, ordered list of pool activities.** A record type
   points to one workflow, as today. An app points to one workflow of its own.
@@ -32,7 +99,8 @@ history there.
 - **An app may change which activities it has, but only narrow how each is
   used.** It adds through its own workflow and removes from either workflow. An
   activity's own rules (availability condition, hooks) apply wherever it runs;
-  an app may tighten them, never loosen them.
+  an app may tighten them, never loosen them. *Changed 2026-10-15: nothing is
+  removed; the page narrows with conditions.*
 - **A shared activity must fit every record type that uses it**, and that is
   the author's responsibility. Save checks it against each type and reports
   what does not fit; the author makes separate activities where it cannot.
@@ -40,7 +108,8 @@ history there.
 - **Record types keep their workflow.** Marking each activity with its record
   type instead (a model the user has used before) was considered and not taken.
 - **Page settings stay on the page; the instance overlays them.** Roles stay on
-  the page. Publishing a page updates every instance of it.
+  the page. Publishing a page updates every instance of it. *Changed
+  2026-10-15: the app has roles too, and both must pass.*
 - **Instances are set up where the menu is set up.** The instance records *are*
   the menu: no separate menu structure is stored for an operation.
 - **A run always carries an instance; the record may be missing.**
@@ -173,14 +242,15 @@ that name activity ids keep working.
   alone is "not found", as today.
 - **New check — only an activity that belongs to the record may run on it**
   (approved by the user 2026-10-06). **Deferred by the user 2026-10-10 — not
-  built with Part 1.** It is one check in `activities.run` and nothing else in
+  built with Part 1.** **Now step 1 of Part 2 (ruled 2026-10-15), DSL Editor
+  included (§2.9).** It is one check in `activities.run` and nothing else in
   Part 1 depends on it; until it is built, runs behave as they did before the
-  pool. Part 2 needs it (§2.5). Today the server runs any UPDATE, DELETE
+  pool. Part 2 needs it (§2.6). Today the server runs any UPDATE, DELETE
   or log-only activity against any readable record, whether or not that
   record's type lists it (`activities.run` checks the anchor is readable, never
   that its workflow holds the activity). The server now rejects a run whose
   activity is not in the anchor's record type's workflow. Part 2 widens this to
-  include the app's own workflow (§2.5). CREATE (no anchor) and GET (a
+  include the page's own workflow, for runs on an app (§2.6). CREATE (no anchor) and GET (a
   question, not an act on its anchor) are not checked here. Before building,
   measure whether any existing page runs an activity on a record whose type's
   workflow lacks it.
@@ -255,7 +325,8 @@ working. These read the stored shape, assume one owning record type, or are new:
 
 ### Decision before building
 
-*Moot for now: the check was deferred (§1.5). Decide when it is built.*
+*Settled 2026-10-15: the check applies in the DSL Editor too, and that use
+goes (Claude's suggestion, agreed).*
 
 - **The DSL Editor and the new check.** The Console's DSL Editor runs any
   activity against any anchor, including a record of another type — documented
@@ -285,7 +356,7 @@ working. These read the stored shape, assume one owning record type, or are new:
   at save, naming that type.
 - An activity in the pool but in no workflow is "not found" when run or
   `invoke`d.
-- *(Deferred with the check, §1.5.)* The server refuses an UPDATE, DELETE or log-only run on a record whose type's
+- *(Deferred with the check, §1.5; now Part 2 step 1.)* The server refuses an UPDATE, DELETE or log-only run on a record whose type's
   workflow does not include the activity.
 - Rolling back to a version published before the migration works.
 - Workbench and page activity buttons keep their order.
@@ -298,154 +369,412 @@ working. These read the stored shape, assume one owning record type, or are new:
 
 ---
 
-## Part 2 — apps and instances
+## Part 2 — apps
 
-Built only after Part 1 is checked, and after § Decisions needed is settled.
+Built in four steps (§2.9), each checked before the next.
 
-### 2.1 The page is the app
+### 2.1 Page and app
 
-- A page may point to a **workflow of its own** (`PageDef.workflow`) — an
-  ordinary workflow, authored in the Workflows editor, that no record type
-  points to.
-- A page with a record type (`PageDef.record`) gets that type's workflow plus
-  its own. It may **remove** activities from either (`PageDef.remove`).
-- A page with no record type has only its own workflow.
-- A page's own workflow's scripts are checked (§1.4) against the page's record
-  type, or `rt_sys_apps` when the page has none.
-- **Its own workflow's activities run only against the app's record** — the page's record,
-  or the instance record when the page has none — and are recorded in its
-  history. They exist so a record type's workflow is not cluttered with
-  activities that belong to one app.
-- **Removed activities cannot run through this app**, on any record. They still
-  run from the workbench and anywhere else their workflow applies.
-- **`RecordActivities`** on the page's own record shows the app's activities
-  (record type's workflow + the page's own − removed), each still subject to its availability condition. On any
-  other record it shows that record's workflow, as now. The workbench is
-  unchanged.
-- **`PageRecordDef.instances: 'one'` is removed.** The instance record now does
-  its job. Measured on the dev database 2026-10-04: no page uses it. `'many'`
-  (the record id in the URL) stays.
+- A **page** is authored and published in the solution, as today (`pages`,
+  `page_versions`). Publishing a page updates every app built from it.
+- An **app** is a page set up in one operation: a record of `rt_sys_apps`
+  (§2.3). An app *is* that record; a run with no other record runs on the app,
+  and leaves its history there. One operation may have several apps from one
+  page (a water scheduler and a sewer scheduler), each with its own label,
+  roles, settings and history.
+- An operation has an app for every page it uses, whether or not that page is
+  on its menu. A page with no app in an operation cannot be opened there, and
+  nothing on it can run.
 
-### 2.2 `rt_sys_apps`
+### 2.2 What an app offers
+
+- **`PageDef.recordTypes`** — the record types the page works with. The page's
+  own record type (`PageDef.record.type`) counts as registered whether or not
+  it is listed.
+- **`PageDef.workflow`** — optional: a workflow of the page's own, an ordinary
+  workflow authored in the Workflows editor that no record type points to.
+- **What the app offers:**
+  - on a record of a registered type: that type's workflow;
+  - with no record: each registered type's CREATEs and GETs, and the page's
+    own workflow, which runs on the app.
+
+  Nothing else. On a record of a type the page does not register, the app
+  offers nothing.
+- **The page's own workflow holds only log-only activities and GETs.** It runs
+  on the app, which it must not change: a CREATE would have no record type to
+  create, an UPDATE would fill the app's own fields (label, roles), and a DELETE
+  would remove the app. Its hooks make the real changes, on other records — a
+  bulk update of jobs, say. A workflow a record type points to cannot also be a
+  page's own.
+- **`PageDef.conditions`** — optional, activity id → expression: the page's
+  condition for that activity. Same language and roots as an activity's own
+  availability condition; `context.record` is the record the run is on (the
+  app, for the page's own activities). An activity is offered only when its own
+  condition and the page's both pass; with no page condition, its own decides.
+  The server evaluates both; the browser never does.
+- **Checked when the page is saved (`validatePage`):** each registered type
+  exists; the page's own workflow exists, no record type points to it, and it
+  holds only log-only activities and GETs; its activities' scripts are typed
+  against `rt_sys_apps`; each page condition names an activity the app offers,
+  and is typed against each record type that activity runs on in this app. The
+  model does not know which pages name a workflow, so `validateConfig` keeps
+  checking an activity only a page's workflow includes untyped (§1.4).
+- **`PageRecordDef.instances` is removed.** Its `'one'` (find or create the
+  page's record when it opens) is replaced by the app itself, and with
+  `'many'` the only value left the field means nothing: a page record always
+  comes from the URL (`?record=`). Measured 2026-10-15: no page on the dev
+  database uses `'one'`.
+
+### 2.3 `rt_sys_apps`
 
 - Defined in platform code and added to every solution's model when it is
   loaded. It is never stored in `sdm_record_types`, never shown in the model
   builder, and an author cannot change it.
-- **Fields:** `page` (page path), `label`, `roles` (list of role ids), `group`
-  (text; items with the same group show together), `order` (number; order
-  within the group, and of groups by their first item), `config` (string
-  holding JSON — the instance's settings).
-- **Workflow:** an empty one, defined with the type. Activities run on an
-  instance come from its page's own workflow (§2.1), never from the type.
+- **Fields:** `page` (page path), `label` (blank: not on the menu), `group`
+  (text; apps with the same group show together), `order` (number; order
+  within the group, and of groups by their first app), `roles` (role ids),
+  `config` (a plain string holding JSON — the app's settings; how pages and
+  hooks read it is deferred).
+- **Workflow:** an empty one, defined with the type. What runs on an app comes
+  from its page's own workflow (§2.2), never from the type.
 - **Rows live in `records`**, per operation, like any record: an id, the fields
-  above, and the activity history that app use leaves.
-- **Reads:** instance records are not returned by general record reads (the
-  runtime partition, `records.*` in scripts, `RecordList`). The runtime receives
-  the caller's instances through the menu (§2.4). The Console reads them all.
+  above, and the history the app's runs leave.
+- **Reads:** apps are not returned by general record reads (the Runtime's
+  records, `records.*` in scripts, `RecordList`). The Runtime receives the
+  caller's apps through the menu (§2.5); the Console reads them all.
+- **Writes:** the Console writes apps directly (§2.4), not through activities —
+  setting up an app is not operational data. Scripts cannot write apps, since
+  they cannot read them.
 - **The Console workbench** lists `rt_sys_apps` like any type, read only, so an
-  instance's history can be seen. It offers no activities (its workflow is
-  empty).
+  app's history can be seen. It offers no activities (the type's workflow is
+  empty). *A workbench change: approving this spec approves it.*
 
-### 2.3 Instances in the Console
+### 2.4 Console
 
-- **The operation's menu editor becomes the instance editor**
-  (`admin/MenuItemsEditor`). Add an instance (pick a published page), set label,
-  group, order, roles and config (a plain text box), remove one. These are
-  direct writes.
-- **Removing an instance deletes it and its history**, after a confirmation
-  saying so — the rule a DELETE activity follows. See § Decisions needed.
+- **Setting up apps.** The operation's menu editor (`admin/MenuItemsEditor`)
+  becomes where its apps are set up: add an app (pick a published page), set
+  its label, group, order, roles and config (a plain text box). Direct writes.
+  No removing in Part 2; blanking the label takes an app off the menu.
 - **The solution's default menu** (`sdm_menus`, edited in the model builder's
-  Menu editor) changes shape to the instance fields: a flat list of
-  `{ page, label, roles, group, order, config }`. Today's one level of nested
-  groups becomes the `group` text.
-- **Creating an operation** copies the default menu into instance records for
-  it. After that the operation owns them; nothing is inherited at runtime.
+  Menu editor) becomes the solution's starting apps: a flat list of
+  `{ page, label, group, order, roles, config }`, with a blank label for pages
+  not on the menu. Today's one level of nested groups becomes the `group` text.
+- **Creating an operation** copies the starting apps into app records for it.
+  After that the operation owns them; nothing is inherited at runtime.
 - **`operations.config.menu` is removed.**
+- **The page editor's settings column** (beside *Page record* and *Page
+  access*) gains:
+  - the registered record types (ticks);
+  - the page's own workflow (a pick list of workflows no record type points
+    to);
+  - **the activities list:** one row per activity the app offers, grouped by
+    record type, then the page's own; columns: the activity, its own condition
+    (read only), and the page's condition (editable, in the editor's existing
+    expression dialog).
 
-### 2.4 Runtime
+  *Page record* loses its one/many choice.
 
-- **The menu** is built from the operation's instances the caller holds a role
-  on, grouped by `group`, sorted by `order`. The server filters, not the
-  browser.
-- **The URL** becomes `?operation=&instance=&record=`. The instance names the
-  page; `page=` is dropped.
-- **Opening another page** (`services.page.open(path, record)`) needs an
-  instance of that page. See § Decisions needed.
+### 2.5 Runtime
 
-### 2.5 What a run carries, and what the server checks
+- **The menu** is the operation's apps that have a label and that the caller
+  may use (§2.6, check 2), grouped by `group` and sorted by `order`. The server
+  filters, not the browser.
+- **The URL** is `?operation=&app=&record=`. The app names the page; `page=` is
+  dropped. An old link carrying `page=` opens that page's first app the caller
+  may use (the rule below), so bookmarks keep working.
+- **Opening another page** (`services.page.open`, or a component's link to a
+  page) opens that page's first app in the operation, by group then order, that
+  the caller may use. If there is none, the page says it is not set up for this
+  operation.
+- The page header's title is the app's label; an app with no label shows what
+  the header shows today.
 
-- Page runs (`activities.run`, `activities.query`) carry `instanceId`, and a
-  `recordId` when there is a record. With no `recordId`, a non-CREATE run's
-  anchor is the instance record.
-- The server, for a run that names an instance:
-  1. loads it from the run's operation; not found → not found;
-  2. the caller must hold one of the instance's roles (when RBAC is enforced);
-  3. the activity must not be in the page's `remove` list;
-  4. if the activity reaches the app only through the page's own workflow, the
-     anchor must be the app's record;
-  5. otherwise Part 1's rules apply.
-- Runs that name no instance (the workbench, outside callers) follow Part 1's
-  rules only. An activity only a page's own workflow includes cannot run
-  without that page's instance.
-- **GETs on a page with no record** now have an anchor, the instance record, so
-  their runs are logged there. This finishes DATA_THROUGH_ACTIVITIES step 3 for
-  pure views.
+### 2.6 What a run carries, and what the server checks
 
-### 2.6 Migration
+- Runs (`activities.run`), GETs (`activities.query`) and the question of which
+  actions a record offers (`page.activities`) carry **`appId`**, and a
+  `recordId` when there is a record.
+- **With an app**, the server:
+  1. loads the app from the run's operation, and its page's published
+     definition; either missing → not found;
+  2. checks that the caller holds one of the app's roles **and** one of the
+     page's roles (`access.open`); otherwise refused;
+  3. finds what the run is on: the named record (read access applies, as
+     today); the app itself when a non-CREATE run names no record; nothing for
+     a CREATE;
+  4. checks that the app offers the activity there (§2.2) — the record's type
+     comes from the server's stored copy, never from the caller;
+  5. evaluates the activity's own condition and the page's condition for it,
+     with the real user;
+  6. runs it under Part 1's rules.
 
-- Each solution's `sdm_menus` reshaped (nested groups → `group` text, `order`
-  from position). Dev database 2026-10-04: two default menus, one item each.
-- For every operation, its solution's default menu copied into instance records.
-  Dev database: no operation has its own menu, so nothing else to carry over.
-- `instances: 'one'` dropped from page defs (none on dev).
+  `page.activities` applies checks 1–5 and answers with what passes.
+- **With no app**, the run is refused unless the caller has Console access to
+  the operation's solution (org owner, org admin, or an admin of that
+  solution). Those runs — the workbench, the DSL Editor, the page editor's
+  preview — follow the record type's workflow and the activity's own condition
+  only.
+- **For every run, with an app or without:** an UPDATE, DELETE or log-only
+  activity runs only on a record whose type's workflow includes it — for an
+  app, its page's own workflow. A CREATE has no record, and a GET is a
+  question rather than an act on its record, so neither is checked here
+  (§1.5). From step 1 the DSL Editor's runs on records of other types are
+  refused.
+- **A GET with no record** is logged on the app. `context.record` is the app
+  only for the page's own activities; a GET from a record type's workflow keeps
+  an empty `context.record`, as today, because its scripts are typed against
+  that record type. This finishes DATA_THROUGH_ACTIVITIES step 3 for pages with
+  no record.
 
-### 2.7 Not in Part 2
+### 2.7 Migration
 
-- How pages and hooks read an instance's `config`.
-- A page added to a solution reaching existing operations.
+Measured on the dev database 2026-10-15: three solutions have pages —
+`demo/sdm` (2 pages, both on its default menu, 2 operations), `projects` (8
+pages, 1 on its default menu, 1 operation) and `inspections` (12 pages, 8 on
+its default menu, 1 operation). `next-solution` and `primary-school-victoria`
+have no pages and no default menu (3 operations), and get nothing. No operation
+has a menu of its own. No page uses `'one'`.
+
+- **Each default menu is reshaped:** nested groups become `group` text and
+  `order` comes from position. Group-level roles are dropped (on dev, only
+  `demo/sdm`'s group has any — the stray `role_`, which its items also carry);
+  an empty group disappears (`inspections`' Admin). An item with no roles takes
+  its page's roles (`access.open`), so what each person sees does not change
+  (on dev, six of `inspections`' items have none).
+- **A starting app with no label is added for every published page not already
+  on the default menu**, with its page's roles, so every link between pages
+  keeps working (on dev: 7 in `projects`, 4 in `inspections`).
+- **Every operation of those solutions gets its solution's starting apps** as
+  app records.
+- **Each existing page registers** its own record type and every record type
+  its components list, show or act on, found by walking the page (record
+  lists, record views, action buttons, `invoke` ids). The build lists what it
+  found per page for the user to check before the migration runs. Published
+  versions are immutable, so the migration publishes a new version of each
+  page carrying its registrations. Rolling a page back to a version from before
+  the migration registers only its own record type; the author adds the rest.
+- **`instances` is dropped** from page records.
+
+### 2.8 Not in Part 2
+
+- How pages and hooks read an app's `config`, and what `context.app` holds for
+  an app (today a fixed `{ name: 'Fluxus' }` in the page runtime).
+- The page's own activities running on records of registered types (an action
+  only one page offers on another type's records).
+- A shared list of named conditions ticked against activities.
+- Removing an app.
+- A page added to a solution later reaching existing operations by itself.
+- The page editor's preview applying the page's registrations and conditions:
+  it runs without an app, as a Console caller.
 - Automations (the app with no UI).
-- Search and pinning as the way to find apps.
-- Review before publish for instances.
+- Search and pinning as ways to find apps.
+- Review before publish for apps.
 
-### 2.8 Done when
+### 2.9 Build steps
 
-- An operation's menu comes from its instances, filtered by role on the server.
-- Two instances of one page on one operation show as two menu items with
-  separate histories.
-- A page with no record type runs an activity from its own workflow, and the
-  entry lands on its instance record.
-- A page with a record type removes a workflow activity (gone on the page, still
-  in the workbench) and adds one through its own workflow (runs on the page's
-  record only).
-- The server refuses: a run naming an instance the caller holds no role on; a
-  removed activity through the app; an activity from the page's own workflow on
-  another record or without the instance.
-- New operation gets the default menu as instances.
-- SPECs, GLOSSARY (*app*, *instance*), ARCHITECTURE and BLUEPRINT § Apps updated.
+1. **The record-type check.** One check in `activities.run`: an UPDATE, DELETE
+   or log-only run on a record whose type's workflow lacks the activity is
+   refused, in the DSL Editor too. Before building, measure whether any
+   existing page runs an activity on a record of another type.
+2. **Apps replace menu items.** `rt_sys_apps`; setting up apps in the Console,
+   and the starting apps; the menu and operation migration (§2.7, first three
+   points); the menu built from apps on the server; the URL `app=`; opening a
+   page by its app; `appId` on runs, GETs and `page.activities`; checks 1–2 of
+   §2.6; runs with no app refused except from the Console.
+3. **Registered record types and the page's conditions.** `PageDef.recordTypes`
+   and `PageDef.conditions`; checks 4–5 of §2.6; the page editor's record
+   types and activities list; registering existing pages' types (§2.7);
+   `instances` removed.
+4. **The page's own workflow.** `PageDef.workflow`; runs on the app (check 3);
+   GETs with no record logged on the app; the record-type check extended to
+   apps.
+
+### 2.10 Where the build has to look
+
+- **Server:** `router.ts` (`activities.run`, `activities.query`, the offered
+  actions `activities`, and the menu); creating an operation (copy the
+  starting apps); `gates.ts` (Console access to one solution — today's
+  `hasConsoleAccess` accepts an admin of *any* solution); model load in
+  `host.ts` (add `rt_sys_apps`); `projection.ts` (leave apps out of general
+  reads; send the browser the page's own workflows of pages the caller may
+  open); migrations.
+- **Engine:** the availability check gains the page's condition;
+  `rt_sys_apps` as a platform type.
+- **Page runtime:** `pageDef.ts`; `validatePage`; `runtime.ts` and
+  `ComponentContainer.tsx` (`appId` on every call; opening a page by its app);
+  `findActivity` for the page's own workflow.
+- **Client:** `appId` on run, query and offered actions; the menu's shape
+  (`MenuItem`).
+- **Runtime app:** the URL, the menu, old `page=` links.
+- **Console:** `admin/MenuItemsEditor.tsx` (setting up apps); the model
+  builder's Menu editor (starting apps); `page-builder/PageEditor.tsx` (the
+  settings column); the workbench (lists `rt_sys_apps`); the DSL Editor (runs
+  on other types refused).
+- **Docs:** each touched package's SPEC; DSL_EDITOR_SPEC; CONSOLE_RUNTIME_SPEC
+  (menu, URL); GLOSSARY; ARCHITECTURE; BLUEPRINT.
+
+### 2.11 Done when
+
+- **Step 1:** an UPDATE run on a record of another type is refused — from a
+  page, from a direct call, and from the DSL Editor.
+- **Step 2:** an operation's menu comes from its apps, filtered by role on the
+  server. Two apps of one page in one operation show as two menu items with
+  separate histories. A new operation gets the starting apps. A run with no app
+  is refused for a caller without Console access and allowed for one with it.
+  A run naming an app the caller holds no role on is refused. Every existing
+  page works as before, including links between pages.
+- **Step 3:** a page that registers jobs and shift reports offers both types'
+  activities; on a record of an unregistered type it offers nothing. A page
+  condition hides an activity until it passes, and the server refuses the run
+  while it fails. The page editor lists the app's activities with both
+  conditions.
+- **Step 4:** a page with no record runs a log-only activity from its own
+  workflow; the entry lands on its app, and its hook changes other records. A
+  GET from a page with no record is logged on the app. The page's own
+  activities are refused on any other record, and without the app.
+- SPECs, GLOSSARY, ARCHITECTURE and BLUEPRINT updated as each step lands.
 
 ---
 
-## Decisions needed before Part 2
+## Cold review 2026-10-16 — open
 
-1. **Pages that are not on the menu.** Detail pages are reached only from other
-   pages (in the `projects` solution, seven of eight pages; its default menu has
-   one item). Every run carries an instance, so they need one too. Suggested: an
-   instance with no `label` is not shown on the menu, and creating an operation
-   makes one such instance for every published page not in the default menu.
-2. **Instance roles and page roles together.** Suggested: both must pass — the
-   page's roles say who may ever use the app, the instance's who may use this
-   one. The alternative is the instance's roles replacing the page's when set.
-3. **Opening a page that has several instances** (`page.open`). Suggested: the
-   first one, by group and order, that the caller holds a role on.
-4. **Removing an instance deletes its history.** Suggested as written (§2.3);
-   the alternative is refusing removal once it has history.
+A cold review of Part 2 against the code. Verdict: **step 1 can be built now**
+(add what happens if its measurement finds a page that would break); **steps
+2–4 are not ready.** Claude checked two findings itself and both hold (1 and 2c
+below). Nothing here is ruled yet.
+
+### Decisions for the user (Claude's recommendation in each)
+
+1. **GETs and registered types.** As written, check 4 (§2.6) refuses most GETs
+   pages make today: a page anchors every GET on its own record
+   (`page-runtime/src/pageHost.ts:256`), and a form anchors its dropdowns' GETs
+   on the record being acted on (`capture/AttributesForm.tsx:742,863`). The
+   inspections job page lists area inspections and findings through GETs from
+   other workflows; dropdowns call GETs from types no page registers
+   (inspectors, defects). *Recommendation:* GETs don't need registration — they
+   are questions, as the record-type check already treats them; read access
+   still applies. Page conditions then cover acts only.
+2. **Migrated menu roles.** Today a menu item's roles decide only what is
+   listed and the page's roles decide entry (CONSOLE_RUNTIME_SPEC §5 "Two
+   layers"); an item with no roles is hidden from everyone
+   (`client/src/index.ts:861-871`). So §2.7's "an item with no roles takes its
+   page's roles, so what each person sees does not change" is **wrong**: six
+   `inspections` items (all admin pages) would become visible to admins.
+   *Recommendation:* migrated apps take their page's roles (on dev, every item
+   that has roles already matches its page), accepting that those six appear —
+   probably an oversight in the inspections build. Needs the user's yes.
+3. **Apps with no label must reach the Runtime.** §2.3 sends apps "through the
+   menu" and §2.5 makes the menu labelled apps only, so links into the 11
+   unlabelled pages on dev break at step 2. *Recommendation:* send the Runtime
+   every app the caller may use; the menu shows the labelled ones.
+4. **Who may run without an app.** §2.6 says org owner, org admin, or an admin
+   of the solution; but the workbench, DSL Editor and preview are open only to
+   solution admins (`config.get` → `requireSolAdmin`, `server/src/router.ts:495`).
+   Also `scripts.query` runs GETs through `invoke` with no app, gated only by
+   `requireOpUser` (`router.ts:1131-1157`). *Recommendation:* admins of that
+   solution only; `scripts.query` follows the same rule.
+5. **Does a Console change to an app leave a history entry?** BLUEPRINT rule 1
+   (`BLUEPRINT.md:62-67`) says every change lands in history; app roles now
+   control access. *Recommendation:* yes — the write stays direct but appends a
+   history entry. Record the direct-write exception to rule 1 in BLUEPRINT,
+   which today exists only in this spec.
+6. **Logging GETs on the app.** Every GET from every user of a page with no
+   record, re-run after each run, would rewrite one ever-growing jsonb array
+   (`server/src/databaseStore.ts:450-456`); the engine also uses one record as
+   both `context.record` and the log target (`engine/src/engine.ts:383-414`).
+   *Recommendation:* drop it from Part 2; GETs on pages with no record stay
+   unlogged, as today.
+7. **Who sets up apps.** *Recommendation:* operation admins, as for today's menu
+   override (`router.ts:463`).
+
+### Fixes needing no decision (make them when revising)
+
+- **Apps are never changed by runs.** `validatePage` cannot enforce §2.2's
+  "log-only and GETs only": its findings never block a save
+  (`console/.../page-builder/persistence.ts:36-46`), the server stores pages
+  unvalidated (`host.ts:195-210`), it sees only the client grade of the model
+  (no hooks or conditions), and later model edits never re-check pages. Add: the
+  server refuses any CREATE, UPDATE or DELETE run on an app, and a hook may not
+  update or delete `context.record` when it is an app (today it can:
+  `dsl/src/validator.ts:762-765`, `evaluator.ts:1064`). The typing of page-own
+  activities and page conditions moves to the server.
+- **Where `rt_sys_apps` lives.** Every candidate place breaks something: left
+  out of the validated model, the orphan check refuses model saves
+  (`host.ts:651-662`); left in `getSolutionConfig`, publish snapshots it,
+  rollback/import writes it into `sdm_record_types`, the model builder shows it,
+  and `records.sys_apps` reaches every hook and GET (`engine/src/bridge.ts:135-170`).
+  The DSL needs it in its schema to type against it. Read access cuts both
+  ways (`computeReadable`, `projection.ts:42-58`): with auth on nobody reads
+  it (workbench can't list it; a run on it answers "Record access denied" at
+  `router.ts:980`); with auth off `records.*` and `projectConfig` hand it out.
+  The spec must name the one place it is added (the run-time model only), how
+  the DSL types against it without `records.*` seeing it, how read access
+  treats it, and reserve the ids `rt_sys_apps` / `wf_sys_apps` so no solution
+  can define them. §2.3's list of read paths also misses
+  `records.partition/list/get`, `scripts.query`, `model.*`, `config.get`,
+  `projectConfig`, publish and rollback.
+- **Migration (§2.7).**
+  - The page walk needs the DSL (types behind `context.record.quote`, a GET's
+    `returns`), so it is a one-off script the user checks and runs, not an
+    auto-applying SQL migration. With decision 1, it registers only the types
+    whose acts a page runs.
+  - Update the `pages` draft as well as publishing, or the author's next
+    publish drops the registrations (`publishPage` snapshots the draft,
+    `host.ts:237-241`); give values for `page_versions.readme` and
+    `published_by` (NOT NULL, `schema.ts:457-467`).
+  - Old published models hold the nested menu, and rollback writes it verbatim
+    into `sdm_menus` (`host.ts:702-710`): add a converter, as Part 1 did for
+    activities, and reshape `menuItemSchema` / `validateOperationMenu`
+    (`host.ts:524-582`).
+  - State the created apps' ids (UUIDv7, also on PGlite) and their first
+    history entry.
+- **Record the menu-override reversal.** Copying starting apps at operation
+  creation and removing `operations.config.menu` reverses BLUEPRINT "The
+  operating model" (`BLUEPRINT.md:45-49`, `:88`), CONSOLE_RUNTIME_SPEC §5
+  (inherit/override) and §5a, and GLOSSARY *Solution*. Mark each reversed.
+- **Page conditions see what the activity's own condition sees** — for a
+  CREATE offered on a record and run without one (ACTIONS_OFFERED_BY_SERVER
+  §2.1), and for a GET with no record. Say so.
+- **`page.activities`.** Specify the item for the app's own workflow (today
+  items are `{recordId} | {typeId}`, `router.ts:638-672`, and
+  `ComponentContainer.listActivities` returns `[]` with no record,
+  `ComponentContainer.tsx:209-215`); GETs are not offered
+  (`offeredActivities`, `engine.ts:241`); failing checks 1–2 answers empty.
+- **§2.8** gains the parked condition on opening a page (RECORD_READ_CONDITIONS
+  `:22-24`, BLUEPRINT `:159-162`).
+- **Drop §2.5's page-header bullet** — the title is the author's static config
+  (`PageHeader.tsx:19-20`) and `context.app` is deferred.
+- **Field types (§2.3):** `roles` stored as text holding a list, like `config`;
+  `order` a number.
+- **Name** the server's menu read and the Console's app writes (the user's OK
+  needed); stop `projectConfig` sending `default_menu` to Runtime users
+  (`projection.ts:295,304`).
+- **Step 1:** if the measurement finds a page that would break (likely source:
+  `ComponentContainer.tsx:144` anchors no-record runs on the page's record),
+  stop and report to the user rather than build.
+- **§2.10 additions.** Engine: `engine.ts` (`executeQuery`), `bridge.ts`,
+  `validateConfig.ts` (reserved ids), `modelProjection.ts`. Server: `host.ts`
+  (`validateConfigGraph`, `putConfig`, `publishConfig`, `rollbackConfig`, menu
+  schema and validation, `createOperation`), `records.*` routes,
+  `scripts.query`, `schema.ts` (`MenuItem`, `OperationConfig`). Client:
+  `index.ts:842-871` (`visibleMenu`, `RunInput` / `QueryInput`). Runtime:
+  `context/RuntimeContext.tsx`, `components/MenuNav.tsx`,
+  `components/PagesList.tsx` and its no-menu fallback (`App.tsx:60-65`). Page
+  runtime: `pageAnchor.ts`, `PageRenderer.tsx`, `capture/AttributesForm.tsx`,
+  `RecordActivities`, `PageHeader`. Console: `admin/OperationMenuSection.tsx`,
+  the DSL Editor's picker. The workbench package and its SPEC. Docs:
+  CLIENT_TRUST_BOUNDARY (§1, §7), ACTIONS_OFFERED_BY_SERVER,
+  RECORD_READ_CONDITIONS, DATA_THROUGH_ACTIVITIES, RBAC_COMPACT.
+
+---
 
 ## Names needing the user's OK
 
-Approved 2026-10-06: `sdm_activities` · `activity_ref` (on a workflow's
-reference) · `model.workflow_activities`.
+Approved: `sdm_activities` · `activity_ref` · `model.workflow_activities`
+(2026-10-06) · `rt_sys_apps` (2026-10-04) · `appId` on runs and `app` in the
+URL (the user's, 2026-10-15) · `PageDef.recordTypes`, `PageDef.workflow`,
+`PageDef.conditions`, the `rt_sys_apps` field keys `page`, `label`, `group`,
+`order`, `roles`, `config`, and `wf_sys_apps` for its empty workflow
+(2026-10-15).
 
-Still open: `PageDef.workflow` and `PageDef.remove` ·
-the `rt_sys_apps` field keys `page`, `label`, `roles`, `group`, `order`,
-`config` · the instance URL parameter `instance` · the name of `rt_sys_apps`'s
-empty workflow (suggested `wf_sys_apps`).
+None open.

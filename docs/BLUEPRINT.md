@@ -109,9 +109,12 @@ inspections) go dark until roles are set up.
 ([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)). Today a call carries the action
 and its record, not the page, so the server cannot tell which page it came
 from, and a create — which has no existing record to check — is not
-role-checked. Part 2 makes every run carry its app instance, which holds the
-roles and covers pages with no record type; a run with no instance is refused.
-Not treated as a gap until then (the user's call).
+role-checked. Part 2 makes every run carry its **app** (a page set up in the
+operation), which holds roles and covers pages with no record type; a run with
+no app is refused unless the caller has Console access to the solution (ruled
+2026-10-15 — the spec had allowed such runs for the workbench and outside
+callers, which disagreed with this paragraph). Not treated as a gap until then
+(the user's call).
 
 **Built — the server decides which actions are offered (agreed and built
 2026-10-11, spec [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md)).** The browser
@@ -462,17 +465,40 @@ other's activities, never by reading each other's records.**
 
 ## Apps — *Direction* (agreed 2026-09-28)
 
-> **Superseded in part, 2026-10-04.** The page itself is the app; an operation
-> runs **instances** of it (its menu). **Settled:** activities live in a
-> solution-level **pool**; a workflow is an ordered list of pool activities; a
-> record type points to one workflow and an app may point to one of its own; an
-> activity runs only through a workflow; an app may change which activities it
-> has but only narrow how each is used. This reverses the 2026-08-08 storage
-> ruling that activities stay inside their workflow. **The pool (Part 1) is
-> BUILT, 2026-10-10** — except its check that an activity may run only on a
-> record whose workflow includes it, deferred by the user. Instances are still
-> being settled. See [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md) (the spec)
-> before building anything from this section.
+> **Superseded, 2026-10-04 and 2026-10-15.** The body below is the 2026-09-28
+> version, kept as history. Current direction (spec:
+> [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md), read it before building
+> anything from this section):
+>
+> - **Pool — BUILT 2026-10-10.** Activities live in a solution-level pool; a
+>   workflow is an ordered list of pool activities; a record type points to one
+>   workflow; an activity runs only through a workflow. This reversed the
+>   2026-08-08 storage ruling that activities stay inside their workflow. Its
+>   check that an activity runs only on a record whose type's workflow includes
+>   it was deferred on 2026-10-10 and is now Part 2's first step (the user:
+>   "must not pass").
+> - **Page and app (2026-10-15).** A **page** is the definition the author
+>   builds. An **app** is a page set up in one operation — what end users open,
+>   e.g. a water scheduler and a sewer scheduler from one page — stored as a
+>   record of the platform's `rt_sys_apps`, with its label, menu placement,
+>   roles and settings. An operation's apps with a label are its menu.
+> - **What an app offers.** A page registers the record types it works with;
+>   the app offers their workflows, plus the page's own workflow, which runs
+>   only on the app. The page may add a condition to any activity, which must
+>   pass along with the activity's own. Every run carries its app, and the
+>   server checks roles (the app's and the page's), what the app offers, and
+>   both conditions.
+>
+> **Reversed 2026-10-15** (the user's rulings):
+> - *"The page is the app" and "instance"* (2026-10-04). "App" moved from the
+>   page to the page set up in an operation, the thing users actually use; the
+>   word "instance" was dropped as ambiguous.
+> - *An app removes activities from either workflow* (2026-10-04). Dropped for
+>   conditions: which activities are available changes with state, which a fixed
+>   list of removals cannot express.
+> - *A page's own activities run on the page's record too* (2026-10-04). For
+>   now they run only on the app; an action one page offers on another type's
+>   records goes in that type's workflow with a condition.
 
 In short: the model's workflows list every activity that can happen, and an
 **app** is what picks the ones it uses and puts them in front of people (as
@@ -819,14 +845,14 @@ Canonical definitions live in [GLOSSARY.md](GLOSSARY.md); this is the working se
 | **Module** | A self-contained, reusable unit installed into a solution — its own model, workflow and records, hidden from the solution, reached only through callbacks. Direction. |
 | **Activity history** | The append-only record of who did what, with what inputs. The audit spine. |
 | **FluxScript** | The one scripting language (expressions → queries → scripts). |
-| **App** *(direction)* | A solution-level definition that picks which of the model's activities it uses and can only narrow them. Has pages, automations or both. |
-| **Page** | A stored, validated screen definition rendered by the page runtime; direction: an app's user-facing part. |
-| **Automation** *(direction)* | An app's part with no user interface, run by a schedule, an event or an outside caller. |
+| **App** *(direction, 2026-10-15)* | A page set up in one operation — what end users open (e.g. a water scheduler); a record of `rt_sys_apps`. Offers the workflows of the record types its page registers, plus the page's own. |
+| **Page** | A stored, validated screen definition rendered by the page runtime; direction: the definition an app is built from. |
+| **Automation** *(direction)* | Work with no user interface, run by a schedule, an event or an outside caller. How it relates to apps is not yet worked out (2026-10-15). |
 | **Component** | A model-blind UI block wired to the SDM per page; reused, never rewritten. |
 | **Solution** | The shippable design bundle: SDM + pages + roles + default menu. No data. |
 | **Operation** | A running instance of a solution: its records, users, and roles. |
 | **Org** | The subscribing business everything hangs under. |
-| **Console / Runtime** | The builder's app / the end user's app. Always named in full, so a bare "app" means the solution-level one. |
+| **Console / Runtime** | The builder's app / the end user's app. Always named in full, so a bare "app" means a page set up in an operation. |
 | **Release** *(direction)* | One numbered snapshot of a whole solution. |
 | **Pinning** *(direction)* | An operation staying on a chosen release until it opts to upgrade. |
 | **Solution connector** *(direction)* | A hook in one solution calling an activity in another. |

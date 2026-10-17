@@ -11,6 +11,10 @@ while exploring, on purpose.
 made since. Where the two differ, the spec wins. This note stays as the record
 of the exploration.
 
+**Update 2026-10-15: words renamed.** In this note "app" means the page and
+"instance" means a page set up in one operation. Since 2026-10-15 that second
+thing is called the **app**, and "instance" is retired (GLOSSARY).
+
 Everything below is the user's idea unless marked **(Claude)**.
 
 ## The foundation
