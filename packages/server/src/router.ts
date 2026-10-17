@@ -979,6 +979,20 @@ export const appRouter = t.router({
               // config + resolved roles.
               const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
               if (readable !== null && !readable.has(anchorRecord.typeRef)) throw accessDenied();
+              // Only an activity that belongs to the record may run on it
+              // (APPS_AND_INSTANCES §1.5, Part 2 step 1): the record's type's
+              // workflow must list it. A shared activity runs on any type that
+              // lists it. CREATE has no record here; a GET is a question, not an
+              // act on its record. The DSL Editor runs through here too.
+              if (activity.record_map !== 'GET') {
+                const listed = host.store.getRecordTypeDef(anchorRecord.typeRef).workflow.activities;
+                if (!listed.some((a) => a.id === activity.id)) {
+                  throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: `'${activity.id}' is not in ${anchorRecord.typeRef}'s workflow, so it cannot run on this record`,
+                  });
+                }
+              }
             }
 
             const issues = await withSpan('validate', activity.id, () =>

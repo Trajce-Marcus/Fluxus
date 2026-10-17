@@ -97,6 +97,43 @@ describe('an activity no workflow lists', () => {
   });
 });
 
+// APPS_AND_INSTANCES §1.5, Part 2 step 1: only an activity that belongs to the
+// record may run on it.
+describe('the record-type check', () => {
+  async function withSites() {
+    await caller().config.putActivity({ solutionId: SOL, def: act('act_create_sites', 'CREATE', ['name']) });
+    await caller().config.putActivity({ solutionId: SOL, def: act('act_log_pumps', undefined, []) });
+    await caller().config.putWorkflow({ solutionId: SOL, def: { id: 'wf_sites', name: 'Sites', description: '', activities: [{ activity_ref: 'act_create_sites' }] } });
+    await caller().config.putWorkflow({ solutionId: SOL, def: { id: 'wf_pumps', name: 'Pumps', description: '', activities: [{ activity_ref: 'act_create_pumps' }, { activity_ref: 'act_note_items' }, { activity_ref: 'act_log_pumps' }] } });
+  }
+
+  it('refuses an UPDATE on a record whose type\'s workflow does not list it, and writes nothing', async () => {
+    await withSites();
+    const site = (await run('act_create_sites', { name: 'S1' })).recordId!;
+    await expect(run('act_note_items', { note: 'x' }, site))
+      .rejects.toThrow(/'act_note_items' is not in rt_sites's workflow, so it cannot run on this record/);
+    const s = await caller().records.get({ operationId: OP, recordId: site });
+    expect(s.activityHistory.map((e) => e.activityId)).toEqual(['act_create_sites']);
+  });
+
+  it('refuses a log-only activity on a record of another type', async () => {
+    await withSites();
+    const valve = (await run('act_create_valves', { name: 'V3' })).recordId!;
+    await expect(run('act_log_pumps', {}, valve)).rejects.toThrow(/'act_log_pumps' is not in rt_valves's workflow/);
+  });
+
+  it('still runs a shared activity on each type that lists it, and a log-only one on its own type', async () => {
+    await withSites();
+    const pump = (await run('act_create_pumps', { name: 'P3' })).recordId!;
+    const valve = (await run('act_create_valves', { name: 'V4' })).recordId!;
+    await run('act_note_items', { note: 'a' }, pump);
+    await run('act_note_items', { note: 'b' }, valve);
+    await run('act_log_pumps', {}, pump);
+    const p = await caller().records.get({ operationId: OP, recordId: pump });
+    expect(p.activityHistory.map((e) => e.activityId)).toEqual(['act_create_pumps', 'act_note_items', 'act_log_pumps']);
+  });
+});
+
 describe('save refuses what the pool cannot mean', () => {
   it('a CREATE added to a second record type\'s workflow', async () => {
     await expect(caller().config.putWorkflow({

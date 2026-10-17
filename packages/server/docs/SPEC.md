@@ -968,10 +968,16 @@ saves that way.
 
 **Finding an activity to run** (`findActivity`, `activities.run` /
 `activities.query`) looks only at activities some workflow lists; one in the
-pool alone is "Activity not found". **Not built (deferred by the user
-2026-10-10):** the spec's check that refuses a run whose activity is not in the
-anchor record type's workflow (§1.5). Today, as before the pool, an UPDATE,
-DELETE or log-only activity runs on any readable record.
+pool alone is "Activity not found". **The record-type check (built 2026-10-18,
+APPS_AND_INSTANCES §1.5 / Part 2 step 1):** `activities.run` refuses an UPDATE,
+DELETE or log-only run whose activity is not in its record's type's workflow —
+"'act_x' is not in rt_y's workflow, so it cannot run on this record" — after the
+read check and before anything is validated or written. A shared activity runs
+on any type that lists it. CREATE (no record) and GET (a question, not an act on
+its record) are not checked. The Console's DSL Editor runs through the same call,
+so it is held to the same rule. Measured on the dev database before building:
+no past run of an existing activity, and no page action, would have been
+refused.
 
 Details settled in the build:
 

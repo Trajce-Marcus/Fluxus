@@ -8,7 +8,7 @@ revisited the architecture from scratch rather than answer the seven decisions
 the 2026-10-16 cold review left. A second cold review the same day left five
 decisions and 18 fixes; the decisions were settled with the user on 2026-10-18
 and Part 2 revised with them and the fixes (§ Second cold review). Built in six
-steps, each checked before the next (§2.10); step 1 can be built now. Built from
+steps, each checked before the next (§2.10). **Step 1 BUILT 2026-10-18.** Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -331,7 +331,7 @@ that name activity ids keep working.
 - **New check — only an activity that belongs to the record may run on it**
   (approved by the user 2026-10-06). **Deferred by the user 2026-10-10 — not
   built with Part 1.** **Now step 1 of Part 2 (ruled 2026-10-15), DSL Editor
-  included (§2.10).** It is one check in `activities.run` and nothing else in
+  included (§2.10). BUILT 2026-10-18.** It is one check in `activities.run` and nothing else in
   Part 1 depends on it; until it is built, runs behave as they did before the
   pool. Part 2 needs it (§2.3). Today the server runs any UPDATE, DELETE
   or log-only activity against any readable record, whether or not that
@@ -877,7 +877,12 @@ USERS.md `:228-231` (how Console access is derived); CLIENT_TRUST_BOUNDARY
 
 Each step works on its own and is cold-tested before the next.
 
-1. **The record-type check.** One check in `activities.run`
+1. **The record-type check — BUILT 2026-10-18.** Measured first on the dev
+   database: no past run of an existing activity in `rpt_activities` would have
+   been refused (the 12 that would were of three activities no longer in the
+   model, which fail as "not found" anyway), and every page action without a
+   record is a CREATE, while every row action belongs to its rows' type. One
+   check in `activities.run`
    (`router.ts:957-982`): an UPDATE, DELETE or log-only run on a record whose
    type's workflow lacks the activity is refused — from pages, direct calls and
    the DSL Editor alike, since the Editor runs through `activities.run`
