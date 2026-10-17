@@ -57,6 +57,12 @@ repo — is the source of truth for a solution's config and pages.
 from the **Catalogue**. Installed solutions carry provenance (the `origin`
 columns exist today; the install path doesn't).
 
+**Direction (2026-10-17, spec [APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)):**
+the solution's default menu and the operation's menu override go. An operation
+admin picks the solution's apps into the operation's apps list, each with its
+own id, name, roles and definition, and the operation's app menu points at
+apps in that list (§ Apps).
+
 ## Rules the platform never breaks — *Built*
 
 1. **All change goes through activities.** Records are never edited directly;
@@ -65,6 +71,10 @@ columns exist today; the install path doesn't).
    layer is projected from — so reporting can never miss a change. ("The only
    log" is about **working data**. Performance logging is a different thing,
    entirely disconnected from it — see *Performance logging*.)
+   *Direction (2026-10-17, apps Part 2):* one exception — the Console writes
+   the apps in an operation's apps list directly, not through activities, since
+   setting up an app is not working data; every such change still leaves a
+   history entry on that app's record.
 2. **One language everywhere.** A query written for a page binding is the same
    language as a hook or a headless call.
 3. **Scripts are scope-blind.** A script never names its org or operation;
@@ -109,12 +119,19 @@ inspections) go dark until roles are set up.
 ([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)). Today a call carries the action
 and its record, not the page, so the server cannot tell which page it came
 from, and a create — which has no existing record to check — is not
-role-checked. Part 2 makes every run carry its **app** (a page set up in the
-operation), which holds roles and covers pages with no record type; a run with
-no app is refused unless the caller has Console access to the solution (ruled
-2026-10-15 — the spec had allowed such runs for the workbench and outside
-callers, which disagreed with this paragraph). Not treated as a gap until then
-(the user's call).
+role-checked. Part 2 makes every call from the Runtime carry the id of its
+**app** in the operation's apps list, which holds the roles that may run it and
+covers apps with no record type. The server checks every call against that
+app, its list and both conditions, and record read rules still apply inside an app. A call with no app
+is refused unless the caller is an **admin of that operation**, who then reads
+every record in it whatever their roles, and nothing in operations they are
+not admins of (ruled 2026-10-17; it replaces 2026-10-15's "Console access to
+the solution", and closes today's hole where any operation user can run a
+script reading every record type). Activities run for users only
+through an app in the Runtime, or on records directly in the Console (ruled
+2026-10-17). Who may open a page moves from the page (`access.open`) to the
+app in the apps list, and menu items lose their own roles (2026-10-17). Not treated as a gap
+until then (the user's call).
 
 **Built — the server decides which actions are offered (agreed and built
 2026-10-11, spec [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md)).** The browser
@@ -465,8 +482,8 @@ other's activities, never by reading each other's records.**
 
 ## Apps — *Direction* (agreed 2026-09-28)
 
-> **Superseded, 2026-10-04 and 2026-10-15.** The body below is the 2026-09-28
-> version, kept as history. Current direction (spec:
+> **Superseded, 2026-10-04, 2026-10-15 and 2026-10-17.** The body below is the
+> 2026-09-28 version, kept as history. Current direction (spec:
 > [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md), read it before building
 > anything from this section):
 >
@@ -477,22 +494,63 @@ other's activities, never by reading each other's records.**
 >   check that an activity runs only on a record whose type's workflow includes
 >   it was deferred on 2026-10-10 and is now Part 2's first step (the user:
 >   "must not pass").
-> - **Page and app (2026-10-15).** A **page** is the definition the author
->   builds. An **app** is a page set up in one operation — what end users open,
->   e.g. a water scheduler and a sewer scheduler from one page — stored as a
->   record of the platform's `rt_sys_apps`, with its label, menu placement,
->   roles and settings. An operation's apps with a label are its menu.
-> - **What an app offers.** A page registers the record types it works with;
->   the app offers their workflows, plus the page's own workflow, which runs
->   only on the app. The page may add a condition to any activity, which must
->   pass along with the activity's own. Every run carries its app, and the
->   server checks roles (the app's and the page's), what the app offers, and
->   both conditions.
+> - **Apps and the apps list (2026-10-17).** An **app** is the thing that is
+>   built: it does something, with or without record types, with a UI or
+>   (later) as an automation. For now a UI app is a page. The solution's apps
+>   are simply its published pages. An operation admin picks apps into the
+>   operation's **apps list** (seen in the Console only), giving each its name,
+>   who may run it and its **definition** (what it needs set for this
+>   operation); each app in the list has its own id and is a record of the
+>   platform's `rt_sys_apps`. One page can be picked twice (a water scheduler
+>   and a sewer scheduler). The **app menu** points at apps in the list and
+>   holds no roles: a user sees only what they may run.
+> - **One list per app.** An app's own workflow lists the activities and reads
+>   it uses, pulled from the pool; it offers only what is listed. Each item may
+>   carry a condition, which must pass along with the activity's own — the
+>   record type's rules and the app's both hold.
+> - **One way to open an app**, from a menu, a link in a page or (later) a
+>   scheduled job: by its id in the apps list, with params, through the same
+>   checks — `services.app.open(appId, params)` from a page, replacing
+>   `services.page.open`. The author writes the link into the page; where the
+>   target differs per operation, the page reads the id from its app's
+>   definition (`context.app.definition.jobLinkId`), which the author also
+>   designs. Making links correct is the author's job.
+> - **Every call checked.** Every call from the Runtime names its app, and
+>   the activity, record type and record it is about. The server checks every
+>   call — the browser cannot be trusted: the caller may run the app, the
+>   activity is on the list, the call matches the model, the caller may read the
+>   record and every record its reference fields send back, and both
+>   conditions pass. An activity of the app's own names no
+>   record and runs on the app's record, leaving its history there. Only an
+>   operation admin works on records without an app, from the Console.
+>
+> **Reversed 2026-10-17** (the user's rulings, revisiting the architecture from
+> scratch rather than answering the 2026-10-16 cold review):
+> - *"App" as a page set up in an operation* (2026-10-15). "App" is back on
+>   the thing that is built; an operation's apps list holds the apps it uses.
+>   The first 2026-10-17 draft called those "configs"; the user ruled the word
+>   out the same day.
+> - *A page registers record types and offers their whole workflows*
+>   (2026-10-15). Replaced by an explicit list: an activity added to a workflow
+>   later no longer appears on every page that works with that type.
+> - *Menu fields on the app; the app's and the page's roles both pass*
+>   (2026-10-15). The menu is a separate list of pointers with no roles; who
+>   may run an app is set only on it in the apps list, the page carrying no
+>   roles "for now".
+> - *The solution's default menu, copied into each new operation as its
+>   starting apps* (2026-10-15, and the inherit/override menu built 2026-07-26).
+>   The default menu goes; an admin picks apps into each operation.
+> - *GETs need no registration* (the 2026-10-16 cold review's
+>   recommendation). Reads are linked to an app the same way as activities.
+> - *Runs with no app allowed for anyone with Console access to the solution*
+>   (2026-10-15). Now operation admins only: the operation is the data
+>   boundary, and a solution's designer should not see an org's records by
+>   default.
 >
 > **Reversed 2026-10-15** (the user's rulings):
 > - *"The page is the app" and "instance"* (2026-10-04). "App" moved from the
 >   page to the page set up in an operation, the thing users actually use; the
->   word "instance" was dropped as ambiguous.
+>   word "instance" was dropped as ambiguous. *Itself reversed 2026-10-17.*
 > - *An app removes activities from either workflow* (2026-10-04). Dropped for
 >   conditions: which activities are available changes with state, which a fixed
 >   list of removals cannot express.
@@ -845,14 +903,14 @@ Canonical definitions live in [GLOSSARY.md](GLOSSARY.md); this is the working se
 | **Module** | A self-contained, reusable unit installed into a solution — its own model, workflow and records, hidden from the solution, reached only through callbacks. Direction. |
 | **Activity history** | The append-only record of who did what, with what inputs. The audit spine. |
 | **FluxScript** | The one scripting language (expressions → queries → scripts). |
-| **App** *(direction, 2026-10-15)* | A page set up in one operation — what end users open (e.g. a water scheduler); a record of `rt_sys_apps`. Offers the workflows of the record types its page registers, plus the page's own. |
-| **Page** | A stored, validated screen definition rendered by the page runtime; direction: the definition an app is built from. |
-| **Automation** *(direction)* | Work with no user interface, run by a schedule, an event or an outside caller. How it relates to apps is not yet worked out (2026-10-15). |
+| **App** *(direction, 2026-10-17)* | The thing that is built: does something, with or without record types; for now a UI app is a page. Has one list of the activities and reads it uses. Picked into an operation's **apps list**, where each app has its own id, name, roles and definition (a record of `rt_sys_apps`); the app menu points at apps in the list. |
+| **Page** | A stored, validated screen definition rendered by the page runtime; direction: for now, what a UI app is. |
+| **Automation** *(direction)* | Work with no user interface, run by a schedule, an event or an outside caller — an app with no UI (2026-10-17); details, including what it runs as, later. |
 | **Component** | A model-blind UI block wired to the SDM per page; reused, never rewritten. |
 | **Solution** | The shippable design bundle: SDM + pages + roles + default menu. No data. |
 | **Operation** | A running instance of a solution: its records, users, and roles. |
 | **Org** | The subscribing business everything hangs under. |
-| **Console / Runtime** | The builder's app / the end user's app. Always named in full, so a bare "app" means a page set up in an operation. |
+| **Console / Runtime** | The builder's app / the end user's app. Always named in full, so a bare "app" means a solution's app. |
 | **Release** *(direction)* | One numbered snapshot of a whole solution. |
 | **Pinning** *(direction)* | An operation staying on a chosen release until it opts to upgrade. |
 | **Solution connector** *(direction)* | A hook in one solution calling an activity in another. |

@@ -449,6 +449,10 @@ needed before an operation grows that big, not before the build.
 - **The browser apps.** The Console workbench still takes the whole operation at
   connect (`records.partition`) and after every run — a breach of rule no. 1,
   fixed separately. The Runtime app already connects with no records.
+  **Deferred to-do (the user, 2026-10-17):** remove the whole-operation fetch
+  from the Console, in a later session. Until then apps Part 2 closes
+  `records.partition` to everyone but the operation's admins
+  ([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) cold review 2026-10-17, decision 3).
 - **Queries across several record types** beyond references — the user's new
   requirement; waiting on an example.
 - **The growth of an anchor record's history** from GET log entries (§11).
