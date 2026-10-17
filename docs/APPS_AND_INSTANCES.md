@@ -8,7 +8,8 @@ revisited the architecture from scratch rather than answer the seven decisions
 the 2026-10-16 cold review left. A second cold review the same day left five
 decisions and 18 fixes; the decisions were settled with the user on 2026-10-18
 and Part 2 revised with them and the fixes (§ Second cold review). Built in six
-steps, each checked before the next (§2.10). **Step 1 BUILT 2026-10-18.** Built from
+steps, each checked before the next (§2.10). **Step 1 BUILT 2026-10-18.**
+Step 2's names settled with the user the same day (§ Names). Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -505,7 +506,7 @@ draft called an app in the list a "config"; the user ruled the word out.)
 ### 2.2 The app's list
 
 - **An app has one list: the activities and reads it uses.** It is the page's
-  own workflow, `PageDef.workflow` — an ordinary workflow, authored in the
+  own workflow, `PageDef.workflowId` — an ordinary workflow, authored in the
   Workflows editor, that no record type points to. The author adds pool
   activities to it: activities that are also in record types' workflows (an
   inspection's Submit, a GET listing jobs), and activities of the app's own
@@ -568,11 +569,12 @@ draft called an app in the list a "config"; the user ruled the word out.)
   page whose `workflow` is missing, dangling, or pointed at by a record type
   offers nothing.
 - **What a script knows about its app — `context.app`.** In a page and in
-  every server-side script of a call through an app: `page`, `label` and
-  `definition` (the whole definition, which reaches the browser). Not `roles`.
+  every server-side script of a call through an app: `pageId`, `label` and
+  `definition` (the whole definition, parsed from its JSON text, which reaches
+  the browser). Not its roles.
   It replaces today's fixed `{ name: 'Fluxus' }` in the page runtime. An app's
-  own activities see the same through `context.record`, typed with those three
-  fields only. *A server-only part of the definition is not built now* (§2.9).
+  own activities see the same through `context.record`, typed with the record
+  fields `page_id`, `label` and `definition` only. *A server-only part of the definition is not built now* (§2.9).
 - **Removed from the page definition:** `PageDef.access` (who may open the page
   — now on the operation's app, §2.4) and `PageRecordDef.instances` (its
   `'one'` is replaced by the operation's app; measured 2026-10-15, no page on
@@ -642,7 +644,7 @@ draft called an app in the list a "config"; the user ruled the word out.)
   admin.
 - **Calls that stay open to the operation's users**, app or none: the
   connect-time calls `operations.get`, `config.getForOperation`, `me`,
-  `apps.mine` and `perf.*`. **`pages.list` in draft mode** is the design
+  `apps.user` and `perf.*`. **`pages.list` in draft mode** is the design
   plane: called by `connectSolution` with no operation
   (`client/src/index.ts:692`) and ungated today (`router.ts:685`), it becomes
   solution admins only.
@@ -654,7 +656,7 @@ draft called an app in the list a "config"; the user ruled the word out.)
   admitted (the way in is always an activity).
 - **`operations.get`** stops returning the operation's menu (today it returns
   `config.menu` unchecked, `router.ts:420-435`); the Runtime gets it from
-  `apps.mine`, the Console from `apps.list`.
+  `apps.user`, the Console from `apps.list`.
 
 ### 2.4 `rt_sys_apps` — the operation's apps
 
@@ -666,14 +668,16 @@ draft called an app in the list a "config"; the user ruled the word out.)
   (`validateConfigGraph`, `host.ts:649-662`); `records.partition/list/get`;
   `records.*` in scripts (`bridge.ts:135-170`); `scripts.query`; `model.*`;
   `config.get` and `projectConfig`; publish and rollback. The operation's apps
-  are read only through `apps.list` and `apps.mine`.
+  are read only through `apps.list` and `apps.user`.
 - **Where the platform's definition of `rt_sys_apps` and `wf_sys_apps` lives**
   (step 5): one constant in `@fluxus/engine`, which the engine adds to the model
   it runs and `validateConfig` adds to the model it checks. It is never stored
   and never sent to the browser. Until step 5, rows exist only as data the
   server reads directly.
-- **Fields:** `page` (the page — a page path), `label` (its name, e.g. "Water
-  scheduler"; required), `roles` (role ids, stored as text holding a list),
+- **Fields** (record field keys, snake_case like every record field; calls
+  spell them `pageId`, `roleIds`): `page_id` (the page — its path, which is its
+  id), `label` (its name, e.g. "Water
+  scheduler"; required), `role_ids` (role ids, stored as text holding a list),
   `definition` (what the app needs set for this operation: a plain string
   holding JSON, read as `context.app.definition`, §2.2).
 - **Workflow:** an empty one, `wf_sys_apps`. What runs on an operation's app
@@ -692,7 +696,7 @@ draft called an app in the list a "config"; the user ruled the word out.)
   changed fields' new values in `capturedAttributes`. The migration's entry is
   `sys_migration` / "Created by the migration". Both ids are reserved.
   BLUEPRINT rule 1 records this as its one direct-write exception.
-- **Checked at save:** `page` is a published page of the solution; every role
+- **Checked at save:** `page_id` is a published page of the solution; every role
   exists in the solution; `label` is not blank; `definition` is JSON.
 - **The app's own GETs leave no history entry** on its record; reads about a
   real record keep logging as today. Today `executeQuery` logs on whatever
@@ -702,14 +706,14 @@ draft called an app in the list a "config"; the user ruled the word out.)
 ### 2.5 The app menu
 
 - Stored on the operation, `operations.config.menu`, reshaped. A **leaf** is
-  `{ id, app }`, `app` being an app's id; a **group** is `{ id, label, items }`,
-  one level deep as today. No `roles` and no `page` on either.
+  `{ id, appId }`, `appId` being an app's id; a **group** is `{ id, label, items }`,
+  one level deep as today. No roles and no page on either.
 - **A leaf shows its app's name.** Group labels belong to the menu.
-- **The server builds each caller's menu** (`apps.mine`): leaves whose app
+- **The server builds each caller's menu** (`apps.user`): leaves whose app
   the caller may run (check 2), groups that keep at least one leaf, in the
   stored order. The browser no longer filters (`visibleMenu`,
   `client/src/index.ts:861-871`, goes).
-- **Checked at save:** every `app` is an app of this operation; an app
+- **Checked at save:** every `appId` is an app of this operation; an app
   appears at most once.
 
 ### 2.6 Console
@@ -737,9 +741,11 @@ draft called an app in the list a "config"; the user ruled the word out.)
 - **Apps list** — in the operation's admin, replacing the operation menu
   editor (`admin/MenuItemsEditor.tsx`, `admin/OperationMenuSection.tsx`, which
   read the menu through `operations.get`, `:26,46`; they read `apps.list`,
-  which returns the apps and the menu). It lists the operation's apps. **Add**
+  which returns the apps, without their history, and the menu). It lists the
+  operation's apps, in an **Apps** tab of the operation. **Add**
   opens a dialog: pick a published page, give it a name, roles and definition
-  (a plain text box). The same dialog edits an app and shows its history. No
+  (a plain text box). The same dialog edits an app and shows its history,
+  fetched for that one app when the dialog opens (`apps.get`). No
   removing in Part 2.
 - **App menu** — beside the apps list: add a leaf by picking an app, add a
   group, reorder, move a leaf into or out of a group.
@@ -747,19 +753,20 @@ draft called an app in the list a "config"; the user ruled the word out.)
   workflow a page names shows a condition column against each item, edited in
   the existing expression dialog.
 - **Page editor's settings column:** gains the app's list (chosen from the
-  workflows no record type points to, `PageDef.workflow`). *Page access* is removed.
+  workflows no record type points to, `PageDef.workflowId`). *Page access* is removed.
   *Page record* loses its one/many choice.
 
 ### 2.7 Runtime
 
-- **What it receives** (`apps.mine`): the apps the caller may run, each with
-  its id, name, page and definition; their pages' published definitions
-  (`pages.list` becomes a no-app call, §2.3); the menu built from them (§2.5);
-  and, until step 6, for each page the operation has exactly one app made from,
-  that app's id — for the old way of opening (below).
+- **What it receives** (`apps.user`): `apps`, those the caller may run, each
+  with its `id`, `label`, `pageId` and `definition`; `pages`, their pages'
+  published definitions (`pages.list` becomes a no-app call, §2.3); `menu`,
+  built from them (§2.5); and, until step 6, `appIdByPageId`: for each page the
+  operation has exactly one app made from, that app's id — for the old way of
+  opening (below).
 - **Opening an app.** A page opens one with **`services.app.open(appId,
   params)`**, params carrying things like the record, e.g.
-  `services.app.open(context.app.definition.jobLinkId, { record: job.id })`.
+  `services.app.open(context.app.definition.jobLinkId, { recordId: job.id })`.
   The author writes the link into the page; where the target differs per
   operation, the page reads its id from its app's definition, which the author
   also designs. Making links correct is the author's job; the platform opens
@@ -829,7 +836,7 @@ and model functions reached from page expressions (callbacks cannot `invoke`,
 record type: the script takes it from the GET's `returns` where that names a
 type, and otherwise lists the row as unresolved for the user. Form GETs need no
 listing (§2.2). It creates one workflow per page, `wf_app_<page>`, and sets
-`PageDef.workflow` on both the draft and a new published version made from the
+`PageDef.workflowId` on both the draft and a new published version made from the
 **latest published** definition — not the draft, which may hold unpublished
 work (`page_versions.readme` and `published_by` need values). It prints what it
 found per page for the user to check first. After the deploy, a page still
@@ -869,7 +876,11 @@ USERS.md `:228-231` (how Console access is derived); CLIENT_TRUST_BOUNDARY
 - Search and pinning as ways to find apps.
 - Review before publish for apps and apps lists.
 - The page editor's preview applying the app's list and conditions: it runs
-  without an app, as an operation admin.
+  without an app, as an operation admin. In the preview `context.app` is
+  `{ pageId: <the page>, label: <the page>, definition: {} }` and
+  `services.app.open` says the preview cannot open apps. **Parked (the user,
+  2026-10-18):** a definition for the preview — a dummy one, or one of the
+  operation's apps — so a page that reads its definition can be developed.
 - **Removing the Console's whole-operation fetch** (`records.partition`) — a
   deferred to-do for a later session (the user's; SERVER_DATA_LOADING §6).
 
@@ -892,7 +903,7 @@ Each step works on its own and is cold-tested before the next.
    if one would break, stop and report to the user.
 2. **The apps list and the app menu.** `rt_sys_apps` rows kept out of general
    reads, and calls sending their ids refused; `apps.list`, `apps.put`,
-   `apps.mine`; the Console's apps list and menu editor; operation admins in
+   `apps.user`; the Console's apps list and menu editor; operation admins in
    the Console (who sees what, `config.get`, `pages.publishedPaths`, connecting
    with no records); history entries on every change; the server-built menu;
    the Runtime receiving its apps; the URL `app=`, `services.app.open`, and
@@ -903,7 +914,7 @@ Each step works on its own and is cold-tested before the next.
    `instances` removed; the step 2 script. Until step 3, a call that passes
    checks 1, 2 and 5 is offered and run as today: the record type's workflow
    and the activity's own condition.
-3. **The app's list — acts.** `PageDef.workflow` and items' conditions;
+3. **The app's list — acts.** `PageDef.workflowId` and items' conditions;
    `typeId` on runs; checks 3, 4 and 6 for runs and `page.activities`; the
    app-list rules at model save for workflows pages name; the page's list
    protected and checked at publish; the Workflows editor's condition column
@@ -914,7 +925,7 @@ Each step works on its own and is cold-tested before the next.
    functions they call; computed ids there refused at save.
 5. **The app's own activities.** Log-only activities and GETs of the app's own
    run on the operation's app's record; the platform's `rt_sys_apps` and
-   `wf_sys_apps` in `@fluxus/engine`, typed with `page`, `label` and
+   `wf_sys_apps` in `@fluxus/engine`, typed with `page_id`, `label` and
    `definition`; never changing an operation's app; their GETs unlogged (the
    engine change, §2.4); the browser able to find and open them (§2.11).
 6. **One way to open an app.** The step 6 script rewriting links;
@@ -996,7 +1007,7 @@ Each step works on its own and is cold-tested before the next.
   `capture/AttributesForm.tsx`; `RecordActivities` (shows the app's own
   activities with no record); `actionComponents.tsx` (OpenPage, `:84-90`).
 - **Client:** `appId` and `typeId` on run, query, offered actions, record
-  fetches and files; `apps.mine`; `connectSolution` connecting with no records
+  fetches and files; `apps.user`; `connectSolution` connecting with no records
   (`index.ts:691-701`); the menu's shape (`MenuItem`, `OperationConfig`);
   `visibleMenu` goes; the effective-menu fallback (`index.ts:840-846`).
 - **Runtime app:** `context/RuntimeContext.tsx` (the URL), `components/MenuNav.tsx`,
@@ -1360,5 +1371,29 @@ Approved 2026-10-18:
   by the migration") — the activity id and name on history entries for a
   Console change to an app in the apps list, and for the migration creating
   one.
+
+Settled 2026-10-18, at the start of the step 2 build (the user's, on Claude's
+playback; where they rename an earlier approval, the earlier text above and in
+the cold review sections keeps the old name as written then):
+
+- **A name holding an id ends in `Id`** (the user's: "if it's an id the name
+  should include Id, same as operationId"). So: the `rt_sys_apps` fields `page`
+  → `page_id` and `roles` → `role_ids` (record field keys are snake_case; calls
+  spell them `pageId`, `roleIds`); a menu leaf `{ id, app }` → `{ id, appId }`;
+  `context.app.page` → `context.app.pageId`; `services.app.open(appId,
+  { recordId })`; `PageDef.workflow` → `PageDef.workflowId` (step 3). The URL
+  stays `?operation=&app=&record=`, short like `operation=`; existing names
+  holding ids (`PageDef.record.type`, a page's `path`, a history entry's
+  `author`) are not renamed here.
+- `apps.user` replaces `apps.mine` (the user's). It answers `apps` (`id`,
+  `label`, `pageId`, `definition`), `pages`, `menu` and `appIdByPageId` (until
+  step 6).
+- `apps.list` answers `apps` (`id`, `pageId`, `label`, `roleIds`,
+  `definition`) and `menu`, without history; **`apps.get`** answers one app
+  with its `activityHistory`, for the dialog (the user asked why history came
+  with every list). `apps.put` takes `id` absent to add, and answers `{ id }`.
+- The **Apps** tab in the operation view, beside its Menu tab.
+- `packages/server/scripts/apps-step2.ts` — the step 2 script; it prints what
+  it would do, and writes only with `--apply`.
 
 None open.
