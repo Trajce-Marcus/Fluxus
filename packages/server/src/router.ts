@@ -34,7 +34,6 @@ import {
   configCollections,
   deleteConfigEntity,
   putConfigEntity,
-  defaultMenuItemSchema,
   listConfigVersions,
   getPageVersion,
   insertPendingAttachment,
@@ -55,7 +54,6 @@ import {
   putOperationConfig,
   putPage,
   usedStorageBytes,
-  validateDefaultMenuItems,
   type ConfigCollection,
 } from './host';
 import {
@@ -666,16 +664,8 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         try {
           await requireSolAdmin(ctx, input.solutionId);
-          // The solution's default menu (§5) still rides in an imported or
-          // rolled-back model until apps Part 2 step 3 drops it; nothing reads
-          // it but the step 2 script. The engine stays menu-blind, so its shape
-          // and references are validated here, roles read from the incoming config.
-          const defaultMenu = (input.config as { default_menu?: unknown }).default_menu;
-          if (defaultMenu !== undefined) {
-            const parsed = z.array(defaultMenuItemSchema).safeParse(defaultMenu);
-            if (!parsed.success) throw new TRPCError({ code: 'BAD_REQUEST', message: `default_menu is not a menu: ${parsed.error.message}` });
-            await validateDefaultMenuItems(ctx.db, input.solutionId, parsed.data, input.config as SolutionConfig);
-          }
+          // An imported model's `default_menu` is dropped (apps Part 2 step 3):
+          // each operation sets up its own apps and menu.
           await putConfig(ctx.db, input.solutionId, input.config as SolutionConfig, ctx.sink, ctx.user?.email ?? null);
           return { ok: true as const };
         } catch (err) {

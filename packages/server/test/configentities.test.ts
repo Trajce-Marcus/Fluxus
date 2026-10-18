@@ -1,7 +1,6 @@
 // Per-entity model writes (model storage split, step 1): `config.putAttribute`
-// and its nine siblings. (`config.putDefaultMenu` went with apps Part 2 step 2:
-// the default menu is read only by the step 2 script, and rides in an imported
-// model until step 3 drops it.)
+// and its nine siblings. (`config.putDefaultMenu` went with apps Part 2 step 2,
+// and the default menu itself with step 3.)
 //
 // The point of the exercise is the concurrency fix — two sol admins editing two
 // different entities have no logical conflict, and must both keep their work.
@@ -13,7 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { sdmAttributes, sdmMenus, sdmRecordTypes, sdmRoles } from '../src/db/schema';
+import { sdmAttributes, sdmRecordTypes, sdmRoles } from '../src/db/schema';
 import {
   appointSolAdmin,
   ensureOperation,
@@ -189,37 +188,13 @@ describe('the graph is validated on every entity write', () => {
   });
 });
 
-// The default menu, until apps Part 2 step 3 drops it: carried by an imported
-// model and still held to the model it names.
-const withDefaultMenu = async (menu: unknown[]) =>
-  stub().config.put({ solutionId: SOL, config: { ...(await getSolutionConfig(db, SOL)), default_menu: menu } });
-
-describe('the default menu, until step 3', () => {
-  it('rides in an imported model, and drops the key when emptied', async () => {
-    await stub().pages.put({ solutionId: SOL, path: 'pages/home', def: {} });
-    await stub().pages.publish({ solutionId: SOL, path: 'pages/home', readme: 'v1' });
-    await withDefaultMenu([{ label: 'Home', page: 'pages/home', roles: ['role_crew'] }]);
-    const withMenu = await getSolutionConfig(db, SOL) as SolutionConfig & { default_menu?: unknown[] };
-    expect(withMenu.default_menu).toHaveLength(1);
-
-    await withDefaultMenu([]);
-    const emptied = await getSolutionConfig(db, SOL) as SolutionConfig & { default_menu?: unknown[] };
-    expect(emptied.default_menu).toBeUndefined();
-  });
-
-  it('rejects a menu naming an unpublished page or an unknown role', async () => {
-    await expect(withDefaultMenu([{ label: 'X', page: 'pages/ghost' }])).rejects.toThrow(/no published page/);
-    await expect(withDefaultMenu([{ label: 'X', roles: ['role_zzz'] }])).rejects.toThrow(/unknown role/);
-  });
-
-  it('holds the menu to the model — deleting a role it names fails', async () => {
-    // A menu item must open something (2026-08-20), so the page exists first.
-    await stub().pages.put({ solutionId: SOL, path: 'pages/crew', def: {} });
-    await stub().pages.publish({ solutionId: SOL, path: 'pages/crew', readme: 'seed' });
-    await withDefaultMenu([{ label: 'Crew', page: 'pages/crew', roles: ['role_crew'] }]);
-    await expect(stub().config.deleteRole({ solutionId: SOL, id: 'role_crew' })).rejects.toThrow(/unknown role/);
-    expect((await getSolutionConfig(db, SOL)).access?.roles).toHaveLength(1);
-    await withDefaultMenu([]);
+// The solution's default menu went with apps Part 2 step 3 (migration 0023):
+// an imported model that still carries one has it dropped.
+describe('the default menu is gone', () => {
+  it('drops the default menu an imported model carries', async () => {
+    const current = await getSolutionConfig(db, SOL);
+    await stub().config.put({ solutionId: SOL, config: { ...current, default_menu: [{ label: 'Home', page: 'pages/home', roles: ['role_crew'] }] } as SolutionConfig });
+    expect(await getSolutionConfig(db, SOL)).not.toHaveProperty('default_menu');
   });
 });
 
@@ -257,17 +232,6 @@ describe('the tables are truth', () => {
     const [updated] = await db.select().from(sdmRoles).where(and(eq(sdmRoles.solutionId, SOL), eq(sdmRoles.id, 'role_leads')));
     expect(updated.createdBy).toBe('admin@example.com'); // the author of record survives
     expect(updated.updatedBy).toBe('outsider@example.com');
-  });
-
-  it('the menu is a row keyed by solution alone', async () => {
-    await stub().pages.put({ solutionId: SOL, path: 'pages/crew', def: {} });
-    await stub().pages.publish({ solutionId: SOL, path: 'pages/crew', readme: 'seed' });
-    const item = { label: 'Crew', page: 'pages/crew', roles: ['role_crew'] };
-    await withDefaultMenu([item]);
-    const [menu] = await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL));
-    expect(menu.def).toEqual([item]);
-    await withDefaultMenu([]);
-    expect(await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL))).toEqual([]);
   });
 
   it('config.put is the import path — rows absent from the incoming config go', async () => {

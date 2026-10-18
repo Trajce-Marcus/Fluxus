@@ -122,8 +122,9 @@ The onboarding story, and the shape it implies:
 > (`visibleMenu` went). Checked at save (`operations.putConfig`): every leaf
 > points at an app of this operation, at most once. The solution's
 > `default_menu` is no longer read or edited (`config.putDefaultMenu` and the
-> model builder's Menu editor went); it stays stored, read only by the step 2
-> migration script, until step 3 drops it. A new operation starts with an empty
+> model builder's Menu editor went); the step 2 migration script built each
+> operation's apps and menu from it, and step 3 dropped it (migration 0023,
+> 2026-10-18). A new operation starts with an empty
 > apps list and menu. The text below is the design as it stood until then.
 
 - The solution's config artifact carries a top-level **`default_menu`** (key name pending endorsement) in the §5 shape below — versioned/published with the model via `sdm_config_versions`, so a prebuilt solution ships working menus. The engine stays menu-blind (`config.put` is `z.unknown()`; `validateConfig` ignores the key); the server validates it with the same §5 rules — at `config.put`, and (2026-08-08) on **every** per-entity write, so deleting a role a menu item still names fails. Roles are read from the **incoming** config. The Console edits it through `config.putDefaultMenu`; there is no delete, because `[]` is the empty menu and the server drops the key.

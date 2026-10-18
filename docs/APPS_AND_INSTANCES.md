@@ -15,7 +15,9 @@ day at the user's go-ahead, after a dry run he reviewed: 24 apps in four
 operations (inspections-dev 12, projects-dev 8, demo/sdm and
 nicks-inspection-business 2 each), each with its `sys_migration` entry, and
 their menus rebuilt; the three operations whose solutions have no pages were
-skipped (§2.8). Built from
+skipped (§2.8). **Step 3 BUILT 2026-10-18** (four commits); its script ran on
+the dev database first, at the user's go-ahead after a dry run: all 22
+published pages got their lists, nothing unresolved. Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -946,12 +948,26 @@ Each step works on its own and is cold-tested before the next.
    `files.*` also check that the operation runs the solution named. The step 2
    script is `packages/server/scripts/apps-step2.ts` (§2.8), tested against an
    in-memory database shaped like dev (`test/appsStep2.test.ts`).
-3. **The app's list — acts.** `PageDef.workflowId` and items' conditions;
+3. **The app's list — acts — BUILT 2026-10-18.** `PageDef.workflowId` and items' conditions;
    `typeId` on runs; checks 3, 4 and 6 for runs and `page.activities`; the
    app-list rules at model save for workflows pages name; the page's list
    protected and checked at publish; the Workflows editor's condition column
    and choosing the list in the page editor; the step 3 script, run before the deploy;
    the SQL dropping the default menu, and rollback's converter.
+
+   *As built* (working defaults, mentioned to the user): the step 3 script is
+   `packages/server/scripts/apps-step3.ts` (dry run by default, `--apply`
+   writes; a page that has a list is skipped), and a list id makes every
+   character outside `[A-Za-z0-9_]` an underscore (`pages/new page 1` →
+   `wf_app_pages_new_page_1`); an activity of the app's own on a list is
+   checked untyped until step 5 defines `rt_sys_apps`, and cannot run until
+   then; `typeId` is required through an app, and checked when given on a
+   Console run; a save that removes a workflow a page names is refused only if
+   the workflow existed before the save (a page naming a missing one does not
+   block every model save); the page editor offers as lists the workflows no
+   record type points to; migration 0023 drops `sdm_menus`, an imported or
+   rolled-back model's `default_menu` is dropped, and the step 2 script's test
+   went with the table (the script ran, and now skips every operation).
 4. **The app's list — reads.** Checks 3 and 6 for GETs (`activities.query`);
    form GETs counted from literal `invoke` ids in datasources and the named
    functions they call; computed ids there refused at save.

@@ -29,7 +29,7 @@ import {
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type DefaultMenuItem, type OperationConfig, type StoredConfigBeforePool } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type OperationConfig, type StoredConfigBeforePool } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 import { withSpan } from './perf';
@@ -90,7 +90,6 @@ export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise
       workflows: sql<WorkflowRawDef[] | null>`(SELECT jsonb_agg(${sdmWorkflows.def} ORDER BY ${sdmWorkflows.id}) FROM ${sdmWorkflows} WHERE ${eq(sdmWorkflows.solutionId, solutionId)})`,
       functions: sql<FunctionDef[] | null>`(SELECT jsonb_agg(${sdmFunctions.def} ORDER BY ${sdmFunctions.id}) FROM ${sdmFunctions} WHERE ${eq(sdmFunctions.solutionId, solutionId)})`,
       roles: sql<RoleDef[] | null>`(SELECT jsonb_agg(${sdmRoles.def} ORDER BY ${sdmRoles.id}) FROM ${sdmRoles} WHERE ${eq(sdmRoles.solutionId, solutionId)})`,
-      defaultMenu: sql<DefaultMenuItem[] | null>`(SELECT ${sdmMenus.def} FROM ${sdmMenus} WHERE ${eq(sdmMenus.solutionId, solutionId)})`,
     })
     .from(solutions)
     .where(eq(solutions.id, solutionId));
@@ -105,7 +104,6 @@ export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise
     // an empty array would not say.
     ...(row.functions ? { functions: row.functions } : {}),
     ...(row.roles ? { access: { roles: row.roles } } : {}),
-    ...(row.defaultMenu ? { default_menu: row.defaultMenu } : {}),
   } as SolutionConfig;
 }
 
@@ -549,69 +547,6 @@ export class MenuValidationError extends Error {
   }
 }
 
-/** The shape of the solution's default menu (`default_menu`, the menu shape
- *  before apps Part 2) — checked by `config.put` and every model write until
- *  step 3 drops it. The operation's app menu has its own (`apps.ts`). */
-export const defaultMenuItemSchema: z.ZodType<DefaultMenuItem> = z.lazy(() =>
-  z.object({
-    // Zod strips unknown keys, so the stable id has to be declared here or a
-    // saved override would come back without ids.
-    id: z.string().min(1).optional(),
-    label: z.string().min(1),
-    page: z.string().min(1).optional(),
-    roles: z.array(z.string().min(1)).optional(),
-    items: z.array(defaultMenuItemSchema).optional(),
-  }),
-);
-
-/**
- * Validate the solution's default menu against its solution (CONSOLE_RUNTIME_SPEC
- * §5, until apps Part 2 step 3 drops it): every leaf `page` must resolve to a
- * **published** page of the solution; every role id must be one the solution
- * declares (`access.roles`); nesting is one level max. Run at config.put and at
- * every model write — `rolesFrom` reads roles from the config being saved, not
- * the stored one it is replacing.
- */
-export async function validateDefaultMenuItems(db: DbOrTx, solutionId: string, menu: DefaultMenuItem[], rolesFrom?: SolutionConfig): Promise<void> {
-  const published = new Set((await listPublishedPages(db, solutionId)).map((p) => p.path));
-  const config = rolesFrom ?? (await getSolutionConfig(db, solutionId));
-  const roleIds = new Set((config.access?.roles ?? []).map((r) => r.id));
-  const errors: string[] = [];
-  // Item ids must be unique across the whole menu — they identify an item for
-  // selection, reordering and (§5a) an operation's per-item overrides.
-  const seenIds = new Set<string>();
-  const walk = (items: DefaultMenuItem[], depth: number) => {
-    for (const it of items) {
-      if (it.id) {
-        if (seenIds.has(it.id)) errors.push(`"${it.label}" → duplicate item id "${it.id}"`);
-        seenIds.add(it.id);
-      }
-      if (it.page && !published.has(it.page)) errors.push(`"${it.label}" → no published page "${it.page}"`);
-      // A leaf that opens nothing is a dead entry: it renders, it highlights
-      // nothing, and clicking it does nothing — while its presence hides the
-      // Pages list the Runtime app falls back to when an operation has no
-      // menu. Caught here since 2026-08-20, after three such items in the demo
-      // operation made its published pages unreachable.
-      //
-      // A **group** is any item carrying an `items` key, empty included: the
-      // editor makes a group first and fills it by dragging items in, and an
-      // empty one is invisible at runtime anyway (`visibleMenu` drops a group
-      // with no visible child). What is rejected is an item that is neither —
-      // a label with nothing behind it.
-      if (!it.page && it.items === undefined) {
-        errors.push(`"${it.label}" → give it a page, or make it a group and put items under it`);
-      }
-      for (const r of it.roles ?? []) if (!roleIds.has(r)) errors.push(`"${it.label}" → unknown role "${r}"`);
-      if (it.items && it.items.length > 0) {
-        if (depth >= 1) errors.push(`"${it.label}" nests too deep (one level max)`);
-        else walk(it.items, depth + 1);
-      }
-    }
-  };
-  walk(menu, 0);
-  if (errors.length > 0) throw new MenuValidationError(errors);
-}
-
 /** Whether a page has a published version — what an app is made from. */
 export async function isPagePublished(db: DbOrTx, solutionId: string, path: string): Promise<boolean> {
   const [row] = await db
@@ -758,15 +693,6 @@ export async function putConfig(
       for (const entity of collection.read(config)) {
         await collection.put(tx, solutionId, identityOf(collection, entity), entity, author);
       }
-    }
-    const menu = (config as { default_menu?: DefaultMenuItem[] }).default_menu;
-    if (menu && menu.length > 0) {
-      await tx
-        .insert(sdmMenus)
-        .values({ solutionId, def: menu, createdBy: author, updatedBy: author })
-        .onConflictDoUpdate({ target: sdmMenus.solutionId, set: { def: menu, updatedAt: new Date(), updatedBy: author } });
-    } else {
-      await tx.delete(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
     }
   });
 }
@@ -1051,22 +977,7 @@ async function editConfig(
     await writeRows(tx);
     const next = await getSolutionConfig(tx, solutionId);
     await validateConfigGraph(tx, solutionId, next, sink, new Set(before.map((r) => r.id)));
-    await validateDefaultMenu(tx, solutionId, next);
   });
-}
-
-/**
- * The solution's `default_menu` (§5, M10) — shape, then references, against the
- * config it rides in. The engine is menu-blind, so this is the only place the
- * config's one non-collection field is checked. A role delete that a menu item
- * still names fails here, exactly like any other dangling reference.
- */
-export async function validateDefaultMenu(db: DbOrTx, solutionId: string, config: SolutionConfig): Promise<void> {
-  const defaultMenu = (config as { default_menu?: unknown }).default_menu;
-  if (defaultMenu === undefined) return;
-  const parsed = z.array(defaultMenuItemSchema).safeParse(defaultMenu);
-  if (!parsed.success) throw new ConfigValidationError([`default_menu is not a menu: ${parsed.error.message}`]);
-  await validateDefaultMenuItems(db, solutionId, parsed.data, config);
 }
 
 /** Add or replace one entity of a collection, by the identity its def carries. */
@@ -1164,6 +1075,11 @@ export async function rollbackConfig(db: Db, solutionId: string, version: number
 /** `toActivityPool`, with a refusal reported the way every other rejected
  *  model is. */
 function poolShaped(config: SolutionConfig): SolutionConfig {
+  // The solution's default menu went with apps Part 2 step 3: an old model —
+  // a published version rolled back to, or an export imported — still carries
+  // one, and it is dropped (each operation sets up its own apps and menu).
+  const { default_menu: _menu, ...rest } = config as SolutionConfig & { default_menu?: unknown };
+  config = rest as SolutionConfig;
   try {
     return toActivityPool(config);
   } catch (err) {

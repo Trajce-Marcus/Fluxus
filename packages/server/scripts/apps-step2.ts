@@ -1,4 +1,8 @@
-// Apps Part 2, step 2 — a one-off script (APPS_AND_INSTANCES §2.8). Run it
+// Apps Part 2, step 2 — a one-off script (APPS_AND_INSTANCES §2.8). RUN on
+// the dev database 2026-10-18; since step 3 dropped `sdm_menus` (0023) it
+// cannot build menus from the solution's default menu any more, and every
+// operation it would touch has apps, so it skips them all. Kept as the record
+// of what it did. Run it
 // AFTER the step 2 deploy: old code refuses every model save once
 // `rt_sys_apps` rows exist, and the step 2 code keeps them out.
 //
@@ -28,7 +32,10 @@ import { APPS_RECORD_TYPE, MIGRATION_EDIT, newRecordId, type SolutionConfig } fr
 import { createDb, closeDb, type Db } from '../src/db/client';
 import { getSolutionConfig, listOperations, listPublishedPages, putOperationConfig, type OperationRow } from '../src/host';
 import { putApp, validateAppMenu, type App } from '../src/apps';
-import { records, type DefaultMenuItem, type MenuItem, type MenuLeaf } from '../src/db/schema';
+import { records, type MenuItem, type MenuLeaf } from '../src/db/schema';
+
+/** A menu as it was before apps Part 2 (the shape `sdm_menus` held). */
+interface DefaultMenuItem { id?: string; label: string; page?: string; roles?: string[]; items?: DefaultMenuItem[] }
 
 /** What the script would do for one operation. */
 export interface OperationPlan {

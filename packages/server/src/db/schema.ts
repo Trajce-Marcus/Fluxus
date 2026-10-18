@@ -127,21 +127,6 @@ export type MenuItem = MenuLeaf | MenuGroup;
 export interface MenuLeaf { id: string; appId: string }
 export interface MenuGroup { id: string; label: string; items: MenuLeaf[] }
 
-/**
- * A menu as it was before apps Part 2 — the solution's default menu
- * (`sdm_menus`) and, until the step 2 script rebuilds them, operations' own.
- * Read only by that script and carried by import and rollback; the default
- * menu is dropped in step 3.
- */
-export interface DefaultMenuItem {
-  id?: string;
-  label: string;
-  /** Page path (leaf items). */
-  page?: string;
-  roles?: string[];
-  items?: DefaultMenuItem[];
-}
-
 // Governance store (CONSOLE_RUNTIME_SPEC §2a — Option B, bespoke auth-tier
 // tables; RBAC_COMPACT "Roles"): user roles live here, never in the solution.
 // Plain reads — no SDM, no activities.
@@ -401,20 +386,8 @@ export const sdmRoles = pgTable('sdm_roles', {
   primaryKey({ columns: [t.solutionId, t.id] }),
 ]);
 
-// The odd one out — keyed by solution ALONE, because the solution's default
-// runtime menu (§5, M10) is the config's only non-collection field. It is a
-// table rather than a column on `sdm_configs` so that nothing in `sdm_configs`
-// is truth. `def` holds the menu array whole: menu items are not independently
-// authored entities, and one person edits a menu at a time (the same reasoning
-// that keeps activities inside their workflow).
-export const sdmMenus = pgTable('sdm_menus', {
-  solutionId: text('solution_id').primaryKey().references(() => solutions.id),
-  def: jsonb('def').$type<DefaultMenuItem[]>().notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  createdBy: text('created_by'),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedBy: text('updated_by'),
-});
+// `sdm_menus` — the solution's default menu — was dropped by 0023 (apps Part 2
+// step 3): each operation sets up its own apps and app menu.
 
 // Published SDM config versions — the model's change history, closing the gap
 // pages have had since M3 (ruled 2026-07-26). Same posture as page_versions:

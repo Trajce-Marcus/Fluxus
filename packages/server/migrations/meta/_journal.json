@@ -162,6 +162,13 @@
       "when": 1785201400000,
       "tag": "0022_activity_pool",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785201500000,
+      "tag": "0023_drop_default_menu",
+      "breakpoints": true
     }
   ]
 }

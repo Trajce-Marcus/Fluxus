@@ -1,6 +1,6 @@
-// Published pages, the operation's app menu checked at save (APPS_AND_INSTANCES
-// §2.5 — it replaced page access control and the role-gated menu override), and
-// the solution's default menu until step 3 drops it.
+// Published pages, and the operation's app menu checked at save
+// (APPS_AND_INSTANCES §2.5 — it replaced page access control, the role-gated
+// menu override and the solution's default menu).
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
@@ -115,48 +115,15 @@ describe('the app menu, checked at save (APPS_AND_INSTANCES §2.5)', () => {
   });
 });
 
-// M10 (§5 amended): the solution ships a default_menu in its config artifact,
-// validated at config.put with the same §5 rules — roles read from the config
-// being saved. The operation's config.menu is the whole-menu override; the
-// inherit fallback itself is resolved client-side at connect.
-describe('solution default_menu validation at config.put (§5, M10)', () => {
-  it('accepts a default_menu of published pages + roles from the incoming config', async () => {
-    const res = await open().config.put({
-      solutionId: SOL,
-      config: { ...config, default_menu: [{ label: 'Home', page: 'pages/p1', roles: ['role_a'] }] },
-    });
-    expect(res.ok).toBe(true);
-  });
-
-  it('rejects an unpublished page reference', async () => {
+// The solution's default menu went with apps Part 2 step 3: an imported model
+// carrying one (as old exports and published versions do) has it dropped.
+describe('the default menu is gone (apps Part 2 step 3)', () => {
+  it('drops an imported default_menu instead of storing or checking it', async () => {
     await expect(open().config.put({
       solutionId: SOL,
-      config: { ...config, default_menu: [{ label: 'X', page: 'pages/ghost' }] },
-    })).rejects.toThrow(/no published page/i);
-  });
-
-  it('validates roles against the incoming config, not the stored one', async () => {
-    // role_c exists only in the config being saved — must pass.
-    await expect(open().config.put({
-      solutionId: SOL,
-      config: {
-        ...config,
-        access: { roles: [...(config.access?.roles ?? []), { id: 'role_c', name: 'Cs' }] },
-        default_menu: [{ label: 'C', page: 'pages/p1', roles: ['role_c'] }],
-      },
+      config: { ...config, default_menu: [{ label: 'X', page: 'pages/ghost', roles: ['role_zzz'] }] } as SolutionConfig,
     })).resolves.toEqual({ ok: true });
-    // role_zzz exists nowhere — must fail even though the stored config now has role_c.
-    await expect(open().config.put({
-      solutionId: SOL,
-      config: { ...config, default_menu: [{ label: 'X', page: 'pages/p1', roles: ['role_zzz'] }] },
-    })).rejects.toThrow(/unknown role/i);
-  });
-
-  it('rejects a default_menu that is not a menu shape', async () => {
-    await expect(open().config.put({
-      solutionId: SOL,
-      config: { ...config, default_menu: [{ page: 'pages/p1' }] },
-    })).rejects.toThrow(/default_menu is not a menu/i);
+    expect(await open().config.get({ solutionId: SOL })).not.toHaveProperty('default_menu');
   });
 });
 

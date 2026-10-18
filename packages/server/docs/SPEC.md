@@ -513,9 +513,10 @@ takes `operationId?` (both default `demo/sdm`):
   unreachable forever. Config is solution-plane and owns no records, and since
   2026-08-05 nothing else puts records in an operation either (see "Nothing is
   prepopulated" below). Since M10 the artifact may
-  carry a top-level **`default_menu`** (*since 2026-10-18 read by nothing but the
-  apps Part 2 step 2 script, and dropped in step 3; still validated as below,
-  because import and rollback still carry it; `config.putDefaultMenu` went*) (§5 amended — the solution's default
+  carry a top-level **`default_menu`** (*gone 2026-10-18: apps Part 2 step 3
+  dropped its table, and an imported model's `default_menu` is now dropped
+  rather than validated and stored; the rest of this paragraph is how it
+  stood*) (§5 amended — the solution's default
   runtime navigation, inherited by operations unless overridden): the engine
   stays menu-blind, so `put` validates it here — §5 shape, published-page +
   declared-role references (roles read from the **incoming** config via
@@ -992,9 +993,14 @@ config spells it.
 | `sdm_workflows` | `(solution_id, id)` | `workflows[]` — each an ordered list of `{ activity_ref }` |
 | `sdm_functions` | `(solution_id, id)` | `functions[]` |
 | `sdm_roles` | `(solution_id, id)` | `access.roles[]` |
-| `sdm_menus` | `(solution_id)` | `default_menu` — one row, not a collection |
+| ~~`sdm_menus`~~ | `(solution_id)` | `default_menu` — **dropped 2026-10-18** (0023) |
 
-**`sdm_menus` is the odd one** — keyed by solution alone, because the
+**`sdm_menus` was the odd one, until migration 0023 dropped it** with the
+solution's default menu (APPS_AND_INSTANCES Part 2 step 3: each operation sets
+up its own apps and app menu, and the step 2 script had built them from it).
+An imported or rolled-back model that carries a `default_menu` has it dropped
+(`poolShaped`); published versions keep theirs as history. What follows is the
+design as it stood: keyed by solution alone, because the
 solution's default runtime menu (§5, M10) is the config's only non-collection
 field. It is a table rather than a column on `sdm_configs` so that **nothing in
 `sdm_configs` is truth**: the snapshot row stays purely derived, and therefore

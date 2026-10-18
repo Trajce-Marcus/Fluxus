@@ -60,9 +60,9 @@ used to ship a default menu that each operation inherited or replaced
 wholesale (2026-07-26). Dropped by the user's 2026-10-17 rulings: an operation
 admin picks the solution's apps into the operation's apps list, and the
 operation's app menu points at apps in it ("no role there, just a pointer").
-The default menu stays stored only until step 3 drops it; nothing reads it but
-the step 2 migration script, which builds each operation's apps and menu from
-it.
+The step 2 migration script built each operation's apps and menu from it, and
+step 3 dropped it (migration 0023, 2026-10-18); an old model imported or rolled
+back has its default menu dropped.
 
 **Direction:** an org gets solutions two ways — author them, or install them
 from the **Catalogue**. Installed solutions carry provenance (the `origin`
@@ -140,8 +140,10 @@ inspections) go dark until roles are set up.
 2): every Runtime call names its app, and the server checks the app is the
 operation's and the caller holds one of its roles, and that the caller may read
 every record the call sends, reference fields included; a call with no app is
-an operation admin's, who reads every record in it. Checking the activity
-against the app's own list comes with steps 3–4.* Today a call carries the action
+an operation admin's, who reads every record in it. Since step 3 (same day) a
+run and the offered actions are also checked against the app's own list, the
+call names its record type, and the app's condition on the item must pass;
+GETs follow in step 4.* Today a call carries the action
 and its record, not the page, so the server cannot tell which page it came
 from, and a create — which has no existing record to check — is not
 role-checked. Part 2 makes every call from the Runtime carry the id of its
@@ -529,7 +531,7 @@ other's activities, never by reading each other's records.**
 >   platform's `rt_sys_apps`. One page can be picked twice (a water scheduler
 >   and a sewer scheduler). The **app menu** points at apps in the list and
 >   holds no roles: a user sees only what they may run.
-> - **One list per app.** An app's own workflow lists the activities and reads
+> - **One list per app — BUILT 2026-10-18 for activities (step 3); reads in step 4.** An app's own workflow lists the activities and reads
 >   it uses, pulled from the pool; it offers only what is listed. Each item may
 >   carry a condition, which must pass along with the activity's own — the
 >   record type's rules and the app's both hold.
