@@ -635,6 +635,8 @@ second view of it.
 
 **Settled 2026-08-11:** the **URL shape** is query params —
 `?page=<pageId>&record=<recordId>` — on the Runtime app's existing flat URL.
+*(Since 2026-10-18, apps Part 2: `?app=<appId>&record=<recordId>`; `page=` is
+gone.)*
 
 Workbench column 3 is the built-in instance of the same concept — the record UI
 every SDM gets free; an authored record page is the customisable version. One

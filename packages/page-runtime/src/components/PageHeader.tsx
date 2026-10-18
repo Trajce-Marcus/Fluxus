@@ -4,7 +4,7 @@
 // so it is placed like any component rather than drawn by the app around it.
 //
 // **Back is the host's history**, reached through `services` exactly as the
-// Open button reaches `openPage`: in the Runtime app it is the browser's Back,
+// Open button reaches `openApp`: in the Runtime app it is the browser's Back,
 // the same step. On the first page opened there is nothing to go back to, and
 // the arrow shows greyed rather than vanishing, so the header does not shift.
 //

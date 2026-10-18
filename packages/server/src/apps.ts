@@ -301,12 +301,6 @@ export interface UserApps {
   /** Their pages' published definitions. */
   pages: { path: string; def: unknown }[];
   menu: MenuItem[];
-  /**
-   * For each page the operation has exactly one app made from — whoever may
-   * run it — that app's id: the old way of opening a page by its path
-   * (`services.page.open`, OpenPage, `page=` links), until step 6 removes it.
-   */
-  appIdByPageId: Record<string, string>;
 }
 
 export async function appsForUser(
@@ -319,12 +313,9 @@ export async function appsForUser(
   const defs = new Map(published.map((p) => [p.path, p.def]));
   const runnable = all.filter((a) => defs.has(a.pageId) && mayRunApp(a, authConfigured, roles));
   const runnableIds = new Set(runnable.map((a) => a.id));
-  const byPage = new Map<string, string[]>();
-  for (const a of all) byPage.set(a.pageId, [...(byPage.get(a.pageId) ?? []), a.id]);
   return {
     apps: runnable.map(({ id, label, pageId, definition }) => ({ id, label, pageId, definition })),
     pages: [...new Set(runnable.map((a) => a.pageId))].map((path) => ({ path, def: defs.get(path) })),
     menu: menuFor(readMenu(op.config), (appId) => runnableIds.has(appId)),
-    appIdByPageId: Object.fromEntries([...byPage].filter(([, ids]) => ids.length === 1).map(([page, [id]]) => [page, id])),
   };
 }

@@ -710,12 +710,10 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    */
   solutionAdmin = true;
   /**
-   * The apps the caller may run in this operation (`apps.user`), and, until
-   * step 6, the id of each page's only app — what the old way of opening a page
-   * by its path resolves through. Empty on the design plane.
+   * The apps the caller may run in this operation (`apps.user`). Empty on the
+   * design plane.
    */
   apps: UserApp[] = [];
-  appIdByPageId: Record<string, string> = {};
   /**
    * The app the host has open — sent as `appId` on every call that runs, reads
    * or uploads through it (APPS_AND_INSTANCES §2.3). The Runtime sets it when
@@ -923,7 +921,6 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     const client = new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, op.orgId, me.roles, me.authConfigured);
     client.recordsMode = recordsMode;
     client.apps = userApps.apps;
-    client.appIdByPageId = userApps.appIdByPageId;
     return client;
   }
 

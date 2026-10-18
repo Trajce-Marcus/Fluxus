@@ -233,7 +233,9 @@ it deliberately: a component that read first would fire an untraceable GET and
 then have to fire it again.
 
 **The URL now addresses what is open** — `?page=<pageId>&record=<recordId>`
-beside the existing `?operation=`. Query params over path segments because the
+beside the existing `?operation=`. *(Since 2026-10-18, apps Part 2:
+`?app=<appId>&record=<recordId>`, `app` an app's id in the operation's apps
+list; `page=` is gone.)* Query params over path segments because the
 Runtime host is a static deploy with no SPA rewrite and a page id already
 contains a slash; the shape is revisitable, since nothing stored depends on it.
 `?operation=` stays what it was, session establishment rather than addressing,

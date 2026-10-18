@@ -3,7 +3,7 @@
 **Status:** **Part 1 (the activity pool) BUILT 2026-10-10.** Its run check
 (§1.5) was deferred then, and is step 1 of Part 2. **Part 2 (apps)
 re-specified 2026-10-17**, cold-reviewed and revised the same day (§ Cold
-review 2026-10-17: nine decisions ruled, fixes applied); not built. The user
+review 2026-10-17: nine decisions ruled, fixes applied), and built 2026-10-18. The user
 revisited the architecture from scratch rather than answer the seven decisions
 the 2026-10-16 cold review left. A second cold review the same day left five
 decisions and 18 fixes; the decisions were settled with the user on 2026-10-18
@@ -22,7 +22,12 @@ published pages got their lists, nothing unresolved. **Step 4 BUILT
 computed id in any datasource or the named functions they reach, no GET of an
 app's own on any list, and no item condition on a GET. **Step 5 BUILT
 2026-10-18** (three commits), after measuring dev read-only: no list held an
-app's own activity, and the 24 apps had only `sys_*` history entries. Built from
+app's own activity, and the 24 apps had only `sys_*` history entries. **Step 6
+BUILT 2026-10-18** (three commits), after measuring dev read-only: its script
+ran on the dev database between the second and third commits, at the user's
+go-ahead after a dry run — 18 links in 11 pages rewritten, 11 apps'
+definitions filled, nothing unresolved — and the old way of opening went.
+**Part 2 is complete.** Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -475,7 +480,7 @@ goes (Claude's suggestion, agreed).*
 
 Re-specified 2026-10-17; revised with the rulings of § Cold review 2026-10-17
 the same day, and with those of § Second cold review on 2026-10-18. Built in
-six steps (§2.10), each checked before the next.
+six steps (§2.10), each checked before the next — all six built 2026-10-18.
 
 **Words used here.** An **app** is the thing built — for now, a page. An
 operation uses apps through its **apps list**: each app there has its own id,
@@ -774,9 +779,9 @@ draft called an app in the list a "config"; the user ruled the word out.)
 - **What it receives** (`apps.user`): `apps`, those the caller may run, each
   with its `id`, `label`, `pageId` and `definition`; `pages`, their pages'
   published definitions (`pages.list` becomes a no-app call, §2.3); `menu`,
-  built from them (§2.5); and, until step 6, `appIdByPageId`: for each page the
-  operation has exactly one app made from, that app's id — for the old way of
-  opening (below).
+  built from them (§2.5). Until step 6 it also answered `appIdByPageId` — for
+  each page the operation had exactly one app made from, that app's id — for the
+  old way of opening (below).
 - **Opening an app.** A page opens one with **`services.app.open(appId,
   params)`**, params carrying things like the record, e.g.
   `services.app.open(context.app.definition.jobLinkId, { recordId: job.id })`.
@@ -786,14 +791,18 @@ draft called an app in the list a "config"; the user ruled the word out.)
   the id it is given, after its checks. An id the caller may not run, or that
   is not an app of this operation, says the app is not set up for this
   operation.
-- **Until step 6, the old way still works:** `services.page.open(page,
-  record)`, OpenPage targets (`actionComponents.tsx:84-90`) and RecordList
-  action columns name a page, and open the operation's only app made from that
-  page. With several, they say the app is not set up for this operation. After
-  the migration every operation has one app per page (§2.8). Step 6 removes
-  `services.page.open`.
+- **A button opens an app the same way:** `OpenApp`, placed on a page or
+  named by a RecordList action column, its `target` the key in the app's
+  definition holding the id to open (§ Names, step 6).
+- **The old way, removed in step 6 (2026-10-18):** until then
+  `services.page.open(page, record)`, OpenPage targets and RecordList action
+  columns named a page, and opened the operation's only app made from that
+  page; with several, they said the app is not set up for this operation. The
+  step 6 script rewrote every link (§2.8) and `services.page.open`, OpenPage,
+  `appIdByPageId` and `page=` went.
 - **The URL** is `?operation=&app=&record=`, `app` being an app's id; `page=`
-  is dropped. An old link carrying `page=` follows the old way above.
+  is dropped. Until step 6 an old link carrying `page=` followed the old way
+  above; since then it opens nothing.
 - **No menu, no fallback.** The list of every openable page shown when an
   operation has no menu (`PagesList`, `App.tsx:59-66`) goes; an empty menu says
   nothing is set up.
@@ -868,7 +877,8 @@ becomes `services.app.open(context.app.definition.<key>, …)`, and the script
 fills each operation's apps' definitions with the ids of the apps those links
 open. It proposes one key per linked page and prints them, with every rewrite,
 for the user to check first. Links whose page is computed are listed for the
-author to rewrite.
+author to rewrite. *Built as `packages/server/scripts/apps-step6.ts`, and run on
+the dev database 2026-10-18 at the user's go-ahead after a dry run (§2.10).*
 
 **Record the reversals** (with step 2): BLUEPRINT "The operating model" (the
 menu override), § Access "Built" (page access lists, menu item roles), and the
@@ -1022,22 +1032,31 @@ Each step works on its own and is cold-tested before the next.
    trimmed to `page_id`, `label` and `definition` — the step 5 cold test found
    a GET returning `context.record` whole sent the stored `role_ids` to the
    browser; fixed the same day.
-6. **One way to open an app.** The step 6 script rewriting links;
+6. **One way to open an app — BUILT 2026-10-18.** The step 6 script rewriting links;
    `services.page.open` and the old way of opening (§2.7) removed.
 
-   *As built so far* (2026-10-18): dev measured read-only first — every link
-   literal, drafts the same as what is published, no operation with several
-   apps from one page, every app's definition `{}`; links in `projects` (10
-   action columns, 4 OpenPage buttons, one `services.page.open`) and in
-   `inspections` (4 action columns, not counted by the earlier measurement).
+   *As built* (working defaults, mentioned to the user): dev measured read-only
+   first — every link literal, drafts the same as what is published, no
+   operation with several apps from one page, every app's definition `{}`;
+   links in `projects` (9 action columns, 4 OpenPage buttons, one
+   `services.page.open`) and in `inspections` (4 action columns, not counted by
+   the earlier measurement).
    The button that opens an app is **`OpenApp`** (§ Names), its `target` a key
    in the app's definition, read without regard to case as FluxScript reads
    it; it came first, beside `OpenPage`, so pages the script rewrites work at
    once. The script is `packages/server/scripts/apps-step6.ts` (dry run by
-   default, `--apply` writes); its dry run on dev proposes 11 keys, rewrites 19
-   links in 11 pages and fills 11 apps' definitions, nothing unresolved. Its
-   definition changes leave `sys_migration` entries; a page gets a new
+   default, `--apply` writes), committed with its test before anything was
+   removed; the user ran it on dev — 11 keys, 18 links in 11 pages, 11 apps'
+   definitions filled, nothing unresolved (Claude's playback said 19; the count
+   was wrong, the dry run's list was 18) — and a second dry run found nothing.
+   Its definition changes leave `sys_migration` entries; a page got a new
    published version made from the latest published, and its draft rewritten.
+   Then the old way went: `services.page.open`, `OpenPage`, `PageRuntime.openPage`,
+   `appIdByPageId` in `apps.user` and the client, and `page=` handling in the
+   Runtime — an old `page=` link now opens nothing, and a page still calling
+   `services.page.open` fails validation. Rolling a page back to a version from
+   before the script brings back an `OpenPage`, which then draws as an unknown
+   component until its author makes it an `OpenApp`.
 
 **Done when:**
 

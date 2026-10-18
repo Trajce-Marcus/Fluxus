@@ -16,8 +16,8 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    **app menu** (APPS_AND_INSTANCES §2.5, §2.7, since 2026-10-18): `apps.user`
    answers the apps the caller may run (`apps`, each `{ id, label, pageId,
    definition }`), their published pages, the menu built from them on the
-   server, and `appIdByPageId` (each page's only app — the old way of opening a
-   page by its path, until step 6). No fallback: an empty menu means nothing is
+   server. (`appIdByPageId`, each page's only app for the old way of opening a
+   page by its path, went in step 6, 2026-10-18.) No fallback: an empty menu means nothing is
    set up. *(Until then the menu was `operation.config.menu ??
    config.default_menu ?? []`, filtered in the browser by `visibleMenu`.)*
    Runs carry **`typeId`** (`RunInput.typeId`, since step 3): the record type

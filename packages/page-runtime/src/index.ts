@@ -34,7 +34,7 @@ export {
   toOffsetIso,
 } from './capture/attributeWidgets';
 export { componentManifests } from './componentManifests';
-export { OpenApp, OpenPage, RunActivity } from './components/actionComponents';
+export { OpenApp, RunActivity } from './components/actionComponents';
 export { AppHeader } from './components/AppHeader';
 export { Contributions } from './components/Contributions';
 export type { ContributionCell, ContributionRow, ContributionState } from './components/Contributions';

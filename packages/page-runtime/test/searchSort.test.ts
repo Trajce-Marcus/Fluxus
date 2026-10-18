@@ -17,7 +17,7 @@ const columns: RecordListColumn[] = [
   { key: 'name', label: 'Name' },
   { key: 'cost', label: 'Cost', type: 'decimal', format: 'N2' },
   { key: 'due', label: 'Due', type: 'datetime', format: 'dd/MM/yyyy' },
-  { label: 'Open', component: 'OpenPage', target: 'pages/x' },
+  { label: 'Open', component: 'OpenApp', target: 'xLinkId' },
 ];
 
 const rows: RecordListRow[] = [
@@ -36,7 +36,7 @@ describe('which columns can sort', () => {
   });
 
   it('is never an action column — it draws a button, not a value', () => {
-    expect(hasSortableValue({ label: 'Open', component: 'OpenPage' })).toBe(false);
+    expect(hasSortableValue({ label: 'Open', component: 'OpenApp' })).toBe(false);
   });
 });
 

@@ -22,9 +22,8 @@ export interface ActionProps {
   /** What the button says. */
   label?: string;
   /**
-   * What this component acts on: the activity id (`RunActivity`), the key in
-   * the app's definition holding the id of the app to open (`OpenApp`), or the
-   * page path (`OpenPage`, the old way until step 6 removes it).
+   * What this component acts on: the activity id (`RunActivity`), or the key
+   * in the app's definition holding the id of the app to open (`OpenApp`).
    */
   target?: string;
   /** The record the act is about. Null for a CREATE, which has no anchor. */
@@ -86,15 +85,6 @@ function RunActivityComponent({ label = 'Run', target, record, attribute, servic
   );
 }
 
-function OpenPageComponent({ label = 'Open', target, record, services }: ActionProps) {
-  return (
-    <button className="fx-action-btn" title={target}
-      onClick={() => { if (target) services?.openPage(target, anchor(record)); }}>
-      {label}
-    </button>
-  );
-}
-
 // Opens the app whose id this app's definition holds under `target` — the
 // page is shared by every operation's apps made from it, and each operation's
 // apps have their own ids, so the button names the key and each operation's
@@ -115,14 +105,8 @@ export const OpenApp = Object.assign(OpenAppComponent, {
   schema: schema("Key in this app's definition holding the id of the app to open — the record goes with it"),
 });
 
-export const OpenPage = Object.assign(OpenPageComponent, {
-  css,
-  schema: schema('Page path to open — the record goes with it'),
-});
-
 /** The action components a RecordList column may name. */
 export const actionComponents: Record<string, FunctionComponent<ActionProps>> = {
   RunActivity: RunActivityComponent,
   OpenApp: OpenAppComponent,
-  OpenPage: OpenPageComponent,
 };

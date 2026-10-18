@@ -137,15 +137,16 @@ Header (identity line, notification bell, user menu)
 **Apps, since 2026-10-18 (APPS_AND_INSTANCES Part 2 step 2, §2.7).** At
 connect the client fetches `apps.user`: the apps the caller may run (each with
 its id, name, page and definition), their published pages, the app menu built
-from them on the server, and — until step 6 — each page's only app.
+from them on the server.
 `MenuNav` draws that menu (a leaf shows its app's name). Opening an app —
-from the menu, `services.app.open(appId, { recordId })` in a page, or a link —
+from the menu, `services.app.open(appId, { recordId })` or an `OpenApp` button in a page, or a link —
 sets `client.appId` before anything on its page can make a call, so every call
 the page makes names its app, and the server checks it. An id the caller may
-not run says the app is not set up for this operation. **The old way, until
-step 6:** `services.page.open(page, record)`, OpenPage targets and RecordList
-action columns name a page, and open the operation's only app made from it
-(`appIdForPage`); with several, or none, the app is not set up. `PageView` is
+not run says the app is not set up for this operation. **Removed in step 6
+(2026-10-18): the old way** — `services.page.open(page, record)`, OpenPage
+targets and RecordList action columns named a page and opened the operation's
+only app made from it (`appIdForPage`); the step 6 script rewrote every link to
+open an app by its id, read from the app's definition. `PageView` is
 keyed on the app, so two apps made from one page start the page afresh, and
 passes the app to the page as `context.app` (its definition parsed from JSON;
 one that will not parse reads as empty). **Reversed: the no-menu fallback**
@@ -153,7 +154,7 @@ one that will not parse reads as empty). **Reversed: the no-menu fallback**
 menu) — a page not in the operation's apps list cannot be opened there, so an
 empty menu says nothing is set up.
 
-**What is open, in the URL (2026-08-11; `app=` since 2026-10-18):** `?app=<appId>&record=<recordId>` beside `?operation=`. `app` is the id of an app in the operation's apps list; `record` names the record its page is about (a pure view has none). Both are read at boot, so a link opens where it says; picking another app rewrites `app` and drops `record`, which belonged to the app it was opened in. **`page=` went with `app=`**: an old link carrying `?page=<path>` opens that page's only app in the operation (the old way, until step 6) and the address is rewritten to name the app; a page with several apps, or none, says the app is not set up. **Each page opened is a history entry** (2026-09-23): a menu pick or a page opened from a page pushes one — re-opening what is already open pushes none — and Back/Forward reopen what the URL then names. The entry was replaced until then, so Back had nothing inside the app to return to. Each entry carries its depth in the app (`history.state.fluxusDepth`, 0 for the page the tab landed on), because the browser will not say whether Back would leave the app — that is what greys `PageHeader`'s back arrow on the first page. **Each entry also keeps where the reader was** (2026-09-26): the page's panel scroll and, where its tab strip switches sections, the tab showing — `history.state.fluxusScroll` — written into the current entry 200 ms after scrolling stops (browsers limit how often an entry may be rewritten) and at once before another page is opened. Back and Forward hand it to the page, which puts the reader back (page-runtime SPEC § Rendering); a page opened from the menu or another page is a new entry and starts at the top. A reload keeps the entry, so it returns to the same place too. The operation param is a different thing — it establishes *which operation this app runs* before any of this, and it is the client-trust operation handle that will eventually retire it, not this addressing.
+**What is open, in the URL (2026-08-11; `app=` since 2026-10-18):** `?app=<appId>&record=<recordId>` beside `?operation=`. `app` is the id of an app in the operation's apps list; `record` names the record its page is about (a pure view has none). Both are read at boot, so a link opens where it says; picking another app rewrites `app` and drops `record`, which belonged to the app it was opened in. **`page=` went with `app=`**: until step 6 an old link carrying `?page=<path>` opened that page's only app in the operation; since step 6 (2026-10-18) it opens nothing. **Each page opened is a history entry** (2026-09-23): a menu pick or a page opened from a page pushes one — re-opening what is already open pushes none — and Back/Forward reopen what the URL then names. The entry was replaced until then, so Back had nothing inside the app to return to. Each entry carries its depth in the app (`history.state.fluxusDepth`, 0 for the page the tab landed on), because the browser will not say whether Back would leave the app — that is what greys `PageHeader`'s back arrow on the first page. **Each entry also keeps where the reader was** (2026-09-26): the page's panel scroll and, where its tab strip switches sections, the tab showing — `history.state.fluxusScroll` — written into the current entry 200 ms after scrolling stops (browsers limit how often an entry may be rewritten) and at once before another page is opened. Back and Forward hand it to the page, which puts the reader back (page-runtime SPEC § Rendering); a page opened from the menu or another page is a new entry and starts at the top. A reload keeps the entry, so it returns to the same place too. The operation param is a different thing — it establishes *which operation this app runs* before any of this, and it is the client-trust operation handle that will eventually retire it, not this addressing.
 
 **Which operation it runs (2026-07-26):** `?operation=<id>` in the URL selects it (`initHost` reads the query string and passes `operationId` to `FluxusClient.connect`); absent ⇒ the client's default operation, so existing links keep working. This is how the Console's Operations list launches the app — Console's **Open** on an operation opens `${VITE_FLUXUS_RUNTIME_URL}/?operation=<id>` in a new tab — and it makes an operation a plain bookmarkable address.
 

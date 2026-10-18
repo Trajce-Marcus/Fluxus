@@ -220,8 +220,8 @@ describe('the Runtime through apps (§2.3, §2.5, §2.7)', () => {
     expect(mine.apps[0]).toEqual({ id: water, label: 'Water scheduler', pageId: 'pages/scheduler', definition: '{"network":"water"}' });
     expect(mine.menu).toEqual([{ id: 'g1', label: 'Schedulers', items: [{ id: 'm1', appId: water }] }, { id: 'm3', appId: board }]);
     expect(mine.pages.map((p) => p.path).sort()).toEqual(['pages/board', 'pages/scheduler']);
-    // Two apps from the scheduler page, so it has no only app; the board has one.
-    expect(mine.appIdByPageId).toEqual({ 'pages/board': board });
+    // The old way of opening a page by its path went with step 6.
+    expect(mine).not.toHaveProperty('appIdByPageId');
 
     const bosses = await as(boss).apps.user({ operationId: USER_OP });
     expect(bosses.menu).toEqual([{ id: 'g1', label: 'Schedulers', items: [{ id: 'm2', appId: sewer }] }, { id: 'm3', appId: board }]);

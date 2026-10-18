@@ -196,27 +196,12 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     })();
   }, [runtime, runWithConfirm, onError, manifest.name, pageCtx.record?.id]);
 
-  // services.page.open — the host decides what navigating means, so an absent
-  // seam is an error the author should see, not a click that does nothing.
-  const openPage = useCallback((page: string, record: unknown) => {
-    if (!runtime.openPage) {
-      onError(new Error(`This host cannot open pages — '${page}' was not opened`), manifest.name);
-      return;
-    }
-    const recordId = record === null || record === undefined || record === '' ? null : String(record);
-    // The host may refuse — the old way opens a page's only app, and a page
-    // with several, or none the caller may run, is not set up here.
-    try {
-      runtime.openPage(page, recordId);
-    } catch (err) {
-      onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
-    }
-  }, [runtime, onError, manifest.name]);
-
   // services.app.open — the one way to open an app, by its id with params
-  // (APPS_AND_INSTANCES §2.7). The id is often read from the app's definition,
-  // where a missing key is null: that, like an id the host cannot open, says
-  // the app is not set up for this operation.
+  // (APPS_AND_INSTANCES §2.7). The host decides what opening means, so an
+  // absent seam is an error the author should see, not a click that does
+  // nothing. The id is often read from the app's definition, where a missing
+  // key is null: that, like an id the host cannot open, says the app is not
+  // set up for this operation.
   const openApp = useCallback((appId: unknown, params: unknown) => {
     const fail = (message: string) => onError(new Error(message), manifest.name);
     if (!runtime.openApp) { fail('This host cannot open apps — the preview runs without one'); return; }
@@ -265,7 +250,6 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     setContext: onContextChange,
     hideComponent: () => setHidden(true),
     runActivity: launchActivity,
-    openPage,
     openApp,
     openAppByKey,
     listActivities,
@@ -282,7 +266,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     activeTab: tabs.active,
     selectTab: tabs.select,
     watchTabs: tabs.watch,
-  }), [onContextChange, launchActivity, openPage, openApp, openAppByKey, listActivities, runtime, tabs]);
+  }), [onContextChange, launchActivity, openApp, openAppByKey, listActivities, runtime, tabs]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is
@@ -401,7 +385,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // four verbs already handed to callback scripts. It adds no capability — a
   // script could always call all four, and the server authorises every run
   // whatever the browser asked for — but it lets a component *be* an act
-  // (RunActivity, OpenPage) instead of needing a script wired behind it.
+  // (RunActivity, OpenApp) instead of needing a script wired behind it.
   // Assigned last so nothing declared can shadow it.
   resolvedProps.services = serviceHandlers;
 

@@ -214,7 +214,7 @@ describe('context.app and services.app.open', () => {
 function pageServicesStubHandlers(): PageServiceHandlers {
   void pageServicesStub;
   return {
-    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {}, openAppByKey: () => {},
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openApp: () => {}, openAppByKey: () => {},
     listActivities: async () => [], resolveUrl: async () => '', goBack: () => {}, canGoBack: () => false,
     tabs: [], activeTab: null, selectTab: () => {}, watchTabs: () => () => {},
   };

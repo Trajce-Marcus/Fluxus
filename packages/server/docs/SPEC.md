@@ -638,14 +638,14 @@ added more than once — a water scheduler and a sewer scheduler.
 roles. A menu written in the old shape (labels, pages, roles) reads as empty
 (`readMenu`) until the step 2 script rebuilds it.
 
-**`apps.user`** `{ operationId }` → `{ apps, pages, menu, appIdByPageId }` —
+**`apps.user`** `{ operationId }` → `{ apps, pages, menu }` —
 what the Runtime receives at sign-in (§2.7), open to the operation's users:
 `apps`, those the caller may run (checks 1–2), each `{ id, label, pageId,
 definition }`; `pages`, their pages' latest published definitions; `menu`, the
 leaves whose app they may run and the groups that keep one, in the stored order
-(`menuFor`); and, until step 6, `appIdByPageId` — for each page the operation
-has exactly one app made from, whoever may run it, that app's id: the old way
-of opening a page by its path.
+(`menuFor`). Until step 6 it also answered `appIdByPageId` — each page's only
+app in the operation, for the old way of opening a page by its path; removed
+with that way (2026-10-18).
 
 **Checks on a call that names its app** (§2.3), `checkCallApp` in the router:
 
@@ -761,7 +761,9 @@ first; `--apply` writes the definitions (`putApp`, a `sys_migration` entry
 each), then a new published version of each page made from the latest
 published one, and the rewritten draft. A second run finds nothing to rewrite.
 Run by the user between the deploy that has `OpenApp` and the one that removes
-the old way. Tested in `test/appsStep6.test.ts`.
+the old way — **run on dev 2026-10-18**, after a dry run: 18 links in 11 pages,
+11 definitions, nothing unresolved; a second run finds nothing. Tested in
+`test/appsStep6.test.ts`.
 
 Tests: `test/apps.test.ts`, `test/menu.test.ts`, `test/rbac.test.ts` ("calls
 with no app"); tests about what a role may read or do go through an app

@@ -53,24 +53,18 @@ export interface PageRuntime {
    */
   readonly captureHost: CaptureHost;
   /**
-   * Open a page, optionally about a record — what `services.page.open` reaches
-   * (2026-08-27). The seam is here rather than in the container because
-   * navigation is the *host's* idea: the Runtime app pushes `?page=&record=`,
-   * the Console swaps the previewed page, and neither meaning belongs to a
-   * component. Absent when the host has no notion of navigating; the container
-   * then fails loudly rather than swallowing the call.
-   */
-  readonly openPage?: (page: string, recordId: string | null) => void;
-  /**
    * Open an app by its id in the operation's apps list, optionally about a
-   * record — what `services.app.open` reaches (APPS_AND_INSTANCES §2.7). The
-   * host's, like `openPage`; absent in a host that runs no apps (the Console's
-   * preview), where the container says so.
+   * record — what `services.app.open` and an `OpenApp` button reach
+   * (APPS_AND_INSTANCES §2.7). The seam is here rather than in the container
+   * because opening is the *host's* idea: the Runtime app pushes
+   * `?app=&record=`, and that meaning belongs to no component. Absent in a
+   * host that runs no apps (the Console's preview), where the container says
+   * so rather than swallowing the call.
    */
   readonly openApp?: (appId: string, recordId: string | null) => void;
   /**
    * Back to the page before, and whether there is one (2026-09-23) — the
-   * host's history, as `openPage` is the host's navigating. Absent: a host
+   * host's history, as `openApp` is the host's navigating. Absent: a host
    * with no history; the back arrow then stays greyed out.
    */
   readonly goBack?: () => void;
@@ -101,9 +95,8 @@ export interface PageRuntime {
 }
 
 export function createPageRuntime(
-  { client, openPage, openApp, goBack, canGoBack }: {
+  { client, openApp, goBack, canGoBack }: {
     client: FluxusClient;
-    openPage?: (page: string, recordId: string | null) => void;
     openApp?: (appId: string, recordId: string | null) => void;
     goBack?: () => void;
     canGoBack?: () => boolean;
@@ -168,7 +161,6 @@ export function createPageRuntime(
     store,
     config,
     captureHost,
-    openPage,
     openApp,
     goBack,
     canGoBack,

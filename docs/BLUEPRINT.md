@@ -443,7 +443,10 @@ records — owned by its designer and installed into a solution.
   host page still needs somewhere to send the user for its own settings or
   detail views. The addressing already works: `services.page.open(page,
   record)` called inside a module script resolves in the module's vocabulary,
-  so the host never learns the page or the record. Module pages are invisible
+  so the host never learns the page or the record. *(2026-10-18: apps Part 2
+  removed `services.page.open` — a page now opens an app by its id,
+  `services.app.open`, the id read from its app's definition — so how a
+  module's pages are opened is to be worked out again with modules.)* Module pages are invisible
   to the host's page editor and menu builder the same way its record types
   are. This narrows the standing rule that *a new page is always a solution* —
   written when solutions were the only authored thing.
@@ -513,7 +516,7 @@ other's activities, never by reading each other's records.**
 > **Superseded, 2026-10-04, 2026-10-15 and 2026-10-17.** The body below is the
 > 2026-09-28 version, kept as history. Current direction (spec:
 > [APPS_AND_INSTANCES.md](APPS_AND_INSTANCES.md), read it before building
-> anything from this section):
+> anything from this section). **Part 2 built in full 2026-10-18** (six steps):
 >
 > - **Pool — BUILT 2026-10-10.** Activities live in a solution-level pool; a
 >   workflow is an ordered list of pool activities; a record type points to one
@@ -536,13 +539,17 @@ other's activities, never by reading each other's records.**
 >   it uses, pulled from the pool; it offers only what is listed. Each item may
 >   carry a condition, which must pass along with the activity's own — the
 >   record type's rules and the app's both hold.
-> - **One way to open an app**, from a menu, a link in a page or (later) a
->   scheduled job: by its id in the apps list, with params, through the same
->   checks — `services.app.open(appId, params)` from a page, replacing
->   `services.page.open`. The author writes the link into the page; where the
+> - **One way to open an app — BUILT 2026-10-18 (step 6)**, from a menu, a
+>   link in a page or (later) a scheduled job: by its id in the apps list, with
+>   params, through the same checks — `services.app.open(appId, params)` from a
+>   page, or an `OpenApp` button naming the key in its app's definition that
+>   holds the id. The author writes the link into the page; where the
 >   target differs per operation, the page reads the id from its app's
 >   definition (`context.app.definition.jobLinkId`), which the author also
->   designs. Making links correct is the author's job.
+>   designs. Making links correct is the author's job. **Removed:**
+>   `services.page.open`, the `OpenPage` button and `page=` URLs, which opened
+>   a page by its path (the page's only app in the operation, after step 2) —
+>   a one-off script rewrote every existing link first.
 > - **Every call checked.** Every call from the Runtime names its app, and
 >   the activity, record type and record it is about. The server checks every
 >   call — the browser cannot be trusted: the caller may run the app, the

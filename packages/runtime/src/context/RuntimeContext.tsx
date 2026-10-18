@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { appIdForPage, client, currentSession, depthState, dropScroll, flushScroll, historyDepth, hostAuth, setAppNavigator } from '../host';
+import { client, currentSession, depthState, dropScroll, flushScroll, historyDepth, hostAuth, setAppNavigator } from '../host';
 import type { AuthSession, HostAuth } from '@fluxus/client';
 
 // The Runtime app's shell state (CONSOLE_RUNTIME_SPEC §4, M15): who is signed
@@ -29,33 +29,15 @@ interface RuntimeContextValue {
 // `?operation=<id>` establishes which operation this app runs — it is read at
 // connect, before any of this — and `app` / `record` address what is open
 // inside it, so an open app is a link someone can send. `app` is the app's id
-// in the operation's apps list; `page=` went with it.
+// in the operation's apps list. `page=` went with it, and since step 6 an old
+// link carrying one opens nothing.
 const params = () => new URLSearchParams(window.location.search);
 
-/**
- * The app the URL names. An old link carrying `page=` (and no `app=`) follows
- * the old way — the page's only app in this operation — until step 6, and the
- * address is rewritten to name the app. A page with several apps, or none,
- * names no app this caller can open: its path stands in, which no app's id
- * matches, so the content area says it is not set up.
- */
-function appFromUrl(): string | null {
-  const p = params();
-  const app = p.get('app');
-  if (app) return app;
-  const page = p.get('page');
-  if (!page) return null;
-  const appId = appIdForPage(page);
-  if (!appId) return page;
-  p.delete('page');
-  p.set('app', appId);
-  window.history.replaceState(window.history.state, '', `${window.location.pathname}?${p}`);
-  return appId;
-}
+/** The app the URL names. */
+const appFromUrl = (): string | null => params().get('app');
 
 function addressBar(appId: string | null, recordId: string | null = null): void {
   const next = params();
-  next.delete('page');
   if (appId) next.set('app', appId);
   else next.delete('app');
   // The record belongs to the app it was opened in; picking another app

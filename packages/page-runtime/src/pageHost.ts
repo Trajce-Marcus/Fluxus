@@ -80,24 +80,16 @@ export interface PageServiceHandlers {
    */
   runActivity(activityId: string, record: unknown, seed?: AttributeSeed): void;
   /**
-   * Open another page, optionally about a record (2026-08-27). Navigating *is*
-   * setting the two values the page-anchor model already ruled — `?page=` and
-   * `?record=` — so this invents no concept, it writes the pair.
-   *
-   * The host owns what that means: the Runtime app pushes a URL, the Console
-   * swaps the previewed page. A host that supplies none fails loudly, the same
-   * posture as `invoke` without a query — a page that cannot navigate should
-   * say so, not quietly do nothing.
-   */
-  openPage(page: string, record: unknown): void;
-  /**
    * Open an app of this operation by its id in the apps list, with params — the
-   * one way to open an app (APPS_AND_INSTANCES §2.7), replacing `openPage` once
-   * step 6 has rewritten the links. Params carry things like the record:
+   * one way to open an app (APPS_AND_INSTANCES §2.7), which replaced opening a
+   * page by its path (`services.page.open`, removed in step 6). Params carry
+   * things like the record:
    * `{ recordId }`. The host decides what opening means, and an id the caller
    * may not run, or that is no app of this operation, says the app is not set
    * up for this operation. Raw values: the id may well come out of
-   * `context.app.definition`, where a missing key reads as null.
+   * `context.app.definition`, where a missing key reads as null. The host owns
+   * what opening means; a host that supplies none fails loudly, the same
+   * posture as `invoke` without a query.
    */
   openApp(appId: unknown, params: unknown): void;
   /**
@@ -177,12 +169,6 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
           kind: 'effect',
           fn: () => handlers.hideComponent(),
         },
-        open: {
-          params: ['page', 'record'],
-          description: 'Open a page, optionally about a record (id, or null for a pure view) — the old way; use services.app.open',
-          kind: 'effect',
-          fn: (page, record) => handlers.openPage(String(page), record),
-        },
       },
     },
     {
@@ -217,7 +203,7 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
 /** Manifest-only modules for validation — same schema, no live handlers. */
 export const pageServicesStub = (): ServiceModuleDef[] =>
   buildPageServices({
-    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {}, openAppByKey: () => {},
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openApp: () => {}, openAppByKey: () => {},
     // Not in any module below, so nothing can name them in a script — they are
     // here only because the handler set is one interface.
     listActivities: async () => [],

@@ -14,6 +14,5 @@ export const SESSION_COMPONENTS = [
   { name: 'PageHeader', version: '1.0.0' },
   { name: 'Tabs', version: '1.0.0' },
   { name: 'OpenApp', version: '1.0.0' },
-  { name: 'OpenPage', version: '1.0.0' },
   { name: 'RunActivity', version: '1.0.0' },
 ];
