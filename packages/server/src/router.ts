@@ -65,7 +65,7 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
-import { appFromRow, appListOf, appsForUser, getAppRecord, isAppRecord, listApps, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
+import { appFromRow, appListOf, appsForUser, getAppRecord, isAppRecord, listApps, listWorkflowOf, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
 import {
@@ -168,6 +168,20 @@ function typesListing(config: SolutionConfig, activityId: string): string[] {
   return config.recordTypes
     .filter((rt) => config.workflows.find((w) => w.id === rt.workflow_ref)?.activities.some((u) => u.activity_ref === activityId))
     .map((rt) => rt.id);
+}
+
+/**
+ * Check 4 for an activity of the app's own (§2.3): it runs only through its
+ * app, and names neither a record type nor a record — the server puts it on
+ * the app's record.
+ */
+function assertAppsOwnCall(activityId: string, app: App | null, input: { typeId?: string; recordId?: string }): asserts app is App {
+  if (!app) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activityId}' is in no record type's workflow — an app's own activity runs only through its app` });
+  }
+  if (input.typeId !== undefined || input.recordId !== undefined) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activityId}' is an activity of '${app.label}' itself — it names no record type and no record, and runs on the app` });
+  }
 }
 
 /** How far `records.get` follows references: two levels covers a page that
@@ -654,7 +668,15 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         try {
           const { user, config } = await operationContext(ctx, input.operationId);
-          return projectConfig(config, { roles: user.roles, enforced: ctx.authConfigured });
+          // The lists of the apps this caller may run, so the browser gets
+          // their own activities (step 5).
+          const op = await getOperation(ctx.db, input.operationId);
+          const appLists = new Set<string>();
+          for (const pageId of new Set((await listApps(ctx.db, op.id)).filter((a) => mayRunApp(a, ctx.authConfigured, user.roles)).map((a) => a.pageId))) {
+            const list = await listWorkflowOf(ctx.db, op.solutionId, pageId, config);
+            if (list) appLists.add(list.id);
+          }
+          return projectConfig(config, { roles: user.roles, enforced: ctx.authConfigured, appLists });
         } catch (err) {
           rethrow(err);
         }
@@ -756,7 +778,9 @@ export const appRouter = t.router({
      * record — a create button). A record the caller may not read answers an
      * empty list, exactly as a missing one does — the check `activities.run`
      * applies to its record. A record type has no read check, as a CREATE's
-     * run has none.
+     * run has none. An empty `{}` asks for the app's own activities (step 5):
+     * those on its list that no record type's workflow lists, offered on the
+     * app's record; with no app, none.
      */
     activities: t.procedure
       .input(
@@ -766,6 +790,7 @@ export const appRouter = t.router({
           items: z.array(z.union([
             z.object({ recordId: z.string().min(1) }),
             z.object({ typeId: z.string().min(1) }),
+            z.object({}).strict(),
           ])),
         }),
       )
@@ -787,10 +812,11 @@ export const appRouter = t.router({
               return input.items.map(() => []);
             }
           }
-          const { readable } = access;
+          const { readable, app } = access;
+          if (app) host.useApp(app);
           // Through an app, only what its list holds (check 3), each with the
           // app's condition beside the activity's own (check 6, §2.3).
-          const list = access.app ? await appListOf(ctx.db, host.solutionId, access.app.pageId, host.config) : null;
+          const list = app ? await appListOf(ctx.db, host.solutionId, app.pageId, host.config) : null;
           const workflowOf = (typeId: string): ActivityDef[] | null => {
             let activities: ActivityDef[];
             try { activities = host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
@@ -803,9 +829,17 @@ export const appRouter = t.router({
               const record = await host.store.findRecord(item.recordId);
               const activities = record && !isAppRecord(record) && (readable === null || readable.has(record.typeRef)) ? workflowOf(record.typeRef) : null;
               answers.push(activities ? await host.engine.offeredActivities(activities, record, list?.conditions) : []);
-            } else {
+            } else if ('typeId' in item) {
               const activities = workflowOf(item.typeId);
               answers.push(activities ? await host.engine.offeredActivities(activities, null, list?.conditions) : []);
+            } else if (app && list) {
+              const own = [...list.ids]
+                .filter((id) => typesListing(host.config, id).length === 0)
+                .map((id) => findActivity(host, id))
+                .filter((a): a is ActivityDef => a !== null);
+              answers.push(own.length > 0 ? await host.engine.offeredActivities(own, await host.store.getRecord(app.id), list.conditions) : []);
+            } else {
+              answers.push([]);
             }
           }
           return answers;
@@ -1128,6 +1162,7 @@ export const appRouter = t.router({
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
           const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          if (app) host.useApp(app);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -1144,23 +1179,30 @@ export const appRouter = t.router({
             condition = list.conditions.get(activity.id);
           }
           // Check 4: the call matches the model. Where an activity runs is the
-          // model's to say — a record type whose workflow lists it. One no
-          // record type lists is an app's own, which runs on its app (step 5).
+          // model's to say — a record type whose workflow lists it, or, for one
+          // no record type lists, the app's own record (step 5).
           const owners = typesListing(host.config, activity.id);
-          if (owners.length === 0) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is in no record type's workflow — an app's own activities cannot run yet` });
-          }
-          if (app && input.typeId === undefined) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `A run through an app names the record type it is about (typeId)` });
-          }
-          if (input.typeId !== undefined && !owners.includes(input.typeId)) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is not in ${input.typeId}'s workflow` });
-          }
-          if (activity.record_map === 'CREATE' && input.recordId) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is a CREATE activity — recordId must not be supplied` });
-          }
-          if (activity.record_map !== 'CREATE' && !input.recordId) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' needs a recordId to anchor on` });
+          const appsOwn = owners.length === 0;
+          if (appsOwn) {
+            assertAppsOwnCall(activity.id, app, input);
+            // Its list allows only log-only activities and GETs (checked at
+            // model save); an app never changes through a run (§2.4).
+            if (activity.record_map !== undefined) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is an app's own ${activity.record_map} — an app's own activities only log or read` });
+            }
+          } else {
+            if (app && input.typeId === undefined) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `A run through an app names the record type it is about (typeId)` });
+            }
+            if (input.typeId !== undefined && !owners.includes(input.typeId)) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is not in ${input.typeId}'s workflow` });
+            }
+            if (activity.record_map === 'CREATE' && input.recordId) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is a CREATE activity — recordId must not be supplied` });
+            }
+            if (activity.record_map !== 'CREATE' && !input.recordId) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' needs a recordId to anchor on` });
+            }
           }
 
           // One transaction for the run, open before its first read
@@ -1169,7 +1211,9 @@ export const appRouter = t.router({
           await host.store.begin();
           let result: RunActivityResult;
           try {
-            let anchorRecord = null;
+            // An app's own activity runs on its app's record because the
+            // server puts it there, never because the caller named it (§2.3).
+            let anchorRecord = appsOwn ? await host.store.getRecord(app!.id) : null;
             if (input.recordId) {
               anchorRecord = await host.store.getRecord(input.recordId); // throws → BAD_REQUEST via rethrow
               // Unreadable anchor ⇒ access denied, checked BEFORE the run gate
@@ -1276,6 +1320,7 @@ export const appRouter = t.router({
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
           const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          if (app) host.useApp(app);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -1285,29 +1330,30 @@ export const appRouter = t.router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is not a GET activity — run it through activities.run` });
           }
           // Through an app (§2.3, step 4). Check 3: the GET is on its list, or
-          // a listed activity's form calls it. Check 4: it is in some record
-          // type's workflow — which, with no record, any type that lists it
-          // satisfies; the record a GET sends is only where its entry lands.
-          // One in none is the app's own, which cannot run until step 5.
-          // Check 6: an item's condition, which applies whenever the GET is on
-          // the list, since the server cannot tell a form's call from the page's.
+          // a listed activity's form calls it. Check 6: an item's condition,
+          // which applies whenever the GET is on the list, since the server
+          // cannot tell a form's call from the page's.
           let condition: string | undefined;
           if (app) {
             const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.config);
             if (!list.ids.has(activity.id) && !list.formGets.has(activity.id)) {
               throw new TRPCError({ code: 'FORBIDDEN', message: `'${activity.id}' is not on the list of '${app.label}'` });
             }
-            if (typesListing(host.config, activity.id).length === 0) {
-              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is in no record type's workflow — an app's own activities cannot run yet` });
-            }
             condition = list.conditions.get(activity.id);
           }
+          // Check 4: a GET in some record type's workflow names no type — with
+          // no record, any type that lists it will do; the record it sends is
+          // only where its entry lands. One in none is the app's own (step 5):
+          // only through its app, naming no record, on the app's record, and
+          // leaving no entry there (§2.4).
+          const appsOwn = typesListing(host.config, activity.id).length === 0;
+          if (appsOwn) assertAppsOwnCall(activity.id, app, input);
 
           // No transaction: a GET only reads, and its one write — the light
           // entry on its anchor — is a single statement at the end
           // (SERVER_DATA_LOADING §4.3), written whether the answer came or the
           // `returns` threw.
-          let anchorRecord = null;
+          let anchorRecord = appsOwn ? await host.store.getRecord(app!.id) : null;
           if (input.recordId) {
             anchorRecord = await host.store.getRecord(input.recordId);
             if (isAppRecord(anchorRecord) || (readable !== null && !readable.has(anchorRecord.typeRef))) throw accessDenied();
@@ -1322,7 +1368,7 @@ export const appRouter = t.router({
           return await withSpan(
             'engine',
             activity.id,
-            () => host.engine.runQuery(activity, input.attributes, anchorRecord, { condition }),
+            () => host.engine.runQuery(activity, input.attributes, anchorRecord, { condition, log: !appsOwn }),
             (r) => (Array.isArray(r.data) ? { rows: r.data.length } : undefined),
           );
         } catch (err) {

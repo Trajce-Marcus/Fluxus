@@ -210,15 +210,23 @@ export interface AppList {
 
 const EMPTY_LIST: AppList = { ids: new Set(), conditions: new Map(), formGets: new Set() };
 
-export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<AppList> {
+/** The workflow a page's latest published version names as its list, if it
+ *  is one: it exists, and no record type points to it. */
+export async function listWorkflowOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<SolutionConfig['workflows'][number] | null> {
   const [latest] = await db.select({ def: pageVersions.def }).from(pageVersions)
     .where(and(eq(pageVersions.solutionId, solutionId), eq(pageVersions.path, pageId)))
     .orderBy(desc(pageVersions.version))
     .limit(1);
   const workflowId = (latest?.def as { workflowId?: unknown } | undefined)?.workflowId;
-  if (typeof workflowId !== 'string') return EMPTY_LIST;
+  if (typeof workflowId !== 'string') return null;
   const workflow = config.workflows.find((w) => w.id === workflowId);
-  if (!workflow || config.recordTypes.some((rt) => rt.workflow_ref === workflowId)) return EMPTY_LIST;
+  if (!workflow || config.recordTypes.some((rt) => rt.workflow_ref === workflowId)) return null;
+  return workflow;
+}
+
+export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<AppList> {
+  const workflow = await listWorkflowOf(db, solutionId, pageId, config);
+  if (!workflow) return EMPTY_LIST;
   const ids = new Set(workflow.activities.map((u) => u.activity_ref));
   return {
     ids,

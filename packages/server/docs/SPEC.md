@@ -433,7 +433,7 @@ takes `operationId?` (both default `demo/sdm`):
   `appId` runs checks 1 and 2 first, and since step 4 checks 3, 4 and 6 for
   the GET (see "An operation's apps"); a GET's parameters are not read-checked
   (a GET decides what it returns).
-- **`page.activities`** `{ operationId?, appId?, items: ({ recordId } | { typeId })[] }`
+- **`page.activities`** `{ operationId?, appId?, items: ({ recordId } | { typeId } | {})[] }`
   → `ActivityOption[][]` (`{ id, name }`, one list per item, in the order
   asked) — which actions each item offers the caller (built 2026-10-11,
   [ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)).
@@ -443,7 +443,9 @@ takes `operationId?` (both default `demo/sdm`):
   roles), and the rule is the engine's `offeredActivities`: a **record**
   offers every non-GET action whose `show_condition` is strictly `true` with
   that record as `context.record` (a CREATE's included); a **record type**
-  offers its CREATEs, evaluated with no record, as their run gate sees them.
+  offers its CREATEs, evaluated with no record, as their run gate sees them;
+  an **empty `{}`** (step 5) offers the app's own activities on its list,
+  with the app's record as `context.record` (none with no app).
   A record the caller may not read, a missing one and an unknown type all
   answer an empty list — the read check of the `activities.run` anchor
   (`DatabaseStore.findRecord`, which answers null instead of throwing). A
@@ -542,7 +544,9 @@ takes `operationId?` (both default `demo/sdm`):
   survives is decided by the caller's roles *in that operation*; entry
   (`requireOpUser`) is checked before anything is trimmed.
   `FluxusClient.connect` uses this; `connectSolution` (Console) uses
-  `config.get`. See "What the client is given" below.
+  `config.get`. See "What the client is given" below. Since step 5 it also
+  carries the **app's own activities** of the apps the caller may run: each
+  such app's list, holding only those (`projectConfig`'s `appLists`).
 - **`pages.list` / `pages.put` / `pages.delete`** `{ solutionId?, path, def }`
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
@@ -595,8 +599,9 @@ added more than once — a water scheduler and a sewer scheduler.
   `APPS_RECORD_TYPE`), id issued by the platform (UUIDv7, `newRecordId`).
   Record fields, snake_case like every record field: `page_id` (the page's
   path, which is its id), `label`, `role_ids` (text holding a list) and
-  `definition` (text holding JSON). No solution defines the type, so no model
-  carries it (until step 5) and it is never sent to the browser.
+  `definition` (text holding JSON). No solution defines the type; the
+  engine's definition of it (`page_id`, `label`, `definition`) is added only to
+  the model checked at save (step 5), and it is never sent to the browser.
 - **Kept out of every general read, by type id** — `records.partition` and
   `records.list` leave them out and `records.get` refuses one; a run, a GET or
   `scripts.query` whose record is an app is refused ("Record access denied");
@@ -667,7 +672,7 @@ nothing. Each item may carry the app's own condition.
    whose workflow lists the activity — otherwise "'<id>' is not in <type>'s
    workflow" — and, for a run on a record, the record's **stored** type
    ("The record is a <stored>, not a <named>"). An activity in no record type's
-   workflow is an app's own and cannot run until step 5.
+   workflow is the **app's own** (step 5, below).
 6. **Both conditions pass**: the activity's own and the item's, evaluated by the
    engine's gate with the real user (`runActivity`'s `condition`,
    `offeredActivities`' `conditions`).
@@ -683,13 +688,30 @@ nothing. Each item may carry the app's own condition.
    The GET behind a dropdown counts this way without being added;
 4. **it is in some record type's workflow.** It names no type: the record it
    sends is only where its entry lands, so a GET shared by several types, sent
-   with no record, passes. One in none is the app's own and cannot run until
-   step 5;
+   with no record, passes. One in none is the app's own (below);
 6. **both conditions pass**: its own and the item's, by the engine's gate
    (`runQuery`'s `condition`). The item's applies whenever the GET is on the
    list — the server cannot tell a form's call from the page's.
 
-A call with no app is untouched: an operation admin runs any GET.
+A call with no app is untouched: an operation admin runs any GET but the
+app's own.
+
+**The app's own activities** (step 5, built 2026-10-18, §2.2–§2.4). An
+activity on an app's list that no record type's workflow lists — a log-only
+activity or a GET, as model save allows — **runs only through its app,
+naming no `typeId` and no `recordId`**; otherwise "'<id>' is an activity of
+'<name>' itself — it names no record type and no record, and runs on the
+app", and with no app "… runs only through its app". **The server runs it on
+the app's record**: a run's history entry lands there (two apps from one page
+keep separate histories), and its hook changes other records; an app's own
+**GET leaves no entry** (`runQuery`'s `log: false`). `page.activities` offers
+them for an empty `{}`. **Every script of a call through an app sees it as
+`context.app`** — `pageId`, `label` and `definition` parsed from its JSON
+(`appScope`; `host.useApp`, once checks 1–2 pass) — in conditions, hooks and
+GETs, whatever the activity. **No run changes an app**: an app's record is
+never a call's record (above), an app's own activity cannot be a CREATE,
+UPDATE or DELETE, and a script may not update or delete one (refused at save
+and at run time, engine SPEC).
 
 **At model save** (`validateConfigGraph`), the workflows pages name — on their
 drafts and latest published versions, `pageLists` — are passed to
@@ -921,7 +943,7 @@ two audiences**:
 | `config.get` `{ solutionId }` | design plane (Console) | **sol admin**, or op admin of one of its operations (2026-10-18) | `SolutionConfig`, whole |
 | `config.getForOperation` `{ operationId }` | runtime plane | op user, then the role trim | `ClientSolutionConfig` |
 
-**One pure function.** `projectConfig(config, { roles, enforced })` in
+**One pure function.** `projectConfig(config, { roles, enforced, appLists })` in
 `src/projection.ts` is the only thing that turns one into the other — one place
 to audit, one place to test (`test/projection.test.ts`).
 
@@ -941,7 +963,7 @@ somebody deliberately exposes them. This is the rule the whole module rests on.
 | attributes | `key`, `label`, `description`, `type`, display config, `max_count`, `validation` + `validation_message`, `show_condition`, `required`, `can_waive` | the presign gate (`max_size_mb`); attributes no surviving form reaches, and pool orphans |
 | record types | `id`, `name`, `description`, `workflow_ref`, custom field key + label + type + FK wiring | `access.read`; storage constraints (`required`/`unique`/`immutable`/`indexed`/`default`); **unreadable types entirely** |
 | activities (the pool) | `id`, `name`, `description`, `record_map`, form definition (its questions' `show_condition` included) | **`before_hook` and `after_hook` entirely**; the activity's own `show_condition` (2026-10-11 — `page.activities` answers which actions are offered, so the browser has no use for it; a function only those conditions call stops shipping); any activity no surviving workflow lists (one listed by two is sent once) |
-| workflows | `id`, `name`, `description`, and their ordered `{ activity_ref }` list | workflows serving no surviving record type |
+| workflows | `id`, `name`, `description`, and their ordered `{ activity_ref }` list; the list of each app the caller may run (`appLists`, step 5), holding only that app's own activities — what no record type's workflow lists | workflows serving no surviving record type, nor a list of an app the caller may run; a list with none of its app's own |
 | functions | those reachable from a shipped expression, transitively | the rest — including every hook-only helper |
 | roles | — | **the whole `access` block**; the client gets its own roles from `me` |
 | `default_menu` | — | **not sent** since 2026-10-18: the Runtime's menu comes from `apps.user` |

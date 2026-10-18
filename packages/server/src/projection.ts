@@ -243,7 +243,17 @@ function reachableFunctions(all: FunctionDef[], sources: string[]): FunctionDef[
  */
 export function projectConfig(
   config: SolutionConfig,
-  { roles, enforced }: { roles: string[] | undefined; enforced: boolean | undefined },
+  { roles, enforced, appLists }: {
+    roles: string[] | undefined;
+    enforced: boolean | undefined;
+    /**
+     * The lists of the apps this caller may run (APPS_AND_INSTANCES step 5):
+     * each is sent holding only its app's own activities — those no record
+     * type's workflow lists — so the browser can find and open them. What
+     * else a list holds arrives with its record types, or not at all.
+     */
+    appLists?: ReadonlySet<string>;
+  },
 ): ClientSolutionConfig {
   const readable = computeReadable(enforced, config, roles);
 
@@ -252,14 +262,28 @@ export function projectConfig(
   // read is not "unrunnable" by a second rule, it is the same rule.
   const recordTypes = config.recordTypes.filter((rt) => readable === null || readable.has(rt.id));
   const shippedWorkflowIds = new Set(recordTypes.map((rt) => rt.workflow_ref));
-  const workflows: ClientWorkflowRawDef[] = config.workflows
-    .filter((wf) => shippedWorkflowIds.has(wf.id))
-    .map((wf) => ({
-      id: wf.id,
-      name: wf.name,
-      description: wf.description,
-      activities: wf.activities.map((usage) => ({ activity_ref: usage.activity_ref })),
-    }));
+  const typedWorkflowIds = new Set(config.recordTypes.map((rt) => rt.workflow_ref));
+  const typed = includedActivityIds({ workflows: config.workflows.filter((wf) => typedWorkflowIds.has(wf.id)) });
+  const workflows: ClientWorkflowRawDef[] = [
+    ...config.workflows
+      .filter((wf) => shippedWorkflowIds.has(wf.id))
+      .map((wf) => ({
+        id: wf.id,
+        name: wf.name,
+        description: wf.description,
+        activities: wf.activities.map((usage) => ({ activity_ref: usage.activity_ref })),
+      })),
+    ...config.workflows
+      .filter((wf) => appLists?.has(wf.id) && !typedWorkflowIds.has(wf.id))
+      .map((wf) => ({
+        id: wf.id,
+        name: wf.name,
+        description: wf.description,
+        activities: wf.activities.filter((usage) => !typed.has(usage.activity_ref)).map((usage) => ({ activity_ref: usage.activity_ref })),
+      }))
+      // A list with none of its app's own is not sent: nothing in it is new.
+      .filter((wf) => wf.activities.length > 0),
+  ];
 
   // The activity pool is trimmed the same way: only activities a shipped
   // workflow lists. One listed by two shipped workflows is sent once; one no

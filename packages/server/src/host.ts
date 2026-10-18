@@ -18,6 +18,7 @@ import {
   toActivityPool,
   ActivityPoolConflictError,
   type ActivityDef,
+  type AppScope,
   type ActivityRawDef,
   type AttributeDef,
   type FunctionDef,
@@ -51,6 +52,20 @@ export interface OperationHost {
   config: SolutionConfig;
   store: DatabaseStore;
   engine: Engine<DatabaseStore>;
+  /**
+   * The call goes through this app (APPS_AND_INSTANCES §2.2): from now on
+   * every script the engine runs sees it as `context.app`. Called once the
+   * app's checks have passed, before anything runs.
+   */
+  useApp(app: { pageId: string; label: string; definition: string }): void;
+}
+
+/** What a script sees of an app: its definition parsed from its JSON text
+ *  (saved only as JSON; anything else reads as `{}`). */
+export function appScope(app: { pageId: string; label: string; definition: string }): AppScope {
+  let definition: unknown = {};
+  try { definition = JSON.parse(app.definition); } catch { /* checked at save */ }
+  return { pageId: app.pageId, label: app.label, definition };
 }
 
 export class SolutionNotFoundError extends Error {
@@ -133,14 +148,14 @@ export async function loadOperationHost(db: Db, operationId: string, sink: Notif
     const op = await getOperation(db, operationId);
     const config = await getSolutionConfig(db, op.solutionId);
     const store = new DatabaseStore(db, operationId, config);
-    const engine = createEngine({
-      store,
-      config,
-      services: [buildNotifyModule(sink), buildGeoModule(store), buildTimeModule(), buildMathModule()],
-      // context.user for gates/hooks; entries record user.id as author.
-      user,
-    });
-    return { operationId, orgId: op.orgId, solutionId: op.solutionId, config, store, engine };
+    const services = [buildNotifyModule(sink), buildGeoModule(store), buildTimeModule(), buildMathModule()];
+    // context.user for gates/hooks; entries record user.id as author.
+    const host: OperationHost = {
+      operationId, orgId: op.orgId, solutionId: op.solutionId, config, store,
+      engine: createEngine({ store, config, services, user }),
+      useApp: (app) => { host.engine = createEngine({ store, config, services, user, app: appScope(app) }); },
+    };
+    return host;
   });
 }
 

@@ -3,7 +3,7 @@
 // activity's form calls it (a datasource, composite cells and named functions
 // included); an item's condition must pass along with the GET's own; a GET
 // shared by several types runs with no record. GET parameters stay unchecked,
-// and a call with no app is untouched.
+// and a call with no app is untouched. (The app's own GETs: appsOwn.test.ts.)
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
@@ -122,8 +122,9 @@ describe('the GET and the model (check 4)', () => {
     await expect(query('act_list_everything')).resolves.toMatchObject({ data: expect.any(Array) });
   });
 
-  it("refuses the app's own GET until step 5", async () => {
-    await expect(query('act_board_summary')).rejects.toThrow(/an app's own activities cannot run yet/);
+  it("runs the app's own GET on the app (step 5), naming no record", async () => {
+    await expect(query('act_board_summary')).resolves.toMatchObject({ data: expect.any(Array) });
+    await expect(query('act_board_summary', 'J1')).rejects.toThrow(/names no record type and no record/);
   });
 });
 
