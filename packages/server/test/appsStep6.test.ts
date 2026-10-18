@@ -27,6 +27,7 @@ const config: SolutionConfig = {
 
 const SELECT = "if callbackData.value <> null { services.page.open('pages/job', callbackData.value) }";
 const jobsPage = {
+  componentDependencies: [{ name: 'RecordList', version: '1.0.0' }, { name: 'OpenPage', version: '1.0.0' }],
   slotConfigs: {
     list: {
       componentName: 'RecordList',
@@ -53,7 +54,9 @@ beforeAll(async () => {
   await putConfig(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Step 6');
   await ensureOperation(db, TWO, SOL, 'Step 6, two schedulers');
-  for (const [path, def] of [['pages/jobs', jobsPage], ['pages/job', {}], ['pages/report', {}]] as const) {
+  // The job page links nowhere, but its component list still names OpenPage.
+  const jobPage = { componentDependencies: [{ name: 'OpenPage', version: '1.0.0' }, { name: 'OpenApp', version: '1.0.0' }] };
+  for (const [path, def] of [['pages/jobs', jobsPage], ['pages/job', jobPage], ['pages/report', {}]] as const) {
     await open().pages.put({ solutionId: SOL, path, def });
     await open().pages.publish({ solutionId: SOL, path, readme: 'v1' });
   }
@@ -81,10 +84,12 @@ describe('the step 6 plan — read only', () => {
     expect(jobs.published?.version).toBe(1);
     // In the order the database keeps the slots.
     expect(jobs.published?.rewrites.map((r) => r.to).sort()).toEqual([
+      'OpenApp',
       "OpenApp target 'jobLinkId'",
       "OpenApp target 'reportLinkId'",
       'services.app.open(context.app.definition.jobLinkId, { recordId: callbackData.value })',
     ]);
+    expect(jobs.published!.def.componentDependencies).toEqual([{ name: 'RecordList', version: '1.0.0' }, { name: 'OpenApp', version: '1.0.0' }]);
     const slots = jobs.published!.def.slotConfigs!;
     expect(slots.list!.staticConfig!.columns).toEqual([
       { component: 'RunActivity', target: 'act_note_jobs' },
@@ -98,6 +103,14 @@ describe('the step 6 plan — read only', () => {
     expect(plan.unresolved.filter((u) => u.startsWith('pages/jobs'))).toEqual([
       'pages/jobs — Text (computed) onClick: services.page.open(context.page.which, null) — its page is computed; rewrite it to services.app.open(context.app.definition.<key>, { recordId })',
     ]);
+  });
+
+  it('swaps OpenPage out of a component list in the draft alone when nothing else changes', async () => {
+    const [plan] = (await planStep6(db)).filter((p) => p.solutionId === SOL);
+    const job = plan.pages.find((p) => p.path === 'pages/job')!;
+    expect(job.published).toBeNull();
+    expect(job.draft?.rewrites).toEqual([{ where: 'component list', from: 'OpenPage', to: '(dropped — OpenApp is listed already)' }]);
+    expect(job.draft?.def.componentDependencies).toEqual([{ name: 'OpenApp', version: '1.0.0' }]);
   });
 
   it("fills each operation's definitions with the only app made from the page linked to, and says where there is none or several", async () => {
@@ -131,6 +144,13 @@ describe('the step 6 script — written', () => {
     expect(v2.def).not.toHaveProperty('draftOnly');
     const [draft] = await db.select().from(pages).where(and(eq(pages.solutionId, SOL), eq(pages.path, 'pages/jobs')));
     expect(draft.def).toMatchObject({ draftOnly: true, slotConfigs: { report: { componentName: 'OpenApp' } } });
+  });
+
+  it('changes only the draft of a page whose only change is its component list', async () => {
+    const versions = await db.select().from(pageVersions).where(and(eq(pageVersions.solutionId, SOL), eq(pageVersions.path, 'pages/job')));
+    expect(versions.map((v) => v.version)).toEqual([1]);
+    const [draft] = await db.select().from(pages).where(and(eq(pages.solutionId, SOL), eq(pages.path, 'pages/job')));
+    expect(draft.def).toEqual({ componentDependencies: [{ name: 'OpenApp', version: '1.0.0' }] });
   });
 
   it('does nothing on a second run but list what is still left', async () => {

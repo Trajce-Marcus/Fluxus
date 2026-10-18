@@ -22,6 +22,12 @@
 //   operation admin to fill by hand. A key the definition already holds is
 //   kept, and said if it differs.
 //
+// - **the page's component list** (`componentDependencies`, the page editor's
+//   palette of components placed on the page) names `OpenApp` where it named
+//   `OpenPage`. Only the page editor reads it, and it reads the draft, so a
+//   page whose only change is its list changes in its draft alone (added after
+//   the first run on dev, 2026-10-18, when the cold test found it missed).
+//
 // Definitions are written first, each change leaving a `sys_migration` history
 // entry; then each page gets a new published version made from the **latest
 // published** definition, rewritten, and its draft is rewritten too. A page
@@ -43,7 +49,15 @@ interface SlotConfig {
   dynamicProps?: Record<string, string>;
   callbacks?: Record<string, string>;
 }
-interface StoredPage { slotConfigs?: Record<string, SlotConfig | null>; [key: string]: unknown }
+interface StoredPage {
+  slotConfigs?: Record<string, SlotConfig | null>;
+  componentDependencies?: { name?: string; version?: string }[];
+  [key: string]: unknown;
+}
+
+/** Where a component-list rewrite is said to be — it opens nothing, so it
+ *  alone never makes a new published version. */
+const COMPONENT_LIST = 'component list';
 
 /** One link, before and after. */
 export interface Rewrite { where: string; from: string; to: string }
@@ -251,7 +265,13 @@ export function rewritePage(def: StoredPage, keys: Record<string, string>): Page
     }
     slotConfigs[slot] = next;
   }
-  out.def = { ...def, slotConfigs };
+  out.def = def.slotConfigs ? { ...def, slotConfigs } : { ...def };
+  const deps = def.componentDependencies;
+  if (Array.isArray(deps) && deps.some((d) => d?.name === 'OpenPage')) {
+    const hasApp = deps.some((d) => d?.name === 'OpenApp');
+    out.def.componentDependencies = deps.flatMap((d) => (d?.name !== 'OpenPage' ? [d] : hasApp ? [] : [{ ...d, name: 'OpenApp' }]));
+    out.rewrites.push({ where: COMPONENT_LIST, from: 'OpenPage', to: hasApp ? '(dropped — OpenApp is listed already)' : 'OpenApp' });
+  }
   return out;
 }
 
@@ -287,7 +307,7 @@ export async function planStep6(db: Db): Promise<SolutionPlan[]> {
       const draftRewrite = draft ? rewritePage(draft.def as StoredPage, keys) : null;
       const page: PagePlan = {
         path,
-        published: pubRewrite && pubRewrite.rewrites.length > 0 ? { ...pubRewrite, version: versionOf.get(path) ?? 0 } : null,
+        published: pubRewrite && pubRewrite.rewrites.some((r) => r.where !== COMPONENT_LIST) ? { ...pubRewrite, version: versionOf.get(path) ?? 0 } : null,
         draft: draftRewrite && draftRewrite.rewrites.length > 0 ? draftRewrite : null,
       };
       const unresolved = new Set([...(pubRewrite?.unresolved ?? []), ...(draftRewrite?.unresolved ?? [])]);
@@ -381,7 +401,7 @@ function print(plans: SolutionPlan[]): void {
   for (const plan of plans) {
     console.log(`\n=== ${plan.solutionId}`);
     const keys = Object.entries(plan.keys);
-    if (keys.length === 0 && plan.unresolved.length === 0) { console.log('  no links between pages — nothing to do'); continue; }
+    if (keys.length === 0 && plan.pages.length === 0 && plan.unresolved.length === 0) { console.log('  nothing to do'); continue; }
     if (keys.length > 0) {
       console.log('  keys:');
       for (const [path, key] of keys) console.log(`    ${path}  →  ${key}`);

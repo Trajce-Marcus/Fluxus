@@ -1056,7 +1056,12 @@ Each step works on its own and is cold-tested before the next.
    Runtime — an old `page=` link now opens nothing, and a page still calling
    `services.page.open` fails validation. Rolling a page back to a version from
    before the script brings back an `OpenPage`, which then draws as an unknown
-   component until its author makes it an `OpenApp`.
+   component until its author makes it an `OpenApp`. The cold test (Sonnet 5,
+   same day) found no divergence, and one loose end: pages' component lists
+   (`componentDependencies`, the page editor's palette, read by nothing else)
+   still named `OpenPage` in 18 drafts. At the user's go-ahead the script now
+   swaps it for `OpenApp` there as well, in the draft alone when nothing else
+   on the page changes (only the page editor reads the list, from the draft).
 
 **Done when:**
 

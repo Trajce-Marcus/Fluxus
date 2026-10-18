@@ -762,8 +762,12 @@ each), then a new published version of each page made from the latest
 published one, and the rewritten draft. A second run finds nothing to rewrite.
 Run by the user between the deploy that has `OpenApp` and the one that removes
 the old way — **run on dev 2026-10-18**, after a dry run: 18 links in 11 pages,
-11 definitions, nothing unresolved; a second run finds nothing. Tested in
-`test/appsStep6.test.ts`.
+11 definitions, nothing unresolved; a second run finds nothing. The step 6
+cold test found it left `OpenPage` in pages' component lists
+(`componentDependencies`, the page editor's palette — read by nothing else), so
+the script now swaps it for `OpenApp` there too; a page whose only change is
+its list changes in its draft alone, since only the page editor reads it and
+it reads the draft. Tested in `test/appsStep6.test.ts`.
 
 Tests: `test/apps.test.ts`, `test/menu.test.ts`, `test/rbac.test.ts` ("calls
 with no app"); tests about what a role may read or do go through an app
