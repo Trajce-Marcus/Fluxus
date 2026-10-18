@@ -62,7 +62,19 @@ const serverGrade = (activity: ClientActivityRawDef): boolean =>
  */
 const DATASOURCE_ROOTS = ['term'];
 
-export function validateConfig(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): Finding[] {
+/** What a model save knows beyond the model itself. */
+export interface ValidateConfigOptions {
+  /**
+   * The workflows pages name as their app's list (`PageDef.workflowId`,
+   * drafts and latest published versions; APPS_AND_INSTANCES §2.2). The rules
+   * for an app's list apply to these only, so ordinary editing of a record
+   * type's workflow is untouched. The server knows them; a host without pages
+   * passes none.
+   */
+  appLists?: ReadonlySet<string>;
+}
+
+export function validateConfig(config: ClientSolutionConfig, services: ServiceModuleDef[] = [], options: ValidateConfigOptions = {}): Finding[] {
   // services.logger is engine-owned and part of every host's registry
   // (createEngine appends it, name reserved) — validation must see the same
   // registry the engine runs with, whoever is validating.
@@ -248,6 +260,51 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   }
   const typesByActivity = recordTypesByActivity(config);
   const included = includedActivityIds(config);
+
+  // ── An app's list (APPS_AND_INSTANCES §2.2) ───────────────────────────────
+  // Only for workflows pages name. An activity on one that no record type's
+  // workflow lists is the app's own: it may only log or read (a CREATE would
+  // have no type to make, an UPDATE or DELETE would change the app itself).
+  // An item's condition is checked as the activity's own is, against each
+  // record type the activity runs on — untyped for the app's own until step 5
+  // gives `rt_sys_apps` its definition. A condition on any other workflow is an
+  // error, and so is a record type pointing at a page's list.
+  const appLists = options.appLists ?? new Set<string>();
+  const poolById = new Map(pool.map((a) => [a.id, a]));
+  for (const rt of config.recordTypes) {
+    if (appLists.has(rt.workflow_ref)) {
+      note(`record type '${rt.id}'`, `points at '${rt.workflow_ref}', which a page names as its app's list — a record type needs a workflow of its own`);
+    }
+  }
+  for (const workflow of config.workflows) {
+    const isList = appLists.has(workflow.id);
+    for (const usage of workflow.activities) {
+      if (usage.show_condition !== undefined && !isList) {
+        note(`workflow '${workflow.id}'`, `'${usage.activity_ref}' carries a condition, which only an app's list may (a workflow a page names)`);
+      }
+      const activity = poolById.get(usage.activity_ref);
+      if (!isList || !activity) continue;
+      const types = typesByActivity.get(activity.id) ?? [];
+      if (types.length === 0 && activity.record_map !== undefined && activity.record_map !== 'GET') {
+        note(`workflow '${workflow.id}'`, `'${activity.id}' is the app's own (in no record type's workflow), so it may only log or read — not ${activity.record_map}`);
+      }
+      if (!usage.show_condition?.trim()) continue;
+      const anchors = types.length > 0 ? types : [undefined];
+      for (const typeId of anchors) {
+        const diagnostics = validateExpression(usage.show_condition, schema, {
+          anchorType: typeId ? shortName(typeId) : undefined,
+          bannedRoots: ['attributes'],
+          functions,
+        });
+        for (const diagnostic of diagnostics) {
+          findings.push({
+            where: `workflow '${workflow.id}' → '${activity.id}' condition${anchors.length > 1 ? ` (on ${typeId})` : ''}`,
+            diagnostic,
+          });
+        }
+      }
+    }
+  }
 
   // The engine works out which type a CREATE makes from the one record type
   // whose workflow lists it. Reached through two, it could not say.

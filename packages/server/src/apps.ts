@@ -10,11 +10,11 @@
 // still leaves a history entry on the app, through the same append an activity
 // run uses (`appendHistoryEntry`).
 
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { APPS_RECORD_TYPE, CONSOLE_EDIT, newRecordId, type ActivityHistoryEntry, type SolutionConfig } from '@fluxus/engine';
 import type { DbOrTx } from './db/client';
-import { records, type MenuGroup, type MenuItem, type MenuLeaf, type OperationConfig } from './db/schema';
+import { pageVersions, records, type MenuGroup, type MenuItem, type MenuLeaf, type OperationConfig } from './db/schema';
 import { appendHistoryEntry } from './databaseStore';
 import { MenuValidationError, isPagePublished, listPublishedPages } from './host';
 
@@ -191,6 +191,35 @@ export async function loadAppForCall(db: DbOrTx, operationId: string, solutionId
   const app = await getApp(db, operationId, appId);
   if (!app || !(await isPagePublished(db, solutionId, app.pageId))) throw new AppNotFoundError(appId);
   return app;
+}
+
+/**
+ * What an app may offer and run (§2.2): the activities on its page's list —
+ * the page's own workflow, `PageDef.workflowId` on its latest published
+ * version — and the app's condition on each. A page with no list, one naming a
+ * workflow that does not exist, or one a record type points to, offers
+ * nothing.
+ */
+export interface AppList {
+  ids: ReadonlySet<string>;
+  conditions: ReadonlyMap<string, string>;
+}
+
+const EMPTY_LIST: AppList = { ids: new Set(), conditions: new Map() };
+
+export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<AppList> {
+  const [latest] = await db.select({ def: pageVersions.def }).from(pageVersions)
+    .where(and(eq(pageVersions.solutionId, solutionId), eq(pageVersions.path, pageId)))
+    .orderBy(desc(pageVersions.version))
+    .limit(1);
+  const workflowId = (latest?.def as { workflowId?: unknown } | undefined)?.workflowId;
+  if (typeof workflowId !== 'string') return EMPTY_LIST;
+  const workflow = config.workflows.find((w) => w.id === workflowId);
+  if (!workflow || config.recordTypes.some((rt) => rt.workflow_ref === workflowId)) return EMPTY_LIST;
+  return {
+    ids: new Set(workflow.activities.map((u) => u.activity_ref)),
+    conditions: new Map(workflow.activities.filter((u) => u.show_condition?.trim()).map((u) => [u.activity_ref, u.show_condition!])),
+  };
 }
 
 // ── The app menu (§2.5) ──────────────────────────────────────────────────────

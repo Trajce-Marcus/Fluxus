@@ -67,7 +67,7 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
-import { appFromRow, appsForUser, getAppRecord, isAppRecord, listApps, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu } from './apps';
+import { appFromRow, appListOf, appsForUser, getAppRecord, isAppRecord, listApps, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
 import {
@@ -148,7 +148,7 @@ async function requireNoAppCaller(ctx: AppContext, op: { id: string; orgId: stri
 /**
  * Who may make a call on the closed list, and which record types they read in
  * it: with an app, checks 1 and 2 and then their read rules; with none, an
- * operation admin, who reads them all (null).
+ * operation admin, who reads them all (null). Answers the app, when there is one.
  */
 async function callAccess(
   ctx: AppContext,
@@ -156,13 +156,20 @@ async function callAccess(
   appId: string | undefined,
   user: AuthUser,
   config: SolutionConfig,
-): Promise<Set<string> | null> {
+): Promise<{ readable: Set<string> | null; app: App | null }> {
   if (appId === undefined) {
     await requireNoAppCaller(ctx, op);
-    return null;
+    return { readable: null, app: null };
   }
-  await checkCallApp(ctx, op, appId, user);
-  return computeReadable(ctx.authConfigured, config, user.roles);
+  const app = await checkCallApp(ctx, op, appId, user);
+  return { readable: computeReadable(ctx.authConfigured, config, user.roles), app };
+}
+
+/** The record types whose workflow lists an activity — where it runs (§2.2). */
+function typesListing(config: SolutionConfig, activityId: string): string[] {
+  return config.recordTypes
+    .filter((rt) => config.workflows.find((w) => w.id === rt.workflow_ref)?.activities.some((u) => u.activity_ref === activityId))
+    .map((rt) => rt.id);
 }
 
 /** How far `records.get` follows references: two levels covers a page that
@@ -254,11 +261,12 @@ function withoutMenu<T extends { config: OperationConfig }>(op: T): T {
  * caller holds one of its roles (with sign-in off, open). Run before anything
  * the call asks for.
  */
-async function checkCallApp(ctx: AppContext, op: { id: string; solutionId: string }, appId: string, user: AuthUser): Promise<void> {
+async function checkCallApp(ctx: AppContext, op: { id: string; solutionId: string }, appId: string, user: AuthUser): Promise<App> {
   const app = await loadAppForCall(ctx.db, op.id, op.solutionId, appId);
   if (!mayRunApp(app, ctx.authConfigured, user.roles)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: `You may not run '${app.label}'` });
   }
+  return app;
 }
 
 /** `files.*` (§2.3): the operation's entry gate, the operation running the
@@ -779,18 +787,24 @@ export const appRouter = t.router({
           // question is what this caller may do here. Naming no app is the
           // no-app rule's, and refused for anyone but an operation admin.
           const op = { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId };
-          let readable: Set<string> | null;
+          let access: Awaited<ReturnType<typeof callAccess>>;
           if (input.appId === undefined) {
-            readable = await callAccess(ctx, op, undefined, user, host.config);
+            access = await callAccess(ctx, op, undefined, user, host.config);
           } else {
             try {
-              readable = await callAccess(ctx, op, input.appId, user, host.config);
+              access = await callAccess(ctx, op, input.appId, user, host.config);
             } catch {
               return input.items.map(() => []);
             }
           }
+          const { readable } = access;
+          // Through an app, only what its list holds (check 3), each with the
+          // app's condition beside the activity's own (check 6, §2.3).
+          const list = access.app ? await appListOf(ctx.db, host.solutionId, access.app.pageId, host.config) : null;
           const workflowOf = (typeId: string): ActivityDef[] | null => {
-            try { return host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
+            let activities: ActivityDef[];
+            try { activities = host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
+            return list ? activities.filter((a) => list.ids.has(a.id)) : activities;
           };
           // One item after another: they share the request's record cache.
           const answers: ActivityOption[][] = [];
@@ -798,10 +812,10 @@ export const appRouter = t.router({
             if ('recordId' in item) {
               const record = await host.store.findRecord(item.recordId);
               const activities = record && !isAppRecord(record) && (readable === null || readable.has(record.typeRef)) ? workflowOf(record.typeRef) : null;
-              answers.push(activities ? await host.engine.offeredActivities(activities, record) : []);
+              answers.push(activities ? await host.engine.offeredActivities(activities, record, list?.conditions) : []);
             } else {
               const activities = workflowOf(item.typeId);
-              answers.push(activities ? await host.engine.offeredActivities(activities, null) : []);
+              answers.push(activities ? await host.engine.offeredActivities(activities, null, list?.conditions) : []);
             }
           }
           return answers;
@@ -1069,7 +1083,7 @@ export const appRouter = t.router({
           const user = await resolveUser(ctx, input.operationId);
           const op = await getOperation(ctx.db, input.operationId);
           const config = await getSolutionConfig(ctx.db, op.solutionId);
-          const readable = await callAccess(ctx, op, input.appId, user, config);
+          const { readable } = await callAccess(ctx, op, input.appId, user, config);
           const rows = await ctx.db
             .select()
             .from(records)
@@ -1101,6 +1115,10 @@ export const appRouter = t.router({
           operationId: operationInput,
           appId: appIdInput,
           activityId: z.string().min(1),
+          /** The record type the run is about (§2.3): the type whose workflow
+           *  lists the activity — the record's, or the one a CREATE makes.
+           *  Required through an app; checked when given otherwise. */
+          typeId: z.string().min(1).optional(),
           recordId: z.string().min(1).optional(),
           /** Attribute payload. Scalars are strings, as the capture form
            *  submits; composite cells come flat under dotted keys
@@ -1119,11 +1137,34 @@ export const appRouter = t.router({
           // availability gate may read context.user.roles.
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          const readable = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
             throw new TRPCError({ code: 'NOT_FOUND', message: `Activity not found: ${input.activityId}` });
+          }
+          // Check 3 (§2.3): through an app, the activity is on its list — and
+          // its item may carry the app's own condition (check 6, below).
+          let condition: string | undefined;
+          if (app) {
+            const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.config);
+            if (!list.ids.has(activity.id)) {
+              throw new TRPCError({ code: 'FORBIDDEN', message: `'${activity.id}' is not on the list of '${app.label}'` });
+            }
+            condition = list.conditions.get(activity.id);
+          }
+          // Check 4: the call matches the model. Where an activity runs is the
+          // model's to say — a record type whose workflow lists it. One no
+          // record type lists is an app's own, which runs on its app (step 5).
+          const owners = typesListing(host.config, activity.id);
+          if (owners.length === 0) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is in no record type's workflow — an app's own activities cannot run yet` });
+          }
+          if (app && input.typeId === undefined) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `A run through an app names the record type it is about (typeId)` });
+          }
+          if (input.typeId !== undefined && !owners.includes(input.typeId)) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is not in ${input.typeId}'s workflow` });
           }
           if (activity.record_map === 'CREATE' && input.recordId) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is a CREATE activity — recordId must not be supplied` });
@@ -1146,6 +1187,11 @@ export const appRouter = t.router({
               // config + resolved roles. An operation's app is never a run's
               // record (APPS_AND_INSTANCES §2.3).
               if (isAppRecord(anchorRecord) || (readable !== null && !readable.has(anchorRecord.typeRef))) throw accessDenied();
+              // Check 4: the record is the type the call names — its stored
+              // type, never the caller's word for it.
+              if (input.typeId !== undefined && anchorRecord.typeRef !== input.typeId) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `The record is a ${anchorRecord.typeRef}, not a ${input.typeId}` });
+              }
               // Only an activity that belongs to the record may run on it
               // (APPS_AND_INSTANCES §1.5, Part 2 step 1): the record's type's
               // workflow must list it. A shared activity runs on any type that
@@ -1175,6 +1221,7 @@ export const appRouter = t.router({
               host.engine.runActivity(activity, input.attributes, anchorRecord, {
                 acknowledgedWarnings: input.acknowledgedWarnings,
                 waived: input.waived,
+                condition,
               }));
           } catch (err) {
             // A failing after hook has already rolled back to its savepoint;
@@ -1235,7 +1282,7 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          const readable = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          const { readable } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {

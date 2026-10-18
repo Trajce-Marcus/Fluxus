@@ -872,6 +872,23 @@ workflow or activity using any of the four** (`RESERVED_IDS`).
 `newRecordId()` issues a record id (UUIDv7, as `shapeNewRecord` always has), so
 the server can issue an app's.
 
+**An app's list** (2026-10-18, APPS_AND_INSTANCES step 3, §2.2). A workflow's
+reference may carry the app's own condition, `{ activity_ref, show_condition }`
+(`ActivityUsage.show_condition`), on the list of an app — a workflow a page
+names. **The availability gate takes it**: `activityAvailabilityAsync(activity,
+record, condition?)`, `offeredActivities(activities, record, conditions?)` and
+`runActivity(…, { condition })` evaluate the activity's own condition and then
+the app's, each strictly `true` and failing closed, with the same `context`.
+**`validateConfig(config, services, { appLists })`** applies the rules for an
+app's list to the workflows the caller names (the server passes the ones pages
+name): an activity on one that no record type's workflow lists is the app's
+own and may only log or read; an item's condition is checked as the activity's
+own is, against each record type the activity runs on (untyped for the app's
+own until step 5 defines `rt_sys_apps`); a condition on any other workflow is an
+error; a record type pointing at a page's list is an error. With no `appLists`,
+none of it applies, so ordinary editing of a record type's workflow is
+untouched.
+
 **`validateSubmission`'s `canRead`** (2026-10-18, §2.3 check 5): an optional
 last argument, the caller's read rules. Given, a run's reference attribute —
 top-level, or a composite cell — naming a record the caller may not read is an

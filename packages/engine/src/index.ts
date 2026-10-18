@@ -72,7 +72,7 @@ export {
   toActivityPool,
   workflowActivities,
 } from './activityPool';
-export type { Finding } from './validateConfig';
+export type { Finding, ValidateConfigOptions } from './validateConfig';
 
 export type {
   ActivityDef,

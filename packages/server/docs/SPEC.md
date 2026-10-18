@@ -650,9 +650,37 @@ of opening a page by its path.
    (runs) the records its reference fields send back.
 
 They apply to `activities.run`, `activities.query`, `page.activities` (failing
-1 or 2 answers every item empty), `records.get`, and `files.*`. Until step 3,
-a call that passes them is offered and run as before: the record type's
-workflow and the activity's own condition.
+1 or 2 answers every item empty), `records.get`, and `files.*`.
+
+**An app's list, and checks 3, 4 and 6** (step 3, built 2026-10-18). An app
+offers and runs only what its page's list holds: the workflow its latest
+published version names (`PageDef.workflowId`), read by `appListOf`. A page
+with no list, one naming no workflow, or one a record type points to, offers
+nothing. Each item may carry the app's own condition.
+
+3. **The activity is on the app's list** — otherwise "'<id>' is not on the list
+   of '<name>'". `page.activities` offers only listed activities.
+4. **The call matches the model.** A run names the record type it is about,
+   `typeId` (required through an app; checked when given otherwise): a type
+   whose workflow lists the activity — otherwise "'<id>' is not in <type>'s
+   workflow" — and, for a run on a record, the record's **stored** type
+   ("The record is a <stored>, not a <named>"). An activity in no record type's
+   workflow is an app's own and cannot run until step 5.
+6. **Both conditions pass**: the activity's own and the item's, evaluated by the
+   engine's gate with the real user (`runActivity`'s `condition`,
+   `offeredActivities`' `conditions`).
+
+GETs (`activities.query`) are checked against the list from step 4.
+
+**At model save** (`validateConfigGraph`), the workflows pages name — on their
+drafts and latest published versions, `pageLists` — are passed to
+`validateConfig` as `appLists`, whose rules apply to those only (engine SPEC).
+**A page's list is protected**: a save that removes a workflow a page names —
+`config.deleteWorkflow`, or an import or rollback without it — is refused,
+naming the page (`editConfig` reads the workflows before the write). **At
+publish** (`publishPage`), a page naming a list must name a workflow that
+exists and that no record type points to (`PageListError`). **A page rollback**
+to a version from before lists carries the current list forward.
 
 **The no-app rule** (§2.3, ruled 2026-10-17): a call that names no app is
 refused unless the caller is an **admin of that operation** ("This call names

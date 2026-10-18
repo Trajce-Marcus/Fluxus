@@ -90,6 +90,9 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   ): Promise<RunActivityResult> => {
     const result = await runtime.client.runActivity({
       activityId: activity.id,
+      // The record type the run is about (APPS_AND_INSTANCES §2.3): its
+      // record's, or — for a CREATE — the one type whose workflow lists it.
+      typeId: anchorRecord?.typeRef ?? runtime.findActivity(activity.id)?.typeDef.id,
       recordId: anchorRecord?.id,
       attributes: captured,
       waived: options?.waived,

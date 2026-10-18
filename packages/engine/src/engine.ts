@@ -9,7 +9,7 @@ import { evaluateExpression, evaluateExpressionAsync, executeScriptAsync, FluxFa
 import type { ActivityDef, ActivityOption, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
 import type { Store, WaitingStore } from './store';
 import { blockingReferences, buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
-import { validateConfig, reportConfigFindings, type Finding } from './validateConfig';
+import { validateConfig, reportConfigFindings, type Finding, type ValidateConfigOptions } from './validateConfig';
 import { buildLoggerModule } from './services/logger';
 import { attributeFieldRef } from './attributeTypes';
 import { recordTypesByActivity } from './activityPool';
@@ -53,6 +53,12 @@ export class AfterHookFailedError extends Error {
 export interface RunActivityOptions {
   acknowledgedWarnings?: boolean;
   waived?: Record<string, string>;
+  /**
+   * The app's own condition on this activity — the `show_condition` on its
+   * item in the app's list (APPS_AND_INSTANCES §2.2). It must pass along with
+   * the activity's own, by the same gate: strictly `true`, failing closed.
+   */
+  condition?: string;
 }
 
 /**
@@ -88,7 +94,7 @@ export interface Engine<S extends WaitingStore = Store> {
   readonly store: S;
   /** Availability gate result — see ActivityRawDef.show_condition. The
    *  server's gate, waiting on the store. */
-  activityAvailabilityAsync(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<ActivityAvailability>;
+  activityAvailabilityAsync(activity: ActivityDef, anchorRecord: RecordInstance | null, condition?: string): Promise<ActivityAvailability>;
   isActivityAvailableAsync(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<boolean>;
   /**
    * Which of a workflow's activities are offered, in its order
@@ -102,8 +108,10 @@ export interface Engine<S extends WaitingStore = Store> {
    *   `context.record` null — exactly what their run gate sees.
    *
    * Each condition is this engine's gate: strictly `true`, failing closed.
+   * `conditions` are an app's own, per activity (its list's items, §2.2): an
+   * activity with one is offered only when both pass.
    */
-  offeredActivities(activities: ActivityDef[], record: RecordInstance | null): Promise<ActivityOption[]>;
+  offeredActivities(activities: ActivityDef[], record: RecordInstance | null, conditions?: ReadonlyMap<string, string>): Promise<ActivityOption[]>;
   runActivity(
     activity: ActivityDef,
     captured: Record<string, unknown>,
@@ -145,7 +153,7 @@ export interface Engine<S extends WaitingStore = Store> {
   /** `evaluate`, waiting on the store, services and `invoke`. */
   evaluateAsync(source: string, script: ScriptContext): Promise<unknown>;
   /** Config-save-time validation of every FluxScript script in the config. */
-  validateConfig(): Finding[];
+  validateConfig(options?: ValidateConfigOptions): Finding[];
   /** validateConfig with diagnostics reported to the console. */
   reportConfigFindings(): void;
 }
@@ -221,27 +229,35 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   // `true` makes the activity available. Evaluation errors FAIL CLOSED (unlike
   // attribute show_conditions, which leave the input visible): this is an access
   // rule, and a broken gate must not wave the activity through.
+  //
+  // An app's condition on the activity (its list's item, APPS_AND_INSTANCES
+  // §2.2) is a second gate of the same kind: both must pass. It sees what the
+  // activity's own sees.
   async function activityAvailabilityAsync(
     activity: ActivityDef,
-    anchorRecord: RecordInstance | null
+    anchorRecord: RecordInstance | null,
+    condition?: string,
   ): Promise<ActivityAvailability> {
-    if (!activity.show_condition) return { available: true };
-    try {
-      const result = await evaluateExpressionAsync(activity.show_condition, availabilityHost(activity, anchorRecord));
-      return { available: result === true };
-    } catch (err) {
-      return failedClosed(activity, err);
+    for (const source of [activity.show_condition, condition]) {
+      if (!source) continue;
+      try {
+        const result = await evaluateExpressionAsync(source, availabilityHost(activity, anchorRecord));
+        if (result !== true) return { available: false };
+      } catch (err) {
+        return failedClosed(activity, err);
+      }
     }
+    return { available: true };
   }
 
   // One condition after another, not together: they share the store's record
   // cache, so conditions following the same reference (a finding's job) read
   // it once instead of racing to read it several times.
-  async function offeredActivities(activities: ActivityDef[], record: RecordInstance | null): Promise<ActivityOption[]> {
+  async function offeredActivities(activities: ActivityDef[], record: RecordInstance | null, conditions?: ReadonlyMap<string, string>): Promise<ActivityOption[]> {
     const candidates = activities.filter((a) => (record ? a.record_map !== 'GET' : a.record_map === 'CREATE'));
     const offered: ActivityOption[] = [];
     for (const activity of candidates) {
-      if ((await activityAvailabilityAsync(activity, record)).available) {
+      if ((await activityAvailabilityAsync(activity, record, conditions?.get(activity.id))).available) {
         offered.push({ id: activity.id, name: activity.name });
       }
     }
@@ -305,8 +321,8 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   // Availability gate — first step of every pipeline, read or write, before
   // the before hook. The UI hides unavailable activities, but the gate is the
   // enforcement point (headless callers skip the UI entirely).
-  async function enforceAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null): Promise<void> {
-    const availability = await activityAvailabilityAsync(activity, anchorRecord);
+  async function enforceAvailability(activity: ActivityDef, anchorRecord: RecordInstance | null, condition?: string): Promise<void> {
+    const availability = await activityAvailabilityAsync(activity, anchorRecord, condition);
     if (!availability.available) {
       throw new Error(
         availability.error
@@ -449,7 +465,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     if (activity.record_map === 'GET') {
       throw new Error(`'${activity.name}' is a GET activity — read it through runQuery`);
     }
-    await enforceAvailability(activity, anchorRecord);
+    await enforceAvailability(activity, anchorRecord, options?.condition);
 
     const warnings: string[] = [];
     // Attributes declared unavailable: scripts see them as null, they never
@@ -631,7 +647,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     invoke: (activityId, params, anchorRecord) => invoke(activityId, params, anchorRecord),
     evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
     evaluateAsync: (source, script) => evaluateExpressionAsync(source, buildEvalHost(store, config, { user, ...script }, services)),
-    validateConfig: () => validateConfig(config, services),
+    validateConfig: (options) => validateConfig(config, services, options),
     reportConfigFindings: () => reportConfigFindings(config, services),
   };
 }

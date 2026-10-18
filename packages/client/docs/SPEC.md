@@ -20,6 +20,8 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    page by its path, until step 6). No fallback: an empty menu means nothing is
    set up. *(Until then the menu was `operation.config.menu ??
    config.default_menu ?? []`, filtered in the browser by `visibleMenu`.)*
+   Runs carry **`typeId`** (`RunInput.typeId`, since step 3): the record type
+   the run is about — required by the server through an app.
    **`appId`** is the app the host has open: the Runtime sets it when it opens
    one, and every call that runs, reads or uploads through it carries it —
    `activities.run`, `activities.query`, `page.activities`, `records.get`,

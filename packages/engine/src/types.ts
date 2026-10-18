@@ -264,6 +264,13 @@ export interface ActivityDef {
  */
 export interface ActivityUsage {
   activity_ref: string;
+  /**
+   * An app's condition on this item (APPS_AND_INSTANCES §2.2) — only on the
+   * list of an app (a workflow a page names): the activity is offered, and
+   * runs, only when its own condition and this both pass. Never sent to a
+   * browser (`projectConfig` sends `activity_ref` alone).
+   */
+  show_condition?: string;
 }
 
 /** A workflow is the same on both planes: a name and an ordered list of

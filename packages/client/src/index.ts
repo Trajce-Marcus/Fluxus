@@ -615,6 +615,9 @@ export function orgFromPath(pathname: string = window.location.pathname): string
 
 export interface RunInput {
   activityId: string;
+  /** The record type the run is about (APPS_AND_INSTANCES §2.3): the anchor
+   *  record's, or the type a CREATE makes. Required through an app. */
+  typeId?: string;
   /** Anchor record id — omit for CREATE activities. */
   recordId?: string;
   /**
@@ -1053,6 +1056,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
         operationId: this.operationId,
         ...this.viaApp,
         activityId: input.activityId,
+        typeId: input.typeId,
         recordId: input.recordId,
         attributes: input.attributes ?? {},
         waived: input.waived,

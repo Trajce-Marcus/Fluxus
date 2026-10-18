@@ -89,7 +89,7 @@ describe('page.activities — with the real user', () => {
 
   // One rule: what is not offered is refused when run.
   it('refuses the other inspector when run', async () => {
-    await expect(as(ann).activities.run({ operationId: OP, appId, activityId: 'act_start_jobs', recordId: 'J1' }))
+    await expect(as(ann).activities.run({ operationId: OP, appId, activityId: 'act_start_jobs', typeId: 'rt_jobs', recordId: 'J1' }))
       .rejects.toThrow(/not available/);
   });
 

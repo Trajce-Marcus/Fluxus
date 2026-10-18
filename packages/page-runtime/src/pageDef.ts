@@ -68,6 +68,14 @@ export interface PageRecordDef {
 export interface PageDef {
   template?: string;
   record?: PageRecordDef;
+  /**
+   * The page's list — the activities and reads its apps use (APPS_AND_INSTANCES
+   * §2.2): a workflow no record type points to, authored in the Workflows
+   * editor, whose items may carry the app's own condition. An app offers and
+   * runs only what is on it; with none, nothing. Checked when the page is
+   * published (it exists, and no record type points to it).
+   */
+  workflowId?: string;
   layout?: LayoutDefinition;
   componentDependencies?: PageComponentEntry[];
   contextSchema?: ContextKeyDef[];

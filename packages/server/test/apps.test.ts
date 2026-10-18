@@ -11,6 +11,7 @@ import { appRouter } from '../src/router';
 import { records, rptActivities } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
 import type { ActivityRawDef, ContextUser, SolutionConfig } from '@fluxus/engine';
+import { pageWithList } from './appFor';
 
 const SOL = 'test/apps';
 const OP = 'test/apps';
@@ -56,10 +57,7 @@ beforeAll(async () => {
   await putConfig(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Apps');
   await ensureOperation(db, OTHER_OP, SOL, 'Apps, other');
-  for (const path of ['pages/scheduler', 'pages/board']) {
-    await open().pages.put({ solutionId: SOL, path, def: {} });
-    await open().pages.publish({ solutionId: SOL, path, readme: 'seed' });
-  }
+  for (const path of ['pages/scheduler', 'pages/board']) await pageWithList(db, SOL, path);
   await open().pages.put({ solutionId: SOL, path: 'pages/draft-only', def: {} });
   for (const email of ['opboss@example.com', 'solboss@example.com', 'crew@example.com']) await inviteUser(db, { email });
   await appointOpAdmin(db, { operationId: OP, email: 'opboss@example.com' });
@@ -173,7 +171,7 @@ describe('apps are kept out of every general read (§2.4)', () => {
 
   it('refuses a call that sends an app\'s id as its record', async () => {
     await expect(open().records.get({ operationId: OP, recordId: appId })).rejects.toThrow(/Record access denied/);
-    await expect(open().activities.run({ operationId: OP, activityId: 'act_note_jobs', recordId: appId })).rejects.toThrow(/Record access denied/);
+    await expect(open().activities.run({ operationId: OP, activityId: 'act_note_jobs', typeId: 'rt_jobs', recordId: appId })).rejects.toThrow(/Record access denied/);
     const [answer] = await open().page.activities({ operationId: OP, items: [{ recordId: appId }] });
     expect(answer).toEqual([]);
     const script = await open().scripts.query({ operationId: OP, source: 'context.record', recordId: appId });
@@ -243,19 +241,19 @@ describe('the Runtime through apps (§2.3, §2.5, §2.7)', () => {
   });
 
   it('runs a call through an app the caller may run', async () => {
-    await expect(as(crew).activities.run({ operationId: USER_OP, appId: water, activityId: 'act_note_jobs', recordId: 'J2' }))
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: water, activityId: 'act_note_jobs', typeId: 'rt_jobs', recordId: 'J2' }))
       .resolves.toMatchObject({ status: 'done' });
     await expect(as(crew).records.get({ operationId: USER_OP, appId: water, recordId: 'J2' })).resolves.toMatchObject({ id: 'J2' });
     await expect(as(crew).activities.query({ operationId: USER_OP, appId: water, activityId: 'act_list_jobs' })).resolves.toBeDefined();
   });
 
   it('refuses a call naming an app the caller holds no role on, or no app of this operation', async () => {
-    await expect(as(crew).activities.run({ operationId: USER_OP, appId: sewer, activityId: 'act_note_jobs', recordId: 'J2' }))
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: sewer, activityId: 'act_note_jobs', typeId: 'rt_jobs', recordId: 'J2' }))
       .rejects.toThrow(/may not run 'Sewer scheduler'/);
     await expect(as(crew).activities.query({ operationId: USER_OP, appId: sewer, activityId: 'act_list_jobs' }))
       .rejects.toThrow(/may not run/);
     await expect(as(crew).records.get({ operationId: USER_OP, appId: sewer, recordId: 'J2' })).rejects.toThrow(/may not run/);
-    await expect(as(crew).activities.run({ operationId: USER_OP, appId: 'ghost', activityId: 'act_note_jobs', recordId: 'J2' }))
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: 'ghost', activityId: 'act_note_jobs', typeId: 'rt_jobs', recordId: 'J2' }))
       .rejects.toThrow(/not set up for this operation/);
     // An app of another operation is not this operation's.
     const elsewhere = (await open().apps.list({ operationId: OP })).apps[0].id;
@@ -270,9 +268,9 @@ describe('the Runtime through apps (§2.3, §2.5, §2.7)', () => {
   });
 
   it('refuses a run whose reference field names a record the caller may not read', async () => {
-    await expect(as(crew).activities.run({ operationId: USER_OP, appId: water, activityId: 'act_link_jobs', recordId: 'J2', attributes: { ledger: 'L2' } }))
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: water, activityId: 'act_link_jobs', typeId: 'rt_jobs', recordId: 'J2', attributes: { ledger: 'L2' } }))
       .rejects.toThrow(/Ledger: Record access denied/);
-    await expect(as(boss).activities.run({ operationId: USER_OP, appId: board, activityId: 'act_link_jobs', recordId: 'J2', attributes: { ledger: 'L2' } }))
+    await expect(as(boss).activities.run({ operationId: USER_OP, appId: board, activityId: 'act_link_jobs', typeId: 'rt_jobs', recordId: 'J2', attributes: { ledger: 'L2' } }))
       .resolves.toMatchObject({ status: 'done' });
   });
 

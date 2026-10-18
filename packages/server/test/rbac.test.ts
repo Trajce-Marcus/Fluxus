@@ -91,12 +91,12 @@ describe('record-type read filter (default deny, enforced when configured)', () 
 
   it('running an activity on an unreadable anchor is access denied (before the gate)', async () => {
     await expect(
-      enforced(u1).activities.run({ operationId: OP, appId, activityId: 'act_touch_beta', recordId: 'B1', attributes: { note: 'x' } }),
+      enforced(u1).activities.run({ operationId: OP, appId, activityId: 'act_touch_beta', typeId: 'rt_beta', recordId: 'B1', attributes: { note: 'x' } }),
     ).rejects.toThrow('Record access denied');
   });
 
   it('running an activity on a readable anchor proceeds', async () => {
-    const res = await enforced(u1).activities.run({ operationId: OP, appId, activityId: 'act_touch_alpha', recordId: 'A1', attributes: { note: 'x' } });
+    const res = await enforced(u1).activities.run({ operationId: OP, appId, activityId: 'act_touch_alpha', typeId: 'rt_alpha', recordId: 'A1', attributes: { note: 'x' } });
     expect(res.status).toBe('done');
   });
 
@@ -119,7 +119,7 @@ describe('calls with no app — operation admins only', () => {
     expect(rows.map((r) => r.id).sort()).toEqual(['A1', 'B1', 'G1']);
     expect((await enforced(admin).records.list({ operationId: OP, typeId: 'rt_beta' })).map((r) => r.id)).toEqual(['B1']);
     await expect(enforced(admin).records.get({ operationId: OP, recordId: 'G1' })).resolves.toMatchObject({ id: 'G1' });
-    await expect(enforced(admin).activities.run({ operationId: OP, activityId: 'act_touch_beta', recordId: 'B1', attributes: { note: 'x' } }))
+    await expect(enforced(admin).activities.run({ operationId: OP, activityId: 'act_touch_beta', typeId: 'rt_beta', recordId: 'B1', attributes: { note: 'x' } }))
       .resolves.toMatchObject({ status: 'done' });
   });
 
@@ -128,7 +128,7 @@ describe('calls with no app — operation admins only', () => {
     await expect(enforced(u1).records.partition({ operationId: OP })).rejects.toThrow(noApp);
     await expect(enforced(u1).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(noApp);
     await expect(enforced(u1).records.get({ operationId: OP, recordId: 'A1' })).rejects.toThrow(noApp);
-    await expect(enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_alpha', recordId: 'A1', attributes: { note: 'x' } })).rejects.toThrow(noApp);
+    await expect(enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_alpha', typeId: 'rt_alpha', recordId: 'A1', attributes: { note: 'x' } })).rejects.toThrow(noApp);
     await expect(enforced(u1).page.activities({ operationId: OP, items: [{ recordId: 'A1' }] })).rejects.toThrow(noApp);
     await expect(enforced(u1).scripts.query({ operationId: OP, source: 'records.alpha' })).rejects.toThrow(noApp);
     await expect(enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true })).rejects.toThrow(noApp);

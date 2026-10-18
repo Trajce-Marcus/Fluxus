@@ -236,10 +236,30 @@ async function appendVersion(db: Db, solutionId: string, path: string, def: unkn
   return { version };
 }
 
+/**
+ * A page's list, checked when it is published (APPS_AND_INSTANCES §2.2): if
+ * it names one (`workflowId`), the workflow exists and no record type points
+ * to it. Pages are otherwise stored unvalidated — their findings do not block
+ * a draft save — so this is where the list is held to the model.
+ */
+export class PageListError extends Error {}
+
+async function checkPageList(db: Db, solutionId: string, path: string, def: unknown): Promise<void> {
+  const workflowId = (def as { workflowId?: unknown } | null)?.workflowId;
+  if (workflowId === undefined || workflowId === null) return;
+  const config = await getSolutionConfig(db, solutionId);
+  if (typeof workflowId !== 'string' || !config.workflows.some((w) => w.id === workflowId)) {
+    throw new PageListError(`'${path}' names '${String(workflowId)}' as its list, and there is no such workflow`);
+  }
+  const owner = config.recordTypes.find((rt) => rt.workflow_ref === workflowId);
+  if (owner) throw new PageListError(`'${path}' names '${workflowId}' as its list, but it is the workflow of ${owner.id} — a page's list is its own`);
+}
+
 /** Snapshot the current draft def into a new immutable version. */
 export async function publishPage(db: Db, solutionId: string, path: string, readme: string, publishedBy: string): Promise<{ version: number }> {
   const draft = await db.select().from(pages).where(and(eq(pages.solutionId, solutionId), eq(pages.path, path)));
   if (draft.length === 0) throw new PageDraftNotFoundError(path);
+  await checkPageList(db, solutionId, path, draft[0].def);
   return appendVersion(db, solutionId, path, draft[0].def, readme, publishedBy);
 }
 
@@ -248,8 +268,15 @@ export async function publishPage(db: Db, solutionId: string, path: string, read
  * delete/edit — append-only). The draft is left untouched.
  */
 export async function rollbackPage(db: Db, solutionId: string, path: string, version: number, readme: string, publishedBy: string): Promise<{ version: number }> {
-  const def = await getPageVersion(db, solutionId, path, version);
+  let def = await getPageVersion(db, solutionId, path, version);
   if (def === null) throw new PageDraftNotFoundError(`${path} (version ${version})`);
+  // A version from before pages had lists carries the current one forward, so
+  // a rollback never leaves the page's apps offering nothing (§2.2).
+  const current = (await listPublishedPages(db, solutionId)).find((p) => p.path === path)?.def as { workflowId?: unknown } | undefined;
+  if ((def as { workflowId?: unknown }).workflowId === undefined && current?.workflowId !== undefined) {
+    def = { ...(def as object), workflowId: current.workflowId };
+  }
+  await checkPageList(db, solutionId, path, def);
   return appendVersion(db, solutionId, path, def, readme, publishedBy);
 }
 
@@ -610,12 +637,47 @@ export class ConfigValidationError extends Error {
 }
 
 /**
+ * The workflows pages name as their app's list (`PageDef.workflowId`,
+ * APPS_AND_INSTANCES §2.2) — on their drafts and their latest published
+ * versions — and the pages naming each.
+ */
+export async function pageLists(db: DbOrTx, solutionId: string): Promise<Map<string, string[]>> {
+  const named = new Map<string, string[]>();
+  const note = (workflowId: unknown, path: string) => {
+    if (typeof workflowId !== 'string' || !workflowId) return;
+    const paths = named.get(workflowId) ?? [];
+    if (!paths.includes(path)) named.set(workflowId, [...paths, path]);
+  };
+  for (const row of await db.select({ path: pages.path, def: pages.def }).from(pages).where(eq(pages.solutionId, solutionId))) {
+    note((row.def as { workflowId?: unknown } | null)?.workflowId, row.path);
+  }
+  for (const p of await listPublishedPages(db, solutionId)) note((p.def as { workflowId?: unknown } | null)?.workflowId, p.path);
+  return named;
+}
+
+/**
  * Everything a stored model has to satisfy, whichever door it came through:
  * `config.put` (the whole graph at once) and the per-entity mutations below run
  * exactly this. The consistency unit is the **whole graph** — a workflow
  * references attributes — so no per-entity write gets a smaller check.
  */
-async function validateConfigGraph(db: DbOrTx, solutionId: string, config: SolutionConfig, sink: NotifySink): Promise<void> {
+async function validateConfigGraph(
+  db: DbOrTx,
+  solutionId: string,
+  config: SolutionConfig,
+  sink: NotifySink,
+  /** The workflows the stored model had before this save — so a save that
+   *  removes a page's list can say so. */
+  previousWorkflowIds: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  // A page's list is protected (APPS_AND_INSTANCES §2.2): deleting a workflow a
+  // page names, or a rollback that would remove one, is refused, naming the page.
+  const lists = await pageLists(db, solutionId);
+  const kept = new Set(config.workflows.map((w) => w.id));
+  const removed = [...lists].filter(([id]) => previousWorkflowIds.has(id) && !kept.has(id));
+  if (removed.length > 0) {
+    throw new ConfigValidationError(removed.map(([id, paths]) => `workflow '${id}': it is the list of ${paths.join(', ')} — change the page first`));
+  }
   // A workflow listing an activity the pool does not hold — what deleting a
   // pool activity still in use leaves behind. Said for every workflow before
   // the adapter throws on the first, so the author learns all of them.
@@ -634,7 +696,7 @@ async function validateConfigGraph(db: DbOrTx, solutionId: string, config: Solut
     config,
     services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
   });
-  const errors = engine.validateConfig().filter((f) => f.diagnostic.severity === 'error');
+  const errors = engine.validateConfig({ appLists: new Set(lists.keys()) }).filter((f) => f.diagnostic.severity === 'error');
   if (errors.length > 0) {
     throw new ConfigValidationError(errors.map((f) => `${f.where}: ${f.diagnostic.message}`));
   }
@@ -985,9 +1047,10 @@ async function editConfig(
       .where(eq(solutions.id, solutionId))
       .for('update');
     if (!solution) throw new SolutionNotFoundError(solutionId);
+    const before = await tx.select({ id: sdmWorkflows.id }).from(sdmWorkflows).where(eq(sdmWorkflows.solutionId, solutionId));
     await writeRows(tx);
     const next = await getSolutionConfig(tx, solutionId);
-    await validateConfigGraph(tx, solutionId, next, sink);
+    await validateConfigGraph(tx, solutionId, next, sink, new Set(before.map((r) => r.id)));
     await validateDefaultMenu(tx, solutionId, next);
   });
 }
