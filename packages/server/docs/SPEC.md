@@ -430,7 +430,8 @@ takes `operationId?` (both default `demo/sdm`):
   `show_condition`, with no second filter over the answer — see the engine SPEC
   for why. **Logged light** on the anchor when one is given: parameters,
   caller, outcome, duration, never the answer; anchorless reads leave no trace.
-  `appId` runs checks 1 and 2 first; a GET's parameters are not read-checked
+  `appId` runs checks 1 and 2 first, and since step 4 checks 3, 4 and 6 for
+  the GET (see "An operation's apps"); a GET's parameters are not read-checked
   (a GET decides what it returns).
 - **`page.activities`** `{ operationId?, appId?, items: ({ recordId } | { typeId })[] }`
   → `ActivityOption[][]` (`{ id, name }`, one list per item, in the order
@@ -671,7 +672,24 @@ nothing. Each item may carry the app's own condition.
    engine's gate with the real user (`runActivity`'s `condition`,
    `offeredActivities`' `conditions`).
 
-GETs (`activities.query`) are checked against the list from step 4.
+**GETs, checks 3, 4 and 6** (step 4, built 2026-10-18). Through an app,
+`activities.query` answers a GET only when:
+
+3. **it is on the app's list, or a listed activity's form calls it** — a
+   datasource of one of its attributes (composite cells included), or a named
+   function such a datasource reaches, by the literal ids in `invoke('…')`
+   (`AppList.formGets`, from the engine's `formGetIds`; a computed id there is
+   refused at model save). Otherwise "'<id>' is not on the list of '<name>'".
+   The GET behind a dropdown counts this way without being added;
+4. **it is in some record type's workflow.** It names no type: the record it
+   sends is only where its entry lands, so a GET shared by several types, sent
+   with no record, passes. One in none is the app's own and cannot run until
+   step 5;
+6. **both conditions pass**: its own and the item's, by the engine's gate
+   (`runQuery`'s `condition`). The item's applies whenever the GET is on the
+   list — the server cannot tell a form's call from the page's.
+
+A call with no app is untouched: an operation admin runs any GET.
 
 **At model save** (`validateConfigGraph`), the workflows pages name — on their
 drafts and latest published versions, `pageLists` — are passed to

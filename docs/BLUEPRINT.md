@@ -143,7 +143,8 @@ every record the call sends, reference fields included; a call with no app is
 an operation admin's, who reads every record in it. Since step 3 (same day) a
 run and the offered actions are also checked against the app's own list, the
 call names its record type, and the app's condition on the item must pass;
-GETs follow in step 4.* Today a call carries the action
+since step 4 a GET too must be on the app's list or be called by a listed
+activity's form (a dropdown's datasource), its item's condition passing.* Today a call carries the action
 and its record, not the page, so the server cannot tell which page it came
 from, and a create — which has no existing record to check — is not
 role-checked. Part 2 makes every call from the Runtime carry the id of its
@@ -531,7 +532,7 @@ other's activities, never by reading each other's records.**
 >   platform's `rt_sys_apps`. One page can be picked twice (a water scheduler
 >   and a sewer scheduler). The **app menu** points at apps in the list and
 >   holds no roles: a user sees only what they may run.
-> - **One list per app — BUILT 2026-10-18 for activities (step 3); reads in step 4.** An app's own workflow lists the activities and reads
+> - **One list per app — BUILT 2026-10-18 for activities (step 3) and reads (step 4).** An app's own workflow lists the activities and reads
 >   it uses, pulled from the pool; it offers only what is listed. Each item may
 >   carry a condition, which must pass along with the activity's own — the
 >   record type's rules and the app's both hold.

@@ -17,7 +17,10 @@ nicks-inspection-business 2 each), each with its `sys_migration` entry, and
 their menus rebuilt; the three operations whose solutions have no pages were
 skipped (§2.8). **Step 3 BUILT 2026-10-18** (four commits); its script ran on
 the dev database first, at the user's go-ahead after a dry run: all 22
-published pages got their lists, nothing unresolved. Built from
+published pages got their lists, nothing unresolved. **Step 4 BUILT
+2026-10-18** (two commits), after measuring the dev database read-only: no
+computed id in any datasource or the named functions they reach, no GET of an
+app's own on any list, and no item condition on a GET. Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -530,10 +533,10 @@ draft called an app in the list a "config"; the user ruled the word out.)
   — the datasource of one of its attributes, composite cells included, or a
   named function such a datasource calls — counts as on the list without being
   added. The server works these out from the literal ids in `invoke('…')`. A
-  computed id anywhere on that path is refused at save. Today `checkInvokes`
-  runs only over hooks and `returns` (`validateConfig.ts:325,330`), never
-  datasources, and skips computed ids (`:273-274`). Measure dev for computed
-  datasource ids before building.
+  computed id anywhere on that path is refused at save. Until step 4
+  `checkInvokes` ran only over hooks and `returns`, never datasources, and
+  skipped computed ids; step 4 checks every datasource's path (measured on dev
+  first: nothing refused).
 - **Each item may carry a condition**: `{ activity_ref, show_condition }` on
   the workflow's reference — the per-reference setting Part 1 left room for
   (§1.8). Same language and roots as an activity's own `show_condition`;
@@ -968,9 +971,27 @@ Each step works on its own and is cold-tested before the next.
    record type points to; migration 0023 drops `sdm_menus`, an imported or
    rolled-back model's `default_menu` is dropped, and the step 2 script's test
    went with the table (the script ran, and now skips every operation).
-4. **The app's list — reads.** Checks 3 and 6 for GETs (`activities.query`);
+4. **The app's list — reads — BUILT 2026-10-18.** Checks 3 and 6 for GETs (`activities.query`);
    form GETs counted from literal `invoke` ids in datasources and the named
    functions they call; computed ids there refused at save.
+
+   *As built* (working defaults, mentioned to the user): the save check covers
+   **every** datasource, not only those of activities on a list today, since
+   any activity can be put on one later; on that path a literal id must also
+   name a runnable GET (reported on the full model only, since a browser's
+   copy leaves out the workflows of types its user may not read), and a
+   problem in a named function is reported once, naming the first datasource
+   that reaches it; a computed id in a function no datasource reaches stays a
+   run-time matter, as in hooks. Check 4 for a GET is that it is in some
+   record type's workflow, so a GET shared by several types passes with no
+   record; a GET of the app's own is refused until step 5, as runs are. An
+   item's condition on a GET applies whenever the GET is on the list, even
+   when a listed activity's form also calls it — the server cannot tell the
+   two calls apart. Every activity on the list counts for form GETs, GETs
+   included. The done-when was checked on dev read-only: through the
+   inspections apps, `act_list_area_inspections` is on the Job and Area
+   Inspection pages' lists, and the defect picker's `act_search_area_defects`
+   is a form GET of the Finding and Area Inspection pages' listed activities.
 5. **The app's own activities.** Log-only activities and GETs of the app's own
    run on the operation's app's record; the platform's `rt_sys_apps` and
    `wf_sys_apps` in `@fluxus/engine`, typed with `page_id`, `label` and

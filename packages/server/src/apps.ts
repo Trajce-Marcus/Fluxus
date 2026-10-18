@@ -12,7 +12,7 @@
 
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { APPS_RECORD_TYPE, CONSOLE_EDIT, newRecordId, type ActivityHistoryEntry, type SolutionConfig } from '@fluxus/engine';
+import { APPS_RECORD_TYPE, CONSOLE_EDIT, formGetIds, newRecordId, type ActivityHistoryEntry, type SolutionConfig } from '@fluxus/engine';
 import type { DbOrTx } from './db/client';
 import { pageVersions, records, type MenuGroup, type MenuItem, type MenuLeaf, type OperationConfig } from './db/schema';
 import { appendHistoryEntry } from './databaseStore';
@@ -203,9 +203,12 @@ export async function loadAppForCall(db: DbOrTx, operationId: string, solutionId
 export interface AppList {
   ids: ReadonlySet<string>;
   conditions: ReadonlyMap<string, string>;
+  /** The GETs its listed activities' forms call (step 4): on the list without
+   *  being added, worked out from the literal ids their datasources invoke. */
+  formGets: ReadonlySet<string>;
 }
 
-const EMPTY_LIST: AppList = { ids: new Set(), conditions: new Map() };
+const EMPTY_LIST: AppList = { ids: new Set(), conditions: new Map(), formGets: new Set() };
 
 export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<AppList> {
   const [latest] = await db.select({ def: pageVersions.def }).from(pageVersions)
@@ -216,9 +219,11 @@ export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, 
   if (typeof workflowId !== 'string') return EMPTY_LIST;
   const workflow = config.workflows.find((w) => w.id === workflowId);
   if (!workflow || config.recordTypes.some((rt) => rt.workflow_ref === workflowId)) return EMPTY_LIST;
+  const ids = new Set(workflow.activities.map((u) => u.activity_ref));
   return {
-    ids: new Set(workflow.activities.map((u) => u.activity_ref)),
+    ids,
     conditions: new Map(workflow.activities.filter((u) => u.show_condition?.trim()).map((u) => [u.activity_ref, u.show_condition!])),
+    formGets: formGetIds(config, ids),
   };
 }
 

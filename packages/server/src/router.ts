@@ -1247,8 +1247,11 @@ export const appRouter = t.router({
      *
      * Authorisation is the activity's own gate, exactly as for a write: an
      * activity is the unit of access, and `show_condition` decides who may run
-     * this one. There is deliberately no second read filter over the answer —
-     * a GET returns what its author declared it to return.
+     * this one. Through an app (APPS_AND_INSTANCES step 4) the GET must also be
+     * on the app's list or called by a listed activity's form, and the item's
+     * condition must pass too. There is deliberately no second read filter
+     * over the answer — a GET returns what its author declared it to return,
+     * and its parameters are not read-checked.
      *
      * It is a query that writes one thing: the light entry the engine records
      * on the anchor (step 3), appended in one statement, including on the way
@@ -1272,7 +1275,7 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          const { readable } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -1280,6 +1283,24 @@ export const appRouter = t.router({
           }
           if (activity.record_map !== 'GET') {
             throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.activityId}' is not a GET activity — run it through activities.run` });
+          }
+          // Through an app (§2.3, step 4). Check 3: the GET is on its list, or
+          // a listed activity's form calls it. Check 4: it is in some record
+          // type's workflow — which, with no record, any type that lists it
+          // satisfies; the record a GET sends is only where its entry lands.
+          // One in none is the app's own, which cannot run until step 5.
+          // Check 6: an item's condition, which applies whenever the GET is on
+          // the list, since the server cannot tell a form's call from the page's.
+          let condition: string | undefined;
+          if (app) {
+            const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.config);
+            if (!list.ids.has(activity.id) && !list.formGets.has(activity.id)) {
+              throw new TRPCError({ code: 'FORBIDDEN', message: `'${activity.id}' is not on the list of '${app.label}'` });
+            }
+            if (typesListing(host.config, activity.id).length === 0) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${activity.id}' is in no record type's workflow — an app's own activities cannot run yet` });
+            }
+            condition = list.conditions.get(activity.id);
           }
 
           // No transaction: a GET only reads, and its one write — the light
@@ -1301,7 +1322,7 @@ export const appRouter = t.router({
           return await withSpan(
             'engine',
             activity.id,
-            () => host.engine.runQuery(activity, input.attributes, anchorRecord),
+            () => host.engine.runQuery(activity, input.attributes, anchorRecord, { condition }),
             (r) => (Array.isArray(r.data) ? { rows: r.data.length } : undefined),
           );
         } catch (err) {
