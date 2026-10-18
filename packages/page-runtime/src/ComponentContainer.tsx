@@ -193,7 +193,34 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
       return;
     }
     const recordId = record === null || record === undefined || record === '' ? null : String(record);
-    runtime.openPage(page, recordId);
+    // The host may refuse — the old way opens a page's only app, and a page
+    // with several, or none the caller may run, is not set up here.
+    try {
+      runtime.openPage(page, recordId);
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
+    }
+  }, [runtime, onError, manifest.name]);
+
+  // services.app.open — the one way to open an app, by its id with params
+  // (APPS_AND_INSTANCES §2.7). The id is often read from the app's definition,
+  // where a missing key is null: that, like an id the host cannot open, says
+  // the app is not set up for this operation.
+  const openApp = useCallback((appId: unknown, params: unknown) => {
+    const fail = (message: string) => onError(new Error(message), manifest.name);
+    if (!runtime.openApp) { fail('This host cannot open apps — the preview runs without one'); return; }
+    if (typeof appId !== 'string' || appId === '') { fail('This app is not set up for this operation'); return; }
+    const given = params ?? {};
+    if (typeof given !== 'object' || Array.isArray(given)) { fail('services.app.open takes its params as an object, e.g. { recordId }'); return; }
+    // FluxScript is case-insensitive and folds an object literal's keys, so
+    // `{ recordId: … }` arrives as `recordid`.
+    const raw = Object.entries(given as Record<string, unknown>).find(([k]) => k.toLowerCase() === 'recordid')?.[1];
+    const recordId = raw === null || raw === undefined || raw === '' ? null : String(raw);
+    try {
+      runtime.openApp(appId, recordId);
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)), manifest.name);
+    }
   }, [runtime, onError, manifest.name]);
 
   // Which activities apply to a record — asked by a component that draws them,
@@ -221,6 +248,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     hideComponent: () => setHidden(true),
     runActivity: launchActivity,
     openPage,
+    openApp,
     listActivities,
     // A stored key → a presigned address, so a component can draw a photo
     // (COMPONENT_PHOTOS §2). Like `listActivities` it is on the handler set but
@@ -235,7 +263,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     activeTab: tabs.active,
     selectTab: tabs.select,
     watchTabs: tabs.watch,
-  }), [onContextChange, launchActivity, openPage, listActivities, runtime, tabs]);
+  }), [onContextChange, launchActivity, openPage, openApp, listActivities, runtime, tabs]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is

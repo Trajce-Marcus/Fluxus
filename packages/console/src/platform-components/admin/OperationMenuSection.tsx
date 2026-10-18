@@ -1,21 +1,19 @@
-// The operation view's Menu section (CONSOLE_RUNTIME_SPEC §5 amended M10;
-// scoped into the operation view at M11): the operation's menu is an OVERRIDE
-// of the solution's default_menu. Inheriting (config.menu absent) shows the
-// default read-only; overriding replaces the whole menu — never a per-item
-// merge. Validated server-side at save (pages must be published, roles must
-// exist). Requires op admin.
+// The operation view's Menu tab (APPS_AND_INSTANCES §2.5–§2.6): the operation's
+// app menu — items pointing at apps in its apps list, in groups one level deep,
+// with no roles of their own: each Runtime user sees only the items whose app
+// they may run. It replaced the inherit/override menu (the solution's default
+// menu went, and an operation starts with an empty one). Checked at save (every
+// item points at an app of this operation, at most once). Requires op admin.
 
 import { useEffect, useState } from 'react';
-import type { MenuItem } from '@fluxus/client';
+import type { App, MenuItem } from '@fluxus/client';
 import { consoleClient } from '../../sdm-runtime/engine';
-import { MenuItemsEditor, menuProblems, MenuPreview, css as itemsCss } from './MenuItemsEditor';
+import { MenuItemsEditor, menuProblems, css as itemsCss } from './MenuItemsEditor';
 
-export function OperationMenuSection({ operationId, solutionId }: { operationId: string; solutionId: string }) {
+export function OperationMenuSection({ operationId }: { operationId: string; solutionId: string }) {
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
-  const [paths, setPaths] = useState<string[]>([]);
-  /** null = inheriting the solution default; an array = this operation's override. */
+  const [apps, setApps] = useState<App[]>([]);
   const [menu, setMenu] = useState<MenuItem[] | null>(null);
-  const [defaultMenu, setDefaultMenu] = useState<MenuItem[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,37 +21,22 @@ export function OperationMenuSection({ operationId, solutionId }: { operationId:
     setStatus(null);
     (async () => {
       try {
-        const op = await consoleClient.getOperation(operationId);
-        setMenu(op.config.menu ?? null);
-        const [r, p, cfg] = await Promise.all([
-          consoleClient.operationRoles(operationId),
-          consoleClient.listPublishedPaths(solutionId),
-          consoleClient.getSolutionConfig(solutionId).catch(() => ({})),
-        ]);
+        const [list, r] = await Promise.all([consoleClient.listApps(operationId), consoleClient.operationRoles(operationId)]);
+        setApps(list.apps);
+        setMenu(list.menu);
         setRoles(r);
-        setPaths(p);
-        setDefaultMenu((cfg as { default_menu?: MenuItem[] }).default_menu ?? []);
       } catch (e) {
         setStatus(e instanceof Error ? e.message : String(e));
       }
     })();
-  }, [operationId, solutionId]);
+  }, [operationId]);
 
-  async function persist(next: MenuItem[] | null) {
+  async function persist(next: MenuItem[]) {
     setBusy(true);
     setStatus(null);
     try {
-      const op = await consoleClient.getOperation(operationId);
-      // Whole-config write; drop the menu key entirely when reverting to
-      // inherit — absent means "the solution default", [] means "explicitly
-      // empty". Empty `items[]` is NOT pruned (2026-08-20): a childless group
-      // is a group being built, and flattening it to a leaf makes an item the
-      // server refuses now that a leaf must open a page.
-      const { menu: _drop, ...rest } = op.config;
-      const config = next === null ? rest : { ...rest, menu: next };
-      await consoleClient.putOperationConfig(operationId, config);
-      setMenu(next);
-      setStatus(next === null ? 'Reverted to the solution default.' : 'Menu saved.');
+      await consoleClient.putOperationConfig(operationId, { menu: next });
+      setStatus('Menu saved.');
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
     } finally {
@@ -61,7 +44,6 @@ export function OperationMenuSection({ operationId, solutionId }: { operationId:
     }
   }
 
-  const inheriting = menu === null;
   // Said here rather than by the server after a round trip.
   const problems = menuProblems(menu ?? []);
 
@@ -69,34 +51,25 @@ export function OperationMenuSection({ operationId, solutionId }: { operationId:
     <div className="admin-section">
       <h3 className="admin-section-title">Menu</h3>
       <p className="admin-sub">
-        The runtime navigation. By default the operation inherits the solution's menu;
-        an override replaces it wholesale. Items show only to users holding a listed role.
+        What this operation's users see in the Runtime: items pointing at its apps, in groups. Each user
+        sees only the items whose app they may run — who may run an app is set on it, in the Apps tab.
       </p>
 
-      {status && <div className={/saved\.|default\.$/.test(status) ? 'admin-ok' : 'admin-error'}>{status}</div>}
+      {status && <div className={/saved\.$/.test(status) ? 'admin-ok' : 'admin-error'}>{status}</div>}
 
-      {inheriting ? (
-        <>
-          <p className="admin-muted" style={{ marginTop: 0 }}>Inheriting the solution's default menu:</p>
-          <MenuPreview menu={defaultMenu} />
-          <div className="menu-actions">
-            <button className="admin-btn" disabled={busy} onClick={() => setMenu(structuredClone(defaultMenu))}>
-              Override for this operation
-            </button>
-          </div>
-        </>
+      {menu === null ? (
+        !status && <p className="admin-muted">Loading…</p>
       ) : (
         <>
-          <MenuItemsEditor menu={menu} onChange={setMenu} roles={roles} paths={paths} />
+          {apps.length === 0 && <p className="admin-muted">Add an app in the Apps tab before putting it on the menu.</p>}
+          <MenuItemsEditor menu={menu} onChange={setMenu} apps={apps} roles={roles} />
           {problems.length > 0 && (
             <div className="admin-error">
-              {problems.length === 1 ? 'This item opens nothing:' : 'These items open nothing:'}
-              {' '}{problems.map((p) => `${p.label} (${p.fix})`).join(', ')}.
+              {problems.length === 1 ? 'An item opens nothing:' : `${problems.length} items open nothing:`} pick its app, or remove it.
             </div>
           )}
           <div className="menu-actions">
-            <button className="admin-btn" disabled={busy || problems.length > 0} onClick={() => void persist(menu)}>{busy ? 'Saving…' : 'Save override'}</button>
-            <button className="admin-link" disabled={busy} onClick={() => void persist(null)}>Revert to solution default</button>
+            <button className="admin-btn" disabled={busy || problems.length > 0} onClick={() => void persist(menu)}>{busy ? 'Saving…' : 'Save menu'}</button>
           </div>
         </>
       )}

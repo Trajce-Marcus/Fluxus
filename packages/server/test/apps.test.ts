@@ -22,12 +22,22 @@ const act = (id: string, record_map: ActivityRawDef['record_map']): ActivityRawD
 
 const config: SolutionConfig = {
   access: { roles: [{ id: 'role_admin', name: 'Admin' }, { id: 'role_crew', name: 'Crew' }] },
-  attributes: [],
+  attributes: [{ key: 'ledger', label: 'Ledger', description: '', type: 'reference', type_config: { fk_record_type: 'rt_ledgers' } }],
   recordTypes: [
     { id: 'rt_jobs', name: 'Jobs', description: '', workflow_ref: 'wf_jobs', custom_fields: [{ key: 'note', type: 'text' }], access: { read: ['role_admin', 'role_crew'] } },
+    // Read by admins only: a crew member may not send one back.
+    { id: 'rt_ledgers', name: 'Ledgers', description: '', workflow_ref: 'wf_ledgers', custom_fields: [{ key: 'note', type: 'text' }], access: { read: ['role_admin'] } },
   ],
-  activities: [act('act_create_jobs', 'CREATE'), act('act_note_jobs', 'UPDATE')],
-  workflows: [{ id: 'wf_jobs', name: 'Jobs', description: '', activities: [{ activity_ref: 'act_create_jobs' }, { activity_ref: 'act_note_jobs' }] }],
+  activities: [
+    act('act_create_jobs', 'CREATE'),
+    act('act_note_jobs', 'UPDATE'),
+    { ...act('act_link_jobs', 'UPDATE'), attributes: [{ attribute_ref: 'ledger' }] },
+    { ...act('act_list_jobs', 'GET'), returns: 'records.jobs' },
+  ],
+  workflows: [
+    { id: 'wf_jobs', name: 'Jobs', description: '', activities: ['act_create_jobs', 'act_note_jobs', 'act_link_jobs', 'act_list_jobs'].map((activity_ref) => ({ activity_ref })) },
+    { id: 'wf_ledgers', name: 'Ledgers', description: '', activities: [] },
+  ],
 };
 
 let db: Db;
@@ -56,7 +66,10 @@ beforeAll(async () => {
   await appointSolAdmin(db, { solutionId: SOL, email: 'solboss@example.com' });
   await addOpUser(db, { operationId: OP, email: 'crew@example.com' });
   await putUserRoles(db, { operationId: OP, email: 'crew@example.com', roleIds: ['role_crew'] });
-  await db.insert(records).values({ operationId: OP, id: 'J1', typeRef: 'rt_jobs', customFields: { note: '' }, activityHistory: [] });
+  await db.insert(records).values([
+    { operationId: OP, id: 'J1', typeRef: 'rt_jobs', customFields: { note: '' }, activityHistory: [] },
+    { operationId: OP, id: 'L1', typeRef: 'rt_ledgers', customFields: { note: '' }, activityHistory: [] },
+  ]);
 });
 
 describe('apps.put — adding and changing apps', () => {
@@ -128,7 +141,7 @@ describe('who sets up apps — the operation\'s admins', () => {
 
 describe('operation admins in the Console (§2.6)', () => {
   it('lets an operation admin read the model and the published pages, but not change the model', async () => {
-    await expect(as(opBoss).config.get({ solutionId: SOL })).resolves.toMatchObject({ recordTypes: [{ id: 'rt_jobs' }] });
+    await expect(as(opBoss).config.get({ solutionId: SOL })).resolves.toMatchObject({ recordTypes: [{ id: 'rt_jobs' }, { id: 'rt_ledgers' }] });
     await expect(as(opBoss).pages.publishedPaths({ solutionId: SOL })).resolves.toEqual(['pages/board', 'pages/scheduler']);
     await expect(as(opBoss).config.put({ solutionId: SOL, config })).rejects.toThrow(/admin of this solution/);
     await expect(as(opBoss).pages.list({ solutionId: SOL })).rejects.toThrow(/admin of this solution/);
@@ -174,5 +187,101 @@ describe('apps are kept out of every general read (§2.4)', () => {
   it('reserves the platform\'s ids', async () => {
     await expect(open().config.putActivity({ solutionId: SOL, def: act('sys_console_edit', 'UPDATE') })).rejects.toThrow(/reserved by the platform/);
     await expect(open().config.putWorkflow({ solutionId: SOL, def: { id: 'wf_sys_apps', name: 'X', description: '', activities: [] } })).rejects.toThrow(/reserved by the platform/);
+  });
+});
+
+describe('the Runtime through apps (§2.3, §2.5, §2.7)', () => {
+  const USER_OP = 'test/apps-user';
+  let water: string;
+  let sewer: string;
+  let board: string;
+  const boss: ContextUser = { id: 'u-boss', name: 'Boss', email: 'boss@example.com', roles: [] };
+  beforeAll(async () => {
+    await ensureOperation(db, USER_OP, SOL, 'Apps, users');
+    await inviteUser(db, { email: 'boss@example.com' });
+    for (const [email, role] of [['crew@example.com', 'role_crew'], ['boss@example.com', 'role_admin']]) {
+      await addOpUser(db, { operationId: USER_OP, email });
+      await putUserRoles(db, { operationId: USER_OP, email, roleIds: [role] });
+    }
+    ({ id: water } = await open().apps.put({ operationId: USER_OP, pageId: 'pages/scheduler', label: 'Water scheduler', roleIds: ['role_crew'], definition: '{"network":"water"}' }));
+    ({ id: sewer } = await open().apps.put({ operationId: USER_OP, pageId: 'pages/scheduler', label: 'Sewer scheduler', roleIds: ['role_admin'], definition: '{"network":"sewer"}' }));
+    ({ id: board } = await open().apps.put({ operationId: USER_OP, pageId: 'pages/board', label: 'Board', roleIds: ['role_crew', 'role_admin'], definition: '{}' }));
+    await open().operations.putConfig({
+      operationId: USER_OP,
+      config: { menu: [{ id: 'g1', label: 'Schedulers', items: [{ id: 'm1', appId: water }, { id: 'm2', appId: sewer }] }, { id: 'm3', appId: board }] },
+    });
+    await db.insert(records).values([
+      { operationId: USER_OP, id: 'J2', typeRef: 'rt_jobs', customFields: { note: '' }, activityHistory: [] },
+      { operationId: USER_OP, id: 'L2', typeRef: 'rt_ledgers', customFields: { note: '' }, activityHistory: [] },
+    ]);
+  });
+
+  it('sends each user the apps they may run and a menu built from them', async () => {
+    const mine = await as(crew).apps.user({ operationId: USER_OP });
+    expect(mine.apps.map((a) => a.label)).toEqual(['Water scheduler', 'Board']);
+    expect(mine.apps[0]).toEqual({ id: water, label: 'Water scheduler', pageId: 'pages/scheduler', definition: '{"network":"water"}' });
+    expect(mine.menu).toEqual([{ id: 'g1', label: 'Schedulers', items: [{ id: 'm1', appId: water }] }, { id: 'm3', appId: board }]);
+    expect(mine.pages.map((p) => p.path).sort()).toEqual(['pages/board', 'pages/scheduler']);
+    // Two apps from the scheduler page, so it has no only app; the board has one.
+    expect(mine.appIdByPageId).toEqual({ 'pages/board': board });
+
+    const bosses = await as(boss).apps.user({ operationId: USER_OP });
+    expect(bosses.menu).toEqual([{ id: 'g1', label: 'Schedulers', items: [{ id: 'm2', appId: sewer }] }, { id: 'm3', appId: board }]);
+  });
+
+  it('a group that keeps no leaf goes, and someone with no role sees nothing', async () => {
+    const nobody: ContextUser = { id: 'u-nobody', name: 'Nobody', email: 'nobody@example.com', roles: [] };
+    await inviteUser(db, { email: 'nobody@example.com' });
+    await addOpUser(db, { operationId: USER_OP, email: 'nobody@example.com' });
+    await expect(as(nobody).apps.user({ operationId: USER_OP })).resolves.toMatchObject({ apps: [], menu: [], pages: [] });
+  });
+
+  it('no longer sends the menu with the operation', async () => {
+    const op = await as(crew).operations.get({ operationId: USER_OP });
+    expect(op.config).toEqual({});
+    expect((await open().operations.list()).every((o) => !('menu' in o.config))).toBe(true);
+  });
+
+  it('runs a call through an app the caller may run', async () => {
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: water, activityId: 'act_note_jobs', recordId: 'J2' }))
+      .resolves.toMatchObject({ status: 'done' });
+    await expect(as(crew).records.get({ operationId: USER_OP, appId: water, recordId: 'J2' })).resolves.toMatchObject({ id: 'J2' });
+    await expect(as(crew).activities.query({ operationId: USER_OP, appId: water, activityId: 'act_list_jobs' })).resolves.toBeDefined();
+  });
+
+  it('refuses a call naming an app the caller holds no role on, or no app of this operation', async () => {
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: sewer, activityId: 'act_note_jobs', recordId: 'J2' }))
+      .rejects.toThrow(/may not run 'Sewer scheduler'/);
+    await expect(as(crew).activities.query({ operationId: USER_OP, appId: sewer, activityId: 'act_list_jobs' }))
+      .rejects.toThrow(/may not run/);
+    await expect(as(crew).records.get({ operationId: USER_OP, appId: sewer, recordId: 'J2' })).rejects.toThrow(/may not run/);
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: 'ghost', activityId: 'act_note_jobs', recordId: 'J2' }))
+      .rejects.toThrow(/not set up for this operation/);
+    // An app of another operation is not this operation's.
+    const elsewhere = (await open().apps.list({ operationId: OP })).apps[0].id;
+    await expect(as(crew).records.get({ operationId: USER_OP, appId: elsewhere, recordId: 'J2' })).rejects.toThrow(/not set up for this operation/);
+  });
+
+  it('answers the offered actions empty for an app the caller may not run', async () => {
+    const [ok] = await as(crew).page.activities({ operationId: USER_OP, appId: water, items: [{ recordId: 'J2' }] });
+    expect(ok.length).toBeGreaterThan(0);
+    const [none] = await as(crew).page.activities({ operationId: USER_OP, appId: sewer, items: [{ recordId: 'J2' }] });
+    expect(none).toEqual([]);
+  });
+
+  it('refuses a run whose reference field names a record the caller may not read', async () => {
+    await expect(as(crew).activities.run({ operationId: USER_OP, appId: water, activityId: 'act_link_jobs', recordId: 'J2', attributes: { ledger: 'L2' } }))
+      .rejects.toThrow(/Ledger: Record access denied/);
+    await expect(as(boss).activities.run({ operationId: USER_OP, appId: board, activityId: 'act_link_jobs', recordId: 'J2', attributes: { ledger: 'L2' } }))
+      .resolves.toMatchObject({ status: 'done' });
+  });
+
+  it('checks file calls through the app too', async () => {
+    const get = (user: ContextUser, appId: string) => as(user).files.presignGet({ solutionId: SOL, operationId: USER_OP, appId, key: 'k' });
+    await expect(get(crew, sewer)).rejects.toThrow(/may not run/);
+    // Past the checks, this test server has no blob store.
+    await expect(get(crew, water)).rejects.toThrow(/not configured/);
+    await expect(as(crew).files.presignGet({ solutionId: 'demo/sdm', operationId: USER_OP, appId: water, key: 'k' }))
+      .rejects.toThrow(/does not run solution/);
   });
 });

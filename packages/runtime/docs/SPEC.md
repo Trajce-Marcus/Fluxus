@@ -1,6 +1,6 @@
 # @fluxus/runtime — Living Spec
 
-Current design truth for the **Runtime app** — the runtime-plane app end users sign into: sign in, land on the operation's menu, open published pages. Updated in the same commit as any behaviour/design change (see root CLAUDE.md). Point-in-time build history lives in [phases/](phases/). The canonical schema is [SDM_Schema_Reference.md](SDM_Schema_Reference.md) — it wins on any conflict.
+Current design truth for the **Runtime app** — the runtime-plane app end users sign into: sign in, land on the operation's app menu, open the apps they may run. Updated in the same commit as any behaviour/design change (see root CLAUDE.md). Point-in-time build history lives in [phases/](phases/). The canonical schema is [SDM_Schema_Reference.md](SDM_Schema_Reference.md) — it wins on any conflict.
 
 The package was `@fluxus/sdm` until the 2026-08-01 restructure. Two things left it and one thing stayed:
 
@@ -109,8 +109,8 @@ src/host.ts (backend stage 2): FluxusClient.connect({records:'none'}) →
         initHost() before rendering (server unreachable → boot error screen,
         no fallback)
         └── context/RuntimeContext (shell state: session/auth, the identity
-              line's three names, published page paths, the open page)
-              └── components/ (MenuNav, PagesList, PageView, NotificationCentre)
+              line's three names, the open app and its record)
+              └── components/ (MenuNav, PageView, NotificationCentre)
                     read via useRuntime()
 ```
 
@@ -121,25 +121,45 @@ The package has **no library face** since the 2026-08-01 restructure: `src/index
 
 ## UI
 
-The app is `main.tsx` → `App.tsx`: published pages and nothing else. The record
+The app is `main.tsx` → `App.tsx`: the operation's apps and nothing else. The record
 surface is [`@fluxus/workbench`](../../workbench/docs/SPEC.md), mounted by the
 Console — not by this app (M15).
 
 ```
 Runtime app — src/App.tsx
 Header (identity line, notification bell, user menu)
-├── Side panel — MenuNav; PagesList only as the no-menu fallback
-└── Content — PageView for the open page, else the empty state
-      ("Nothing published yet" / "Nothing open")
+├── Side panel — MenuNav (the caller's app menu, built on the server)
+└── Content — PageView for the open app's page, else the empty state
+      ("Nothing is set up for you here yet" / "Nothing open"), or
+      "This app is not set up for this operation" for an id the caller may not run
 ```
 
-**What is open, in the URL (2026-08-11):** `?page=<pageId>&record=<recordId>` beside `?operation=`. `page` is the page's id, which is its stored path; `record` names the record a page about *many* instances opened on (a one-instance page finds or creates its own, a pure view has none). Both are read at boot, so a link opens where it says; picking another page rewrites `page` and drops `record`, which belonged to the page it was opened on. **Each page opened is a history entry** (2026-09-23): a menu pick or a page opened from a page pushes one — re-opening what is already open pushes none — and Back/Forward reopen what the URL then names. The entry was replaced until then, so Back had nothing inside the app to return to. Each entry carries its depth in the app (`history.state.fluxusDepth`, 0 for the page the tab landed on), because the browser will not say whether Back would leave the app — that is what greys `PageHeader`'s back arrow on the first page. **Each entry also keeps where the reader was** (2026-09-26): the page's panel scroll and, where its tab strip switches sections, the tab showing — `history.state.fluxusScroll` — written into the current entry 200 ms after scrolling stops (browsers limit how often an entry may be rewritten) and at once before another page is opened. Back and Forward hand it to the page, which puts the reader back (page-runtime SPEC § Rendering); a page opened from the menu or another page is a new entry and starts at the top. A reload keeps the entry, so it returns to the same place too. The operation param is a different thing — it establishes *which operation this app runs* before any of this, and it is the client-trust operation handle that will eventually retire it, not this addressing.
+**Apps, since 2026-10-18 (APPS_AND_INSTANCES Part 2 step 2, §2.7).** At
+connect the client fetches `apps.user`: the apps the caller may run (each with
+its id, name, page and definition), their published pages, the app menu built
+from them on the server, and — until step 6 — each page's only app.
+`MenuNav` draws that menu (a leaf shows its app's name). Opening an app —
+from the menu, `services.app.open(appId, { recordId })` in a page, or a link —
+sets `client.appId` before anything on its page can make a call, so every call
+the page makes names its app, and the server checks it. An id the caller may
+not run says the app is not set up for this operation. **The old way, until
+step 6:** `services.page.open(page, record)`, OpenPage targets and RecordList
+action columns name a page, and open the operation's only app made from it
+(`appIdForPage`); with several, or none, the app is not set up. `PageView` is
+keyed on the app, so two apps made from one page start the page afresh, and
+passes the app to the page as `context.app` (its definition parsed from JSON;
+one that will not parse reads as empty). **Reversed: the no-menu fallback**
+(`PagesList`, the list of every openable page shown when an operation had no
+menu) — a page not in the operation's apps list cannot be opened there, so an
+empty menu says nothing is set up.
+
+**What is open, in the URL (2026-08-11; `app=` since 2026-10-18):** `?app=<appId>&record=<recordId>` beside `?operation=`. `app` is the id of an app in the operation's apps list; `record` names the record its page is about (a pure view has none). Both are read at boot, so a link opens where it says; picking another app rewrites `app` and drops `record`, which belonged to the app it was opened in. **`page=` went with `app=`**: an old link carrying `?page=<path>` opens that page's only app in the operation (the old way, until step 6) and the address is rewritten to name the app; a page with several apps, or none, says the app is not set up. **Each page opened is a history entry** (2026-09-23): a menu pick or a page opened from a page pushes one — re-opening what is already open pushes none — and Back/Forward reopen what the URL then names. The entry was replaced until then, so Back had nothing inside the app to return to. Each entry carries its depth in the app (`history.state.fluxusDepth`, 0 for the page the tab landed on), because the browser will not say whether Back would leave the app — that is what greys `PageHeader`'s back arrow on the first page. **Each entry also keeps where the reader was** (2026-09-26): the page's panel scroll and, where its tab strip switches sections, the tab showing — `history.state.fluxusScroll` — written into the current entry 200 ms after scrolling stops (browsers limit how often an entry may be rewritten) and at once before another page is opened. Back and Forward hand it to the page, which puts the reader back (page-runtime SPEC § Rendering); a page opened from the menu or another page is a new entry and starts at the top. A reload keeps the entry, so it returns to the same place too. The operation param is a different thing — it establishes *which operation this app runs* before any of this, and it is the client-trust operation handle that will eventually retire it, not this addressing.
 
 **Which operation it runs (2026-07-26):** `?operation=<id>` in the URL selects it (`initHost` reads the query string and passes `operationId` to `FluxusClient.connect`); absent ⇒ the client's default operation, so existing links keep working. This is how the Console's Operations list launches the app — Console's **Open** on an operation opens `${VITE_FLUXUS_RUNTIME_URL}/?operation=<id>` in a new tab — and it makes an operation a plain bookmarkable address.
 
-**Pages (2026-07-19, extended M15):** pages render via `@fluxus/page-runtime` (`PageView` — plain `<style>` tag for the renderer css, no shadow DOM). The "Pages" listing that introduced them is now the **no-menu fallback only**; with a menu effective, `MenuNav` addresses pages. The open page lives in `RuntimeContext` — since M15 there is no record selection beside it to return to.
+**Pages (2026-07-19, extended M15):** pages render via `@fluxus/page-runtime` (`PageView` — plain `<style>` tag for the renderer css, no shadow DOM). The "Pages" listing that introduced them was the no-menu fallback until 2026-10-18, when it went; `MenuNav` addresses apps. The open app lives in `RuntimeContext` — since M15 there is no record selection beside it to return to.
 
-**Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` (the role-filtered effective menu, `client.visibleMenu()`) is primary; without a menu (demo/adoption posture) the pages listing is the fallback. *Amended M15:* the record-type list is gone from this nav entirely — it belongs to `<Workbench>` now — and so is the "Workbench" menu item.
+**Runtime shell (M10, 2026-07-26 — CONSOLE_RUNTIME_SPEC §4):** the app is chrome around the effective menu. Top bar: a ☰ toggle (nav collapse, persisted at `fluxus:sdm:nav-open`), the identity line (below), then the notification bell, and (auth configured) a user menu — signed-in name + Sign out (`hostAuth.signOut()` then reload, so boot re-runs the sign-in gate; `host.ts` exports `currentSession`/`hostAuth` for it). Nav: `MenuNav` — the caller's app menu as the server built it (`client.menu`, since 2026-10-18; it was the role-filtered effective menu, `client.visibleMenu()`, with the pages listing as the no-menu fallback). *Amended M15:* the record-type list is gone from this nav entirely — it belongs to `<Workbench>` now — and so is the "Workbench" menu item.
 
 **Identity line (M13, 2026-07-27):** the header answers who you work for, which app you are in, whose data it runs on, who you are, and whose platform this is. Left: **org name** `·` **solution name** (`.app-org` / `.app-header-sep` / `.app-title`). Right, before the toggles: the **operation name** as a context chip (`.op-chip`) — display-only, since switching operations in-session needs a memberships list that does not exist. All three come off `FluxusClient` (`orgName` / `solutionName` / `operationName`, resolved at connect from `operations.get`). Platform attribution is one **"Powered by Fluxus"** line pinned to the foot of the nav (`.powered-by`; `.side-panel` is now a column with a scrolling `.side-panel-nav`) — at the edge, never competing with the tenant's branding in the bar. Names come from the tenancy's own rows — nothing installs a demo org, solution or operation any more (2026-08-05), so each is whatever its admin named it, falling back to the id when a row is missing.
 

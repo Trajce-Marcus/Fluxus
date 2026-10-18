@@ -5,7 +5,7 @@ import type { SlotConfig, ContextKeyDef } from './pageDef';
 import type { PageRuntime } from './runtime';
 import { componentManifests } from './componentManifests';
 import { ComponentContainer } from './ComponentContainer';
-import type { PageContext } from './pageHost';
+import type { PageAppContext, PageContext } from './pageHost';
 import { resolvePageAnchor } from './pageAnchor';
 import { collectTabNames, hiddenBySwitch, scrollToTab, watchTabs, type PageTabs } from './pageTabs';
 import { createPageReadiness, type PageReadiness } from './pageReady';
@@ -14,11 +14,9 @@ import { readScroll, restoreScroll, type PageScroll } from './pageScroll';
 // ── The ctx root ──────────────────────────────────────────────────────────────
 // Page context IS the DSL's `context` root (PAGE_WIRING_DESIGN decision 1):
 // the platform supplies built-ins (context.user comes from the engine bridge;
-// context.app here; route params arrive with app-level navigation), and
-// page-local UI state lives under context.page — seeded from the page's
-// declared keys, written via services.page.setContext.
-
-const APP_CONTEXT = { name: 'Fluxus' };
+// context.app from the host, which knows the app it opened — APPS_AND_INSTANCES
+// §2.2), and page-local UI state lives under context.page — seeded from the
+// page's declared keys, written via services.page.setContext.
 
 // ── Panel layout rendering ───────────────────────────────────────────────────
 
@@ -139,11 +137,16 @@ interface Props {
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
   /**
-   * The record this page is about, when the page declares `many` instances —
-   * the host reads it off the URL. A `one`-instance page finds or creates its
-   * own and ignores this; a pure view has none.
+   * The record this page is about, when the page declares one — the host
+   * reads it off the URL. A pure view has none.
    */
   recordId?: string;
+  /**
+   * The app this page is open as — `context.app` (APPS_AND_INSTANCES §2.2).
+   * A host with no app (the Console's preview) omits it, and the page sees its
+   * own path as both `pageId` and `label`, and an empty definition.
+   */
+  app?: PageAppContext;
   /** Show the collapsible context.page debug strip (the editor preview turns this on). */
   debug?: boolean;
   /**
@@ -156,7 +159,7 @@ interface Props {
   onScroll?: (place: PageScroll) => void;
 }
 
-export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, recordId, debug, savedScroll, onScroll }: Props) {
+export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, recordId, app, debug, savedScroll, onScroll }: Props) {
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
   // Which page, about which record. The anchor and the errors are each held
   // against the key they belong to (2026-09-23): the renderer is not remounted
@@ -274,7 +277,7 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
       ready.cancel(); // a page that went away before it was ready is not a slow page
       if (readiness.current === ready) readiness.current = null;
     };
-  }, [runtime, pageKey, recordId, declaredRecord?.type, declaredRecord?.instances]);
+  }, [runtime, pageKey, recordId, declaredRecord?.type]);
 
   // After the commit that mounts the components, so their first "loading"
   // reports (child effects run before this one) are already counted.
@@ -334,8 +337,8 @@ export function PageRenderer({ runtime, pagePath, slotConfigs, contextSchema, re
 
   const anchorRecord = anchor.status === 'ready' ? anchor.record : null;
   const pageCtx = useMemo<PageContext>(
-    () => ({ app: APP_CONTEXT, page: pageState, record: anchorRecord }),
-    [pageState, anchorRecord],
+    () => ({ app: app ?? { pageId: pagePath, label: pagePath, definition: {} }, page: pageState, record: anchorRecord }),
+    [app, pagePath, pageState, anchorRecord],
   );
 
   const handleContextChange = useCallback((key: string, value: unknown) => {

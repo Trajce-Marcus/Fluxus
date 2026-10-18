@@ -129,18 +129,29 @@ export const DEFAULT_URL = 'http://localhost:8787/trpc';
 /** The demo bundle keeps one id as both its operation and its solution. */
 export const DEFAULT_OPERATION = 'demo/sdm';
 
-/** operations.config menu (server schema §5) — snapshotted at connect. */
-export interface MenuItem {
-  /** Stable identity, independent of the label (2026-08-01) — the Console's
-   *  menu editor selects and reorders by it. Optional: older menus lack it. */
-  id?: string;
-  label: string;
-  page?: string;
-  roles?: string[];
-  items?: MenuItem[];
-}
+/**
+ * The operation's app menu (APPS_AND_INSTANCES §2.5): a **leaf** points at one
+ * of the operation's apps, a **group** holds leaves, one level deep. No roles:
+ * the server builds each caller's menu (`apps.user`) from the apps they may
+ * run, and a leaf shows its app's name.
+ */
+export type MenuItem = MenuLeaf | MenuGroup;
+export interface MenuLeaf { id: string; appId: string }
+export interface MenuGroup { id: string; label: string; items: MenuLeaf[] }
+export const isMenuGroup = (item: MenuItem): item is MenuGroup => 'items' in item;
+
 export interface OperationConfig {
   menu?: MenuItem[];
+}
+
+/** An app the caller may run, as the Runtime receives it (`apps.user`). */
+export interface UserApp {
+  id: string;
+  label: string;
+  /** The published page it is made from. */
+  pageId: string;
+  /** What it needs set for this operation: JSON, as text. */
+  definition: string;
 }
 export interface OperationRow {
   id: string;
@@ -467,9 +478,10 @@ export class ConsoleClient {
     return this.trpc.pages.rollback.mutate({ solutionId, path, version });
   }
 
-  // An operation's apps list (APPS_AND_INSTANCES §2.6) — its admins only.
-  listApps(operationId: string): Promise<{ apps: App[] }> {
-    return this.trpc.apps.list.query({ operationId });
+  // An operation's apps list and its menu (APPS_AND_INSTANCES §2.5–§2.6) —
+  // its admins only. The menu is saved with `putOperationConfig`.
+  listApps(operationId: string): Promise<{ apps: App[]; menu: MenuItem[] }> {
+    return this.trpc.apps.list.query({ operationId }) as Promise<{ apps: App[]; menu: MenuItem[] }>;
   }
   /** One app with its history, for the dialog that edits it. */
   getApp(operationId: string, appId: string): Promise<App & { activityHistory: ActivityHistoryEntry[] }> {
@@ -652,9 +664,9 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
      */
     readonly pages: Map<string, unknown>,
     /**
-     * The effective runtime menu (spec §5, amended M10): the operation's
-     * override when its config sets `menu`, else the solution's `default_menu`,
-     * else []. Whole-menu semantics — never a per-item merge.
+     * The caller's app menu, built on the server (`apps.user`, APPS_AND_INSTANCES
+     * §2.5): leaves whose app they may run, groups that keep one. Empty on the
+     * design plane. No fallback: an empty menu means nothing is set up.
      */
     readonly menu: MenuItem[],
     /**
@@ -694,6 +706,20 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * when it is false. Cosmetic: every design write is refused server-side.
    */
   solutionAdmin = true;
+  /**
+   * The apps the caller may run in this operation (`apps.user`), and, until
+   * step 6, the id of each page's only app — what the old way of opening a page
+   * by its path resolves through. Empty on the design plane.
+   */
+  apps: UserApp[] = [];
+  appIdByPageId: Record<string, string> = {};
+  /**
+   * The app the host has open — sent as `appId` on every call that runs, reads
+   * or uploads through it (APPS_AND_INSTANCES §2.3). The Runtime sets it when
+   * it opens an app; the Console never does, so its calls name no app. The
+   * server checks it on every call: it is the browser's claim, nothing more.
+   */
+  appId: string | null = null;
   /**
    * The records fetched directly — by id or by type — which `refresh` re-reads
    * when there is no partition. The records they point at arrive with each read
@@ -833,11 +859,6 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     await this.trpc.config.deleteRole.mutate({ solutionId: this.solutionId, id });
   }
 
-  /** The solution's default runtime menu. No delete — `[]` is the empty menu. */
-  async putDefaultMenu(menu: MenuItem[]): Promise<void> {
-    await this.trpc.config.putDefaultMenu.mutate({ solutionId: this.solutionId, menu });
-  }
-
   /**
    * Model history (ruled 2026-07-26) — the same publish surface pages have had
    * since M3, and what replaces git as the record of model change now that the
@@ -875,14 +896,15 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     const solutionId = op.solutionId;
     const published = options.pages === 'published';
     const recordsMode = options.records ?? 'partition';
-    const [config, partition, pageRows, me] = await Promise.all([
+    const [config, partition, userApps, draftPages, me] = await Promise.all([
       trpc.config.getForOperation.query({ operationId }) as Promise<ClientSolutionConfig>,
       recordsMode === 'none'
         ? Promise.resolve([] as RecordInstance[])
         : (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>),
-      // operationId lets published mode filter pages to those openable to the
-      // caller (page access control, §6).
-      trpc.pages.list.query({ solutionId, operationId, published }),
+      // The apps the caller may run, their published pages, and the menu built
+      // from them (APPS_AND_INSTANCES §2.7) — what the Runtime renders.
+      trpc.apps.user.query({ operationId }),
+      published ? Promise.resolve(null) : trpc.pages.list.query({ solutionId, published: false }),
       trpc.me.query({ operationId }),
       // Rides the same HTTP batch. A server that predates the switches (or a
       // failure) leaves browser logging off — never an error at connect.
@@ -891,39 +913,25 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     const adapter = new MemoryAdapter(config, {
       initialRecords: partition.map((r) => [r.id, r] as const),
     });
-    const pages = new Map(pageRows.map((p) => [p.path, p.def]));
-    // Effective menu (§5, M10): operation override ?? solution default ?? [].
-    // `menu` absent on the operation means inherit; `[]` is an explicit empty
-    // override. The engine is menu-blind, so default_menu is read off the raw
-    // config here, not via SolutionConfig.
-    const menu =
-      (op.config as { menu?: MenuItem[] }).menu ??
-      (config as { default_menu?: MenuItem[] }).default_menu ??
-      [];
+    const pages = new Map((draftPages ?? userApps.pages).map((p) => [p.path, p.def]));
+    const menu = userApps.menu as MenuItem[];
     const solutionName = (op as { solutionName?: string }).solutionName ?? solutionId;
     const orgName = (op as { orgName?: string }).orgName ?? op.orgId;
     const client = new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, op.orgId, me.roles, me.authConfigured);
     client.recordsMode = recordsMode;
+    client.apps = userApps.apps;
+    client.appIdByPageId = userApps.appIdByPageId;
     return client;
   }
 
-  /**
-   * The menu filtered to what the caller may see (spec §5, cosmetic): deny by
-   * default — an item is visible iff the user holds ≥1 listed role; a group
-   * also needs ≥1 visible child. When RBAC is not enforced (env stub) the menu
-   * shows unfiltered (§7). Server-side page filtering is the real gate.
-   */
-  visibleMenu(): MenuItem[] {
-    const held = new Set(this.userRoles);
-    const filter = (items: MenuItem[]): MenuItem[] =>
-      items
-        .map((it) => (it.items ? { ...it, items: filter(it.items) } : it))
-        .filter((it) => {
-          if (!this.enforced) return true;
-          const selfOk = (it.roles ?? []).some((r) => held.has(r));
-          return it.items ? selfOk && it.items.length > 0 : selfOk;
-        });
-    return filter(this.menu);
+  /** The app named by an id, if the caller may run it in this operation. */
+  findApp(appId: string): UserApp | null {
+    return this.apps.find((a) => a.id === appId) ?? null;
+  }
+
+  /** What every call through the open app carries: its id, when one is open. */
+  private get viaApp(): { appId?: string } {
+    return this.appId ? { appId: this.appId } : {};
   }
 
   /** Upsert a page: local snapshot first (sync readers), then the server. */
@@ -945,11 +953,11 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    */
   get uploads(): UploadService {
     const presign = (req: PresignRequest): Promise<Presigned> =>
-      this.trpc.files.presignUpload.mutate({ solutionId: this.solutionId, ...req }) as Promise<Presigned>;
+      this.trpc.files.presignUpload.mutate({ solutionId: this.solutionId, operationId: this.operationId, ...this.viaApp, ...req }) as Promise<Presigned>;
     return {
       upload: (attributeKey, file, onProgress) => runUpload(attributeKey, file, presign, onProgress),
       resolveUrl: async (storageKey) =>
-        (await this.trpc.files.presignGet.query({ solutionId: this.solutionId, key: storageKey })).url,
+        (await this.trpc.files.presignGet.query({ solutionId: this.solutionId, operationId: this.operationId, ...this.viaApp, key: storageKey })).url,
     };
   }
 
@@ -985,7 +993,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
   }
 
   private async readRecord(recordId: string): Promise<RecordInstance & { references: RecordInstance[]; withheld: string[] }> {
-    const read = (await this.trpc.records.get.query({ operationId: this.operationId, recordId })) as
+    const read = (await this.trpc.records.get.query({ operationId: this.operationId, ...this.viaApp, recordId })) as
       RecordInstance & { references?: RecordInstance[]; withheld?: string[] };
     return { ...read, references: read.references ?? [], withheld: read.withheld ?? [] };
   }
@@ -1043,6 +1051,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     try {
       return (await this.trpc.activities.run.mutate({
         operationId: this.operationId,
+        ...this.viaApp,
         activityId: input.activityId,
         recordId: input.recordId,
         attributes: input.attributes ?? {},
@@ -1068,6 +1077,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
   async query(input: QueryInput): Promise<QueryActivityResult> {
     return (await this.trpc.activities.query.query({
       operationId: this.operationId,
+      ...this.viaApp,
       activityId: input.activityId,
       recordId: input.recordId,
       attributes: input.attributes ?? {},
@@ -1083,7 +1093,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * empty list, as a missing one does.
    */
   async pageActivities(items: ({ recordId: string } | { typeId: string })[]): Promise<ActivityOption[][]> {
-    return await this.trpc.page.activities.query({ operationId: this.operationId, items });
+    return await this.trpc.page.activities.query({ operationId: this.operationId, ...this.viaApp, items });
   }
 
   /**

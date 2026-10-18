@@ -238,7 +238,10 @@ above did:
 - **`default_menu` rides through untouched.** The runtime cannot render its
   navigation without it, and the operation's own override — which usually wins —
   arrives untrimmed from `operations.get` anyway. It is not part of
-  `ClientSolutionConfig`: the engine is menu-blind.
+  `ClientSolutionConfig`: the engine is menu-blind. *Reversed 2026-10-18
+  (APPS_AND_INSTANCES §2.5): it is no longer sent — the Runtime's menu is the
+  operation's app menu, which `apps.user` builds for each caller, and
+  `operations.get` no longer carries a menu.*
 
 ### Make the type system enforce it
 

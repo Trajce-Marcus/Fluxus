@@ -12,7 +12,6 @@
 
 import { useCallback, useState } from 'react';
 import type { ActivityRawDef, AttributeDef, RecordTypeDef, RoleDef, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
-import type { MenuItem } from '@fluxus/client';
 import { sdmClient, reloadSolution } from '../../sdm-runtime/engine';
 import { shellStore } from '../shell/store';
 
@@ -108,9 +107,6 @@ export const saveWorkflows = (loaded: WorkflowRawDef[], current: WorkflowRawDef[
 
 export const saveRoles = (loaded: RoleDef[], current: RoleDef[]) =>
   saveEntities(loaded, current, (r) => r.id, (r) => sdmClient.putRole(r), (id) => sdmClient.deleteRole(id));
-
-/** The menu is the config's one non-collection field: it saves whole. */
-export const saveDefaultMenu = (menu: MenuItem[]) => sdmClient.putDefaultMenu(menu);
 
 /** Dirty registry. An editor's draft dies with its unmount, so the SDM sidebar
  *  has to know about unsaved work *before* it switches tabs — a module-level

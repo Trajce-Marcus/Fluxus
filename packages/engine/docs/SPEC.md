@@ -872,6 +872,13 @@ workflow or activity using any of the four** (`RESERVED_IDS`).
 `newRecordId()` issues a record id (UUIDv7, as `shapeNewRecord` always has), so
 the server can issue an app's.
 
+**`validateSubmission`'s `canRead`** (2026-10-18, §2.3 check 5): an optional
+last argument, the caller's read rules. Given, a run's reference attribute —
+top-level, or a composite cell — naming a record the caller may not read is an
+issue, "<label>: Record access denied". The server passes it on every run; a
+GET's parameters are not checked (a GET decides what it returns), and a host
+without read rules omits it.
+
 ## The model projected as record types (BUILT 2026-09-22)
 
 `modelProjection.ts` turns a `SolutionConfig` into the `sdm_*` collections

@@ -6,7 +6,6 @@ import { AttributesEditor } from './AttributesEditor';
 import { ActivitiesEditor } from './ActivitiesEditor';
 import { WorkflowsEditor } from './WorkflowsEditor';
 import { RolesEditor } from './RolesEditor';
-import { MenuEditor } from './MenuEditor';
 import { ConfigPublishControl } from './ConfigPublishControl';
 import { css as publishControlCss } from '../page-builder/PublishControl';
 import { css as rolesEditorCss } from './RolesEditor';
@@ -36,8 +35,6 @@ function sdmSection(tab: string) {
       return <WorkflowsEditor />;
     case 'roles':
       return <RolesEditor />;
-    case 'menu':
-      return <MenuEditor />;
     default:
       return <div className="admin-panel"><p className="admin-muted">Unknown SDM view: {tab}</p></div>;
   }

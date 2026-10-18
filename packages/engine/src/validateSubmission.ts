@@ -54,8 +54,22 @@ export async function validateSubmission(
   captured: Record<string, unknown>,
   anchorRecord: RecordInstance | null,
   waived: Record<string, string> = {},
+  /**
+   * Whether the caller may read a record — given, a reference the run sends
+   * back to a record they may not read is refused (APPS_AND_INSTANCES §2.3,
+   * check 5). The server passes its read rules; a host without them omits it.
+   */
+  canRead?: (record: RecordInstance) => boolean,
 ): Promise<SubmissionIssue[]> {
   const issues: SubmissionIssue[] = [];
+  const denied = async (id: string): Promise<boolean> => {
+    if (!canRead || !id) return false;
+    try {
+      return !canRead(await engine.store.getRecord(id));
+    } catch {
+      return false; // a missing record is not this check's to report
+    }
+  };
   const byKey = new Map(activity.attributes.map(a => [a.key, a]));
 
   // Composite cells may arrive nested or as dotted flat keys — normalise to
@@ -177,6 +191,9 @@ export async function validateSubmission(
             issues.push({ attribute: path, message: `${cellLabel}: ${err instanceof Error ? err.message : String(err)}` });
           }
         }
+        if (sub.type === 'reference' && (await denied(cellStr))) {
+          issues.push({ attribute: path, message: `${cellLabel}: Record access denied` });
+        }
         if (sub.type === 'list') {
           const datasource = sub.type_config?.datasource;
           if (!datasource) issues.push({ attribute: path, message: `'${path}' has no datasource` });
@@ -297,7 +314,11 @@ export async function validateSubmission(
         }
         if (!found || found.typeRef !== (fkType.startsWith('rt_') ? fkType : fullId(fkType))) {
           issues.push({ attribute: attr.key, message: `${attr.label}: no ${shortName(fkType)} record '${raw}'` });
+        } else if (canRead && !canRead(found)) {
+          issues.push({ attribute: attr.key, message: `${attr.label}: Record access denied` });
         }
+      } else if (await denied(raw)) {
+        issues.push({ attribute: attr.key, message: `${attr.label}: Record access denied` });
       }
     }
   }

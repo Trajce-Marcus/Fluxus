@@ -48,7 +48,7 @@ const HOST: PageValidationHost = {
   findRecordType: (id) => RECORD_TYPES[id] ?? null,
 };
 
-const BOARD: PageDef['record'] = { type: 'rt_dispatch_boards', instances: 'one' };
+const BOARD: PageDef['record'] = { type: 'rt_dispatch_boards' };
 
 // Both of WorkOrderList's callbacks are wired unless a test says otherwise:
 // an unwired one is a finding of its own now (its control shows and reports an
@@ -122,33 +122,19 @@ describe('validatePage — a prop naming its producer', () => {
 });
 
 // The other half of step 3: a page that acts needs a record to act about, and
-// the two ways it can be stranded — no such type, no way to create one — are
-// worth catching where they can still be fixed.
+// a type the model does not have is worth catching where it can still be fixed.
 describe('validatePage — the record a page is about', () => {
   const reads = { workOrders: "invoke('act_get_work_orders', { status: 'Raised' })" };
   const about = (record: PageDef['record']): PageDef => ({ ...page(reads), record });
 
-  it('accepts a page about a one-instance type it can create', () => {
+  it('accepts a page about a record type the model has', () => {
     expect(messages(about(BOARD))).toEqual([]);
-  });
-
-  it('accepts a page about one of many, which creates nothing', () => {
-    expect(messages(about({ type: 'rt_projects', instances: 'many' }))).toEqual([]);
+    expect(messages(about({ type: 'rt_projects' }))).toEqual([]);
   });
 
   it('rejects a record type the model does not have', () => {
-    expect(messages(about({ type: 'rt_gone', instances: 'one' })))
+    expect(messages(about({ type: 'rt_gone' })))
       .toEqual(["'rt_gone' is not a record type in this model"]);
-  });
-
-  it('rejects a one-instance page whose type has no create activity', () => {
-    expect(messages(about({ type: 'rt_notifications', instances: 'one' })))
-      .toEqual(["'rt_notifications' has no create activity, so this page cannot open its record"]);
-  });
-
-  it('warns when the create needs values nobody can supply at page open', () => {
-    expect(messages(about({ type: 'rt_projects', instances: 'one' })))
-      .toEqual(['the create activity requires name, which nobody can supply when the page opens it']);
   });
 
   it('warns that a page reading without a record leaves no trace', () => {

@@ -4,8 +4,6 @@ import {
   savePageComponents,
   loadContextSchema,
   saveContextSchema,
-  loadPageAccess,
-  savePageAccess,
   loadPageRecord,
   savePageRecord,
   loadSlotConfigs,
@@ -23,7 +21,6 @@ export interface PageEditorState {
   pageComponents: PageComponentEntry[];
   contextSchema: ContextKeyDef[];
   /** Role ids that may open the page (CONSOLE_RUNTIME_SPEC §6). */
-  accessOpen: string[];
   /** The record the page is about; null on a pure view (step 3). */
   pageRecord: PageRecordDef | null;
   selectedComponentName: string | null;
@@ -40,7 +37,6 @@ function getStore(pagePath: string) {
       mode: 'builder',
       pageComponents: loadPageComponents(pagePath),
       contextSchema: loadContextSchema(pagePath),
-      accessOpen: loadPageAccess(pagePath),
       pageRecord: loadPageRecord(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
@@ -96,19 +92,6 @@ export function removeContextKey(pagePath: string, key: string): void {
     const contextSchema = prev.contextSchema.filter((k) => k.key !== key);
     saveContextSchema(pagePath, contextSchema);
     return { ...prev, contextSchema };
-  });
-}
-
-// ── Page access ──────────────────────────────────────────────────────────────
-
-/** Grant or revoke one role's entry to the page. */
-export function togglePageAccess(pagePath: string, roleId: string): void {
-  getStore(pagePath).set((prev) => {
-    const accessOpen = prev.accessOpen.includes(roleId)
-      ? prev.accessOpen.filter((r) => r !== roleId)
-      : [...prev.accessOpen, roleId];
-    savePageAccess(pagePath, accessOpen);
-    return { ...prev, accessOpen };
   });
 }
 

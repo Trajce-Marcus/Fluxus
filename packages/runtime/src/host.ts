@@ -33,19 +33,46 @@ export let hostAuth: HostAuth | undefined;
 // published pages in the workbench — the first step of workbench → Runtime app.
 export let pageRuntime: PageRuntime;
 
-// `services.page.open` has to reach the shell's page state, but the page
-// runtime is built here at boot — before React exists — so the seam lives at
-// module level and RuntimeProvider fills it. Unfilled, a navigation attempt
-// throws rather than doing nothing: a page that cannot navigate should say so.
-let pageNavigator: ((page: string, recordId: string | null) => void) | null = null;
+// Opening an app has to reach the shell's state, but the page runtime is built
+// here at boot — before React exists — so the seam lives at module level and
+// RuntimeProvider fills it. Unfilled, an attempt throws rather than doing
+// nothing: a page that cannot navigate should say so.
+let appNavigator: ((appId: string, recordId: string | null) => void) | null = null;
 
-export function setPageNavigator(fn: ((page: string, recordId: string | null) => void) | null): void {
-  pageNavigator = fn;
+export function setAppNavigator(fn: ((appId: string, recordId: string | null) => void) | null): void {
+  appNavigator = fn;
 }
 
-function navigate(page: string, recordId: string | null): void {
-  if (!pageNavigator) throw new Error(`Cannot open '${page}' — the shell is not mounted yet`);
-  pageNavigator(page, recordId);
+/** Said of an app id the caller may not run here, or that is no app of this
+ *  operation (APPS_AND_INSTANCES §2.7). */
+export const NOT_SET_UP = 'This app is not set up for this operation';
+
+/**
+ * Open an app by its id in the operation's apps list (`services.app.open`, a
+ * menu item): only one the caller may run, which `apps.user` sent. The server
+ * checks every call the app then makes; this only keeps a page from opening
+ * what it has no definition of.
+ */
+export function openApp(appId: string, recordId: string | null): void {
+  if (!client.findApp(appId)) throw new Error(NOT_SET_UP);
+  if (!appNavigator) throw new Error('Cannot open an app — the shell is not mounted yet');
+  appNavigator(appId, recordId);
+}
+
+/**
+ * The old way of opening, until step 6 rewrites the links: a page named by its
+ * path (`services.page.open`, OpenPage, RecordList action columns, a `page=`
+ * link) opens the operation's only app made from it. With several, or none,
+ * it is not set up for this operation.
+ */
+export function appIdForPage(page: string): string | null {
+  return client.appIdByPageId[page] ?? null;
+}
+
+function openPageTheOldWay(page: string, recordId: string | null): void {
+  const appId = appIdForPage(page);
+  if (!appId) throw new Error(NOT_SET_UP);
+  openApp(appId, recordId);
 }
 
 // How many pages deep this tab is inside the app (2026-09-23): each page
@@ -135,7 +162,8 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   }
   pageRuntime = createPageRuntime({
     client,
-    openPage: navigate,
+    openPage: openPageTheOldWay,
+    openApp,
     goBack: () => window.history.back(),
     canGoBack: () => historyDepth() > 0,
   });

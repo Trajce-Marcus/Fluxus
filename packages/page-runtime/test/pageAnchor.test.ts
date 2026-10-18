@@ -1,7 +1,5 @@
-// How a page reaches the record it is about (DATA_THROUGH_ACTIVITIES step 3).
-// The rule under test: a page that acts has exactly one record, and the only
-// way one comes into being is a create activity — a page opening its board for
-// the first time takes the same path as a person raising a work order.
+// How a page reaches the record it is about (DATA_THROUGH_ACTIVITIES step 3):
+// the id the host was given, fetched from the server.
 //
 // The client is a stub over a store that stands in for the server's, so these
 // tests are about the resolution, not the wire. Note what the stub does NOT
@@ -76,8 +74,7 @@ function harness() {
   return { server, runtime, runActivity, fetchRecord, fetchRecords };
 }
 
-const ONE = { type: 'rt_dispatch_boards', instances: 'one' } as const;
-const MANY = { type: 'rt_dispatch_boards', instances: 'many' } as const;
+const BOARD = { type: 'rt_dispatch_boards' } as const;
 
 describe('resolvePageAnchor', () => {
   it('gives a pure view no record at all', async () => {
@@ -86,74 +83,28 @@ describe('resolvePageAnchor', () => {
     expect(runActivity).not.toHaveBeenCalled();
   });
 
-  it('creates the one instance the first time the page is opened', async () => {
-    const { runtime, runActivity } = harness();
-
-    const record = await resolvePageAnchor(runtime, { record: ONE });
-
-    expect(record?.typeRef).toBe('rt_dispatch_boards');
-    // Created through the create activity, not written into the store behind
-    // the pipeline's back — so the record's history starts with "created".
-    expect(runActivity).toHaveBeenCalledExactlyOnceWith({ activityId: 'act_create_dispatch_boards', attributes: {} });
-  });
-
-  it('opens the one that exists instead of creating a second', async () => {
-    const { server, runtime, runActivity } = harness();
-    const existing = server.createRecord('rt_dispatch_boards', { title: 'The board' });
-
-    const record = await resolvePageAnchor(runtime, { record: ONE });
-
-    expect(record?.id).toBe(existing.id);
-    expect(runActivity).not.toHaveBeenCalled();
-  });
-
-  it('picks the same one every time when a type wrongly holds two', async () => {
-    const { server, runtime } = harness();
-    server.createRecord('rt_dispatch_boards', { title: 'Second' });
-    server.createRecord('rt_dispatch_boards', { title: 'First' });
-    const ids = server.getRecordTypeData('rt_dispatch_boards').map((r) => r.id).sort();
-
-    const first = await resolvePageAnchor(runtime, { record: ONE });
-    const again = await resolvePageAnchor(runtime, { record: ONE });
-
-    expect(first?.id).toBe(ids[0]);
-    expect(again?.id).toBe(first?.id);
-  });
-
-  it('opens the record named in the URL when the type has many', async () => {
-    const { server, runtime, runActivity } = harness();
+  it('opens the record named in the URL, creating nothing', async () => {
+    const { server, runtime, runActivity, fetchRecord } = harness();
     const board = server.createRecord('rt_dispatch_boards', { title: 'North' });
 
-    expect((await resolvePageAnchor(runtime, { record: MANY }, board.id))?.id).toBe(board.id);
+    expect((await resolvePageAnchor(runtime, { record: BOARD }, board.id))?.id).toBe(board.id);
+    // Fetched from the server: the host may hold no records.
+    expect(fetchRecord).toHaveBeenCalledExactlyOnceWith(board.id);
     expect(runActivity).not.toHaveBeenCalled();
   });
 
-  it('asks the server, not the local snapshot — the host may hold no records', async () => {
-    const { server, runtime, runActivity, fetchRecords } = harness();
-    server.createRecord('rt_dispatch_boards', { title: 'The board' });
-
-    // The browser's own store is empty and stays empty: if the resolution
-    // consulted it, this would raise a second board.
-    await resolvePageAnchor(runtime, { record: ONE });
-
-    expect(fetchRecords).toHaveBeenCalledExactlyOnceWith('rt_dispatch_boards');
+  // A single record per operation, found or created at open (`instances:
+  // 'one'`), went with apps Part 2 step 2: the operation's app does its job.
+  it('refuses to guess which record the page meant', async () => {
+    const { runtime, runActivity, fetchRecords } = harness();
+    await expect(resolvePageAnchor(runtime, { record: BOARD })).rejects.toThrow(/open it with a record id/);
+    expect(fetchRecords).not.toHaveBeenCalled();
     expect(runActivity).not.toHaveBeenCalled();
-  });
-
-  it('refuses to guess which of many the page meant', async () => {
-    const { runtime } = harness();
-    await expect(resolvePageAnchor(runtime, { record: MANY })).rejects.toThrow(/open it with a record id/);
   });
 
   it('refuses a record type the model does not have', async () => {
     const { runtime } = harness();
-    await expect(resolvePageAnchor(runtime, { record: { type: 'rt_gone', instances: 'one' } }))
+    await expect(resolvePageAnchor(runtime, { record: { type: 'rt_gone' } }, 'x'))
       .rejects.toThrow(/not a record type in this model/);
-  });
-
-  it('refuses a type with no way in — a page cannot invent a record', async () => {
-    const { runtime } = harness();
-    await expect(resolvePageAnchor(runtime, { record: { type: 'rt_notifications', instances: 'one' } }))
-      .rejects.toThrow(/no create activity/);
   });
 });

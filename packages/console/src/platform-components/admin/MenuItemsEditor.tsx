@@ -1,27 +1,24 @@
-// The shared menu composer (§5 shape): one level of nesting, per-item role
-// lists, leaf items address published page paths. Two consumers since M10 —
-// OperationMenuSection (the operation's override, in the operation view) and
-// the solution-level MenuEditor (the `default_menu` in the config artifact).
-// Controlled: the owner holds the menu and persists it; server-side validation
-// stays with each save path.
+// The app menu composer (APPS_AND_INSTANCES §2.5): what Runtime users see,
+// items pointing at apps in the operation's apps list, in groups one level
+// deep. No roles and no names on a leaf — a leaf shows its app's name, and a
+// user sees only the leaves whose app they may run (the server builds each
+// user's menu). Controlled: the owner holds the menu and persists it;
+// validation stays with the save.
 //
-// Three columns (M18, 2026-08-01): tree | properties | preview. The old form
-// showed every item expanded with a checkbox per role, so the menu's structure
-// was hard to read and there was no way to reorder. Now the tree is one row per
-// item with drag-and-drop ordering, the selected row's fields are edited beside
-// it, and the preview shows the rendered navigation for a chosen set of roles.
-//
-// Items carry a stable `id`. Selection and drag need one, and menu items are
-// matched by id rather than by label wherever they are compared.
+// Three columns (M18, 2026-08-01): tree | properties | preview. The tree is one
+// row per item with drag-and-drop ordering, the selected row's fields are
+// edited beside it, and the preview shows the navigation a user holding a
+// chosen set of roles would see.
 
-import { useMemo, useState } from 'react';
-import type { MenuItem } from '@fluxus/client';
+import { useState } from 'react';
+import { isMenuGroup, type App, type MenuGroup, type MenuItem, type MenuLeaf } from '@fluxus/client';
 
 interface MenuItemsEditorProps {
   menu: MenuItem[];
   onChange: (menu: MenuItem[]) => void;
+  /** The operation's apps list — what a leaf may point at. */
+  apps: App[];
   roles: { id: string; name: string }[];
-  paths: string[];
 }
 
 /** Where a dragged row lands relative to the row it is dropped on. */
@@ -31,52 +28,20 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
-/** Fill in ids for menus authored before items had them. Derived, not written
- *  back on its own — the first edit persists them with the rest of the menu. */
-function ensureIds(items: MenuItem[]): MenuItem[] {
-  return items.map((it) => ({
-    ...it,
-    id: it.id ?? newId(),
-    items: it.items ? ensureIds(it.items) : it.items,
-  }));
-}
-
-const isGroup = (it: MenuItem) => it.items !== undefined;
-
-/**
- * Items that open nothing — a label with no page and no `items` (2026-08-20).
- * The server refuses these (`validateOperationMenu`), and it used to say so
- * only after a round trip, which is a poor way to learn that the item you just
- * added needs a page. An empty group is fine: that is a group waiting to be
- * filled, and it stays invisible at runtime until it has a child.
- */
-export function menuProblems(menu: MenuItem[]): { id?: string; label: string; fix: string }[] {
-  const out: { id?: string; label: string; fix: string }[] = [];
-  const walk = (items: MenuItem[], nested: boolean) => {
-    for (const it of items) {
-      if (!it.page && it.items === undefined) {
-        out.push({
-          id: it.id,
-          label: it.label || '(no label)',
-          // Nesting is one level deep, and only a top-level item can become a
-          // group — so telling someone to group a child item is advice they
-          // cannot take.
-          fix: nested ? 'give it a page, or remove it' : 'give it a page, or make it a group',
-        });
-      }
-      if (it.items) walk(it.items, true);
-    }
-  };
-  walk(menu, false);
-  return out;
+/** Leaves that point at nothing yet. The server refuses these; said here
+ *  rather than after a round trip. An empty group is fine — one is made
+ *  before it is filled, and it shows to nobody until it has a leaf. */
+export function menuProblems(menu: MenuItem[]): { id: string; fix: string }[] {
+  const leaves = menu.flatMap((it) => (isMenuGroup(it) ? it.items : [it]));
+  return leaves.filter((l) => !l.appId).map((l) => ({ id: l.id, fix: 'pick its app' }));
 }
 
 /** The item with this id, and the group holding it (null when top level). */
-function locate(items: MenuItem[], id: string): { item: MenuItem; parent: MenuItem | null } | null {
+function locate(items: MenuItem[], id: string): { item: MenuItem; parent: MenuGroup | null } | null {
   for (const it of items) {
     if (it.id === id) return { item: it, parent: null };
-    for (const child of it.items ?? []) {
-      if (child.id === id) return { item: child, parent: it };
+    if (isMenuGroup(it)) {
+      for (const child of it.items) if (child.id === id) return { item: child, parent: it };
     }
   }
   return null;
@@ -92,7 +57,7 @@ function extract(items: MenuItem[], id: string): { tree: MenuItem[]; removed: Me
       return false;
     })
     .map((it) => {
-      if (!it.items) return it;
+      if (!isMenuGroup(it)) return it;
       const kept = it.items.filter((c) => {
         if (c.id !== id) return true;
         removed = c;
@@ -103,23 +68,26 @@ function extract(items: MenuItem[], id: string): { tree: MenuItem[]; removed: Me
   return { tree, removed };
 }
 
-export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEditorProps) {
-  const items = useMemo(() => ensureIds(menu), [menu]);
-
+export function MenuItemsEditor({ menu, onChange, apps, roles }: MenuItemsEditorProps) {
+  const items = menu;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; spot: DropSpot } | null>(null);
   /** Which roles the preview renders for. Empty = an unassigned user. */
   const [viewRoles, setViewRoles] = useState<string[]>(() => roles.map((r) => r.id));
 
+  const appById = new Map(apps.map((a) => [a.id, a]));
   const found = selectedId ? locate(items, selectedId) : null;
   const selected = found?.item ?? null;
+  // An app is on the menu at most once (§2.5), so a leaf offers only the apps
+  // no other leaf points at.
+  const placed = new Set(items.flatMap((it) => (isMenuGroup(it) ? it.items : [it])).map((l) => l.appId));
 
-  function update(id: string, patch: Partial<MenuItem>) {
+  function replace(id: string, next: MenuItem) {
     onChange(items.map((it) => {
-      if (it.id === id) return { ...it, ...patch };
-      if (!it.items) return it;
-      return { ...it, items: it.items.map((c) => (c.id === id ? { ...c, ...patch } : c)) };
+      if (it.id === id) return next;
+      if (!isMenuGroup(it)) return it;
+      return { ...it, items: it.items.map((c) => (c.id === id ? (next as MenuLeaf) : c)) };
     }));
   }
 
@@ -128,22 +96,26 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
     if (selectedId === id) setSelectedId(null);
   }
 
-  function addItem() {
-    const item: MenuItem = { id: newId(), label: 'New item' };
-    onChange([...items, item]);
-    setSelectedId(item.id!);
+  function firstFreeApp(): string {
+    return apps.find((a) => !placed.has(a.id))?.id ?? '';
+  }
+
+  function addLeaf() {
+    const leaf: MenuLeaf = { id: newId(), appId: firstFreeApp() };
+    onChange([...items, leaf]);
+    setSelectedId(leaf.id);
   }
 
   function addGroup() {
-    const group: MenuItem = { id: newId(), label: 'New group', items: [] };
+    const group: MenuGroup = { id: newId(), label: 'New group', items: [] };
     onChange([...items, group]);
-    setSelectedId(group.id!);
+    setSelectedId(group.id);
   }
 
   function addChild(groupId: string) {
-    const child: MenuItem = { id: newId(), label: 'New item' };
-    onChange(items.map((it) => (it.id === groupId ? { ...it, items: [...(it.items ?? []), child] } : it)));
-    setSelectedId(child.id!);
+    const child: MenuLeaf = { id: newId(), appId: firstFreeApp() };
+    onChange(items.map((it) => (it.id === groupId && isMenuGroup(it) ? { ...it, items: [...it.items, child] } : it)));
+    setSelectedId(child.id);
   }
 
   /** Move `id` relative to `targetId`. One nesting level only: a group cannot
@@ -155,27 +127,25 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
     if (!source || !target) return;
 
     const dragging = source.item;
-    // A group dropped into another group, or onto a child row, would nest two
-    // deep.
-    if (isGroup(dragging) && (spot === 'inside' || target.parent !== null)) return;
-    if (spot === 'inside' && !isGroup(target.item)) return;
+    if (isMenuGroup(dragging) && (spot === 'inside' || target.parent !== null)) return;
+    if (spot === 'inside' && !isMenuGroup(target.item)) return;
 
     const { tree, removed } = extract(items, id);
     if (!removed) return;
 
     if (spot === 'inside') {
-      onChange(tree.map((it) => (it.id === targetId ? { ...it, items: [...(it.items ?? []), removed] } : it)));
+      onChange(tree.map((it) => (it.id === targetId && isMenuGroup(it) ? { ...it, items: [...it.items, removed as MenuLeaf] } : it)));
       return;
     }
 
     // Into the group holding the target row, or at top level.
     if (target.parent) {
-      const parentId = target.parent.id!;
+      const parentId = target.parent.id;
       onChange(tree.map((it) => {
-        if (it.id !== parentId) return it;
-        const children = [...(it.items ?? [])];
+        if (it.id !== parentId || !isMenuGroup(it)) return it;
+        const children = [...it.items];
         const at = children.findIndex((c) => c.id === targetId);
-        children.splice(spot === 'before' ? at : at + 1, 0, removed);
+        children.splice(spot === 'before' ? at : at + 1, 0, removed as MenuLeaf);
         return { ...it, items: children };
       }));
       return;
@@ -186,20 +156,16 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
     onChange(top);
   }
 
-  function toggleRole(item: MenuItem, roleId: string) {
-    const cur = new Set(item.roles ?? []);
-    cur.has(roleId) ? cur.delete(roleId) : cur.add(roleId);
-    update(item.id!, { roles: [...cur] });
-  }
-
   /** Drop position from where the pointer sits in the row: the middle band of a
    *  group row means "into the group", the edges mean before/after. */
   function spotFor(e: React.DragEvent, target: MenuItem): DropSpot {
     const box = e.currentTarget.getBoundingClientRect();
     const y = (e.clientY - box.top) / box.height;
-    if (isGroup(target) && y > 0.3 && y < 0.7) return 'inside';
+    if (isMenuGroup(target) && y > 0.3 && y < 0.7) return 'inside';
     return y < 0.5 ? 'before' : 'after';
   }
+
+  const leafName = (l: MenuLeaf) => appById.get(l.appId)?.label ?? (l.appId ? '(not an app here)' : '(no app)');
 
   function row(it: MenuItem, child: boolean) {
     const marker = dropTarget && dropTarget.id === it.id ? ` drop-${dropTarget.spot}` : '';
@@ -208,34 +174,38 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
         key={it.id}
         className={`menu-row${child ? ' child' : ''}${selectedId === it.id ? ' active' : ''}${marker}`}
         draggable
-        onClick={() => setSelectedId(it.id!)}
-        onDragStart={() => setDragId(it.id!)}
+        onClick={() => setSelectedId(it.id)}
+        onDragStart={() => setDragId(it.id)}
         onDragEnd={() => { setDragId(null); setDropTarget(null); }}
         onDragOver={(e) => {
           if (!dragId || dragId === it.id) return;
           e.preventDefault();
-          setDropTarget({ id: it.id!, spot: spotFor(e, it) });
+          setDropTarget({ id: it.id, spot: spotFor(e, it) });
         }}
         onDragLeave={() => setDropTarget((cur) => (cur?.id === it.id ? null : cur))}
         onDrop={(e) => {
           e.preventDefault();
-          if (dragId) move(dragId, it.id!, spotFor(e, it));
+          if (dragId) move(dragId, it.id, spotFor(e, it));
           setDragId(null);
           setDropTarget(null);
         }}
       >
-        <span className="menu-row-label">{it.label || '(no label)'}</span>
-        {isGroup(it) ? (
-          <span className="menu-row-tag">group</span>
-        ) : it.page ? (
-          <span className="menu-row-page">{it.page}</span>
+        {isMenuGroup(it) ? (
+          <>
+            <span className="menu-row-label">{it.label || '(no name)'}</span>
+            <span className="menu-row-tag">group</span>
+          </>
         ) : (
-          // Not a warning about style — the save will be refused.
-          <span className="menu-row-page problem" title="Pick a page, or make this a group">opens nothing</span>
+          <>
+            <span className="menu-row-label">{leafName(it)}</span>
+            {appById.get(it.appId) ? (
+              <span className="menu-row-page">{appById.get(it.appId)!.pageId}</span>
+            ) : (
+              // Not a warning about style — the save will be refused.
+              <span className="menu-row-page problem" title="Pick its app">opens nothing</span>
+            )}
+          </>
         )}
-        <span className={`menu-row-roles${(it.roles ?? []).length === 0 ? ' none' : ''}`}>
-          {(it.roles ?? []).length === 0 ? 'hidden' : `${(it.roles ?? []).length} role${(it.roles ?? []).length === 1 ? '' : 's'}`}
-        </span>
       </div>
     );
   }
@@ -246,7 +216,7 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
         <div className="menu-col-head">
           <span>Items</span>
           <span className="menu-col-actions">
-            <button className="panel-btn" onClick={addItem}>Add item</button>
+            <button className="panel-btn" onClick={addLeaf}>Add item</button>
             <button className="panel-btn" onClick={addGroup}>Add group</button>
           </span>
         </div>
@@ -255,10 +225,10 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
           {items.map((it) => (
             <div key={it.id}>
               {row(it, false)}
-              {isGroup(it) && (
+              {isMenuGroup(it) && (
                 <div className="menu-children">
-                  {(it.items ?? []).map((c) => row(c, true))}
-                  <button className="admin-link" onClick={() => addChild(it.id!)}>+ item in group</button>
+                  {it.items.map((c) => row(c, true))}
+                  <button className="admin-link" onClick={() => addChild(it.id)}>+ item in group</button>
                 </div>
               )}
             </div>
@@ -272,47 +242,25 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
           <p className="admin-muted">Select an item.</p>
         ) : (
           <div className="menu-props-body">
-            <label className="admin-field">
-              <span>Label</span>
-              <input value={selected.label} onChange={(e) => update(selected.id!, { label: e.target.value })} />
-            </label>
-
-            {!isGroup(selected) && (
+            {isMenuGroup(selected) ? (
               <label className="admin-field">
-                <span>Page</span>
-                <select value={selected.page ?? ''} onChange={(e) => update(selected.id!, { page: e.target.value || undefined })}>
-                  <option value="">(no page)</option>
-                  {paths.map((p) => <option key={p} value={p}>{p}</option>)}
+                <span>Group name</span>
+                <input value={selected.label} onChange={(e) => replace(selected.id, { ...selected, label: e.target.value })} />
+              </label>
+            ) : (
+              <label className="admin-field">
+                <span>App</span>
+                <select value={selected.appId} onChange={(e) => replace(selected.id, { ...selected, appId: e.target.value })}>
+                  <option value="">(no app)</option>
+                  {apps.filter((a) => a.id === selected.appId || !placed.has(a.id)).map((a) => (
+                    <option key={a.id} value={a.id}>{a.label}</option>
+                  ))}
                 </select>
+                <span className="admin-hint">The item shows the app's name, to those who may run it.</span>
               </label>
             )}
-
-            <div className="admin-field">
-              <span>Roles</span>
-              <div className="menu-roles">
-                {roles.length === 0 ? (
-                  <span className="admin-muted">No roles declared in this solution.</span>
-                ) : roles.map((r) => (
-                  <label key={r.id} className="menu-role">
-                    <input
-                      type="checkbox"
-                      checked={(selected.roles ?? []).includes(r.id)}
-                      onChange={() => toggleRole(selected, r.id)}
-                    />
-                    <span>{r.name}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="admin-hint">An item with no roles is hidden from everyone.</p>
-            </div>
-
             <div className="admin-row">
-              {!isGroup(selected) && found?.parent === null && (
-                <button className="admin-link" onClick={() => update(selected.id!, { items: [], page: undefined })}>
-                  Make a group
-                </button>
-              )}
-              <button className="admin-link" onClick={() => remove(selected.id!)}>Remove</button>
+              <button className="admin-link" onClick={() => remove(selected.id)}>Remove</button>
             </div>
           </div>
         )}
@@ -341,21 +289,23 @@ export function MenuItemsEditor({ menu, onChange, roles, paths }: MenuItemsEdito
             </label>
           ))}
         </div>
-        <EffectiveMenu menu={items} viewRoles={viewRoles} />
+        <EffectiveMenu menu={items} apps={appById} viewRoles={viewRoles} />
       </div>
     </div>
   );
 }
 
-/** The navigation as a user holding `viewRoles` would see it: an item shows if
- *  it lists at least one held role; a group also needs one visible child. */
-function EffectiveMenu({ menu, viewRoles }: { menu: MenuItem[]; viewRoles: string[] }) {
+/** The navigation as a user holding `viewRoles` would see it — the rule the
+ *  server applies (`apps.user`): a leaf shows if its app lists a held role; a
+ *  group shows if it keeps one leaf. */
+function EffectiveMenu({ menu, apps, viewRoles }: { menu: MenuItem[]; apps: Map<string, App>; viewRoles: string[] }) {
   const held = new Set(viewRoles);
-  const allowed = (it: MenuItem) => (it.roles ?? []).some((r) => held.has(r));
-
-  const visible = menu
-    .map((it) => (it.items ? { ...it, items: it.items.filter(allowed) } : it))
-    .filter((it) => allowed(it) && (!it.items || it.items.length > 0));
+  const runs = (l: MenuLeaf) => (apps.get(l.appId)?.roleIds ?? []).some((r) => held.has(r));
+  const visible = menu.flatMap((it): MenuItem[] => {
+    if (!isMenuGroup(it)) return runs(it) ? [it] : [];
+    const kept = it.items.filter(runs);
+    return kept.length > 0 ? [{ ...it, items: kept }] : [];
+  });
 
   return (
     <div className="menu-nav">
@@ -363,35 +313,17 @@ function EffectiveMenu({ menu, viewRoles }: { menu: MenuItem[]; viewRoles: strin
         <p className="admin-muted">Nothing visible with these roles.</p>
       ) : visible.map((it) => (
         <div key={it.id}>
-          <div className={`menu-nav-item${it.items ? ' group' : ''}`}>{it.label}</div>
-          {it.items?.map((c) => <div key={c.id} className="menu-nav-item child">{c.label}</div>)}
+          {isMenuGroup(it) ? (
+            <>
+              <div className="menu-nav-item group">{it.label}</div>
+              {it.items.map((c) => <div key={c.id} className="menu-nav-item child">{apps.get(c.appId)?.label}</div>)}
+            </>
+          ) : (
+            <div className="menu-nav-item">{apps.get(it.appId)?.label}</div>
+          )}
         </div>
       ))}
     </div>
-  );
-}
-
-/** Compact read-only rendering — the operation view shows the inherited default with it. */
-export function MenuPreview({ menu }: { menu: MenuItem[] }) {
-  if (menu.length === 0) return <p className="admin-muted">The solution defines no default menu.</p>;
-  const line = (it: MenuItem) => (
-    <>
-      <span>{it.label}</span>
-      {it.page && <span className="menu-preview-page">{it.page}</span>}
-      {(it.roles ?? []).length > 0 && <span className="menu-preview-roles">{(it.roles ?? []).join(', ')}</span>}
-    </>
-  );
-  return (
-    <ul className="menu-preview">
-      {menu.map((it, i) => (
-        <li key={it.id ?? i}>
-          {line(it)}
-          {it.items && it.items.length > 0 && (
-            <ul>{it.items.map((c, j) => <li key={c.id ?? j}>{line(c)}</li>)}</ul>
-          )}
-        </li>
-      ))}
-    </ul>
   );
 }
 

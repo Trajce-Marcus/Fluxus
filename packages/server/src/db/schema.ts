@@ -111,25 +111,35 @@ export const operations = pgTable('operations', {
   index('operations_solution').on(t.solutionId),
 ]);
 
-/** operations.config shape (spec §5): the role-gated runtime menu, and future
- *  runtime settings. Menu items address published page paths of the linked
- *  solution; role ids reference that solution's access.roles. */
+/** operations.config shape: the operation's **app menu** (APPS_AND_INSTANCES
+ *  §2.5, reshaped 2026-10-18), and future runtime settings. */
 export interface OperationConfig {
   menu?: MenuItem[];
 }
-export interface MenuItem {
-  /** Stable identity for the item, independent of its label (2026-08-01).
-   *  The editor uses it for selection and drag; §5a's subtractive overrides
-   *  need it to name an inherited item that a relabel would otherwise lose.
-   *  Optional: menus authored before it exists still load. */
+/**
+ * One app menu item: a **leaf** pointing at one of the operation's apps, or a
+ * **group** of leaves, one level deep. No roles and no page on either (the
+ * user: "no role there, just a pointer"): a user sees only the leaves whose app
+ * they may run, and a leaf shows its app's name. `id` identifies the item for
+ * the editor's selection and drag.
+ */
+export type MenuItem = MenuLeaf | MenuGroup;
+export interface MenuLeaf { id: string; appId: string }
+export interface MenuGroup { id: string; label: string; items: MenuLeaf[] }
+
+/**
+ * A menu as it was before apps Part 2 — the solution's default menu
+ * (`sdm_menus`) and, until the step 2 script rebuilds them, operations' own.
+ * Read only by that script and carried by import and rollback; the default
+ * menu is dropped in step 3.
+ */
+export interface DefaultMenuItem {
   id?: string;
   label: string;
-  /** Page path (leaf items) — resolves to a published version of the solution. */
+  /** Page path (leaf items). */
   page?: string;
-  /** Role ids that may see this item; absent/empty ⇒ hidden (deny by default). */
   roles?: string[];
-  /** One level of nesting max (MVP) — groups carry children instead of a page. */
-  items?: MenuItem[];
+  items?: DefaultMenuItem[];
 }
 
 // Governance store (CONSOLE_RUNTIME_SPEC §2a — Option B, bespoke auth-tier
@@ -399,7 +409,7 @@ export const sdmRoles = pgTable('sdm_roles', {
 // that keeps activities inside their workflow).
 export const sdmMenus = pgTable('sdm_menus', {
   solutionId: text('solution_id').primaryKey().references(() => solutions.id),
-  def: jsonb('def').$type<MenuItem[]>().notNull(),
+  def: jsonb('def').$type<DefaultMenuItem[]>().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   createdBy: text('created_by'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

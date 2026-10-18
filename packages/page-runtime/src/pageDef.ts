@@ -51,23 +51,18 @@ export interface SlotConfig {
 }
 
 /**
- * The record a page is about (CLIENT_TRUST_BOUNDARY §7, page-anchor model).
- * Every run is about exactly one record, so a page that fires activities needs
- * one of its own — an **app record**: an ordinary record type whose instances
- * are boards, dashboards, consoles. Nothing marks the type as an app; the only
- * special thing is how you arrive at the record, and that lives here.
+ * The record a page is about (CLIENT_TRUST_BOUNDARY §7, page-anchor model): a
+ * record type, one of whose records the page is opened on — its id arrives in
+ * the URL (`?record=`), and nothing is created. Absent ⇒ a pure view: no
+ * anchor, and the GETs it fires stay untraced.
  *
- * - `one` — the type has a single instance per operation ("the board"), found
- *   or created when the page opens. The create runs as an ordinary create
- *   activity, so the record's history starts with "created" like any other.
- * - `many` — two groups, two boards: the id arrives in the URL (`?record=`)
- *   and nothing is created.
- *
- * Absent ⇒ a pure view: no anchor, and the GETs it fires stay untraced.
+ * Its `instances` choice went with apps Part 2 step 2 (APPS_AND_INSTANCES
+ * §2.2): `'one'` — a single record per operation, found or created when the
+ * page opened — is the operation's app's job now, and no page on dev used it.
+ * Old page versions still carry the field; nothing reads it.
  */
 export interface PageRecordDef {
   type: string;
-  instances: 'one' | 'many';
 }
 
 export interface PageDef {
@@ -77,15 +72,8 @@ export interface PageDef {
   componentDependencies?: PageComponentEntry[];
   contextSchema?: ContextKeyDef[];
   slotConfigs?: Record<string, SlotConfig | null>;
-  /**
-   * Who may open this page (CONSOLE_RUNTIME_SPEC §6): role ids, **default
-   * deny** once the solution declares `access.roles` — a published page with
-   * none never reaches the browser. Enforced server-side, which reads only
-   * this shallow convention off the otherwise opaque def (`pageOpenable`).
-   * Declared here since 2026-08-10 so the Console can author it; the rule
-   * itself is older, and pages written before it carry nothing.
-   *
-   * Distinct from a menu item's `roles`, which decide only what is *listed*.
-   */
-  access?: { open?: string[] };
+  // `access` (who may open the page) went with apps Part 2 step 2: who may run
+  // an app is set on it in the operation's apps list, and the page carries no
+  // roles "for now" (APPS_AND_INSTANCES §2.2). Old page versions keep it;
+  // nothing reads it.
 }

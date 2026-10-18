@@ -129,7 +129,7 @@ src/recordQuery.ts     — a record query as one SQL statement (step 3)
 src/host.ts            — loadOperationHost (resolve operation → solution, load
                          the model, build the store + engine) / putConfig +
                          the per-entity model writes (configCollections,
-                         putConfigEntity/deleteConfigEntity/putDefaultMenu);
+                         putConfigEntity/deleteConfigEntity);
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig)
@@ -159,7 +159,7 @@ src/router.ts          — the tRPC router: orgs.get/putProfile,
                          operations.list/get/create/putConfig,
                          config.get/getForOperation/put
                          + the per-entity model writes (putAttribute…
-                         putDefaultMenu), pages.*, page.activities,
+                         deleteRole), apps.*, pages.*, page.activities,
                          records.*, activities.run, files.*, perf.*
                          (routers/perf.ts);
                          DEFAULT_ORG/DEFAULT_SOLUTION/DEFAULT_OPERATION
@@ -217,22 +217,28 @@ takes `operationId?` (both default `demo/sdm`):
   the two open questions (R2 blobs, whether a deletion is recorded).
 - **`operations.list`** →
   `OperationRow[]` / **`operations.get`** `{ operationId? }` →
-  `{ id, orgId, solutionId, name, config, solutionName, orgName }` (the display
+  `{ id, orgId, solutionId, name, config, solutionName, orgName }` — both
+  **without the menu** since 2026-10-18 (`config` carries no `menu`): the
+  Runtime gets the caller's menu from `apps.user`, the Console from
+  `apps.list` (the display
   names ride along for the Runtime header's identity line — solution M10, org
   M13; both fall back to their id so a missing row can't break boot)
   / **`operations.create`**
   `{ id, solutionId, name }` (**org admin**) / **`operations.putConfig`**
-  `{ operationId?, config }` (**op admin** since 2026-08-02; the runtime menu **override**,
-  §5 amended M10 — `menu` absent ⇒ inherit the solution's `default_menu`, `[]` ⇒
-  explicitly empty; **validated at save**: every leaf `page` resolves to a
-  published page of the linked solution, every role id is declared, one nesting
-  level max).
+  `{ operationId?, config }` (**op admin** since 2026-08-02) — the operation's
+  **app menu** since 2026-10-18 (APPS_AND_INSTANCES §2.5): leaves
+  `{ id, appId }` and groups `{ id, label, items }` of leaves, one level deep,
+  no roles and no page on either; **validated at save**: every leaf points at
+  an app of this operation, an app appears at most once, item ids are unique.
+  (Until then it was the override of the solution's `default_menu`, with pages
+  and roles on its items — CONSOLE_RUNTIME_SPEC §5, reversed.)
   Plain auth-tier CRUD — no SDM, no activities. `operations.get` is the
   Runtime's resolution door: `@fluxus/client.connect(operationId)` calls it
   first, then loads config + pages by the returned `solutionId`.
 - **`me`** `{ operationId? }` → `{ id, name, email, roles, authConfigured }` —
-  the caller's identity + roles resolved for the operation. The Runtime host
-  uses it for **cosmetic** menu filtering; the server filters are the real gate.
+  the caller's identity + roles resolved for the operation. (The Runtime used it
+  for cosmetic menu filtering until 2026-10-18; the server builds each caller's
+  menu now, `apps.user`.)
 - **Governance (RBAC stage 1)** — over the `user_roles` / `sol_admins` store.
   **`userRoles.roles`** `{ operationId? }` → the linked solution's declared role
   defs (the picker; open, exposes no user data); **`userRoles.list`**
@@ -403,7 +409,13 @@ takes `operationId?` (both default `demo/sdm`):
   anchors non-CREATE activities and is rejected on CREATE. Warn soft-stop
   returns `needs-confirmation` with nothing persisted; re-run with
   `acknowledgedWarnings`. A GET is refused here — it has its own door.
-- **`activities.query`** `{ operationId?, activityId, recordId?, attributes }`
+  **`appId`** (2026-10-18): a call from the Runtime names its app, and checks 1
+  and 2 run first (see "An operation's apps"). **Check 5 covers the run's
+  reference fields** too: `validateSubmission` is given the read rules
+  (`canRead`), so a reference — top-level, or a composite cell — to a record the
+  caller may not read is refused ("<label>: Record access denied"), as an
+  unreadable anchor is.
+- **`activities.query`** `{ operationId?, appId?, activityId, recordId?, attributes }`
   → `QueryActivityResult` — the read path (DSL_SPEC §5a, built 2026-08-09). A
   tRPC **query, not a mutation**: no record data changes and there is no
   confirmation round-trip. It does write one thing — the light entry the engine
@@ -418,7 +430,9 @@ takes `operationId?` (both default `demo/sdm`):
   `show_condition`, with no second filter over the answer — see the engine SPEC
   for why. **Logged light** on the anchor when one is given: parameters,
   caller, outcome, duration, never the answer; anchorless reads leave no trace.
-- **`page.activities`** `{ operationId?, items: ({ recordId } | { typeId })[] }`
+  `appId` runs checks 1 and 2 first; a GET's parameters are not read-checked
+  (a GET decides what it returns).
+- **`page.activities`** `{ operationId?, appId?, items: ({ recordId } | { typeId })[] }`
   → `ActivityOption[][]` (`{ id, name }`, one list per item, in the order
   asked) — which actions each item offers the caller (built 2026-10-11,
   [ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)).
@@ -433,12 +447,16 @@ takes `operationId?` (both default `demo/sdm`):
   answer an empty list — the read check of the `activities.run` anchor
   (`DatabaseStore.findRecord`, which answers null instead of throwing). A
   record type has no read check, as a CREATE's run has none. The browser no
-  longer receives the conditions (*What the client is given*). Tests:
+  longer receives the conditions (*What the client is given*). With an `appId`
+  that fails check 1 or 2, every item answers empty (2026-10-18). Tests:
   `test/pageActivities.test.ts`.
-- **`files.presignUpload`** `{ solutionId?, attributeKey, name, mime, size, hash?,
+- **`files.presignUpload`** `{ solutionId?, operationId?, appId?, attributeKey, name, mime, size, hash?,
   photo metadata? }` → `{ storageKey, uploadUrl, thumbKey?, thumbUploadUrl? }`
-  / **`files.presignGet`** `{ solutionId?, key }` → `{ url }` — the blob upload/read
-  door (ATTRIBUTE_TYPES_FILES_SCALARS §6). Bytes never transit the server: the
+  / **`files.presignGet`** `{ solutionId?, operationId?, appId?, key }` → `{ url }` — the blob upload/read
+  door (ATTRIBUTE_TYPES_FILES_SCALARS §6). Since 2026-10-18 both name the
+  operation — whose entry gate they pass, and which must run the solution
+  named — and, from the Runtime, the app, which gets checks 1 and 2; before,
+  they checked nothing but the blob store. Bytes never transit the server: the
   browser PUTs straight to R2 with the returned URL. `presignUpload` is the
   cost chokepoint (§7), enforced BEFORE any bytes move: the attribute must be
   an **upload** type (`isUploadType` — photo/file; it was "has a descriptor"
@@ -451,7 +469,8 @@ takes `operationId?` (both default `demo/sdm`):
   (`validateSubmission`). Both procedures answer a clean error when
   FLUXUS_R2_* is unset.
 - **`records.partition`** `{ operationId? }` / **`records.list`** `{ operationId?,
-  typeId }` / **`records.get`** `{ operationId?, recordId }` — the platform data
+  typeId }` / **`records.get`** `{ operationId?, appId?, recordId }` (`appId`
+  runs checks 1 and 2 first, 2026-10-18) — the platform data
   channel (RecordInstance shape, history embedded). `partition` returns the
   whole operation partition in one round trip — what `@fluxus/client` loads into the
   browser hosts' `MemoryAdapter` snapshot at bootstrap and re-fetches after
@@ -491,7 +510,9 @@ takes `operationId?` (both default `demo/sdm`):
   unreachable forever. Config is solution-plane and owns no records, and since
   2026-08-05 nothing else puts records in an operation either (see "Nothing is
   prepopulated" below). Since M10 the artifact may
-  carry a top-level **`default_menu`** (§5 amended — the solution's default
+  carry a top-level **`default_menu`** (*since 2026-10-18 read by nothing but the
+  apps Part 2 step 2 script, and dropped in step 3; still validated as below,
+  because import and rollback still carry it; `config.putDefaultMenu` went*) (§5 amended — the solution's default
   runtime navigation, inherited by operations unless overridden): the engine
   stays menu-blind, so `put` validates it here — §5 shape, published-page +
   declared-role references (roles read from the **incoming** config via
@@ -507,7 +528,7 @@ takes `operationId?` (both default `demo/sdm`):
   into a bare label, which this rule then refused — they stopped.
   Since 2026-08-08 `put` is the **import** path, not the editing path: the
   Console saves one entity at a time through the eleven per-entity mutations
-  (`config.putAttribute` … `config.putDefaultMenu`), which run this same
+  (`config.putAttribute` … `config.deleteRole`), which run this same
   validation under a per-solution lock. See "Model storage: the SDM config as
   tables".
 - **`config.getForOperation`** `{ operationId? }` → `ClientSolutionConfig` — the
@@ -541,10 +562,11 @@ takes `operationId?` (both default `demo/sdm`):
   `{ solutionId? }` lists every published path unfiltered — what an app in an
   operation's apps list can be made from, so sol admins **and the admins of
   the solution's operations** may call it (2026-10-18).
-  **Page access (M4)**: published `pages.list` filters to versions the caller
-  can open — `def.access.open` must list a held role (default deny when auth
-  configured + solution declares roles; a shallow read of the opaque def, no
-  PageDef dep). This upgrades RBAC_COMPACT's "client interim" for pages.
+  **Page access (M4) — reversed 2026-10-18**: published `pages.list` used to
+  filter to versions the caller could open (`def.access.open`, `pageOpenable`).
+  Who may run an app is now set on it in the operation's apps list (§2.2), so
+  published `pages.list` lists every published page, and the Runtime receives
+  only its apps' pages through `apps.user`.
 
 **Partition keys** (CONSOLE_RUNTIME_SPEC §1–2): the opaque `scope` split into
 a **solution** (design artifact: SDM config + pages + role defs) and an
@@ -598,8 +620,38 @@ added more than once — a water scheduler and a sewer scheduler.
   append an activity run uses, so it lands in `activity_history` and
   `rpt_activities` / `rpt_attributes` like any other.
 - No removing an app in Part 2.
+- **`apps.list` also answers the operation's app menu** (`menu`), for the
+  Console's menu editor; the menu is saved with `operations.putConfig`.
 
-Tests: `test/apps.test.ts`.
+**The app menu** (§2.5) lives on the operation, `operations.config.menu`: leaves
+`{ id, appId }`, groups `{ id, label, items }` of leaves, one level deep, no
+roles. A menu written in the old shape (labels, pages, roles) reads as empty
+(`readMenu`) until the step 2 script rebuilds it.
+
+**`apps.user`** `{ operationId }` → `{ apps, pages, menu, appIdByPageId }` —
+what the Runtime receives at sign-in (§2.7), open to the operation's users:
+`apps`, those the caller may run (checks 1–2), each `{ id, label, pageId,
+definition }`; `pages`, their pages' latest published definitions; `menu`, the
+leaves whose app they may run and the groups that keep one, in the stored order
+(`menuFor`); and, until step 6, `appIdByPageId` — for each page the operation
+has exactly one app made from, whoever may run it, that app's id: the old way
+of opening a page by its path.
+
+**Checks on a call that names its app** (§2.3), `checkCallApp` in the router:
+
+1. the app is in the call's operation's apps list and its page has a published
+   version — otherwise "This app is not set up for this operation" (not found);
+2. the caller holds one of the app's roles (with sign-in off, open) — otherwise
+   "You may not run '<name>'" (forbidden);
+5. the caller may read every record the call sends — its record, as before, and
+   (runs) the records its reference fields send back.
+
+They apply to `activities.run`, `activities.query`, `page.activities` (failing
+1 or 2 answers every item empty), `records.get`, and `files.*`. Until step 3,
+a call that passes them is offered and run as before: the record type's
+workflow and the activity's own condition.
+
+Tests: `test/apps.test.ts`, `test/menu.test.ts`.
 
 ## Auth (RBAC phase 1, built 2026-07-19 — roles stubbed)
 
@@ -818,16 +870,16 @@ somebody deliberately exposes them. This is the rule the whole module rests on.
 | workflows | `id`, `name`, `description`, and their ordered `{ activity_ref }` list | workflows serving no surviving record type |
 | functions | those reachable from a shipped expression, transitively | the rest — including every hook-only helper |
 | roles | — | **the whole `access` block**; the client gets its own roles from `me` |
-| `default_menu` | rides through untouched | — |
+| `default_menu` | — | **not sent** since 2026-10-18: the Runtime's menu comes from `apps.user` |
 
 **Hooks are the prize**: business logic and every effect never leave the server.
 **Validation expressions are deliberately kept** — the client needs them for
 inline validation, they are not secret (the user discovers the rule by hitting
 it anyway), and the server revalidates regardless.
 
-`default_menu` ships because the runtime cannot render its navigation without
-it, and the operation's own override — which usually wins — arrives untrimmed
-from `operations.get` anyway.
+`default_menu` used to ship because the runtime could not render its
+navigation without it; since 2026-10-18 the Runtime's menu is the operation's
+app menu, built for each caller by `apps.user`, and it stays on the server.
 
 **The type system enforces it.** `ClientSolutionConfig` is declared first in
 `@fluxus/engine` and `SolutionConfig` **extends** it, so client-side code typed
@@ -980,9 +1032,9 @@ Thirteen per-entity mutations sit beside `config.put`: `config.putAttribute` /
 `deleteAttribute`, `config.putActivity` / `deleteActivity` (the pool, since
 2026-10-10), `config.putRecordType` / `deleteRecordType`,
 `config.putWorkflow` / `deleteWorkflow`, `config.putFunction` /
-`deleteFunction`, `config.putRole` / `deleteRole`, and
-`config.putDefaultMenu` (no delete — an empty array is the empty menu) — sol
-admin, like `config.put`. Each runs one transaction:
+`deleteFunction` and `config.putRole` / `deleteRole` (`config.putDefaultMenu`
+went 2026-10-18, with the default menu's editor) — sol admin, like
+`config.put`. Each runs one transaction:
 
 1. `SELECT … FROM solutions WHERE id = $1 FOR UPDATE` — this **serialises
    validation per solution** while leaving writes per entity. Two admins editing
@@ -1093,8 +1145,8 @@ the point of the whole exercise.
 
 What landed, and where the seam is: `configCollections` in `src/host.ts` names
 the five collections, each with the identity field its entities carry and a
-`read`/`write` pair over a config. `putConfigEntity` / `deleteConfigEntity` /
-`putDefaultMenu` share one `editConfig` transaction (lock → splice → validate →
+`read`/`write` pair over a config. `putConfigEntity` / `deleteConfigEntity`
+share one `editConfig` transaction (lock → splice → validate →
 write back); the procedures are thin gate-plus-call. **The `write` half of each
 collection and the splice inside `editConfig` are the only throwaway parts** —
 step 2 replaces them with a table write plus assembly, and touches nothing else.

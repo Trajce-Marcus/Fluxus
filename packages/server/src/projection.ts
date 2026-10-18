@@ -23,7 +23,6 @@ import type {
   SolutionConfig,
 } from '@fluxus/engine';
 import { includedActivityIds } from '@fluxus/engine';
-import type { MenuItem } from './db/schema';
 
 /**
  * The record-type read surface (RBAC_COMPACT: role list, default deny, server
@@ -238,15 +237,14 @@ function reachableFunctions(all: FunctionDef[], sources: string[]): FunctionDef[
  * — trimming by page, the larger payload win — waits on the page declaration
  * (§7) and lands as a second option on this same function.
  *
- * `default_menu` rides through untouched: it is the operation's navigation, the
- * runtime cannot render without it, and the operation's own override (which
- * usually wins) arrives untrimmed from `operations.get` anyway. It is not part
- * of `ClientSolutionConfig` because the engine is menu-blind.
+ * The solution's `default_menu` is not sent (2026-10-18): the Runtime's menu is
+ * the operation's app menu, which `apps.user` builds for each caller
+ * (APPS_AND_INSTANCES §2.5).
  */
 export function projectConfig(
   config: SolutionConfig,
   { roles, enforced }: { roles: string[] | undefined; enforced: boolean | undefined },
-): ClientSolutionConfig & { default_menu?: MenuItem[] } {
+): ClientSolutionConfig {
   const readable = computeReadable(enforced, config, roles);
 
   // Unreadable record types go entirely, and their workflows and activities
@@ -292,7 +290,6 @@ export function projectConfig(
   const attributes = config.attributes.filter((a) => referenced.has(a.key)).map(clientAttribute);
 
   const functions = reachableFunctions(config.functions ?? [], shippedExpressions(activities, attributes));
-  const defaultMenu = (config as { default_menu?: MenuItem[] }).default_menu;
 
   return {
     attributes,
@@ -301,6 +298,5 @@ export function projectConfig(
     workflows,
     // Absent stays absent, as everywhere else in the model.
     ...(functions.length > 0 ? { functions } : {}),
-    ...(defaultMenu !== undefined ? { default_menu: defaultMenu } : {}),
   };
 }

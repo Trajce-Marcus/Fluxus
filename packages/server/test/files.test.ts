@@ -64,7 +64,7 @@ beforeAll(async () => {
 });
 
 describe('files.presignUpload — cost safeguards (§7)', () => {
-  const good = { solutionId: SCOPE, attributeKey: 'site_photos', name: 'a.jpg', mime: 'image/jpeg', size: 1234 };
+  const good = { solutionId: SCOPE, operationId: SCOPE, attributeKey: 'site_photos', name: 'a.jpg', mime: 'image/jpeg', size: 1234 };
 
   it('refuses when the blob store is unconfigured', async () => {
     await expect(caller(false).files.presignUpload(good)).rejects.toThrow(/not configured/);
@@ -85,7 +85,7 @@ describe('files.presignUpload — cost safeguards (§7)', () => {
     await expect(caller().files.presignUpload({ ...good, mime: 'application/pdf', name: 'a.pdf' })).rejects.toThrow(/images only/);
   });
   it('rejects a file outside its accept filter', async () => {
-    await expect(caller().files.presignUpload({ solutionId: SCOPE, attributeKey: 'permit', name: 'a.png', mime: 'image/png', size: 10 })).rejects.toThrow(/not an accepted type/);
+    await expect(caller().files.presignUpload({ solutionId: SCOPE, operationId: SCOPE, attributeKey: 'permit', name: 'a.png', mime: 'image/png', size: 10 })).rejects.toThrow(/not an accepted type/);
   });
 
   it('signs a photo (full + thumb) and ledgers a pending row', async () => {

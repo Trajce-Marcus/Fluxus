@@ -91,6 +91,16 @@ export interface PageServiceHandlers {
    */
   openPage(page: string, record: unknown): void;
   /**
+   * Open an app of this operation by its id in the apps list, with params — the
+   * one way to open an app (APPS_AND_INSTANCES §2.7), replacing `openPage` once
+   * step 6 has rewritten the links. Params carry things like the record:
+   * `{ recordId }`. The host decides what opening means, and an id the caller
+   * may not run, or that is no app of this operation, says the app is not set
+   * up for this operation. Raw values: the id may well come out of
+   * `context.app.definition`, where a missing key reads as null.
+   */
+  openApp(appId: unknown, params: unknown): void;
+  /**
    * Which activities apply to a record right now (2026-09-14) — the workflow's
    * record-level acts, minus the ones their `show_condition` rules out. The
    * server answers (`page.activities`, ACTIONS_OFFERED_BY_SERVER), with the
@@ -158,9 +168,21 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
         },
         open: {
           params: ['page', 'record'],
-          description: 'Open a page, optionally about a record (id, or null for a pure view)',
+          description: 'Open a page, optionally about a record (id, or null for a pure view) — the old way; use services.app.open',
           kind: 'effect',
           fn: (page, record) => handlers.openPage(String(page), record),
+        },
+      },
+    },
+    {
+      name: 'app',
+      description: 'Open an app of this operation',
+      functions: {
+        open: {
+          params: ['appId', 'params'],
+          description: "Open an app by its id in the operation's apps list, optionally about a record: { recordId }",
+          kind: 'effect',
+          fn: (appId, params) => handlers.openApp(appId, params),
         },
       },
     },
@@ -184,7 +206,7 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
 /** Manifest-only modules for validation — same schema, no live handlers. */
 export const pageServicesStub = (): ServiceModuleDef[] =>
   buildPageServices({
-    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {},
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {},
     // Not in any module below, so nothing can name them in a script — they are
     // here only because the handler set is one interface.
     listActivities: async () => [],
@@ -199,9 +221,22 @@ export const pageServicesStub = (): ServiceModuleDef[] =>
 
 // ── Evaluation ────────────────────────────────────────────────────────────────
 
+/**
+ * What a page knows about its app — `context.app` (APPS_AND_INSTANCES §2.2):
+ * the page it is made from, the app's name, and its definition (what it needs
+ * set for this operation), parsed from its JSON text. Not its roles. A page
+ * reads, say, `context.app.definition.jobLinkId` to know which app a link
+ * opens in this operation.
+ */
+export interface PageAppContext {
+  pageId: string;
+  label: string;
+  definition: unknown;
+}
+
 /** The ctx root's page-host members: platform built-ins + the page layer. */
 export interface PageContext {
-  app: { name: string };
+  app: PageAppContext;
   page: Record<string, unknown>;
   /**
    * The record this page is about (`PageDef.record`, resolved at page open) —

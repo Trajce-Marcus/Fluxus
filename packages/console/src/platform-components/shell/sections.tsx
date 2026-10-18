@@ -69,7 +69,8 @@ export const SOLUTION_SECTIONS: ConsoleSection[] = [
   { id: 'activities', label: 'Activities', group: SDM_GROUP, render: () => <SdmView tab="activities" />, canLeave: canLeaveSdm },
   { id: 'workflows', label: 'Workflows', group: SDM_GROUP, render: () => <SdmView tab="workflows" />, canLeave: canLeaveSdm },
   { id: 'roles', label: 'Roles', group: SDM_GROUP, render: () => <SdmView tab="roles" />, canLeave: canLeaveSdm },
-  { id: 'menu', label: 'Menu', group: SDM_GROUP, render: () => <SdmView tab="menu" />, canLeave: canLeaveSdm },
+  // The model's Menu editor (the solution's default menu) went with apps
+  // Part 2 step 2: each operation's admin builds its app menu instead.
   { id: 'workbench', label: 'Workbench', group: DATA_GROUP, render: () => <WorkbenchView /> },
   /* Ad-hoc FluxScript over an operation's records, read-only (DSL_EDITOR_SPEC).
      A sibling of the workbench rather than a tab inside it: the workbench's

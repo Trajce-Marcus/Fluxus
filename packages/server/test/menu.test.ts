@@ -1,6 +1,6 @@
-// M4: page access control (published pages.list filters to openable versions)
-// + operation-menu validation at save (pages must be published, roles must
-// exist, one nesting level max).
+// Published pages, the operation's app menu checked at save (APPS_AND_INSTANCES
+// §2.5 — it replaced page access control and the role-gated menu override), and
+// the solution's default menu until step 3 drops it.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
@@ -45,14 +45,9 @@ beforeAll(async () => {
   await addOpUser(db, { operationId: OP, email: 'u1@example.com' });
 });
 
-describe('published page access filter (§6)', () => {
-  it('filters to pages the caller can open', async () => {
+describe('published pages (APPS_AND_INSTANCES §2.2)', () => {
+  it('lists every published page — who may open one is the app\'s to say, not the page\'s', async () => {
     const pages = await enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true });
-    expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1']); // p2 (role_b), p3 (no open) hidden
-  });
-
-  it('the env stub leaves all published pages visible', async () => {
-    const pages = await open().pages.list({ solutionId: SOL, published: true });
     expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1', 'pages/p2', 'pages/p3']);
   });
 
@@ -63,47 +58,56 @@ describe('published page access filter (§6)', () => {
   });
 });
 
-describe('operation menu validation at save (§5)', () => {
-  it('accepts a menu of published pages + declared roles', async () => {
-    const res = await open().operations.putConfig({
-      operationId: OP,
-      config: { menu: [{ label: 'Home', page: 'pages/p1', roles: ['role_a'] }, { label: 'Admin', roles: ['role_b'], items: [{ label: 'B', page: 'pages/p2', roles: ['role_b'] }] }] },
-    });
-    expect(res.ok).toBe(true);
+describe('the app menu, checked at save (APPS_AND_INSTANCES §2.5)', () => {
+  let home: string;
+  let admin: string;
+  beforeAll(async () => {
+    ({ id: home } = await open().apps.put({ operationId: OP, pageId: 'pages/p1', label: 'Home', roleIds: ['role_a'], definition: '{}' }));
+    ({ id: admin } = await open().apps.put({ operationId: OP, pageId: 'pages/p2', label: 'Admin', roleIds: ['role_b'], definition: '{}' }));
   });
 
-  it('rejects an unpublished page reference', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'X', page: 'pages/ghost' }] } }))
-      .rejects.toThrow(/no published page/i);
-  });
-
-  it('rejects a leaf that opens nothing — a dead entry hides the Pages list', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'Crews' }] } }))
-      .rejects.toThrow(/give it a page/i);
-  });
-
-  it('rejects a dead leaf nested in a group', async () => {
-    await expect(open().operations.putConfig({
-      operationId: OP,
-      config: { menu: [{ label: 'Admin', items: [{ label: 'Users' }] }] },
-    })).rejects.toThrow(/give it a page/i);
+  it('accepts leaves pointing at the operation\'s apps, and groups of them', async () => {
+    const menu = [{ id: 'm1', appId: home }, { id: 'g1', label: 'Admin', items: [{ id: 'm2', appId: admin }] }];
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu } })).resolves.toEqual({ ok: true });
+    expect((await open().apps.list({ operationId: OP })).menu).toEqual(menu);
   });
 
   it('accepts a group that is still empty — one is made before it is filled', async () => {
-    const res = await open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'Admin', items: [] }] } });
-    expect(res.ok).toBe(true);
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'g1', label: 'Admin', items: [] }] } }))
+      .resolves.toEqual({ ok: true });
   });
 
-  it('rejects an unknown role', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'X', page: 'pages/p1', roles: ['role_zzz'] }] } }))
-      .rejects.toThrow(/unknown role/i);
+  it('rejects a leaf that points at no app of this operation', async () => {
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm1', appId: 'nope' }] } }))
+      .rejects.toThrow(/not an app of this operation/);
   });
 
-  it('rejects nesting deeper than one level', async () => {
+  it('rejects an app on the menu twice', async () => {
     await expect(open().operations.putConfig({
       operationId: OP,
-      config: { menu: [{ label: 'A', items: [{ label: 'B', items: [{ label: 'C', page: 'pages/p1' }] }] }] },
-    })).rejects.toThrow(/nests too deep/i);
+      config: { menu: [{ id: 'm1', appId: home }, { id: 'g1', label: 'More', items: [{ id: 'm2', appId: home }] }] },
+    })).rejects.toThrow(/on the menu more than once/);
+  });
+
+  it('rejects duplicate item ids, a group with no name, and the old shape', async () => {
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm1', appId: home }, { id: 'm1', appId: admin }] } }))
+      .rejects.toThrow(/duplicate item id/);
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'g1', label: ' ', items: [] }] } }))
+      .rejects.toThrow();
+    // A page and roles on an item are the menu before apps Part 2.
+    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'Home', page: 'pages/p1', roles: ['role_a'] }] as never } }))
+      .rejects.toThrow();
+  });
+
+  it('nests one level only — a group holds leaves', async () => {
+    await expect(open().operations.putConfig({
+      operationId: OP,
+      config: { menu: [{ id: 'g1', label: 'A', items: [{ id: 'g2', label: 'B', items: [] }] }] as never },
+    })).rejects.toThrow();
+  });
+
+  it('is the op admin\'s', async () => {
+    await expect(enforced(u1).operations.putConfig({ operationId: OP, config: { menu: [] } })).rejects.toThrow(/admin of operation/);
   });
 });
 

@@ -102,15 +102,29 @@ The onboarding story, and the shape it implies:
 - Host: SDM workbench evolves in place.
 - Boot: sign-in (built) → operation resolution (a single op-user row auto-selects; picker if >1; MVP: single hardcoded op acceptable) → `connect(operationId)`.
 - Renders **published page versions only** (latest per path); drafts never leave Console. Console preview keeps rendering drafts via embedded page-runtime.
-- Nav = operation menu (§5), role-filtered.
+- Nav = operation menu (§5), role-filtered. *Since 2026-10-18 (APPS_AND_INSTANCES §2.5, §2.7): the caller's **app menu**, built on the server by `apps.user` from the apps they may run; the Runtime opens apps, by id, and its URL is `?operation=&app=&record=` (`page=` dropped; an old `page=` link opens the page's only app in the operation until step 6).*
 - **The Runtime app renders published pages only; the workbench leaves it** (ruled 2026-07-27, superseding the 2026-07-20 "stays reachable for now"). The line is *runtime = the authored app, Console = model + data tooling*: raw record access, running any activity, CSV import and the schema navigator are design-plane work, and Console already connects against a data operation (M9), so the workbench lands there next to Pages and SDM and the SDM editor stops authoring blind. Consequences: no menu-addressable "Workbench" item, no record-type list in the Runtime nav, and an operation whose solution has no published pages shows an empty app — the escape hatch is gone by design. **BUILT 2026-07-27 as M15** (§9).
 - **The workbench becomes one component** (ruled 2026-07-27) — `<Workbench client user? />` (as built; the `client config` first sketched was redundant — config, adapter and uploads all hang off the client) owning its own context (selected record type, record, activity in flight, CSV/schema-nav state); nothing above it knows those exist. Today's `AppContext` mixes shell state with record state, and that mixing *is* the coupling: the split — session/user + operation + effective menu + current page in a `RuntimeContext`, everything record-shaped inside the workbench — is the extraction. It stayed inside `@fluxus/sdm` at M15 pending a name endorsement; **superseded 2026-08-01** — it is now the `@fluxus/workbench` package (§11.16). Orthogonal to and non-blocking for the deferred `RecordGrid`/`RecordView` page-runtime decomposition (§10) — this is the container step, that is the inner one. **BUILT as M15** — signature
   `<Workbench client user? />`, cluster now at `packages/workbench/src/`, hosted by
   Console's `WorkbenchView`; see §9 M15 and §11.16.
 - **Solution branding, not platform branding** (cosmetic MVP; no branding config yet — logo/colours deferred, §10). The header carries an **identity line** (M13): **org name · solution name** on the left — who you work for, which app you are in — the **operation name** as a context chip on the right, then the user menu. Platform attribution is one **"Powered by Fluxus"** line at the foot of the nav, deliberately at the edge. All three names arrive on the connect snapshot (`operations.get`). The operation chip is **display-only** — switching operations in-session needs the caller's op-user list and is not built.
-- **Shell (M10, header revised M13)**: standard app-shell chrome — top bar (the M13 identity line above, UAT toggle + notification bell retained, user menu w/ sign-out), collapsible left nav ending in the Powered-by-Fluxus line, content area. Nav is the effective menu (§5); when a menu is effective the record-type and pages sidebar listings retire from the nav (the pages listing remains solely as the **no-menu fallback**, so an unconfigured demo operation is unchanged — adoption posture). The M10 Workbench menu item and Workbench-scoped record-type list were retired at M15; the content area now falls back to an empty state ("Nothing published yet" / "Nothing open") rather than a record grid. Plain CSS; no component-library dependency without a ruling.
+- **Shell (M10, header revised M13)**: standard app-shell chrome — top bar (the M13 identity line above, UAT toggle + notification bell retained, user menu w/ sign-out), collapsible left nav ending in the Powered-by-Fluxus line, content area. Nav is the effective menu (§5); when a menu is effective the record-type and pages sidebar listings retire from the nav (the pages listing remains solely as the **no-menu fallback**, so an unconfigured demo operation is unchanged — adoption posture). **Reversed 2026-10-18 (apps Part 2 step 2): the no-menu fallback.** The list of every openable page went: a page not in the operation's apps list cannot be opened there, so an empty menu says nothing is set up ("Nothing is set up for you here yet"). The M10 Workbench menu item and Workbench-scoped record-type list were retired at M15; the content area now falls back to an empty state ("Nothing published yet" / "Nothing open") rather than a record grid. Plain CSS; no component-library dependency without a ruling.
 
 ## 5. Menu (amended 2026-07-26: **defined solution-side, overridable operation-side**; original 2026-07-20 ruling was operation-side only)
+
+> **Reversed 2026-10-18 (apps Part 2 step 2, [APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) §2.5).**
+> The inherit/override menu and its two layers of roles went. An operation's
+> menu is now its **app menu**: leaves `{ id, appId }` pointing at apps in its
+> apps list, groups `{ id, label, items }` of leaves, one level deep — no roles
+> and no page on either ("no role there, just a pointer", the user). Who may
+> run an app is set only on it in the apps list; the server builds each
+> caller's menu (`apps.user`), and the browser no longer filters
+> (`visibleMenu` went). Checked at save (`operations.putConfig`): every leaf
+> points at an app of this operation, at most once. The solution's
+> `default_menu` is no longer read or edited (`config.putDefaultMenu` and the
+> model builder's Menu editor went); it stays stored, read only by the step 2
+> migration script, until step 3 drops it. A new operation starts with an empty
+> apps list and menu. The text below is the design as it stood until then.
 
 - The solution's config artifact carries a top-level **`default_menu`** (key name pending endorsement) in the §5 shape below — versioned/published with the model via `sdm_config_versions`, so a prebuilt solution ships working menus. The engine stays menu-blind (`config.put` is `z.unknown()`; `validateConfig` ignores the key); the server validates it with the same §5 rules — at `config.put`, and (2026-08-08) on **every** per-entity write, so deleting a role a menu item still names fails. Roles are read from the **incoming** config. The Console edits it through `config.putDefaultMenu`; there is no delete, because `[]` is the empty menu and the server drops the key.
 - `operations.config.menu` becomes the **override**: key absent ⇒ inherit the solution default; present ⇒ **whole-menu replacement** (`[]` = explicitly empty). Per-item merge is ruled out — that is where diff semantics and upgrade pain live. Effective menu = `operation.config.menu ?? solution.default_menu ?? []`, resolved at client connect.
@@ -135,6 +149,11 @@ The onboarding story, and the shape it implies:
 
 ### 5a. Override direction (agreed 2026-07-31 — **not built**, no schema endorsed yet)
 
+> **Dropped 2026-10-18 (apps Part 2):** there is no solution menu left for an
+> operation to switch groups of on or off — each operation builds its own app
+> menu from its apps list, so a release adding a page reaches an operation when
+> its admin adds an app made from it. Kept as history.
+
 Whole-menu replacement is the MVP and stays as the escape hatch, but it **forks the operation from upgrades**: a release that adds a page adds it to the solution's default menu, and an operation that replaced its menu never sees it — silently, because the operation isn't behind a version, it just lost the channel. The direction is to make the everyday override *subtractive* instead:
 
 - **Groups are the switchable unit.** A solution ships its menu as named groups ("Inspections", "Scheduling", "Admin"); an operation switches a group on or off. Coarse decisions stay cheap, new items land inside a group already enabled, and it lines up with packaging — a solution dependency contributes its group, so "we don't use scheduling" is one switch, not a curated tree.
@@ -147,6 +166,15 @@ Whole-menu replacement is the MVP and stays as the escape hatch, but it **forks 
 - **Expressions on items: deliberately not now.** Roles already do the visibility work, and per-item conditions make "why can't this user see this" much harder to answer. The storage shape does not preclude adding one later.
 
 ## 6. Page access control (RBAC stage-2 surface, per RBAC_COMPACT)
+
+> **Reversed 2026-10-18 (apps Part 2 step 2, [APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) §2.2–§2.3).**
+> A page no longer says who may open it: `PageDef.access` and the page editor's
+> Page Access section went, and published `pages.list` no longer filters by it
+> (`pageOpenable` went). Who may run an app is set on it in the operation's
+> apps list, and every Runtime call names its app, which the server checks
+> (the caller holds one of its roles). The step 2 script gives each app its
+> page's old `access.open` as its roles. Old page versions keep the field;
+> nothing reads it. The text below is the design as it stood until then.
 
 - `PageDef.access.open: [roleIds]`; default deny. **No roles section ⇒ no page opens** (strict, 2026-10-11; it was open until then — the adoption posture, reversed: BLUEPRINT *Access*). **Authored in the page editor since 2026-08-10** — a "Page Access" section in the configuration column, one checkbox per declared role, warning while the list is empty. Until then the rule was enforced but unauthorable: a published page reached nobody, and the Runtime reported it as *not in the snapshot* (the page is filtered server-side, while the menu item that names it stays visible — menu roles gate listing, `access.open` gates entry).
 - Enforcement: server filters the Runtime `pages.list` snapshot to openable published versions per `context.user.roles` (upgrades the "client interim" — cheap once roles are in context). Client menu filtering is cosmetic on top.
@@ -165,7 +193,7 @@ Whole-menu replacement is the MVP and stays as the escape hatch, but it **forks 
 - `pages.publish({ path, readme })`, `pages.versions({ path })`
 - `pages.list`: published mode (Runtime) vs draft mode (Console)
 - Governance: `userRoles.list/put`, `solAdmins.list/appoint` (admin-gated)
-- `@fluxus/client`: `connect(operationId)` snapshot adds operation config (menu) + published page set; Console client keeps the draft set.
+- `@fluxus/client`: `connect(operationId)` snapshot adds operation config (menu) + published page set; Console client keeps the draft set. *Since 2026-10-18 the menu and the published pages come from `apps.user` (APPS_AND_INSTANCES §2.7); `operations.get` no longer carries the menu.*
 
 ## 9. Phasing
 

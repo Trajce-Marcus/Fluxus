@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryAdapter, type ClientSolutionConfig } from '@fluxus/engine';
-import { evaluatePageExpression, type PageContext, type PageQueryFn } from '../src/pageHost';
+import { evaluatePageExpression, pageServicesStub, runPageCallback, validatePageCallback, type PageContext, type PageQueryFn, type PageServiceHandlers } from '../src/pageHost';
 
 // The client's grade of a tiny model: one record type whose workflow declares
 // the GET a page would name. `returns` is absent by design — the query lives on
@@ -49,7 +49,7 @@ const CONFIG: ClientSolutionConfig = {
   ],
 };
 
-const PAGE_CTX: PageContext = { app: { name: 'Test' }, page: { status: 'Raised' } };
+const PAGE_CTX: PageContext = { app: { pageId: 'pages/test', label: 'Test', definition: {} }, page: { status: 'Raised' } };
 
 const adapter = () => new MemoryAdapter(CONFIG);
 
@@ -173,3 +173,41 @@ describe('a dynamic prop carrying its own query — unchanged', () => {
     expect(query).not.toHaveBeenCalled();
   });
 });
+
+// What a page knows about its app, and the one way it opens another
+// (APPS_AND_INSTANCES §2.2, §2.7).
+describe('context.app and services.app.open', () => {
+  const water: PageContext = {
+    app: { pageId: 'pages/scheduler', label: 'Water scheduler', definition: { network: 'water', jobLinkId: 'app-jobs' } },
+    page: {},
+  };
+
+  it('reads the app\'s name, page and definition', async () => {
+    expect(await evaluate('context.app.label', undefined, water)).toBe('Water scheduler');
+    expect(await evaluate('context.app.pageId', undefined, water)).toBe('pages/scheduler');
+    expect(await evaluate('context.app.definition.network', undefined, water)).toBe('water');
+  });
+
+  it('opens the app a definition names, about a record', () => {
+    const openApp = vi.fn();
+    const handlers: PageServiceHandlers = { ...pageServicesStubHandlers(), openApp };
+    runPageCallback(adapter(), CONFIG, 'services.app.open(context.app.definition.jobLinkId, { recordId: callbackData.value })', { value: 'J1' }, water, handlers);
+    // FluxScript is case-insensitive: the literal's keys arrive folded, and the
+    // container reads `recordId` without regard to case.
+    expect(openApp).toHaveBeenCalledExactlyOnceWith('app-jobs', { recordid: 'J1' });
+  });
+
+  it('is a script a page may save', () => {
+    expect(validatePageCallback(CONFIG, 'services.app.open(context.app.definition.jobLinkId, { recordId: callbackData.value })')).toEqual([]);
+  });
+});
+
+/** Handlers that do nothing, for a test to override the one it watches. */
+function pageServicesStubHandlers(): PageServiceHandlers {
+  void pageServicesStub;
+  return {
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {},
+    listActivities: async () => [], resolveUrl: async () => '', goBack: () => {}, canGoBack: () => false,
+    tabs: [], activeTab: null, selectTab: () => {}, watchTabs: () => () => {},
+  };
+}

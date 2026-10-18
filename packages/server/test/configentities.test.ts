@@ -1,5 +1,7 @@
 // Per-entity model writes (model storage split, step 1): `config.putAttribute`
-// and its nine siblings, plus `config.putDefaultMenu`.
+// and its nine siblings. (`config.putDefaultMenu` went with apps Part 2 step 2:
+// the default menu is read only by the step 2 script, and rides in an imported
+// model until step 3 drops it.)
 //
 // The point of the exercise is the concurrency fix — two sol admins editing two
 // different entities have no logical conflict, and must both keep their work.
@@ -187,36 +189,37 @@ describe('the graph is validated on every entity write', () => {
   });
 });
 
-describe('the default menu', () => {
-  it('saves, and drops the key when emptied', async () => {
+// The default menu, until apps Part 2 step 3 drops it: carried by an imported
+// model and still held to the model it names.
+const withDefaultMenu = async (menu: unknown[]) =>
+  stub().config.put({ solutionId: SOL, config: { ...(await getSolutionConfig(db, SOL)), default_menu: menu } });
+
+describe('the default menu, until step 3', () => {
+  it('rides in an imported model, and drops the key when emptied', async () => {
     await stub().pages.put({ solutionId: SOL, path: 'pages/home', def: {} });
     await stub().pages.publish({ solutionId: SOL, path: 'pages/home', readme: 'v1' });
-    await stub().config.putDefaultMenu({
-      solutionId: SOL,
-      menu: [{ label: 'Home', page: 'pages/home', roles: ['role_crew'] }],
-    });
+    await withDefaultMenu([{ label: 'Home', page: 'pages/home', roles: ['role_crew'] }]);
     const withMenu = await getSolutionConfig(db, SOL) as SolutionConfig & { default_menu?: unknown[] };
     expect(withMenu.default_menu).toHaveLength(1);
 
-    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [] });
+    await withDefaultMenu([]);
     const emptied = await getSolutionConfig(db, SOL) as SolutionConfig & { default_menu?: unknown[] };
     expect(emptied.default_menu).toBeUndefined();
   });
 
   it('rejects a menu naming an unpublished page or an unknown role', async () => {
-    await expect(stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'X', page: 'pages/ghost' }] }))
-      .rejects.toThrow(/no published page/);
-    await expect(stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'X', roles: ['role_zzz'] }] }))
-      .rejects.toThrow(/unknown role/);
+    await expect(withDefaultMenu([{ label: 'X', page: 'pages/ghost' }])).rejects.toThrow(/no published page/);
+    await expect(withDefaultMenu([{ label: 'X', roles: ['role_zzz'] }])).rejects.toThrow(/unknown role/);
   });
 
   it('holds the menu to the model — deleting a role it names fails', async () => {
     // A menu item must open something (2026-08-20), so the page exists first.
     await stub().pages.put({ solutionId: SOL, path: 'pages/crew', def: {} });
     await stub().pages.publish({ solutionId: SOL, path: 'pages/crew', readme: 'seed' });
-    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [{ label: 'Crew', page: 'pages/crew', roles: ['role_crew'] }] });
+    await withDefaultMenu([{ label: 'Crew', page: 'pages/crew', roles: ['role_crew'] }]);
     await expect(stub().config.deleteRole({ solutionId: SOL, id: 'role_crew' })).rejects.toThrow(/unknown role/);
     expect((await getSolutionConfig(db, SOL)).access?.roles).toHaveLength(1);
+    await withDefaultMenu([]);
   });
 });
 
@@ -260,10 +263,10 @@ describe('the tables are truth', () => {
     await stub().pages.put({ solutionId: SOL, path: 'pages/crew', def: {} });
     await stub().pages.publish({ solutionId: SOL, path: 'pages/crew', readme: 'seed' });
     const item = { label: 'Crew', page: 'pages/crew', roles: ['role_crew'] };
-    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [item] });
+    await withDefaultMenu([item]);
     const [menu] = await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL));
     expect(menu.def).toEqual([item]);
-    await stub().config.putDefaultMenu({ solutionId: SOL, menu: [] });
+    await withDefaultMenu([]);
     expect(await db.select().from(sdmMenus).where(eq(sdmMenus.solutionId, SOL))).toEqual([]);
   });
 
@@ -316,8 +319,6 @@ describe('the gate is sol admin, exactly like config.put', () => {
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
     })).rejects.toThrow(/admin of this solution/);
     await expect(as(outsider).config.deleteAttribute({ solutionId: SOL, key: 'name' }))
-      .rejects.toThrow(/admin of this solution/);
-    await expect(as(outsider).config.putDefaultMenu({ solutionId: SOL, menu: [] }))
       .rejects.toThrow(/admin of this solution/);
   });
 });

@@ -34,8 +34,7 @@ import {
   configCollections,
   deleteConfigEntity,
   putConfigEntity,
-  putDefaultMenu,
-  menuItemSchema,
+  defaultMenuItemSchema,
   listConfigVersions,
   getPageVersion,
   insertPendingAttachment,
@@ -48,7 +47,6 @@ import {
   updateSolution,
   deleteSolution,
   loadOperationHost,
-  pageOpenable,
   publishConfig,
   publishPage,
   rollbackConfig,
@@ -57,7 +55,7 @@ import {
   putOperationConfig,
   putPage,
   usedStorageBytes,
-  validateOperationMenu,
+  validateDefaultMenuItems,
   type ConfigCollection,
 } from './host';
 import {
@@ -69,7 +67,7 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
-import { appFromRow, getAppRecord, isAppRecord, listApps, putApp } from './apps';
+import { appFromRow, appsForUser, getAppRecord, isAppRecord, listApps, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
 import {
@@ -208,11 +206,47 @@ function matchesAccept(accept: string[], mime: string, name: string): boolean {
   });
 }
 
-// Menu shape (schema §5) — validated on operations.putConfig. Deeper validation
-// (page paths resolve to published versions; role ids exist) lands with M4.
+// The operation's app menu (APPS_AND_INSTANCES §2.5) — validated on
+// operations.putConfig against the operation's apps list.
 const operationConfigSchema: z.ZodType<OperationConfig> = z.object({
-  menu: z.array(menuItemSchema).optional(),
+  menu: menuSchema.optional(),
 });
+
+/** An operation as `operations.list` / `operations.get` answer it: without its
+ *  menu (§2.3), which the Runtime gets from `apps.user`, built for each caller,
+ *  and the Console from `apps.list`. */
+function withoutMenu<T extends { config: OperationConfig }>(op: T): T {
+  const { menu: _menu, ...config } = op.config;
+  return { ...op, config };
+}
+
+/**
+ * Checks 1 and 2 (APPS_AND_INSTANCES §2.3) for a call that names its app: the
+ * app is in the call's operation's apps list with its page published, and the
+ * caller holds one of its roles (with sign-in off, open). Run before anything
+ * the call asks for. A call naming no app is checked as it was before apps.
+ */
+async function checkCallApp(ctx: AppContext, op: { id: string; solutionId: string }, appId: string | undefined, user: AuthUser): Promise<void> {
+  if (appId === undefined) return;
+  const app = await loadAppForCall(ctx.db, op.id, op.solutionId, appId);
+  if (!mayRunApp(app, ctx.authConfigured, user.roles)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: `You may not run '${app.label}'` });
+  }
+}
+
+/** `files.*` (§2.3): the operation's entry gate, the operation running the
+ *  solution named, and checks 1–2 when the call names an app. */
+async function fileCallAccess(ctx: AppContext, input: { solutionId: string; operationId: string; appId?: string }): Promise<void> {
+  const user = await resolveUser(ctx, input.operationId);
+  const op = await getOperation(ctx.db, input.operationId);
+  if (op.solutionId !== input.solutionId) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Operation '${op.id}' does not run solution '${input.solutionId}'` });
+  }
+  await checkCallApp(ctx, op, input.appId, user);
+}
+
+/** The app a Runtime call names: the id of an app in the operation's apps list. */
+const appIdInput = z.string().min(1).optional();
 
 /**
  * The put half of one collection's per-entity mutations. `def` is opaque on the
@@ -420,7 +454,7 @@ export const appRouter = t.router({
   }),
 
   operations: t.router({
-    list: t.procedure.query(async ({ ctx }) => listOperations(ctx.db)),
+    list: t.procedure.query(async ({ ctx }) => (await listOperations(ctx.db)).map(withoutMenu)),
     get: t.procedure
       .input(z.object({ operationId: operationInput }).default({}))
       .query(async ({ ctx, input }) => {
@@ -433,7 +467,7 @@ export const appRouter = t.router({
             getSolutionName(ctx.db, op.solutionId),
             getOrgName(ctx.db, op.orgId),
           ]);
-          return { ...op, solutionName, orgName };
+          return { ...withoutMenu(op), solutionName, orgName };
         } catch (err) {
           rethrow(err);
         }
@@ -460,14 +494,12 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         try {
           const op = await getOperation(ctx.db, input.operationId);
-          // Op admin (ruled 2026-08-02, was design-plane 'write'). Menus stay
-          // split: `default_menu` is design-plane and belongs to the solution
-          // admin; THIS is the per-operation override, runtime-plane, and
+          // Op admin (ruled 2026-08-02, was design-plane 'write'): the app menu
           // belongs to whoever runs the operation.
           await requireOpAdmin(ctx, input.operationId, op.orgId);
-          // Menu references validated at save (§5): pages resolve to published
-          // versions; role ids exist; one nesting level max.
-          await validateOperationMenu(ctx.db, op.solutionId, input.config.menu ?? []);
+          // Checked at save (§2.5): every leaf points at an app of this
+          // operation, at most once.
+          validateAppMenu(input.config.menu ?? [], await listApps(ctx.db, input.operationId));
           await putOperationConfig(ctx.db, input.operationId, input.config);
           return { ok: true as const };
         } catch (err) {
@@ -488,7 +520,7 @@ export const appRouter = t.router({
         try {
           const op = await getOperation(ctx.db, input.operationId);
           await requireOpAdmin(ctx, input.operationId, op.orgId);
-          return { apps: await listApps(ctx.db, input.operationId) };
+          return { apps: await listApps(ctx.db, input.operationId), menu: readMenu(op.config) };
         } catch (err) {
           rethrow(err);
         }
@@ -503,6 +535,23 @@ export const appRouter = t.router({
           const row = await getAppRecord(ctx.db, input.operationId, input.appId);
           if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: `This app is not set up for this operation (${input.appId})` });
           return { ...appFromRow(row), activityHistory: row.activityHistory };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    /**
+     * What the Runtime receives at sign-in (§2.7): the apps the caller may run,
+     * their pages' published definitions, the menu built from them, and — until
+     * step 6 — the id of each page's only app. Open to the operation's users,
+     * like the other calls a Runtime makes to connect.
+     */
+    user: t.procedure
+      .input(z.object({ operationId: operationInput }))
+      .query(async ({ ctx, input }) => {
+        try {
+          const user = await resolveUser(ctx, input.operationId);
+          const op = await getOperation(ctx.db, input.operationId);
+          return await appsForUser(ctx.db, op, ctx.authConfigured, user.roles);
         } catch (err) {
           rethrow(err);
         }
@@ -581,15 +630,15 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         try {
           await requireSolAdmin(ctx, input.solutionId);
-          // The solution's default runtime menu (§5, amended 2026-07-26) rides
-          // in the config artifact; the engine stays menu-blind, so its shape
-          // and references are validated here — same §5 rules as the operation
-          // override, with roles read from the config being saved.
+          // The solution's default menu (§5) still rides in an imported or
+          // rolled-back model until apps Part 2 step 3 drops it; nothing reads
+          // it but the step 2 script. The engine stays menu-blind, so its shape
+          // and references are validated here, roles read from the incoming config.
           const defaultMenu = (input.config as { default_menu?: unknown }).default_menu;
           if (defaultMenu !== undefined) {
-            const parsed = z.array(menuItemSchema).safeParse(defaultMenu);
+            const parsed = z.array(defaultMenuItemSchema).safeParse(defaultMenu);
             if (!parsed.success) throw new TRPCError({ code: 'BAD_REQUEST', message: `default_menu is not a menu: ${parsed.error.message}` });
-            await validateOperationMenu(ctx.db, input.solutionId, parsed.data, input.config as SolutionConfig);
+            await validateDefaultMenuItems(ctx.db, input.solutionId, parsed.data, input.config as SolutionConfig);
           }
           await putConfig(ctx.db, input.solutionId, input.config as SolutionConfig, ctx.sink, ctx.user?.email ?? null);
           return { ok: true as const };
@@ -634,20 +683,6 @@ export const appRouter = t.router({
     deleteRole: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.roles, input.id)),
-
-    // The config's one non-collection field, so no delete: an empty array is
-    // the empty menu.
-    putDefaultMenu: t.procedure
-      .input(z.object({ solutionId: solutionInput, menu: z.array(menuItemSchema) }))
-      .mutation(async ({ ctx, input }) => {
-        try {
-          await requireSolAdmin(ctx, input.solutionId);
-          await putDefaultMenu(ctx.db, input.solutionId, input.menu, ctx.sink, ctx.user?.email ?? null);
-          return { ok: true as const };
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
 
     // Model history (ruled 2026-07-26) — the same publish surface pages have.
     // Readme required: a version without release notes is a diff nobody can
@@ -701,6 +736,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           operationId: operationInput,
+          appId: appIdInput,
           items: z.array(z.union([
             z.object({ recordId: z.string().min(1) }),
             z.object({ typeId: z.string().min(1) }),
@@ -711,6 +747,13 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+          // Failing check 1 or 2 answers empty, not an error (§2.3): the
+          // question is what this caller may do here.
+          try {
+            await checkCallApp(ctx, { id: input.operationId, solutionId: host.solutionId }, input.appId, user);
+          } catch {
+            return input.items.map(() => []);
+          }
           const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
           const workflowOf = (typeId: string): ActivityDef[] | null => {
             try { return host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
@@ -751,14 +794,12 @@ export const appRouter = t.router({
             await requireSolAdmin(ctx, input.solutionId);
             return await listPages(ctx.db, input.solutionId);
           }
-          const pubs = await listPublishedPages(ctx.db, input.solutionId);
-          // Env stub ⇒ everything open; skip the operation lookup entirely.
-          if (!ctx.authConfigured) return pubs;
-          // Published mode (Runtime): filter to pages openable to the caller in
-          // the operation (RBAC_COMPACT page surface, §6 — server upgrades the
-          // client interim). operationId resolves the caller's roles + solution.
-          const { user, config } = await operationContext(ctx, input.operationId ?? input.solutionId);
-          return pubs.filter((p) => pageOpenable(ctx.authConfigured, config, user.roles, p.def));
+          // Published mode: every published page. Who may open one is no longer
+          // the page's to say (`access.open` went, APPS_AND_INSTANCES §2.2) — it
+          // is the app's in the operation's apps list, and the Runtime receives
+          // its pages through `apps.user`.
+          await resolveUser(ctx, input.operationId ?? input.solutionId);
+          return await listPublishedPages(ctx.db, input.solutionId);
         } catch (err) {
           rethrow(err);
         }
@@ -840,6 +881,10 @@ export const appRouter = t.router({
       .input(
         z.object({
           solutionId: solutionInput,
+          /** The operation the upload is for, and the app it comes through
+           *  (APPS_AND_INSTANCES §2.3): checks 1–2 apply. */
+          operationId: operationInput,
+          appId: appIdInput,
           /** The pool attribute this upload is for — its type_config gates the presign. */
           attributeKey: z.string().min(1),
           name: z.string().min(1),
@@ -857,6 +902,7 @@ export const appRouter = t.router({
       )
       .mutation(async ({ ctx, input }) => {
         try {
+          await fileCallAccess(ctx, input);
           const blob = ctx.blob;
           if (!blob?.configured) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
@@ -916,13 +962,18 @@ export const appRouter = t.router({
         }
       }),
     presignGet: t.procedure
-      .input(z.object({ solutionId: solutionInput, key: z.string().min(1) }))
+      .input(z.object({ solutionId: solutionInput, operationId: operationInput, appId: appIdInput, key: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
-        const blob = ctx.blob;
-        if (!blob?.configured) {
-          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
+        try {
+          await fileCallAccess(ctx, input);
+          const blob = ctx.blob;
+          if (!blob?.configured) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
+          }
+          return { url: await blob.presignGet(input.key) };
+        } catch (err) {
+          rethrow(err);
         }
-        return { url: await blob.presignGet(input.key) };
       }),
   }),
 
@@ -972,9 +1023,12 @@ export const appRouter = t.router({
         }
       }),
     get: t.procedure
-      .input(z.object({ operationId: operationInput, recordId: z.string().min(1) }))
+      .input(z.object({ operationId: operationInput, appId: appIdInput, recordId: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
         try {
+          const user = await resolveUser(ctx, input.operationId);
+          const op = await getOperation(ctx.db, input.operationId);
+          await checkCallApp(ctx, op, input.appId, user);
           const { readable } = await readableTypeIds(ctx, input.operationId);
           const rows = await ctx.db
             .select()
@@ -985,7 +1039,6 @@ export const appRouter = t.router({
           }
           if (isAppRecord(rows[0]) || (readable !== null && !readable.has(rows[0].typeRef))) throw accessDenied();
           const r = rows[0];
-          const op = await getOperation(ctx.db, input.operationId);
           const config = await getSolutionConfig(ctx.db, op.solutionId);
           const { found, withheld } = await referencedRecords(ctx.db, input.operationId, config, readable, [r]);
           return {
@@ -1007,6 +1060,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           operationId: operationInput,
+          appId: appIdInput,
           activityId: z.string().min(1),
           recordId: z.string().min(1).optional(),
           /** Attribute payload. Scalars are strings, as the capture form
@@ -1026,6 +1080,7 @@ export const appRouter = t.router({
           // availability gate may read context.user.roles.
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+          await checkCallApp(ctx, { id: input.operationId, solutionId: host.solutionId }, input.appId, user);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -1069,8 +1124,12 @@ export const appRouter = t.router({
               }
             }
 
+            // Check 5 (§2.3) covers what the run's reference fields send back:
+            // a record the caller may not read is refused, as its anchor is.
+            const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
+            const canRead = (r: { typeRef: string }) => !isAppRecord(r) && (readable === null || readable.has(r.typeRef));
             const issues = await withSpan('validate', activity.id, () =>
-              validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {}));
+              validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {}, canRead));
             if (issues.length > 0) {
               throw new TRPCError({ code: 'BAD_REQUEST', message: issues.map((i) => i.message).join(' · ') });
             }
@@ -1125,6 +1184,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           operationId: operationInput,
+          appId: appIdInput,
           activityId: z.string().min(1),
           /** Anchor record — where the run's entry will land once GETs are
            *  logged. Optional until app records exist (step 3). */
@@ -1138,6 +1198,7 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+          await checkCallApp(ctx, { id: input.operationId, solutionId: host.solutionId }, input.appId, user);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {

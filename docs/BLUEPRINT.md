@@ -42,23 +42,34 @@ one language. Apps come and go; the model accumulates.
 
 ## The operating model
 
-**Built:** A solution — one bundle of SDM + pages + roles + default menu — is
+**Built:** A solution — one bundle of SDM + pages + roles — is
 authored in the Console. An **operation** links to exactly one solution and
-runs it for real: its own records, users, role assignments, and (optionally) a
-menu override. Two operations can run the same solution with fully separate
+runs it for real: its own records, users, role assignments, its **apps list**
+(the solution's apps it uses, each with its own name, roles and definition) and
+its **app menu** (2026-10-18). Two operations can run the same solution with fully separate
 data and people — **the operation is the data boundary, and separation is a
 choice**: an org that wants one shared pool of jobs runs one operation, and
 models internal structure (regions, teams) as fields inside the SDM rather
-than as extra operations. End users sign into the Runtime app, which renders their
-operation's published pages, filtered by their roles. The database — not the
+than as extra operations. End users sign into the Runtime app, which opens the
+apps of their operation they may run, from a menu the server builds for them. The database — not the
 repo — is the source of truth for a solution's config and pages.
+
+**Reversed 2026-10-18 (apps Part 2 step 2, [APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)):
+the solution's default menu and the operation's menu override.** A solution
+used to ship a default menu that each operation inherited or replaced
+wholesale (2026-07-26). Dropped by the user's 2026-10-17 rulings: an operation
+admin picks the solution's apps into the operation's apps list, and the
+operation's app menu points at apps in it ("no role there, just a pointer").
+The default menu stays stored only until step 3 drops it; nothing reads it but
+the step 2 migration script, which builds each operation's apps and menu from
+it.
 
 **Direction:** an org gets solutions two ways — author them, or install them
 from the **Catalogue**. Installed solutions carry provenance (the `origin`
 columns exist today; the install path doesn't).
 
-**Direction (2026-10-17, spec [APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)):**
-the solution's default menu and the operation's menu override go. An operation
+**Built 2026-10-18, as directed 2026-10-17 (spec [APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)):**
+the solution's default menu and the operation's menu override went. An operation
 admin picks the solution's apps into the operation's apps list, each with its
 own id, name, roles and definition, and the operation's app menu points at
 apps in that list (§ Apps).
@@ -94,10 +105,19 @@ configured:
 
 - **Entering an operation** — only the people listed on it (`op_users`, or an
   op admin). Unchanged since 2026-08-02.
-- **Inside it, roles.** A page opens only to a role its access list names; a
-  record type reads only to a role its read list names; a menu item shows only
-  to a role it names. **A solution that declares no roles shows nothing.**
-  Only an environment with no sign-in configured at all stays open.
+- **Inside it, roles.** An app in the operation's apps list runs only for a
+  role it names (since 2026-10-18); a record type reads only to a role its read
+  list names; a menu item shows only to someone who may run its app. **A
+  solution that declares no roles shows nothing.** Only an environment with no
+  sign-in configured at all stays open.
+
+**Reversed 2026-10-18 (apps Part 2 step 2): page access lists and menu item
+roles.** A page used to name who may open it (`PageDef.access.open`), and each
+menu item named who may see it — two layers that could disagree. Dropped by the
+user's 2026-10-17 rulings: who may run an app is set only on it in the
+operation's apps list, the page carrying no roles "for now", and a menu item is
+"just a pointer". The step 2 script gives each app its page's old access list as
+its roles.
 
 **Actions follow the page and the record type.** Whoever can open a page sees
 its actions; an action is restricted further only where it matters, by its
@@ -907,7 +927,7 @@ Canonical definitions live in [GLOSSARY.md](GLOSSARY.md); this is the working se
 | **Page** | A stored, validated screen definition rendered by the page runtime; direction: for now, what a UI app is. |
 | **Automation** *(direction)* | Work with no user interface, run by a schedule, an event or an outside caller — an app with no UI (2026-10-17); details, including what it runs as, later. |
 | **Component** | A model-blind UI block wired to the SDM per page; reused, never rewritten. |
-| **Solution** | The shippable design bundle: SDM + pages + roles + default menu. No data. |
+| **Solution** | The shippable design bundle: SDM + pages + roles. No data. (Its default menu went 2026-10-18: each operation sets up its own apps and menu.) |
 | **Operation** | A running instance of a solution: its records, users, and roles. |
 | **Org** | The subscribing business everything hangs under. |
 | **Console / Runtime** | The builder's app / the end user's app. Always named in full, so a bare "app" means a solution's app. |

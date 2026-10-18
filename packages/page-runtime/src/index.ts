@@ -56,11 +56,12 @@ export {
   pageServicesStub,
   toComponentValue,
   type CallbackPayload,
+  type PageAppContext,
   type PageContext,
   type PageServiceHandlers,
 } from './pageHost';
 export { type PageFinding, type PageValidationHost } from './validatePage';
-export { resolvePageAnchor, createActivityFor } from './pageAnchor';
+export { resolvePageAnchor } from './pageAnchor';
 export type { Panel, BorderSide, LayoutDefinition } from './layout';
 export type { PropKind, PropType, PropSchema, ComponentManifest } from './manifest';
 export type {

@@ -1,14 +1,11 @@
-// Runtime navigation (CONSOLE_RUNTIME_SPEC §4/§5): the operation's menu,
-// role-filtered. Leaf items open a published page; groups nest one level.
-// Every item addresses a published page — the M10 "Workbench" item is gone
-// with M15, the workbench having moved to the Console. Renders nothing when no
-// menu is configured, so the demo op is unchanged. Client filtering is
-// cosmetic; the server already filtered the page snapshot to what the caller
-// may open.
+// Runtime navigation (APPS_AND_INSTANCES §2.5): the operation's app menu, built
+// on the server for this caller (`apps.user`) — only leaves whose app they may
+// run, and groups that keep one. A leaf shows its app's name and opens it;
+// groups nest one level. Renders nothing when the caller has no menu.
 
 import { client } from '../host';
 import { useRuntime } from '../context/RuntimeContext';
-import type { MenuItem } from '@fluxus/client';
+import { isMenuGroup, type MenuLeaf } from '@fluxus/client';
 
 const headerStyle: React.CSSProperties = {
   padding: '12px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
@@ -28,16 +25,13 @@ function itemStyle(active: boolean, indent = false): React.CSSProperties {
 }
 
 export function MenuNav() {
-  const { selectedPage, selectPage } = useRuntime();
-  const menu = client.visibleMenu();
+  const { selectedAppId, selectApp } = useRuntime();
+  const menu = client.menu;
   if (menu.length === 0) return null;
 
-  const leaf = (it: MenuItem, indent: boolean) => (
-    <li
-      style={itemStyle(!!it.page && selectedPage === it.page, indent)}
-      onClick={() => it.page && selectPage(it.page)}
-    >
-      {it.label}
+  const leaf = (it: MenuLeaf, indent: boolean) => (
+    <li style={itemStyle(selectedAppId === it.appId, indent)} onClick={() => selectApp(it.appId)}>
+      {client.findApp(it.appId)?.label ?? it.appId}
     </li>
   );
 
@@ -45,16 +39,16 @@ export function MenuNav() {
     <nav>
       <div style={headerStyle}>Menu</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: '4px 0' }}>
-        {menu.map((it, i) =>
-          it.items ? (
-            <li key={i}>
+        {menu.map((it) =>
+          isMenuGroup(it) ? (
+            <li key={it.id}>
               <div style={{ ...itemStyle(false), cursor: 'default', color: '#475569', fontWeight: 600 }}>{it.label}</div>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                {it.items.map((c, j) => <span key={j}>{leaf(c, true)}</span>)}
+                {it.items.map((c) => <span key={c.id}>{leaf(c, true)}</span>)}
               </ul>
             </li>
           ) : (
-            <span key={i}>{leaf(it, false)}</span>
+            <span key={it.id}>{leaf(it, false)}</span>
           ),
         )}
       </ul>

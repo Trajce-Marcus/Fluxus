@@ -11,10 +11,12 @@
 // run uses (`appendHistoryEntry`).
 
 import { and, asc, eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { APPS_RECORD_TYPE, CONSOLE_EDIT, newRecordId, type ActivityHistoryEntry, type SolutionConfig } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { records } from './db/schema';
+import { records, type MenuGroup, type MenuItem, type MenuLeaf, type OperationConfig } from './db/schema';
 import { appendHistoryEntry } from './databaseStore';
+import { MenuValidationError, isPagePublished, listPublishedPages } from './host';
 
 /** One app in an operation's apps list, as calls carry it. */
 export interface App {
@@ -171,4 +173,114 @@ export async function putApp(
     await appendHistoryEntry(tx, operationId, id, entry);
     return { id };
   });
+}
+
+/** Whether a caller may run an app — check 2 (§2.3): they hold one of its
+ *  roles. With sign-in off there is nobody to check, so everyone may. */
+export function mayRunApp(app: App, authConfigured: boolean | undefined, roles: string[] | undefined): boolean {
+  if (!authConfigured) return true;
+  const held = new Set(roles ?? []);
+  return app.roleIds.some((r) => held.has(r));
+}
+
+/** Check 1 (§2.3): the app is in this operation's apps list and its page has
+ *  a published version; otherwise it is not set up for this operation. */
+export async function loadAppForCall(db: DbOrTx, operationId: string, solutionId: string, appId: string): Promise<App> {
+  const app = await getApp(db, operationId, appId);
+  if (!app || !(await isPagePublished(db, solutionId, app.pageId))) throw new AppNotFoundError(appId);
+  return app;
+}
+
+// ── The app menu (§2.5) ──────────────────────────────────────────────────────
+// Stored on the operation (`operations.config.menu`): pointers at apps in its
+// apps list, in groups one level deep, with no roles of their own.
+
+const menuLeafSchema: z.ZodType<MenuLeaf> = z.object({ id: z.string().min(1), appId: z.string().min(1) });
+const menuGroupSchema: z.ZodType<MenuGroup> = z.object({
+  id: z.string().min(1),
+  label: z.string().trim().min(1, 'a group needs a name'),
+  items: z.array(menuLeafSchema),
+});
+/** The app menu's wire shape. A group is tried first: a leaf has no `items`. */
+export const menuSchema = z.array(z.union([menuGroupSchema, menuLeafSchema]));
+
+const isGroup = (item: MenuItem): item is MenuGroup => 'items' in item;
+
+/** Checked at save: every leaf points at an app of this operation, an app
+ *  appears at most once, and item ids are unique. */
+export function validateAppMenu(menu: MenuItem[], apps: App[]): void {
+  const known = new Map(apps.map((a) => [a.id, a]));
+  const errors: string[] = [];
+  const ids = new Set<string>();
+  const placed = new Set<string>();
+  const seeId = (id: string) => {
+    if (ids.has(id)) errors.push(`duplicate item id "${id}"`);
+    ids.add(id);
+  };
+  const leaf = (l: MenuLeaf) => {
+    seeId(l.id);
+    const app = known.get(l.appId);
+    if (!app) { errors.push(`"${l.appId}" is not an app of this operation`); return; }
+    if (placed.has(l.appId)) errors.push(`"${app.label}" is on the menu more than once`);
+    placed.add(l.appId);
+  };
+  for (const item of menu) {
+    if (isGroup(item)) { seeId(item.id); item.items.forEach(leaf); } else leaf(item);
+  }
+  if (errors.length > 0) throw new MenuValidationError(errors);
+}
+
+/** The stored app menu, keeping only items in its shape — a menu written
+ *  before apps Part 2 (labels and pages) reads as empty until the step 2
+ *  script rebuilds it. */
+export function readMenu(config: OperationConfig | null | undefined): MenuItem[] {
+  return (config?.menu ?? []).flatMap((item) => {
+    const parsed = z.union([menuGroupSchema, menuLeafSchema]).safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+/** One caller's menu, built on the server: the leaves whose app they may run,
+ *  and the groups that keep at least one, in the stored order. */
+export function menuFor(menu: MenuItem[], mayRun: (appId: string) => boolean): MenuItem[] {
+  return menu.flatMap((item): MenuItem[] => {
+    if (!isGroup(item)) return mayRun(item.appId) ? [item] : [];
+    const items = item.items.filter((l) => mayRun(l.appId));
+    return items.length > 0 ? [{ ...item, items }] : [];
+  });
+}
+
+/** What the Runtime receives at sign-in (`apps.user`, §2.7). */
+export interface UserApps {
+  /** The apps the caller may run (checks 1–2), as a page sees one. */
+  apps: { id: string; label: string; pageId: string; definition: string }[];
+  /** Their pages' published definitions. */
+  pages: { path: string; def: unknown }[];
+  menu: MenuItem[];
+  /**
+   * For each page the operation has exactly one app made from — whoever may
+   * run it — that app's id: the old way of opening a page by its path
+   * (`services.page.open`, OpenPage, `page=` links), until step 6 removes it.
+   */
+  appIdByPageId: Record<string, string>;
+}
+
+export async function appsForUser(
+  db: DbOrTx,
+  op: { id: string; solutionId: string; config: OperationConfig },
+  authConfigured: boolean | undefined,
+  roles: string[] | undefined,
+): Promise<UserApps> {
+  const [all, published] = await Promise.all([listApps(db, op.id), listPublishedPages(db, op.solutionId)]);
+  const defs = new Map(published.map((p) => [p.path, p.def]));
+  const runnable = all.filter((a) => defs.has(a.pageId) && mayRunApp(a, authConfigured, roles));
+  const runnableIds = new Set(runnable.map((a) => a.id));
+  const byPage = new Map<string, string[]>();
+  for (const a of all) byPage.set(a.pageId, [...(byPage.get(a.pageId) ?? []), a.id]);
+  return {
+    apps: runnable.map(({ id, label, pageId, definition }) => ({ id, label, pageId, definition })),
+    pages: [...new Set(runnable.map((a) => a.pageId))].map((path) => ({ path, def: defs.get(path) })),
+    menu: menuFor(readMenu(op.config), (appId) => runnableIds.has(appId)),
+    appIdByPageId: Object.fromEntries([...byPage].filter(([, ids]) => ids.length === 1).map(([page, [id]]) => [page, id])),
+  };
 }

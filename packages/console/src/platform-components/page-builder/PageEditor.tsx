@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
-import { loadPageLayout, solutionRoles, solutionRecordTypes } from './persistence';
+import { loadPageLayout, solutionRecordTypes } from './persistence';
 import type { Panel } from './layout-editor/types';
 import type { SlotConfig } from './persistence';
 import {
@@ -14,7 +14,6 @@ import {
   removePageComponent,
   addContextKey,
   removeContextKey,
-  togglePageAccess,
   setPageRecord,
   setStaticConfig,
   setDynamicProp,
@@ -349,11 +348,13 @@ function ArrayPropertyButton({ prop, value, onEdit }: { prop: PropSchema; value:
 }
 
 // ── Page record ──────────────────────────────────────────────────────────────
-// What the page is about (DATA_THROUGH_ACTIVITIES step 3). Every run is about
-// exactly one record, so this is where a page gets one: an app record type,
-// held as one instance per operation (found or created when the page opens) or
-// as many (the id comes in the URL). Left as a pure view, the page still
-// renders — its reads simply land nowhere, which the hint says out loud.
+// What the page is about (DATA_THROUGH_ACTIVITIES step 3): a record type, one
+// of whose records the page is opened on (the id comes in the URL). Left as a
+// pure view, the page still renders — its reads simply land nowhere, which the
+// hint says out loud. Its one/many choice and the Page access section went with
+// apps Part 2 step 2: an operation's app does what a one-instance page did, and
+// who may open the page is set on each app made from it (APPS_AND_INSTANCES
+// §2.2, §2.6).
 
 function PageRecordSection({ pageRecord, pagePath }: { pageRecord: PageRecordDef | null; pagePath: string }) {
   const recordTypes = solutionRecordTypes();
@@ -365,71 +366,17 @@ function PageRecordSection({ pageRecord, pagePath }: { pageRecord: PageRecordDef
         <select
           className="pe-ctx-select"
           value={pageRecord?.type ?? ''}
-          onChange={(e) =>
-            setPageRecord(pagePath, e.target.value
-              ? { type: e.target.value, instances: pageRecord?.instances ?? 'one' }
-              : null)}
+          onChange={(e) => setPageRecord(pagePath, e.target.value ? { type: e.target.value } : null)}
         >
           <option value="">(pure view — no record)</option>
           {recordTypes.map((rt) => <option key={rt.id} value={rt.id}>{rt.name}</option>)}
         </select>
-        {pageRecord && (
-          <select
-            className="pe-ctx-select"
-            value={pageRecord.instances}
-            onChange={(e) => setPageRecord(pagePath, { ...pageRecord, instances: e.target.value as PageRecordDef['instances'] })}
-          >
-            <option value="one">one instance</option>
-            <option value="many">many — id in the URL</option>
-          </select>
-        )}
       </div>
       <p className="pe-config-hint">
         {!pageRecord
           ? 'No record — activities and GETs fired from this page have nothing to anchor on.'
-          : pageRecord.instances === 'one'
-            ? 'One per operation: found, or created through its create activity, when the page opens.'
-            : 'One of many: opened at ?record=<id>; nothing is created.'}
+          : 'Opened at ?record=<id>; nothing is created.'}
       </p>
-    </div>
-  );
-}
-
-// ── Page access ──────────────────────────────────────────────────────────────
-// Who may open the page (CONSOLE_RUNTIME_SPEC §6). Deny by default once the
-// solution declares roles: a published page naming none is filtered out of the
-// snapshot server-side and the Runtime reports it missing, which is a puzzling
-// way to learn about a permission — hence the warning rather than a silent
-// empty list. A solution with no roles has RBAC dormant, so the section says
-// that instead of showing an empty box.
-
-function PageAccessSection({ accessOpen, pagePath }: { accessOpen: string[]; pagePath: string }) {
-  const roles = solutionRoles();
-
-  return (
-    <div className="pe-config-section pe-config-divider">
-      <p className="pe-config-label">Page Access</p>
-      {roles.length === 0 ? (
-        <p className="pe-config-hint">No roles declared — every signed-in user may open this page.</p>
-      ) : (
-        <>
-          <ul className="pe-ctx-list">
-            {roles.map((role) => (
-              <li key={role.id} className="pe-ctx-item">
-                <label className="pe-access-role">
-                  <input type="checkbox" checked={accessOpen.includes(role.id)}
-                    onChange={() => togglePageAccess(pagePath, role.id)} />
-                  <span className="pe-ctx-key">{role.name}</span>
-                </label>
-                <span className="pe-ctx-type">{role.id}</span>
-              </li>
-            ))}
-          </ul>
-          {accessOpen.length === 0 && (
-            <p className="pe-ctx-error">No role may open this page — it will not reach the Runtime.</p>
-          )}
-        </>
-      )}
     </div>
   );
 }
@@ -550,12 +497,11 @@ interface Col3Props {
   selectedSlotId: string | null;
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
-  accessOpen: string[];
   pageRecord: PageRecordDef | null;
   pagePath: string;
 }
 
-function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, pageRecord, pagePath }: Col3Props) {
+function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pagePath }: Col3Props) {
   const config = selectedSlotId ? (slotConfigs[selectedSlotId] ?? null) : null;
 
   return (
@@ -564,7 +510,6 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, accessOpen, 
       <div className="pe-col-scroll">
         <PageContextSection contextSchema={contextSchema} pagePath={pagePath} />
         <PageRecordSection pageRecord={pageRecord} pagePath={pagePath} />
-        <PageAccessSection accessOpen={accessOpen} pagePath={pagePath} />
 
         {selectedSlotId && config && (
           <>
@@ -641,7 +586,7 @@ function PageEditorComponent({ pagePath }: Props) {
 
   const layout = loadPageLayout(pagePath);
   const slots = layout ? collectLeafPanels(layout.root) : [];
-  const { mode, pageComponents, contextSchema, accessOpen, pageRecord, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
+  const { mode, pageComponents, contextSchema, pageRecord, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
 
   if (mode === 'layout') {
     return (
@@ -669,7 +614,7 @@ function PageEditorComponent({ pagePath }: Props) {
           <ComponentsColumn pageComponents={pageComponents} selectedComponentName={selectedComponentName} pagePath={pagePath} />
         )}
         <SlotsColumn slots={slots} selectedSlotId={selectedSlotId} selectedComponentName={selectedComponentName} slotConfigs={slotConfigs} pagePath={pagePath} />
-        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} accessOpen={accessOpen} pageRecord={pageRecord} pagePath={pagePath} />
+        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pagePath={pagePath} />
         <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} />
       </div>
     </div>
@@ -759,8 +704,6 @@ export const css = `
   .pe-ctx-select { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); font-size: 0.72rem; padding: 2px 4px; }
   .pe-ctx-confirm { background: var(--color-accent); border: none; border-radius: 3px; color: #fff; cursor: pointer; font-size: 0.72rem; padding: 2px 8px; }
   .pe-ctx-error { width: 100%; margin: 2px 0 0; font-size: 0.7rem; color: #f48771; }
-  .pe-access-role { display: flex; align-items: center; gap: 5px; flex: 1; cursor: pointer; }
-  .pe-access-role input { accent-color: var(--color-accent); margin: 0; }
 
   .pe-bindings-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .pe-binding-row { display: flex; flex-direction: column; gap: 3px; }

@@ -10,12 +10,21 @@ One class, `FluxusClient`, owning the movements every remote host makes:
 
 1. **`connect({url, operationId, records?})`** — resolve the operation to its
    solution (`operations.get`), then fetch `config.getForOperation` +
-   `pages.list` and (unless `records: 'none'`) `records.partition` in parallel
+   **`apps.user`** and (unless `records: 'none'`) `records.partition` in parallel
    and build a
-   `MemoryAdapter` snapshot plus the `pages` map (path → def) and the
-   **effective menu** (§5 amended M10): `operation.config.menu ??
-   config.default_menu ?? []` — the operation's whole-menu override when set,
-   else the solution's default, resolved here because the engine is menu-blind.
+   `MemoryAdapter` snapshot plus the `pages` map (path → def) and the caller's
+   **app menu** (APPS_AND_INSTANCES §2.5, §2.7, since 2026-10-18): `apps.user`
+   answers the apps the caller may run (`apps`, each `{ id, label, pageId,
+   definition }`), their published pages, the menu built from them on the
+   server, and `appIdByPageId` (each page's only app — the old way of opening a
+   page by its path, until step 6). No fallback: an empty menu means nothing is
+   set up. *(Until then the menu was `operation.config.menu ??
+   config.default_menu ?? []`, filtered in the browser by `visibleMenu`.)*
+   **`appId`** is the app the host has open: the Runtime sets it when it opens
+   one, and every call that runs, reads or uploads through it carries it —
+   `activities.run`, `activities.query`, `page.activities`, `records.get`,
+   `files.*`. The Console never sets it. `findApp(appId)` answers an app the
+   caller may run, or null.
    The host creates its engine over that adapter and wires UI subscriptions to
    it once. Exposes `operationId` + `solutionId`, and the Runtime header's
    three display names — `solutionName` + `operationName` (M10), `orgName`
@@ -44,7 +53,7 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    but the exception, not the design. Model writes are **per entity** (2026-08-08):
    `putAttribute`/`deleteAttribute`, `putRecordType`/`deleteRecordType`,
    `putWorkflow`/`deleteWorkflow`, `putFunction`/`deleteFunction`,
-   `putRole`/`deleteRole` and `putDefaultMenu` each round-trip the matching
+   `putRole`/`deleteRole` each round-trip the matching
    `config.*` mutation, which validates the whole graph under a per-solution
    lock — so two people editing two different entities no longer overwrite each
    other. `saveConfig` still round-trips `config.put`, but as the **import**
@@ -114,8 +123,8 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    here: `PageDef` and its validation belong to the page builder.
 6. **`uploads`** (ATTRIBUTE_TYPES_FILES_SCALARS §10) — the upload surface
    capture widgets inject: `upload(attributeKey, file, onProgress?)` and
-   `resolveUrl(storageKey)`. The solution is bound here so widgets stay blind
-   to it.
+   `resolveUrl(storageKey)`. The solution and operation (and the open app,
+   2026-10-18) are bound here so widgets stay blind to them.
 
 ## Upload core (`src/upload.ts`)
 
@@ -163,19 +172,18 @@ deciding what to **render**; every call is re-checked server-side.
 `connect`'s `pages` option (`'draft'` default | `'published'`) picks which page
 set the snapshot holds: the Runtime host passes `'published'` (latest version
 per path); the Console passes `'draft'` (its editable preview). Connect also
-fetches `me` → the caller's `userRoles` + `enforced` flag, and the effective
-`menu`. `visibleMenu()` filters the menu for display (deny-default per §5;
-unfiltered when not `enforced`, §7) — cosmetic, the server page filter is the
-real gate. `ConsoleClient.listPublishedPaths` feeds the menu editors, and
+fetches `me` → the caller's `userRoles` + `enforced` flag. (`visibleMenu()`
+went 2026-10-18: the server builds each caller's menu.)
+`ConsoleClient.listPublishedPaths` feeds the apps dialog, and
 `ConsoleClient.getOrg` / `putOrgProfile` (M14) drive Console's Organisation
 settings surface — profile reads and edits over the `orgs` row (`OrgProfile`).
 No create and no plan/status writes; the server owns both rules.
-`ConsoleClient.getSolutionConfig` (M10) lets the Console's operation view show
-the `default_menu` an operation inherits — sol-admin gated since the client trim,
-so an op admin who does not build the solution sees an empty inherited menu.
+`ConsoleClient.getSolutionConfig` (M10) reads the whole model (sol admins and,
+since 2026-10-18, the admins of the solution's operations).
 
 **An operation's apps list** (2026-10-18, APPS_AND_INSTANCES §2.6):
-`listApps(operationId)` → `{ apps: App[] }`, `getApp(operationId, appId)` →
+`listApps(operationId)` → `{ apps: App[], menu: MenuItem[] }` (the menu is
+saved with `putOperationConfig`), `getApp(operationId, appId)` →
 the app with its `activityHistory`, `putApp(operationId, AppInput)` → `{ id }`
 (no `id` adds one). `App` is `{ id, pageId, label, roleIds, definition }`,
 `definition` being JSON as text. Op admin, server-side.

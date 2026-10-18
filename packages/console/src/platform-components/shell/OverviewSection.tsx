@@ -10,7 +10,7 @@ import { sectionsForScope } from './sections';
 
 const LINKS = [
   { id: 'pages', label: 'Pages', hint: 'Build and publish the app’s pages' },
-  { id: 'record-types', label: 'Shared Data Model', hint: 'Record types, attributes, workflows, roles, menu' },
+  { id: 'record-types', label: 'Shared Data Model', hint: 'Record types, attributes, activities, workflows, roles' },
   { id: 'workbench', label: 'Workbench', hint: 'Raw records and activity runs against the data operation' },
 ];
 

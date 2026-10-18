@@ -86,25 +86,9 @@ export function saveSlotConfigs(path: string, slotConfigs: Record<string, SlotCo
 }
 
 /**
- * Page access (CONSOLE_RUNTIME_SPEC §6): the role ids that may open the page.
- * Default deny once the solution declares roles, so a page left empty here is
- * published but unreachable — which is why the editor says so out loud.
- */
-export function loadPageAccess(path: string): string[] {
-  return loadPage(path)?.access?.open ?? [];
-}
-
-export function savePageAccess(path: string, open: string[]): void {
-  const existing = loadPage(path) ?? {};
-  // Absent stays absent, as everywhere else in the model: an empty list and no
-  // list mean the same thing to `pageOpenable`, so don't store an empty one.
-  savePage(path, { ...existing, access: open.length > 0 ? { open } : undefined });
-}
-
-/**
  * The record the page is about (DATA_THROUGH_ACTIVITIES step 3): which record
- * type, and whether it has one instance per operation or many. Absent ⇒ a pure
- * view. Stored absent rather than as a half-filled object, like page access.
+ * type, its record's id coming in the URL. Absent ⇒ a pure view. Stored absent
+ * rather than as a half-filled object.
  */
 export function loadPageRecord(path: string): PageRecordDef | null {
   return loadPage(path)?.record ?? null;
@@ -118,11 +102,6 @@ export function savePageRecord(path: string, record: PageRecordDef | null): void
 /** The record types a page may be about — every type in the solution's model. */
 export function solutionRecordTypes(): { id: string; name: string }[] {
   return (sdmClient.config as { recordTypes?: { id: string; name: string }[] }).recordTypes ?? [];
-}
-
-/** The solution's declared roles — the only ids page access may name. */
-export function solutionRoles(): { id: string; name: string }[] {
-  return (sdmClient.config as { access?: { roles?: { id: string; name: string }[] } }).access?.roles ?? [];
 }
 
 export function listPagePaths(): string[] {

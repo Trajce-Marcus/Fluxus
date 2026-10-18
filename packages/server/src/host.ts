@@ -29,7 +29,7 @@ import {
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type OperationConfig, type StoredConfigBeforePool } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmMenus, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type DefaultMenuItem, type OperationConfig, type StoredConfigBeforePool } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 import { withSpan } from './perf';
@@ -88,7 +88,7 @@ export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise
       workflows: sql<WorkflowRawDef[] | null>`(SELECT jsonb_agg(${sdmWorkflows.def} ORDER BY ${sdmWorkflows.id}) FROM ${sdmWorkflows} WHERE ${eq(sdmWorkflows.solutionId, solutionId)})`,
       functions: sql<FunctionDef[] | null>`(SELECT jsonb_agg(${sdmFunctions.def} ORDER BY ${sdmFunctions.id}) FROM ${sdmFunctions} WHERE ${eq(sdmFunctions.solutionId, solutionId)})`,
       roles: sql<RoleDef[] | null>`(SELECT jsonb_agg(${sdmRoles.def} ORDER BY ${sdmRoles.id}) FROM ${sdmRoles} WHERE ${eq(sdmRoles.solutionId, solutionId)})`,
-      defaultMenu: sql<MenuItem[] | null>`(SELECT ${sdmMenus.def} FROM ${sdmMenus} WHERE ${eq(sdmMenus.solutionId, solutionId)})`,
+      defaultMenu: sql<DefaultMenuItem[] | null>`(SELECT ${sdmMenus.def} FROM ${sdmMenus} WHERE ${eq(sdmMenus.solutionId, solutionId)})`,
     })
     .from(solutions)
     .where(eq(solutions.id, solutionId));
@@ -520,9 +520,10 @@ export class MenuValidationError extends Error {
   }
 }
 
-/** A menu's wire shape — the operation override's input schema, and what a
- *  config's `default_menu` is checked against before its references are. */
-export const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
+/** The shape of the solution's default menu (`default_menu`, the menu shape
+ *  before apps Part 2) — checked by `config.put` and every model write until
+ *  step 3 drops it. The operation's app menu has its own (`apps.ts`). */
+export const defaultMenuItemSchema: z.ZodType<DefaultMenuItem> = z.lazy(() =>
   z.object({
     // Zod strips unknown keys, so the stable id has to be declared here or a
     // saved override would come back without ids.
@@ -530,19 +531,19 @@ export const menuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
     label: z.string().min(1),
     page: z.string().min(1).optional(),
     roles: z.array(z.string().min(1)).optional(),
-    items: z.array(menuItemSchema).optional(),
+    items: z.array(defaultMenuItemSchema).optional(),
   }),
 );
 
 /**
- * Validate a menu against its solution (CONSOLE_RUNTIME_SPEC §5): every leaf
- * `page` must resolve to a **published** page of the solution; every role id
- * must be one the solution declares (`access.roles`); nesting is one level max
- * (MVP). Run at operation-config save (the override) and at config.put (the
- * solution's `default_menu`) — the latter passes `rolesFrom` so roles are read
- * from the config being saved, not the stored one it is replacing.
+ * Validate the solution's default menu against its solution (CONSOLE_RUNTIME_SPEC
+ * §5, until apps Part 2 step 3 drops it): every leaf `page` must resolve to a
+ * **published** page of the solution; every role id must be one the solution
+ * declares (`access.roles`); nesting is one level max. Run at config.put and at
+ * every model write — `rolesFrom` reads roles from the config being saved, not
+ * the stored one it is replacing.
  */
-export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu: MenuItem[], rolesFrom?: SolutionConfig): Promise<void> {
+export async function validateDefaultMenuItems(db: DbOrTx, solutionId: string, menu: DefaultMenuItem[], rolesFrom?: SolutionConfig): Promise<void> {
   const published = new Set((await listPublishedPages(db, solutionId)).map((p) => p.path));
   const config = rolesFrom ?? (await getSolutionConfig(db, solutionId));
   const roleIds = new Set((config.access?.roles ?? []).map((r) => r.id));
@@ -550,7 +551,7 @@ export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu
   // Item ids must be unique across the whole menu — they identify an item for
   // selection, reordering and (§5a) an operation's per-item overrides.
   const seenIds = new Set<string>();
-  const walk = (items: MenuItem[], depth: number) => {
+  const walk = (items: DefaultMenuItem[], depth: number) => {
     for (const it of items) {
       if (it.id) {
         if (seenIds.has(it.id)) errors.push(`"${it.label}" → duplicate item id "${it.id}"`);
@@ -582,22 +583,14 @@ export async function validateOperationMenu(db: DbOrTx, solutionId: string, menu
   if (errors.length > 0) throw new MenuValidationError(errors);
 }
 
-/**
- * Whether a published page def is openable to `roles` (RBAC_COMPACT page
- * surface / §6). Enforced whenever auth is configured: **default deny** —
- * `def.access.open` must list a held role, and a solution that declares no
- * roles opens no page (strict, 2026-10-11; it was open until then — the
- * "adoption posture"). Only an environment with no auth is open. `def` is opaque
- * jsonb — this reads only the shallow `access.open` convention, no PageDef dep.
- */
-export function pageOpenable(authConfigured: boolean | undefined, config: SolutionConfig, roles: string[] | undefined, def: unknown): boolean {
-  if (!authConfigured) return true;
-  // Strict (2026-10-11): no roles declared ⇒ no page opens, as for record types.
-  if (!config.access?.roles?.length) return false;
-  const open = (def as { access?: { open?: string[] } } | null)?.access?.open;
-  if (!open || open.length === 0) return false;
-  const held = new Set(roles ?? []);
-  return open.some((r) => held.has(r));
+/** Whether a page has a published version — what an app is made from. */
+export async function isPagePublished(db: DbOrTx, solutionId: string, path: string): Promise<boolean> {
+  const [row] = await db
+    .select({ version: pageVersions.version })
+    .from(pageVersions)
+    .where(and(eq(pageVersions.solutionId, solutionId), eq(pageVersions.path, path)))
+    .limit(1);
+  return !!row;
 }
 
 // ── Governance store (RBAC stage 1; CONSOLE_RUNTIME_SPEC §2a) ──────────────────
@@ -702,7 +695,7 @@ export async function putConfig(
         await collection.put(tx, solutionId, identityOf(collection, entity), entity, author);
       }
     }
-    const menu = (config as { default_menu?: MenuItem[] }).default_menu;
+    const menu = (config as { default_menu?: DefaultMenuItem[] }).default_menu;
     if (menu && menu.length > 0) {
       await tx
         .insert(sdmMenus)
@@ -1006,9 +999,9 @@ async function editConfig(
 export async function validateDefaultMenu(db: DbOrTx, solutionId: string, config: SolutionConfig): Promise<void> {
   const defaultMenu = (config as { default_menu?: unknown }).default_menu;
   if (defaultMenu === undefined) return;
-  const parsed = z.array(menuItemSchema).safeParse(defaultMenu);
+  const parsed = z.array(defaultMenuItemSchema).safeParse(defaultMenu);
   if (!parsed.success) throw new ConfigValidationError([`default_menu is not a menu: ${parsed.error.message}`]);
-  await validateOperationMenu(db, solutionId, parsed.data, config);
+  await validateDefaultMenuItems(db, solutionId, parsed.data, config);
 }
 
 /** Add or replace one entity of a collection, by the identity its def carries. */
@@ -1039,30 +1032,6 @@ export async function deleteConfigEntity<T>(
   sink: NotifySink = consoleNotifySink,
 ): Promise<void> {
   await editConfig(db, solutionId, sink, (tx) => collection.remove(tx, solutionId, id));
-}
-
-/** Replace the solution's default runtime menu. No delete procedure: `[]` is the
- *  empty menu, and it drops the row, because "no default" is the absent key. */
-export async function putDefaultMenu(
-  db: Db,
-  solutionId: string,
-  menu: MenuItem[],
-  sink: NotifySink = consoleNotifySink,
-  author: string | null = null,
-): Promise<void> {
-  await editConfig(db, solutionId, sink, async (tx) => {
-    if (menu.length === 0) {
-      await tx.delete(sdmMenus).where(eq(sdmMenus.solutionId, solutionId));
-      return;
-    }
-    await tx
-      .insert(sdmMenus)
-      .values({ solutionId, def: menu, createdBy: author, updatedBy: author })
-      .onConflictDoUpdate({
-        target: sdmMenus.solutionId,
-        set: { def: menu, updatedAt: new Date(), updatedBy: author },
-      });
-  });
 }
 
 // ── SDM config publishing (ruled 2026-07-26) ─────────────────────────────────
