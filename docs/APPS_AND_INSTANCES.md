@@ -20,7 +20,9 @@ the dev database first, at the user's go-ahead after a dry run: all 22
 published pages got their lists, nothing unresolved. **Step 4 BUILT
 2026-10-18** (two commits), after measuring the dev database read-only: no
 computed id in any datasource or the named functions they reach, no GET of an
-app's own on any list, and no item condition on a GET. Built from
+app's own on any list, and no item condition on a GET. **Step 5 BUILT
+2026-10-18** (three commits), after measuring dev read-only: no list held an
+app's own activity, and the 24 apps had only `sys_*` history entries. Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -992,11 +994,31 @@ Each step works on its own and is cold-tested before the next.
    inspections apps, `act_list_area_inspections` is on the Job and Area
    Inspection pages' lists, and the defect picker's `act_search_area_defects`
    is a form GET of the Finding and Area Inspection pages' listed activities.
-5. **The app's own activities.** Log-only activities and GETs of the app's own
+5. **The app's own activities — BUILT 2026-10-18.** Log-only activities and GETs of the app's own
    run on the operation's app's record; the platform's `rt_sys_apps` and
    `wf_sys_apps` in `@fluxus/engine`, typed with `page_id`, `label` and
    `definition`; never changing an operation's app; their GETs unlogged (the
    engine change, §2.4); the browser able to find and open them (§2.11).
+
+   *As built* (working defaults, mentioned to the user): **the browser gets an
+   app's own activities with its model** — `config.getForOperation` sends the
+   list of each app the caller may run, holding only its own activities (a list
+   with none is not sent), so `findActivity` finds them there with no record
+   type; **`context.app` reaches server-side scripts now** (§2.2 asked for it
+   in every script of a call through an app; step 2 built it in pages only) —
+   conditions, hooks and GETs of every call through an app, its definition
+   parsed from JSON; **`validateConfig` adds `rt_sys_apps` to the schema it
+   checks only**, so the engine's run-time model is unchanged: an app's own
+   activity runs on its app's record without the type being in the records
+   root, and `records.sys_apps` passes the save check but finds nothing at run
+   time; **a script never changes an app**, refused at save (the DSL's
+   `readOnly` schema type) and at run time (the engine's mutation hosts, which
+   key on the record's id alone); an activity in no record type's workflow is
+   refused with no app — the Console included — and with a record or a type
+   through one; `page.activities`' `{}` with no app answers empty; in the
+   browser an app's own form has no `context.record` (the app's record is not
+   sent; the server's checks see it). The scripts' type omits `role_ids`
+   (decision 3 of the second review).
 6. **One way to open an app.** The step 6 script rewriting links;
    `services.page.open` and the old way of opening (§2.7) removed.
 

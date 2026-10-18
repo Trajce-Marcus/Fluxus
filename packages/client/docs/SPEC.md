@@ -113,8 +113,9 @@ One class, `FluxusClient`, owning the movements every remote host makes:
 4a. **`pageActivities(items)`** (2026-10-11,
    [ACTIONS_OFFERED_BY_SERVER](../../../docs/ACTIONS_OFFERED_BY_SERVER.md)) —
    `page.activities` on the server: which actions each item offers the
-   signed-in user, an item being `{ recordId }` (its actions) or `{ typeId }`
-   (its CREATEs, with no record — a create button). One `{ id, name }` list
+   signed-in user, an item being `{ recordId }` (its actions), `{ typeId }`
+   (its CREATEs, with no record — a create button) or an empty `{}` (the open
+   app's own activities, APPS_AND_INSTANCES step 5). One `{ id, name }` list
    per item, in the order asked; an unreadable record answers an empty list,
    as a missing one does. The browser draws what comes back: the client's
    model no longer carries actions' availability conditions. Its callers are

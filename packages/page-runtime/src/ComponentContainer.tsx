@@ -1,5 +1,5 @@
 import { useState, useEffect, createElement, useCallback, useMemo } from 'react';
-import { RecordAccessDeniedError, type ActivityDef, type RecordInstance, type RunActivityResult } from '@fluxus/engine';
+import { APPS_RECORD_TYPE, RecordAccessDeniedError, type ActivityDef, type RecordInstance, type RunActivityResult } from '@fluxus/engine';
 import type { ComponentManifest } from './manifest';
 import type { SlotConfig } from './pageDef';
 import type { PageRuntime } from './runtime';
@@ -92,7 +92,8 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
       activityId: activity.id,
       // The record type the run is about (APPS_AND_INSTANCES §2.3): its
       // record's, or — for a CREATE — the one type whose workflow lists it.
-      typeId: anchorRecord?.typeRef ?? runtime.findActivity(activity.id)?.typeDef.id,
+      // An app's own activity names neither: it runs on its app.
+      typeId: anchorRecord?.typeRef ?? runtime.findActivity(activity.id)?.typeDef?.id,
       recordId: anchorRecord?.id,
       attributes: captured,
       waived: options?.waived,
@@ -143,8 +144,13 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     // it is bringing into being, so the server refuses an anchor outright, and
     // the record a control was about reaches it as the seeded attribute
     // instead. That is what lets a row action open "add a child here".
+    //
+    // An app's own activity (no record type lists it, step 5) is about its
+    // app, and the server puts it there: it never falls back to the page's
+    // record, and one named for it is refused by the server.
     const named = record === null || record === undefined || record === '' ? null : String(record);
-    const anchorId = found.activity.record_map === 'CREATE' ? null : named ?? pageCtx.record?.id ?? null;
+    const appsOwn = found.typeDef === null;
+    const anchorId = found.activity.record_map === 'CREATE' ? null : appsOwn ? named : named ?? pageCtx.record?.id ?? null;
     // The callback script has already returned by the time any of this
     // resolves, so failures surface through the host error channel rather than
     // as a throw nobody is left to catch.
@@ -156,7 +162,8 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
       setPendingForm({
         activity: found.activity,
         anchorRecord: null,
-        recordTypeId: found.typeDef.id,
+        // An app's own activity's form is about its app (§2.11).
+        recordTypeId: found.typeDef?.id ?? APPS_RECORD_TYPE,
         seed,
         loading: anchorId !== null,
       });
@@ -175,7 +182,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
           // no one type of its own, so the anchor's decides; `found.typeDef`
           // is only the first type listing it, right for a CREATE (which has
           // exactly one) and a stand-in while the anchor loads.
-          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: anchorRecord?.typeRef ?? found.typeDef.id, seed });
+          setPendingForm({ activity: found.activity, anchorRecord, recordTypeId: anchorRecord?.typeRef ?? found.typeDef?.id ?? APPS_RECORD_TYPE, seed });
         } else {
           await runWithConfirm(found.activity, anchorRecord);
         }
@@ -230,7 +237,8 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // never by a script (pageHost, `listActivities`). The server decides, with
   // the signed-in user (`page.activities`, ACTIONS_OFFERED_BY_SERVER); the
   // browser no longer has the conditions. A record the caller may not read
-  // answers an empty list.
+  // answers an empty list. With no record, the app's own activities (an empty
+  // `{}`, APPS_AND_INSTANCES step 5) — none where there is no app.
   //
   // It depends on `refreshTick` on purpose: the page bumps it whenever any
   // component's run lands, which hands the component a new `listActivities`
@@ -238,8 +246,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
   // approved, whichever component ran it.
   const listActivities = useCallback(async (record: unknown) => {
     const id = record === null || record === undefined || record === '' ? null : String(record);
-    if (!id) return [];
-    const [offered] = await runtime.client.pageActivities([{ recordId: id }]);
+    const [offered] = await runtime.client.pageActivities([id ? { recordId: id } : {}]);
     return offered ?? [];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, refreshTick]);

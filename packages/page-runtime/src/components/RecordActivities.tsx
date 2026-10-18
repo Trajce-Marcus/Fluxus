@@ -13,6 +13,10 @@
 // (`services.listActivities`) — because only the server has the conditions and
 // the signed-in user to evaluate them with.
 //
+// With no record it shows the app's own activities (APPS_AND_INSTANCES step
+// 5): those on its list no record type's workflow lists, which run on the app
+// — a dashboard's "plan today's jobs". Where there is no app, none.
+//
 // This does not reopen the 2026-08-26 ruling that a control shows whether or
 // not it is wired. That ruling is about **wiring** — the author's omission,
 // which must be loud. This is **availability** — the model's answer to *may I
@@ -27,7 +31,7 @@ import { actionCss } from './actionComponents';
 interface Props {
   /** Heading above the buttons. Blank draws none. */
   title?: string;
-  /** The record the acts are about — a page binds its own. */
+  /** The record the acts are about — a page binds its own. None: the app's own acts. */
   record?: string | null;
   /** Shown when the model offers nothing. Blank draws nothing at all. */
   emptyMessage?: string;
@@ -90,7 +94,7 @@ function RecordActivitiesComponent({ title, record, emptyMessage, services }: Pr
 
 const schema: PropSchema[] = [
   { name: 'title',        kind: 'static-config', type: 'string', required: false, description: 'Heading above the buttons — blank for none' },
-  { name: 'record',       kind: 'dynamic-data',  type: 'string', required: false, description: 'The record the acts are about — usually context.record.id' },
+  { name: 'record',       kind: 'dynamic-data',  type: 'string', required: false, description: "The record the acts are about — usually context.record.id; blank shows the app's own acts" },
   { name: 'emptyMessage', kind: 'static-config', type: 'string', required: false, description: 'Shown when the model offers nothing right now' },
 ];
 

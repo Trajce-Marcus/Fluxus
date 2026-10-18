@@ -27,7 +27,12 @@ import { validatePage, reportPageFindings, type PageFinding } from './validatePa
 
 export interface FoundActivity {
   activity: ActivityDef;
-  typeDef: RecordTypeDef & { workflow: WorkflowDef };
+  /**
+   * The first record type whose workflow lists it — or null for an app's own
+   * activity (APPS_AND_INSTANCES step 5), which no record type's workflow
+   * lists: it runs on its app, and arrives in the model in its app's list.
+   */
+  typeDef: (RecordTypeDef & { workflow: WorkflowDef }) | null;
 }
 
 export interface PageRuntime {
@@ -121,12 +126,20 @@ export function createPageRuntime(
 
   // The first record type whose workflow lists the activity. A shared one has
   // several, so a caller that runs it on a record takes the type from that
-  // record instead (ComponentContainer).
+  // record instead (ComponentContainer). Failing that, an app's own activity:
+  // the model sends it in its app's list, a workflow no record type points to.
   const findActivity = (activityId: string): FoundActivity | null => {
+    const typed = new Set<string>();
     for (const rt of store.listRecordTypes()) {
       const typeDef = store.getRecordTypeDef(rt.id);
+      typed.add(typeDef.workflow.id);
       const activity = typeDef.workflow.activities.find((a) => a.id === activityId);
       if (activity) return { activity, typeDef };
+    }
+    for (const wf of store.listWorkflows()) {
+      if (typed.has(wf.id)) continue;
+      const activity = wf.activities.find((a) => a.id === activityId);
+      if (activity) return { activity, typeDef: null };
     }
     return null;
   };

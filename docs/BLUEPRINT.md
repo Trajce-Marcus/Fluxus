@@ -549,7 +549,9 @@ other's activities, never by reading each other's records.**
 >   activity is on the list, the call matches the model, the caller may read the
 >   record and every record its reference fields send back, and both
 >   conditions pass. An activity of the app's own names no
->   record and runs on the app's record, leaving its history there. Only an
+>   record and runs on the app's record, leaving its history there (BUILT
+>   2026-10-18, step 5, with every script of a call through an app seeing it as
+>   `context.app`). Only an
 >   operation admin works on records without an app, from the Console.
 >
 > **Reversed 2026-10-17** (the user's rulings, revisiting the architecture from
