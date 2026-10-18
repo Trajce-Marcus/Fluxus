@@ -9,6 +9,7 @@ import { BillingAdmin } from './BillingAdmin';
 import { Placeholder, css as placeholderCss } from './Placeholder';
 import { css as menuCss } from './OperationMenuSection';
 import { css as operationViewCss } from './OperationView';
+import { css as appsCss } from './OperationAppsSection';
 
 export function AdminView({ tab }: { tab: string }) {
   switch (tab) {
@@ -49,4 +50,4 @@ export function AdminView({ tab }: { tab: string }) {
 // `.admin-*` classes. OperationMenuSection adds the `.menu-*` rules (shared
 // with the solution-level MenuEditor via MenuItemsEditor); OperationView adds
 // the `.op-*` tab strip.
-export const css = operationsCss + menuCss + orgCss + placeholderCss + operationViewCss + usersCss;
+export const css = operationsCss + menuCss + appsCss + orgCss + placeholderCss + operationViewCss + usersCss;

@@ -172,7 +172,10 @@ endpoint that filters harder — it is two endpoints with different audiences.
   Unchanged in shape, but **tightened to sol admin** (it is the authoring
   door; `config.put` already requires sol admin, and read and write of a model
   are the same privilege in a one-grade world). `FluxusClient.connectSolution`
-  keeps using it.
+  keeps using it. *Widened 2026-10-18 (APPS_AND_INSTANCES §2.6):* the admins
+  of the solution's operations read it too — they use the Console's workbench
+  on their records, which runs on the whole model. Writing it stays sol
+  admin.
 - **`config.getForOperation` `{ operationId }` → `ClientSolutionConfig`** —
   the runtime plane. Keyed on the **operation**, not the solution, because what
   survives the trim is decided by the caller's roles *in that operation*.

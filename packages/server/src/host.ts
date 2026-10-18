@@ -9,6 +9,7 @@
 import { and, asc, eq, inArray, not, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  APPS_RECORD_TYPE,
   createEngine,
   MemoryAdapter,
   buildGeoModule,
@@ -654,7 +655,9 @@ async function validateConfigGraph(db: DbOrTx, solutionId: string, config: Solut
     .from(records)
     .innerJoin(operations, eq(records.operationId, operations.id))
     .where(eq(operations.solutionId, solutionId));
-  const orphaned = stored.map((r) => r.typeRef).filter((t) => !ids.includes(t));
+  // An operation's apps are records of the platform's `rt_sys_apps`, which no
+  // solution defines (APPS_AND_INSTANCES §2.4) — not strays.
+  const orphaned = stored.map((r) => r.typeRef).filter((t) => t !== APPS_RECORD_TYPE && !ids.includes(t));
   if (orphaned.length > 0) {
     throw new ConfigValidationError(
       orphaned.map((t) => `recordTypes: stored records still reference '${t}' — rename or remove is blocked while records of this type exist`),

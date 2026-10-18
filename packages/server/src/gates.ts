@@ -29,6 +29,8 @@ import { isPlatformAdmin, stubRolesResolver, type AuthUser } from './auth';
 import type { AppContext } from './trpc';
 import { DEFAULT_ORG } from './trpc';
 import {
+  administeredOperationsOf,
+  isAnyOpAdmin,
   isAnySolAdmin,
   isOpAdmin as isOpAdminRow,
   isOpUser as isOpUserRow,
@@ -92,6 +94,23 @@ export async function requireSolAdmin(ctx: AppContext, solutionId: string): Prom
 }
 
 /**
+ * The solution's model and published pages, read by whoever works on it or on
+ * one of its operations (APPS_AND_INSTANCES §2.6): its solution admins, and the
+ * admins of its operations — who set up those operations' apps and use the
+ * workbench on their records, and so must read the model those records follow.
+ * Writing the model stays with solution admins (`requireSolAdmin`).
+ */
+export async function requireSolOrOpAdmin(ctx: AppContext, solutionId: string): Promise<void> {
+  if (!ctx.authConfigured) return;
+  const user = ctx.user ?? DEMO_USER;
+  const roles = ctx.roles ?? stubRolesResolver;
+  if (await roles.isSolAdmin(user.email, solutionId)) return;
+  const email = callerEmail(ctx);
+  if (email && (await administeredOperationsOf(ctx.db, { solutionId, email })).length > 0) return;
+  throw new TRPCError({ code: 'FORBIDDEN', message: 'Requires being an admin of this solution or of one of its operations' });
+}
+
+/**
  * The entry gate: may this caller open this operation at all? Distinct from
  * roles — someone in the operation with no roles enters and sees nothing
  * (valid); roles without entry must never grant it.
@@ -135,8 +154,10 @@ export async function requirePlatformAdmin(ctx: AppContext): Promise<void> {
 
 /**
  * May this caller open the Console at all? **Derived, never a stored flag** — a
- * separate bit could contradict the grants it summarises. Three ways in:
- * owning the org, administering it, or building any of its solutions.
+ * separate bit could contradict the grants it summarises. Four ways in:
+ * owning the org, administering it, building any of its solutions, or
+ * administering any operation (2026-10-18: the Console is where operation
+ * admins set up their operations' apps and work on their records).
  *
  * The owner's derivation is the one that matters on a fresh organisation: they
  * hold no grants yet, and without this there would be nobody able to open the
@@ -148,5 +169,6 @@ export async function hasConsoleAccess(ctx: AppContext, orgId: string = DEFAULT_
   if (!email) return false;
   if (await isOrgOwnerRow(ctx.db, { email, orgId })) return true;
   if (await isOrgAdminRow(ctx.db, { email, orgId })) return true;
-  return isAnySolAdmin(ctx.db, email);
+  if (await isAnySolAdmin(ctx.db, email)) return true;
+  return isAnyOpAdmin(ctx.db, email);
 }

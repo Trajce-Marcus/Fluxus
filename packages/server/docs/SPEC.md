@@ -273,8 +273,9 @@ takes `operationId?` (both default `demo/sdm`):
   | `orgAdmins.appoint` / `remove` | **owner only** |
   | `solAdmins.*`, `opAdmins.appoint` / `remove` | org admin |
   | `opUsers.add` | op admin **or** org admin |
-  | `opUsers.remove`, `userRoles.*`, `operations.putConfig` | op admin |
-  | `config.put`, the per-entity model writes, `pages.*`, `publish` | sol admin |
+  | `opUsers.remove`, `userRoles.*`, `operations.putConfig`, `apps.list` / `get` / `put` | op admin |
+  | `config.put`, the per-entity model writes, `pages.*` (draft `pages.list` included), `publish` | sol admin |
+  | `config.get`, `pages.publishedPaths` | sol admin **or** op admin of one of the solution's operations (2026-10-18) |
 
   **Sol admins have no user-facing grant at all** — including `solAdmins.list`,
   which carries real emails. A person building the model has no business over
@@ -309,8 +310,9 @@ takes `operationId?` (both default `demo/sdm`):
   will not resurrect an expired row, and `setUserStatus` refuses `expired` —
   dropping grants is not something a status write may do silently.
 
-  `hasConsoleAccess` derives "may open the Console" — owner, org admin, or sol
-  admin of anything. Never a stored flag. The owner's derivation is what makes
+  `hasConsoleAccess` derives "may open the Console" — owner, org admin, sol
+  admin of anything, or (2026-10-18) op admin of anything: operation admins use
+  the Console for their operations (APPS_AND_INSTANCES §2.6). Never a stored flag. The owner's derivation is what makes
   the first appointment reachable on a fresh org, where nobody holds a grant.
 - **Bootstrap** — `bootstrapOrgAdmin(db, { email })`, exposed as
   `npm run bootstrap`. No signup plus a strict entry gate means the
@@ -468,12 +470,19 @@ takes `operationId?` (both default `demo/sdm`):
   **RBAC stage 1**: all three apply the record-type read filter (below) — a
   deny answers "Record access denied" on `get` (FORBIDDEN, since 2026-10-12;
   not-found before, reversed by the user — BLUEPRINT *Access*), a missing record
-  not-found, and unreadable types drop out of `partition`/`list`.
+  not-found, and unreadable types drop out of `partition`/`list`. **An
+  operation's apps never appear** (2026-10-18), whatever the read filter says
+  (with sign-in off it lets everything through): `get` of an app's id answers
+  "Record access denied", and `partition`/`list` leave them out — see "An
+  operation's apps" below.
 - **`config.get` / `config.put`** `{ solutionId?, config }` — the **design
   plane's** door: the whole model, hooks and access rules included, because
   authoring them is the job. Since 2026-08-09 `get` requires **sol admin** like
   `put` — reading a model and writing it are the same privilege in a one-grade
-  world (see "What the client is given" below). The Phase 4 shift:
+  world (see "What the client is given" below). *Widened 2026-10-18:* an admin
+  of one of the solution's operations may `get` it too — operation admins use
+  the Console's workbench on their records, which runs on this model
+  (APPS_AND_INSTANCES §2.6); `put` stays sol admin. The Phase 4 shift:
   the SDM config is a stored artifact and "config-save-time validation" is
   literal. `put` rejects on structural danglers (MemoryAdapter resolution),
   any error-severity `validateConfig` finding, or (2026-07-26) a record-type
@@ -518,7 +527,9 @@ takes `operationId?` (both default `demo/sdm`):
   page file both went on 2026-08-05). `list` `{ solutionId?, published? }`
   has **two modes** (M3): draft (Console — the `pages` rows) vs published
   (Runtime — latest `page_versions` per path). `@fluxus/client` snapshots one
-  set at connect per its `pages` mode.
+  set at connect per its `pages` mode. **Draft mode is sol admin only**
+  (2026-10-18): it is the design plane, and the Console reads a refusal as
+  "this caller cannot design here" and hides the design tools.
 - **`pages.publish`** `{ solutionId?, path, readme }` → `{ version }` /
   **`pages.versions`** `{ solutionId?, path }` / **`pages.getVersion`**
   `{ solutionId?, path, version }` → `{ def }` / **`pages.rollback`**
@@ -527,8 +538,9 @@ takes `operationId?` (both default `demo/sdm`):
   release notes; `page_versions` is **append-only, immutable** — rollback
   republishes an older version's def as a new version (draft untouched),
   never a delete/edit. Diffing is a non-goal. **`pages.publishedPaths`**
-  `{ solutionId? }` (sol-user `read`) lists every published path unfiltered —
-  the authoring plane (menu editor); Console preview is access-exempt (§6).
+  `{ solutionId? }` lists every published path unfiltered — what an app in an
+  operation's apps list can be made from, so sol admins **and the admins of
+  the solution's operations** may call it (2026-10-18).
   **Page access (M4)**: published `pages.list` filters to versions the caller
   can open — `def.access.open` must list a held role (default deny when auth
   configured + solution declares roles; a shallow read of the opaque def, no
@@ -544,6 +556,50 @@ partitioned. The demo bundle keeps one id (`demo/sdm`) as **both** its solution
 and its operation, so the rekey (migration `0003_operations_tier`) is a
 data-preserving column rename plus a backfill of the single implicit
 solution/operation. Single implicit org for MVP (column present, no org UI).
+
+## An operation's apps (APPS_AND_INSTANCES Part 2 — step 2 building, 2026-10-18)
+
+An operation uses the solution's apps through its **apps list**. Each app in it
+is made from one published page, with its own name, who may run it, and its
+**definition** (what it needs set for this operation, as JSON). One page may be
+added more than once — a water scheduler and a sewer scheduler.
+
+- **Rows in `records`**, of the platform's type `rt_sys_apps` (`@fluxus/engine`
+  `APPS_RECORD_TYPE`), id issued by the platform (UUIDv7, `newRecordId`).
+  Record fields, snake_case like every record field: `page_id` (the page's
+  path, which is its id), `label`, `role_ids` (text holding a list) and
+  `definition` (text holding JSON). No solution defines the type, so no model
+  carries it (until step 5) and it is never sent to the browser.
+- **Kept out of every general read, by type id** — `records.partition` and
+  `records.list` leave them out and `records.get` refuses one; a run, a GET or
+  `scripts.query` whose record is an app is refused ("Record access denied");
+  `page.activities` answers an app with nothing; `records.get`'s references
+  withhold one; the stray-record-type check at model save
+  (`validateConfigGraph`) ignores them. Scripts cannot name the type: it is in no
+  model. The ids `rt_sys_apps`, `wf_sys_apps`, `sys_console_edit` and
+  `sys_migration` are reserved — `validateConfig` refuses a record type,
+  workflow or activity using one.
+- **`apps.list`** `{ operationId }` → `{ apps: { id, pageId, label, roleIds,
+  definition }[] }`, in the order added, without history. **`apps.get`**
+  `{ operationId, appId }` → one app with its `activityHistory`, for the
+  Console's dialog (history grows with every change, so the list does not carry
+  it). **`apps.put`** `{ operationId, id?, pageId, label, roleIds, definition }`
+  → `{ id }`: no `id` adds an app. All three are **op admin** (sign-in off:
+  open); an app of another operation is not found.
+- **Checked at save** (`putApp`): the page is a published page of the
+  solution; every role exists in it; the name is not blank; the definition is
+  JSON (blank is `{}`).
+- **Written directly, never through activities** — setting up an app is not
+  working data (BLUEPRINT rule 1's one exception) — **and every change leaves a
+  history entry** on the app: `sys_console_edit` / "Changed in the Console", the
+  caller's id as `author`, the changed fields' new values in
+  `capturedAttributes`. A change that changes nothing writes nothing. The entry
+  goes through `appendHistoryEntry` (`databaseStore.ts`), the same one-statement
+  append an activity run uses, so it lands in `activity_history` and
+  `rpt_activities` / `rpt_attributes` like any other.
+- No removing an app in Part 2.
+
+Tests: `test/apps.test.ts`.
 
 ## Auth (RBAC phase 1, built 2026-07-19 — roles stubbed)
 
@@ -736,7 +792,7 @@ two audiences**:
 
 | | Audience | Gate | Returns |
 |---|---|---|---|
-| `config.get` `{ solutionId }` | design plane (Console) | **sol admin** | `SolutionConfig`, whole |
+| `config.get` `{ solutionId }` | design plane (Console) | **sol admin**, or op admin of one of its operations (2026-10-18) | `SolutionConfig`, whole |
 | `config.getForOperation` `{ operationId }` | runtime plane | op user, then the role trim | `ClientSolutionConfig` |
 
 **One pure function.** `projectConfig(config, { roles, enforced })` in
@@ -783,7 +839,7 @@ generic in its grade — see the client SPEC.
 
 - An org admin who is not a sol admin of a solution can no longer open its model
   in the Console. `connectSolution` surfaces the refusal rather than opening a
-  blank editor.
+  blank editor. (Since 2026-10-18 an op admin of one of its operations can.)
 - The operation-menu screen's "inherited default" read (`getSolutionConfig`)
   goes through `config.get`, so an op admin who does not build the solution sees
   an empty inherited menu. Its call already catches and degrades.

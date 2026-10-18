@@ -9,12 +9,15 @@ import { useEffect, useState } from 'react';
 import { useShellState } from './useShellState';
 import { shellStore } from './store';
 import { exitToWorkspace } from './router';
-import { consoleClient } from '../../sdm-runtime/engine';
+import { consoleClient, solutionOperations } from '../../sdm-runtime/engine';
 
 export function SolutionSettingsSection() {
-  const { solutionId, solutionName, dataOperations } = useShellState([
+  // Every operation of the solution, not only the picker's (those the caller
+  // administers).
+  const { solutionId, solutionName } = useShellState([
     'solutionId', 'solutionName', 'dataOperations',
   ]);
+  const dataOperations = solutionOperations;
 
   const [name, setName] = useState(solutionName ?? '');
   const [origin, setOrigin] = useState<string | null>(null);

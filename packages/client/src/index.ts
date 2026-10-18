@@ -9,6 +9,7 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { MemoryAdapter } from '@fluxus/engine';
 import type {
+  ActivityHistoryEntry,
   ActivityOption,
   ActivityRawDef,
   AttributeDef,
@@ -149,6 +150,30 @@ export interface OperationRow {
   solutionId: string;
   name: string;
   config: OperationConfig;
+}
+
+/**
+ * One app in an operation's apps list (APPS_AND_INSTANCES §2.4): a record of
+ * the platform's `rt_sys_apps`, made from one published page, with its own
+ * name, who may run it, and what it needs set for this operation.
+ */
+export interface App {
+  id: string;
+  /** The published page it is made from — its path, which is its id. */
+  pageId: string;
+  label: string;
+  roleIds: string[];
+  /** JSON, as text. */
+  definition: string;
+}
+
+/** What adding or changing an app sends: no `id` adds one. */
+export interface AppInput {
+  id?: string;
+  pageId: string;
+  label: string;
+  roleIds: string[];
+  definition: string;
 }
 
 /** The org's profile — Console's Organisation → Settings surface (M14).
@@ -441,6 +466,19 @@ export class ConsoleClient {
   rollbackPage(solutionId: string, path: string, version: number): Promise<{ version: number }> {
     return this.trpc.pages.rollback.mutate({ solutionId, path, version });
   }
+
+  // An operation's apps list (APPS_AND_INSTANCES §2.6) — its admins only.
+  listApps(operationId: string): Promise<{ apps: App[] }> {
+    return this.trpc.apps.list.query({ operationId });
+  }
+  /** One app with its history, for the dialog that edits it. */
+  getApp(operationId: string, appId: string): Promise<App & { activityHistory: ActivityHistoryEntry[] }> {
+    return this.trpc.apps.get.query({ operationId, appId }) as Promise<App & { activityHistory: ActivityHistoryEntry[] }>;
+  }
+  /** Add an app (no `id`) or change one; every change leaves a history entry. */
+  putApp(operationId: string, app: AppInput): Promise<{ id: string }> {
+    return this.trpc.apps.put.mutate({ operationId, ...app });
+  }
 }
 
 /** An org as the platform plane sees it — the same row `getOrg` returns, but
@@ -650,6 +688,13 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    */
   private recordsMode: 'partition' | 'none' = 'partition';
   /**
+   * Whether the caller is an admin of this solution, who alone may design it
+   * (APPS_AND_INSTANCES §2.6). Learnt by `connectSolution` from whether the
+   * draft pages were refused; the Console hides the model and page builders
+   * when it is false. Cosmetic: every design write is refused server-side.
+   */
+  solutionAdmin = true;
+  /**
    * The records fetched directly — by id or by type — which `refresh` re-reads
    * when there is no partition. The records they point at arrive with each read
    * (`records.get`'s `references`) and are not roots themselves, so following
@@ -688,8 +733,16 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     // client trim (CLIENT_TRUST_BOUNDARY §2), and a Console user who may open
     // the org but does not build this solution must be told that, not shown an
     // empty model they will then fail to save into.
+    // Draft pages are the design plane, solution admins only (APPS_AND_INSTANCES
+    // §2.3); an operation admin who is not one connects with none, and the
+    // Console hides the design tools from them.
+    let solutionAdmin = true;
     const [pageRows, config, partition] = await Promise.all([
-      trpc.pages.list.query({ solutionId, published: false }),
+      trpc.pages.list.query({ solutionId, published: false }).catch((err) => {
+        if (!(err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN')) throw err;
+        solutionAdmin = false;
+        return [] as { path: string; def: unknown }[];
+      }),
       (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch((err) => {
         if (err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN') throw err;
         return { attributes: [], activities: [], recordTypes: [], workflows: [] } as SolutionConfig;
@@ -708,7 +761,9 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     // as in the Runtime host — running an activity is how you test a workflow.
     // Display names are Runtime chrome; Console shows the solution banner it
     // already has, so the ids stand in.
-    return new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], '', solutionId, operationId ?? '', '', [], false);
+    const client = new FluxusClient(trpc, operationId ?? solutionId, solutionId, config, adapter, pages, [], '', solutionId, operationId ?? '', '', [], false);
+    client.solutionAdmin = solutionAdmin;
+    return client;
   }
 
   /** The operations running a given solution — Console's data picker (which

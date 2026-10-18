@@ -313,11 +313,12 @@ describe('what `me` reports', () => {
     await expect(as(boss).me({ operationId: OP })).rejects.toThrow(/not a user of operation/i);
     await addOpUser(db, { operationId: OP, email: 'boss@example.com' });
     await expect(as(boss).me({ operationId: OP })).resolves.toMatchObject({ orgOwner: false, orgAdmin: true, opAdmin: false, console: true });
-    await expect(as(opBoss).me({ operationId: OP })).resolves.toMatchObject({ orgAdmin: false, opAdmin: true, console: false });
+    // An op admin uses the Console for their operation (2026-10-18).
+    await expect(as(opBoss).me({ operationId: OP })).resolves.toMatchObject({ orgAdmin: false, opAdmin: true, console: true });
     await expect(as(worker).me({ operationId: OP })).resolves.toMatchObject({ orgAdmin: false, opAdmin: false, console: false });
   });
 
-  it('Console access is derived: owner, org admin, or sol admin of anything', async () => {
+  it('Console access is derived: owner, org admin, sol admin or op admin of anything', async () => {
     // Never a stored flag — a separate bit could contradict the grants above.
     // The owner's derivation is the one that matters on a fresh organisation:
     // they hold no grants, and without it nobody could open the screen that

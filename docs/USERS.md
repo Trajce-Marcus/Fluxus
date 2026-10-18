@@ -227,9 +227,17 @@ the person. They can then sign in, appoint the first org admins, and appoint
 themselves one if they intend to do ordinary org-admin work.
 
 **Console access is derived, never a flag.** It follows from being the owner, an
-org admin, or a sol admin of any solution. The owner's derivation is what makes
-the first appointment reachable: signing in as owner with no grants opens
-Organisation → Users and nothing else.
+org admin, a sol admin of any solution, or (since 2026-10-18) an op admin of any
+operation. The owner's derivation is what makes the first appointment reachable:
+signing in as owner with no grants opens Organisation → Users and nothing else.
+
+*Changed 2026-10-18 (APPS_AND_INSTANCES §2.6):* operation admins use the Console
+for their operations — the user: "the Console is an operations tool". They see
+an operation's admin (its apps list, menu, users) and the workbench on its
+records, and they read the solution's model (`config.get`) and published pages
+(`pages.publishedPaths`) to do it; the design tools (model and page builders)
+show only to sol admins, who alone can save there. Before, Console access was
+the owner, org admins and sol admins only.
 
 **What that screen owes the owner** (fixed 2026-08-09 — it was reachable but not
 usable, and each half failed for the same reason: the owner is deliberately not

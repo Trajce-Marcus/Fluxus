@@ -10,7 +10,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { opAdmins } from '../db/schema';
+import { opAdmins, operations } from '../db/schema';
 import { DEFAULT_ORG_ID, normaliseEmail, type Grant } from './types';
 import { assertInPool } from './org-admins';
 import { isActiveUser } from './pool';
@@ -66,4 +66,37 @@ export async function isOpAdmin(db: Db, input: { operationId: string; email: str
     .limit(1);
   if (!row) return false;
   return isActiveUser(db, { email, orgId });
+}
+
+/**
+ * The operations of one solution this person administers (APPS_AND_INSTANCES
+ * §2.6). Being an admin of any of them lets them read the solution's model and
+ * published pages: they set up those operations' apps and use the workbench on
+ * their records. Suspension is re-checked, as in `isOpAdmin`.
+ */
+export async function administeredOperationsOf(db: Db, input: { solutionId: string; email: string }): Promise<string[]> {
+  const email = normaliseEmail(input.email);
+  const rows = await db
+    .select({ operationId: opAdmins.operationId, orgId: opAdmins.orgId })
+    .from(opAdmins)
+    .innerJoin(operations, and(eq(operations.id, opAdmins.operationId), eq(operations.orgId, opAdmins.orgId)))
+    .where(and(eq(operations.solutionId, input.solutionId), eq(opAdmins.email, email)));
+  const active = new Map<string, boolean>();
+  const out: string[] = [];
+  for (const r of rows) {
+    if (!active.has(r.orgId)) active.set(r.orgId, await isActiveUser(db, { email, orgId: r.orgId }));
+    if (active.get(r.orgId)) out.push(r.operationId);
+  }
+  return out.sort();
+}
+
+/** Whether the person administers any operation — one of the derived ways
+ *  into the Console (operation admins use it for their operations, 2026-10-18). */
+export async function isAnyOpAdmin(db: Db, email: string): Promise<boolean> {
+  const [row] = await db
+    .select({ email: opAdmins.email })
+    .from(opAdmins)
+    .where(eq(opAdmins.email, normaliseEmail(email)))
+    .limit(1);
+  return !!row;
 }

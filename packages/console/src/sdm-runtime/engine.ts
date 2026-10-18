@@ -46,8 +46,16 @@ export let currentSolutionId: string | null = null;
 /** Which operation supplies the records you are building against (ruled
  *  2026-07-26). Null only when the solution has no operations yet. */
 export let currentOperationId: string | null = null;
-/** The open solution's operations — the header picker's options. */
+/** The open solution's operations. */
 export let solutionOperations: { id: string; name: string }[] = [];
+/** Those the caller administers — the workbench and DSL Editor picker's
+ *  options. Only these bind records: a call with no app is an operation
+ *  admin's (APPS_AND_INSTANCES §2.3), so the Console connects with no records
+ *  for any other (§2.6). */
+export let administeredOperations: { id: string; name: string }[] = [];
+/** Whether the caller may design the open solution — solution admins only;
+ *  the model and page builders show only to them (§2.6). */
+export let solutionAdmin = true;
 
 /** Remembered per solution so reopening lands on the same data (local only —
  *  a preference, not model state). Renamed 2026-07-31 with the picker's move
@@ -102,12 +110,19 @@ export async function initSdmRuntime(): Promise<void> {
  */
 export async function openSolution(solutionId: string, operationId?: string | null): Promise<void> {
   solutionOperations = await FluxusClient.operationsForSolution({ url: bootUrl, solutionId, getToken: bootGetToken });
-  const exists = (id: string | null | undefined) => !!id && solutionOperations.some((o) => o.id === id);
+  // `me` per operation answers "do I administer it"; a refusal (not in it at
+  // all) is a no. With sign-in off every check is open, so is every operation.
+  const administers = authConfigured
+    ? await Promise.all(solutionOperations.map((op) => consoleClient.me(op.id).then((m) => m.opAdmin, () => false)))
+    : solutionOperations.map(() => true);
+  administeredOperations = solutionOperations.filter((_, i) => administers[i]);
+  const exists = (id: string | null | undefined) => !!id && administeredOperations.some((o) => o.id === id);
   const remembered = localStorage.getItem(dataOpKey(solutionId));
   const chosen = operationId === null
     ? undefined
     : (exists(operationId) ? operationId! : exists(remembered) ? remembered! : undefined);
   sdmClient = await FluxusClient.connectSolution({ url: bootUrl, solutionId, operationId: chosen, getToken: bootGetToken });
+  solutionAdmin = sdmClient.solutionAdmin;
   pageRuntime = createPageRuntime({ client: sdmClient });
   currentSolutionId = solutionId;
   currentOperationId = chosen ?? null;

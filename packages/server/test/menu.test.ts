@@ -56,8 +56,9 @@ describe('published page access filter (§6)', () => {
     expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1', 'pages/p2', 'pages/p3']);
   });
 
-  it('draft mode is unaffected by access', async () => {
-    const pages = await enforced(u1).pages.list({ solutionId: SOL });
+  it('draft mode is the design plane: solution admins only (APPS_AND_INSTANCES §2.3)', async () => {
+    await expect(enforced(u1).pages.list({ solutionId: SOL })).rejects.toThrow(/admin of this solution/i);
+    const pages = await open().pages.list({ solutionId: SOL });
     expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1', 'pages/p2', 'pages/p3']);
   });
 });

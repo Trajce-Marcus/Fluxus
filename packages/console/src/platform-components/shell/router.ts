@@ -4,7 +4,7 @@
 // a store subscription; hash→state on boot and `hashchange` (browser back).
 // Every navigation path runs the leaving section's `canLeave` guard.
 
-import { consoleClient, currentOperationId, openSolution, solutionOperations } from '../../sdm-runtime/engine';
+import { administeredOperations, consoleClient, currentOperationId, openSolution } from '../../sdm-runtime/engine';
 import { enterSolutionScope, exitSolutionScope, shellStore } from './store';
 import { sectionsForScope } from './sections';
 
@@ -59,11 +59,14 @@ export async function openSolutionScoped(solutionId: string, name?: string, sect
     solutionName = sols.find((s) => s.id === solutionId)?.name ?? solutionId;
   }
   await openSolution(solutionId);
+  // A design section asked of someone who cannot design here (a link, a
+  // remembered route) lands on the overview instead.
+  const allowed = sectionsForScope(true).some((x) => x.id === section) ? section : 'overview';
   enterSolutionScope(
     solutionId,
     solutionName,
-    { operationId: currentOperationId, operations: solutionOperations },
-    section,
+    { operationId: currentOperationId, operations: administeredOperations },
+    allowed,
   );
 }
 

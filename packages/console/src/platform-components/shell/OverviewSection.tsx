@@ -5,7 +5,8 @@
 import { useEffect, useState } from 'react';
 import { useShellState } from './useShellState';
 import { navigateSection } from './router';
-import { consoleClient } from '../../sdm-runtime/engine';
+import { consoleClient, solutionOperations } from '../../sdm-runtime/engine';
+import { sectionsForScope } from './sections';
 
 const LINKS = [
   { id: 'pages', label: 'Pages', hint: 'Build and publish the app’s pages' },
@@ -14,9 +15,14 @@ const LINKS = [
 ];
 
 function OverviewSectionComponent() {
-  const { solutionId, solutionName, dataOperationId, dataOperations } = useShellState([
+  // Every operation of the solution — not only the ones the picker offers,
+  // which are those the caller administers.
+  const { solutionId, solutionName, dataOperationId } = useShellState([
     'solutionId', 'solutionName', 'dataOperationId', 'dataOperations',
   ]);
+  const dataOperations = solutionOperations;
+  // The design links only for those who may design here (APPS_AND_INSTANCES §2.6).
+  const links = LINKS.filter((l) => sectionsForScope(true).some((s) => s.id === l.id));
   const [origin, setOrigin] = useState<string | null>(null);
   useEffect(() => {
     void consoleClient.listSolutions()
@@ -54,7 +60,7 @@ function OverviewSectionComponent() {
       <div className="admin-section">
         <h3 className="admin-section-title">Design</h3>
         <div className="overview-links">
-          {LINKS.map((l) => (
+          {links.map((l) => (
             <button key={l.id} className="overview-link" onClick={() => navigateSection(l.id)}>
               <span className="overview-link-label">{l.label}</span>
               <span className="overview-link-hint">{l.hint}</span>

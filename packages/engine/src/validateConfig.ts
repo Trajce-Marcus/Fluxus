@@ -4,6 +4,7 @@
 // with the SDM still hand-edited as files, "save time" is app start, and
 // diagnostics land on the console.
 
+import { RESERVED_IDS } from './platformApps';
 import { attributeFieldRef } from './attributeTypes';
 import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Call, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
 import type { ActivityRawDef, ClientActivityRawDef, ClientSolutionConfig } from './types';
@@ -74,6 +75,16 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   const note = (where: string, message: string) => {
     findings.push({ where, diagnostic: { severity: 'error', message, line: 1, col: 1 } });
   };
+
+  // The platform's own ids (an operation's apps, their history entries) are
+  // not a solution's to use (APPS_AND_INSTANCES §2.4).
+  for (const [kind, ids] of [
+    ['record type', config.recordTypes.map((rt) => rt.id)],
+    ['workflow', config.workflows.map((wf) => wf.id)],
+    ['activity', (config.activities ?? []).map((a) => a.id)],
+  ] as const) {
+    for (const id of ids) if (RESERVED_IDS.has(id)) note(`${kind} '${id}'`, `'${id}' is reserved by the platform`);
+  }
 
   // Named functions first — their signatures feed every other check.
   // Governance (DSL_SPEC §8): mandatory description, flat namespace, declared

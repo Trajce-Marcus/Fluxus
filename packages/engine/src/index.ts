@@ -9,7 +9,8 @@ export { AfterHookFailedError } from './engine';
 export type { Engine, EngineOptions, ActivityAvailability, RunActivityOptions } from './engine';
 
 export type { ModelStore, Savepoint, Store, WaitingStore } from './store';
-export { MemoryAdapter, coerceFieldValues, shapeNewRecord, uniqueValues } from './memoryAdapter';
+export { MemoryAdapter, coerceFieldValues, newRecordId, shapeNewRecord, uniqueValues } from './memoryAdapter';
+export { APPS_RECORD_TYPE, APPS_WORKFLOW, CONSOLE_EDIT, MIGRATION_EDIT, RESERVED_IDS } from './platformApps';
 export { RecordAccessDeniedError } from './errors';
 export type { MemoryAdapterOptions } from './memoryAdapter';
 

@@ -5,22 +5,25 @@
 // the header — name, id, linked solution, Open in Runtime — stays put above
 // them.
 //
-// Only **Users** and **Menu** are built (they are the M10/M11 surfaces moved
-// under tabs unchanged). Overview, Data and Settings are placeholders that say
+// **Users** and **Menu** are built (the M10/M11 surfaces moved under tabs
+// unchanged), and **Apps**, the operation's apps list (APPS_AND_INSTANCES
+// §2.6). Overview, Data and Settings are placeholders that say
 // plainly what will live there — the M17 convention, not fake empty data. What
 // each one becomes is still to be specified.
 
 import { useState } from 'react';
 import type { OperationRow } from '@fluxus/client';
 import { OperationMenuSection } from './OperationMenuSection';
+import { OperationAppsSection } from './OperationAppsSection';
 import { OperationUsersScreen } from '../users';
 import { PlaceholderCard } from './Placeholder';
 
-type OpTab = 'overview' | 'users' | 'menu' | 'data' | 'settings';
+type OpTab = 'overview' | 'users' | 'apps' | 'menu' | 'data' | 'settings';
 
 const TABS: { id: OpTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'users', label: 'Users' },
+  { id: 'apps', label: 'Apps' },
   { id: 'menu', label: 'Menu' },
   { id: 'data', label: 'Data' },
   { id: 'settings', label: 'Settings' },
@@ -67,6 +70,7 @@ export function OperationView({ operation, solutionName, onOpenRuntime }: {
       <div className="op-body">
         {tab === 'overview' && <OverviewTab operation={operation} solutionName={solutionName} />}
         {tab === 'users' && <OperationUsersScreen operationId={operation.id} operationName={operation.name} />}
+        {tab === 'apps' && <OperationAppsSection operationId={operation.id} solutionId={operation.solutionId} />}
         {tab === 'menu' && <OperationMenuSection operationId={operation.id} solutionId={operation.solutionId} />}
         {tab === 'data' && <DataTab />}
         {tab === 'settings' && <SettingsTab />}

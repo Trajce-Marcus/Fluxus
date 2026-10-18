@@ -15,6 +15,7 @@ import { SolutionOperationsSection } from './SolutionOperationsSection';
 import { SolutionSettingsSection } from './SolutionSettingsSection';
 import { SolutionUsersScreen } from '../users';
 import { sdmDirty, setSdmDirty } from '../sdm-builder/useSolutionConfig';
+import { solutionAdmin } from '../../sdm-runtime/engine';
 
 export interface ConsoleSection {
   /** Registry id — nav key and route segment. */
@@ -76,6 +77,13 @@ export const SOLUTION_SECTIONS: ConsoleSection[] = [
   { id: 'dsl-editor', label: 'DSL Editor', group: DATA_GROUP, render: () => <DslEditorView /> },
 ];
 
+/** The design tools — the page builder and the model builder — which show
+ *  only to the solution's admins, who alone can save there (APPS_AND_INSTANCES
+ *  §2.6). An operation admin who is not one sees the rest: the operations'
+ *  admin, the workbench and the DSL Editor. */
+const DESIGN_SECTIONS = new Set(['pages', ...SOLUTION_SECTIONS.filter((s) => s.group === SDM_GROUP).map((s) => s.id)]);
+
 export function sectionsForScope(solutionOpen: boolean): ConsoleSection[] {
-  return solutionOpen ? SOLUTION_SECTIONS : WORKSPACE_SECTIONS;
+  if (!solutionOpen) return WORKSPACE_SECTIONS;
+  return solutionAdmin ? SOLUTION_SECTIONS : SOLUTION_SECTIONS.filter((s) => !DESIGN_SECTIONS.has(s.id));
 }

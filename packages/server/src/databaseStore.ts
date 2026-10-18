@@ -441,39 +441,7 @@ export class DatabaseStore implements WaitingStore {
    * not, nothing lands and the request fails (ruling 17).
    */
   async appendActivity(recordId: string, entry: ActivityHistoryEntry): Promise<void> {
-    const attributes = projectionAttributeRows(entry).map((row) => ({
-      key: row.key,
-      value: row.value,
-      waive_desc: row.waiveDesc,
-    }));
-    const storageKeys = [...collectStorageKeys(entry.capturedAttributes)];
-    const result = await this.run(
-      this.handle.execute(sql`
-        WITH appended AS (
-          UPDATE records
-          SET activity_history = activity_history || ${JSON.stringify([entry])}::jsonb, updated_at = now()
-          WHERE operation_id = ${this.operationId} AND id = ${recordId}
-          RETURNING id, type_ref
-        ), activity_row AS (
-          INSERT INTO rpt_activities (operation_id, record_id, record_type, activity_id, activity_name, author, ts)
-          SELECT ${this.operationId}, appended.id, appended.type_ref, ${entry.activityId}, ${entry.activityName},
-                 ${entry.author ?? LEGACY_AUTHOR}, ${entry.timestamp}::timestamptz
-          FROM appended
-          RETURNING id
-        ), attribute_rows AS (
-          INSERT INTO rpt_attributes (activity_row_id, key, value, waive_desc)
-          SELECT activity_row.id, a.key, a.value, a.waive_desc
-          FROM activity_row, jsonb_to_recordset(${JSON.stringify(attributes)}::jsonb) AS a(key text, value text, waive_desc text)
-        ), ledger AS (
-          UPDATE attachments SET status = 'committed'
-          WHERE status = 'pending'
-            AND storage_key IN (SELECT jsonb_array_elements_text(${JSON.stringify(storageKeys)}::jsonb))
-            AND EXISTS (SELECT 1 FROM appended)
-        )
-        SELECT count(*)::int AS appended FROM appended
-      `),
-    );
-    const appended = Number((result as unknown as { rows: { appended: number }[] }).rows[0]?.appended ?? 0);
+    const appended = await this.run(appendHistoryEntry(this.handle, this.operationId, recordId, entry));
     if (appended === 0) this.deletedMeanwhile(recordId);
     const held = this.held.get(recordId);
     if (held) {
@@ -562,6 +530,48 @@ export class DatabaseStore implements WaitingStore {
       throw err;
     }
   }
+}
+
+/**
+ * Append one history entry to a record, with its reporting rows and the
+ * attachments ledger flip, in **one statement**; answers how many records it
+ * landed on (0 when the record is gone). Every history entry is written
+ * through here: an activity run's (`appendActivity`) and a Console change to
+ * an operation's app (APPS_AND_INSTANCES §2.4), so both reach `rpt_activities`
+ * the same way.
+ */
+export async function appendHistoryEntry(handle: DbOrTx, operationId: string, recordId: string, entry: ActivityHistoryEntry): Promise<number> {
+  const attributes = projectionAttributeRows(entry).map((row) => ({
+    key: row.key,
+    value: row.value,
+    waive_desc: row.waiveDesc,
+  }));
+  const storageKeys = [...collectStorageKeys(entry.capturedAttributes)];
+  const result = await handle.execute(sql`
+    WITH appended AS (
+      UPDATE records
+      SET activity_history = activity_history || ${JSON.stringify([entry])}::jsonb, updated_at = now()
+      WHERE operation_id = ${operationId} AND id = ${recordId}
+      RETURNING id, type_ref
+    ), activity_row AS (
+      INSERT INTO rpt_activities (operation_id, record_id, record_type, activity_id, activity_name, author, ts)
+      SELECT ${operationId}, appended.id, appended.type_ref, ${entry.activityId}, ${entry.activityName},
+             ${entry.author ?? LEGACY_AUTHOR}, ${entry.timestamp}::timestamptz
+      FROM appended
+      RETURNING id
+    ), attribute_rows AS (
+      INSERT INTO rpt_attributes (activity_row_id, key, value, waive_desc)
+      SELECT activity_row.id, a.key, a.value, a.waive_desc
+      FROM activity_row, jsonb_to_recordset(${JSON.stringify(attributes)}::jsonb) AS a(key text, value text, waive_desc text)
+    ), ledger AS (
+      UPDATE attachments SET status = 'committed'
+      WHERE status = 'pending'
+        AND storage_key IN (SELECT jsonb_array_elements_text(${JSON.stringify(storageKeys)}::jsonb))
+        AND EXISTS (SELECT 1 FROM appended)
+    )
+    SELECT count(*)::int AS appended FROM appended
+  `);
+  return Number((result as unknown as { rows: { appended: number }[] }).rows[0]?.appended ?? 0);
 }
 
 /** Postgres's division_by_zero, however the driver wraps it. */

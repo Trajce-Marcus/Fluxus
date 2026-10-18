@@ -7,9 +7,9 @@
 
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, ne } from 'drizzle-orm';
 import { FkPointer } from '@fluxus/dsl';
-import { AfterHookFailedError, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
+import { AfterHookFailedError, APPS_RECORD_TYPE, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -69,6 +69,7 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
+import { appFromRow, getAppRecord, isAppRecord, listApps, putApp } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
 import {
@@ -81,6 +82,7 @@ import {
   requireOrgAdmin,
   requirePlatformAdmin,
   requireSolAdmin,
+  requireSolOrOpAdmin,
 } from './gates';
 import {
   DEFAULT_OPERATION,
@@ -180,7 +182,9 @@ async function referencedRecords(
     const rows = await db.select().from(records)
       .where(and(eq(records.operationId, operationId), inArray(records.id, [...ids])));
     for (const r of rows) seen.add(r.id);
-    level = rows.filter((r) => readable === null || readable.has(r.typeRef));
+    // An operation's app is never handed out as a record (APPS_AND_INSTANCES
+    // §2.3); a reference naming one is withheld like an unreadable record.
+    level = rows.filter((r) => !isAppRecord(r) && (readable === null || readable.has(r.typeRef)));
     found.push(...level);
     withheld.push(...rows.filter((r) => !level.includes(r)).map((r) => r.id));
   }
@@ -472,6 +476,63 @@ export const appRouter = t.router({
       }),
   }),
 
+  // An operation's apps list (APPS_AND_INSTANCES Part 2 §2.4–§2.6): the apps it
+  // uses, each a record of the platform's `rt_sys_apps`. Set up by the
+  // operation's admins, in the Console only; written directly, never through
+  // activities, and every change leaves a `sys_console_edit` history entry.
+  apps: t.router({
+    /** The operation's apps, without their history (the dialog asks `get`). */
+    list: t.procedure
+      .input(z.object({ operationId: operationInput }))
+      .query(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireOpAdmin(ctx, input.operationId, op.orgId);
+          return { apps: await listApps(ctx.db, input.operationId) };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    /** One app, with its history — for the dialog that edits it. */
+    get: t.procedure
+      .input(z.object({ operationId: operationInput, appId: z.string().min(1) }))
+      .query(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireOpAdmin(ctx, input.operationId, op.orgId);
+          const row = await getAppRecord(ctx.db, input.operationId, input.appId);
+          if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: `This app is not set up for this operation (${input.appId})` });
+          return { ...appFromRow(row), activityHistory: row.activityHistory };
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    /** Add an app (no `id`) or change one. No removing in Part 2. */
+    put: t.procedure
+      .input(z.object({
+        operationId: operationInput,
+        id: z.string().min(1).optional(),
+        pageId: z.string().min(1),
+        label: z.string(),
+        roleIds: z.array(z.string().min(1)),
+        definition: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireOpAdmin(ctx, input.operationId, op.orgId);
+          const [published, config] = await Promise.all([
+            listPublishedPages(ctx.db, op.solutionId),
+            getSolutionConfig(ctx.db, op.solutionId),
+          ]);
+          const { operationId, ...app } = input;
+          return await putApp(ctx.db, operationId, app, { publishedPages: new Set(published.map((p) => p.path)), config }, (ctx.user ?? DEMO_USER).id);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+  }),
+
   // Users, admins and roles (USERS.md) — one router per list, each governed by
   // one tier. The whole surface lives in ./routers/users.ts; the gates it reads
   // are in ./gates.ts.
@@ -485,14 +546,15 @@ export const appRouter = t.router({
   config: t.router({
     // Two doors, not one filter (CLIENT_TRUST_BOUNDARY §2). This is the design
     // plane's: the whole model, hooks and access rules included, because
-    // authoring them is the job. **Sol admin** — `config.put` already requires
-    // it, and reading a model and writing it are the same privilege in a
-    // one-grade world.
+    // authoring them is the job. **Sol admin, or an admin of one of the
+    // solution's operations** (APPS_AND_INSTANCES §2.6, 2026-10-18): operation
+    // admins use the Console's workbench on their records, which runs on this
+    // model. Writing it (`config.put` and the per-entity writes) stays sol admin.
     get: t.procedure
       .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          await requireSolAdmin(ctx, input.solutionId);
+          await requireSolOrOpAdmin(ctx, input.solutionId);
           return await getSolutionConfig(ctx.db, input.solutionId);
         } catch (err) {
           rethrow(err);
@@ -658,7 +720,7 @@ export const appRouter = t.router({
           for (const item of input.items) {
             if ('recordId' in item) {
               const record = await host.store.findRecord(item.recordId);
-              const activities = record && (readable === null || readable.has(record.typeRef)) ? workflowOf(record.typeRef) : null;
+              const activities = record && !isAppRecord(record) && (readable === null || readable.has(record.typeRef)) ? workflowOf(record.typeRef) : null;
               answers.push(activities ? await host.engine.offeredActivities(activities, record) : []);
             } else {
               const activities = workflowOf(item.typeId);
@@ -682,7 +744,13 @@ export const appRouter = t.router({
       .input(z.object({ solutionId: solutionInput, operationId: operationInput.optional(), published: z.boolean().default(false) }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          if (!input.published) return await listPages(ctx.db, input.solutionId);
+          // Draft mode is the design plane (APPS_AND_INSTANCES §2.3), called by
+          // the Console's connect with no operation: solution admins only. A
+          // refusal is how the Console learns the caller cannot design here.
+          if (!input.published) {
+            await requireSolAdmin(ctx, input.solutionId);
+            return await listPages(ctx.db, input.solutionId);
+          }
           const pubs = await listPublishedPages(ctx.db, input.solutionId);
           // Env stub ⇒ everything open; skip the operation lookup entirely.
           if (!ctx.authConfigured) return pubs;
@@ -722,13 +790,14 @@ export const appRouter = t.router({
           rethrow(err);
         }
       }),
-    // Every published page path (unfiltered) — the design/authoring plane
-    // (menu editor, §5). Console preview is access-exempt (§6). Sol-user read.
+    // Every published page path (unfiltered) — what an app in an operation's
+    // apps list can be made from (APPS_AND_INSTANCES §2.6). Sol admins, and the
+    // admins of the solution's operations, who set up those operations' apps.
     publishedPaths: t.procedure
       .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          await requireSolAdmin(ctx, input.solutionId);
+          await requireSolOrOpAdmin(ctx, input.solutionId);
           return (await listPublishedPages(ctx.db, input.solutionId)).map((p) => p.path).sort();
         } catch (err) {
           rethrow(err);
@@ -865,7 +934,10 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         try {
           const { readable } = await readableTypeIds(ctx, input.operationId);
-          const rows = await ctx.db.select().from(records).where(eq(records.operationId, input.operationId));
+          // Never the operation's apps (APPS_AND_INSTANCES §2.4) — with sign-in
+          // off `readable` is null and would let them through.
+          const rows = await ctx.db.select().from(records)
+            .where(and(eq(records.operationId, input.operationId), ne(records.typeRef, APPS_RECORD_TYPE)));
           return rows
             .filter((r) => readable === null || readable.has(r.typeRef))
             .map((r) => ({
@@ -883,6 +955,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         try {
           const { readable } = await readableTypeIds(ctx, input.operationId);
+          if (input.typeId === APPS_RECORD_TYPE) return [];
           if (readable !== null && !readable.has(input.typeId)) return [];
           const rows = await ctx.db
             .select()
@@ -910,7 +983,7 @@ export const appRouter = t.router({
           if (rows.length === 0) {
             throw new TRPCError({ code: 'NOT_FOUND', message: `Record not found: ${input.recordId}` });
           }
-          if (readable !== null && !readable.has(rows[0].typeRef)) throw accessDenied();
+          if (isAppRecord(rows[0]) || (readable !== null && !readable.has(rows[0].typeRef))) throw accessDenied();
           const r = rows[0];
           const op = await getOperation(ctx.db, input.operationId);
           const config = await getSolutionConfig(ctx.db, op.solutionId);
@@ -976,9 +1049,10 @@ export const appRouter = t.router({
               anchorRecord = await host.store.getRecord(input.recordId); // throws → BAD_REQUEST via rethrow
               // Unreadable anchor ⇒ access denied, checked BEFORE the run gate
               // (2026-10-12; not-found before). Reuses the already-loaded
-              // config + resolved roles.
+              // config + resolved roles. An operation's app is never a run's
+              // record (APPS_AND_INSTANCES §2.3).
               const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
-              if (readable !== null && !readable.has(anchorRecord.typeRef)) throw accessDenied();
+              if (isAppRecord(anchorRecord) || (readable !== null && !readable.has(anchorRecord.typeRef))) throw accessDenied();
               // Only an activity that belongs to the record may run on it
               // (APPS_AND_INSTANCES §1.5, Part 2 step 1): the record's type's
               // workflow must list it. A shared activity runs on any type that
@@ -1081,7 +1155,7 @@ export const appRouter = t.router({
           if (input.recordId) {
             anchorRecord = await host.store.getRecord(input.recordId);
             const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
-            if (readable !== null && !readable.has(anchorRecord.typeRef)) throw accessDenied();
+            if (isAppRecord(anchorRecord) || (readable !== null && !readable.has(anchorRecord.typeRef))) throw accessDenied();
           }
 
           const issues = await withSpan('validate', activity.id, () =>
@@ -1155,6 +1229,9 @@ export const appRouter = t.router({
             // transport failure, so it answers as a result like any other
             // script error rather than a thrown BAD_REQUEST.
             const anchorRecord = input.recordId ? await host.store.getRecord(input.recordId) : null;
+            if (isAppRecord(anchorRecord)) {
+              return { value: null, elapsedMs: Date.now() - started, error: { kind: 'runtime', message: 'Record access denied' } };
+            }
 
             // No transaction: the script cannot write, and a GET reached
             // through `invoke` logs nothing of its own.

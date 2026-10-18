@@ -388,7 +388,12 @@ export function shapeNewRecord(rt: RecordTypeDef, customFields: Record<string, u
   //
   // UUIDv7, not v4: it leads with a timestamp, so ids sort by creation and
   // inserts land at the end of the index instead of scattering across it.
-  return { id: uuidv7(), typeRef: rt.id, customFields: merged, activityHistory: [] };
+  return { id: newRecordId(), typeRef: rt.id, customFields: merged, activityHistory: [] };
+}
+
+/** A new record's id — the platform's to issue, UUIDv7 (see shapeNewRecord). */
+export function newRecordId(): string {
+  return uuidv7();
 }
 
 /** The values a record would hold in its type's unique fields — what each store checks for a clash. */

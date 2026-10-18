@@ -30,9 +30,12 @@ One class, `FluxusClient`, owning the movements every remote host makes:
 1a. **`connectSolution({url, solutionId, operationId?})`** (CONSOLE_RUNTIME_SPEC
    §3, design plane) — bind to a solution to author its model + draft pages:
    fetch `config.get` (the whole model, hooks included — authoring them is the
-   job; **sol-admin gated** since 2026-08-09, and a refusal is surfaced rather
-   than opened as a blank editor) + draft `pages.list` by `solutionId`, plus **that
-   operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
+   job; **sol-admin gated** since 2026-08-09 — and since 2026-10-18 open to
+   the admins of the solution's operations too — and a refusal is surfaced
+   rather than opened as a blank editor) + draft `pages.list` by `solutionId`
+   (sol admin only since 2026-10-18: a refusal connects with no pages and sets
+   **`solutionAdmin`** false, which the Console reads to hide its design
+   tools), plus **that operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
    the data you build against is one operation's). No menu/roles (`enforced`
    false: Console is the design plane). With an operation bound,
    `refresh`/`runActivity` work exactly as in the Runtime host — running an
@@ -170,6 +173,12 @@ No create and no plan/status writes; the server owns both rules.
 `ConsoleClient.getSolutionConfig` (M10) lets the Console's operation view show
 the `default_menu` an operation inherits — sol-admin gated since the client trim,
 so an op admin who does not build the solution sees an empty inherited menu.
+
+**An operation's apps list** (2026-10-18, APPS_AND_INSTANCES §2.6):
+`listApps(operationId)` → `{ apps: App[] }`, `getApp(operationId, appId)` →
+the app with its `activityHistory`, `putApp(operationId, AppInput)` → `{ id }`
+(no `id` adds one). `App` is `{ id, pageId, label, roleIds, definition }`,
+`definition` being JSON as text. Op admin, server-side.
 
 ## Contracts and postures
 

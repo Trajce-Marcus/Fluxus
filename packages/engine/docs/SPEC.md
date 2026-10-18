@@ -858,6 +858,20 @@ passes through.
   `where`; an activity no type reaches checked untyped; `invoke` of an
   activity no workflow lists is an error.
 
+## The platform's apps (APPS_AND_INSTANCES Part 2, 2026-10-18)
+
+An operation's apps list is records of `rt_sys_apps`, a record type no
+solution defines (§2.4). `platformApps.ts` holds the platform's ids for it:
+`APPS_RECORD_TYPE` (`rt_sys_apps`), `APPS_WORKFLOW` (`wf_sys_apps`), and the
+history entries a Console change and the step 2 migration leave on an app,
+`CONSOLE_EDIT` (`sys_console_edit` / "Changed in the Console") and
+`MIGRATION_EDIT` (`sys_migration` / "Created by the migration"). Until step 5
+they are ids only — the engine has no definition of the type, and the server
+reads and writes its rows directly. **`validateConfig` refuses a record type,
+workflow or activity using any of the four** (`RESERVED_IDS`).
+`newRecordId()` issues a record id (UUIDv7, as `shapeNewRecord` always has), so
+the server can issue an app's.
+
 ## The model projected as record types (BUILT 2026-09-22)
 
 `modelProjection.ts` turns a `SolutionConfig` into the `sdm_*` collections
