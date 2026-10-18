@@ -122,12 +122,14 @@ export interface Engine<S extends WaitingStore = Store> {
    * The read path: run a GET activity's `returns` with the captured
    * attributes as its parameters (DSL_SPEC §5a). Same gate and same before
    * hook as a write; no record changes — but the run is logged light on the
-   * anchor record, like every other activity (step 3).
+   * anchor record, like every other activity (step 3). `condition` is the
+   * app's own on the GET, as for a write (`RunActivityOptions.condition`).
    */
   runQuery(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
+    options?: { condition?: string },
   ): Promise<QueryActivityResult>;
   /**
    * The read door `invoke(activityId, params)` opens, exposed so a caller can
@@ -367,15 +369,16 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
+    options?: { condition?: string },
   ): Promise<QueryActivityResult> {
-    return executeQuery(activity, captured, anchorRecord, { log: true });
+    return executeQuery(activity, captured, anchorRecord, { log: true, condition: options?.condition });
   }
 
   async function executeQuery(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-    { log }: { log: boolean },
+    { log, condition }: { log: boolean; condition?: string },
   ): Promise<QueryActivityResult> {
     if (activity.record_map !== 'GET') {
       throw new Error(`'${activity.name}' is not a GET activity — run it through runActivity`);
@@ -383,7 +386,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     if (!activity.returns) {
       throw new Error(`GET activity '${activity.id}' has no 'returns' expression`);
     }
-    await enforceAvailability(activity, anchorRecord);
+    await enforceAvailability(activity, anchorRecord, condition);
 
     // A nested read logs nothing of its own, so it must not disturb the run it
     // belongs to: its logger lines join that run's system log rather than

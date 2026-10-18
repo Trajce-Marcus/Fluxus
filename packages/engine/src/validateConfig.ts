@@ -6,31 +6,17 @@
 
 import { RESERVED_IDS } from './platformApps';
 import { attributeFieldRef } from './attributeTypes';
-import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Call, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
+import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
 import type { ActivityRawDef, ClientActivityRawDef, ClientSolutionConfig } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
 import { includedActivityIds, recordTypesByActivity } from './activityPool';
+import { datasourceInvokes, walkCalls } from './formGets';
 
 export interface Finding {
   where: string;
   diagnostic: Diagnostic;
-}
-
-/** Visit every Call node reachable from a parsed script (statements, args). */
-function walkCalls(node: unknown, visit: (call: Call) => void): void {
-  if (Array.isArray(node)) {
-    for (const item of node) walkCalls(item, visit);
-    return;
-  }
-  if (node === null || typeof node !== 'object') return;
-  const rec = node as Record<string, unknown>;
-  if (rec.kind === 'call') visit(node as Call);
-  for (const [key, value] of Object.entries(rec)) {
-    if (key === 'pos') continue;
-    walkCalls(value, visit);
-  }
 }
 
 // Either grade of config: the design plane validates the full model at save,
@@ -323,10 +309,21 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
     if (included.has(activity.id)) recordMapById.set(activity.id, activity.record_map);
   }
 
+  /** What is wrong with `invoke('<id>')`, if anything: the id must be a
+   *  runnable activity and must be a GET. */
+  const invokeProblem = (id: string): string | null => {
+    if (!recordMapById.has(id)) {
+      return poolIds.has(id)
+        ? `invoke('${id}') — no workflow includes this activity, so it cannot run`
+        : `invoke('${id}') — no such activity`;
+    }
+    return recordMapById.get(id) !== 'GET' ? `invoke('${id}') — only GET activities can be invoked` : null;
+  };
+
   /**
-   * Resolve literal ids passed to `invoke(...)` against the model: the id must
-   * be a runnable activity and must be a GET. A non-literal first argument is
-   * left to runtime — same posture as validatePage's activity-id check.
+   * Resolve literal ids passed to `invoke(...)` against the model. A
+   * non-literal first argument is left to runtime — same posture as
+   * validatePage's activity-id check. Not so on a datasource's path, below.
    */
   const checkInvokes = (where: string, source: string, out: Finding[]) => {
     let body: Stmt[];
@@ -335,20 +332,39 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
     } catch {
       return; // syntax errors are already reported by the validator
     }
-    const fail = (message: string) => out.push({ where, diagnostic: { severity: 'error', message, line: 1, col: 1 } });
     walkCalls(body, (call) => {
       if (call.callee.kind !== 'ident' || call.callee.name !== 'invoke') return;
       const first = call.args[0]?.value;
       if (first?.kind !== 'string') return;
-      if (!recordMapById.has(first.value)) {
-        fail(poolIds.has(first.value)
-          ? `invoke('${first.value}') — no workflow includes this activity, so it cannot run`
-          : `invoke('${first.value}') — no such activity`);
-      } else if (recordMapById.get(first.value) !== 'GET') {
-        fail(`invoke('${first.value}') — only GET activities can be invoked`);
-      }
+      const problem = invokeProblem(first.value);
+      if (problem) out.push({ where, diagnostic: { severity: 'error', message: problem, line: 1, col: 1 } });
     });
   };
+
+  // A datasource's GETs (APPS_AND_INSTANCES §2.2): what a form calls counts as
+  // on an app's list, worked out from the literal ids in `invoke('…')` — in the
+  // datasource and in every named function it reaches. So on that path an id
+  // must be literal, and must name a GET. Every datasource is checked, not only
+  // those of activities on a list today: any activity can be put on one later.
+  // A function several datasources reach is reported once. A browser's copy
+  // leaves out the workflows of record types its user may not read, so a GET
+  // it lacks is unknown only on the full model (the grade rule above).
+  const fullModel = pool.some(serverGrade);
+  const reportedOnPath = new Set<string>();
+  for (const [key, invokes] of datasourceInvokes(config)) {
+    for (const { where, activityId } of invokes) {
+      if (activityId !== null && !recordMapById.has(activityId) && !fullModel) continue;
+      const problem = activityId === null
+        ? `invoke() with a computed activity id — a form's GET must be named literally, so an app can tell it is on its list`
+        : invokeProblem(activityId);
+      if (!problem) continue;
+      const at = where.startsWith('function') ? `${where} (reached from attribute '${key}' datasource)` : where;
+      const once = `${where}\u0000${problem}`;
+      if (reportedOnPath.has(once)) continue;
+      reportedOnPath.add(once);
+      note(at, problem);
+    }
+  }
 
   /** Every script an activity carries, checked with `context.record` typed as
    *  `anchorType` (untyped when undefined). */

@@ -56,6 +56,9 @@ src/attributeTypes.ts — the attribute type registry (files, photos, scalars,
                      validateSubmission, and validateConfig
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
 src/validateConfig.ts — config-save-time validation of every FluxScript script
+src/formGets.ts    — a form's GETs: the literal `invoke` ids on each
+                     datasource's path, and those a set of activities' forms
+                     call (an app's list counts them)
 src/evaluateWithGets.ts — the waiting loop for a host whose GET answers are a
                      round trip away: evaluate, fetch what the round asked for,
                      evaluate again. Written in the page host, moved here
@@ -119,9 +122,10 @@ the store (`Engine<S>`), so `engine.store` keeps its type — a browser host's
   `AfterHookFailedError` ("recorded, but no changes were applied") after the
   entry is appended, so a caller holding the writes in a transaction knows to
   commit them (the server does).
-- `engine.runQuery(activity, captured, anchorRecord)` — the read pipeline; see
-  "GET activities" below. Refuses anything that is not a GET. Records the run
-  on the anchor, logged light.
+- `engine.runQuery(activity, captured, anchorRecord, options?)` — the read
+  pipeline; see "GET activities" below. Refuses anything that is not a GET.
+  Records the run on the anchor, logged light. `options.condition` is the
+  app's own on the GET, gated as a write's is (since 2026-10-18).
 - `engine.activityAvailabilityAsync(activity, anchorRecord)` /
   `isActivityAvailableAsync(...)` — the activity-level `show_condition` gate,
   strictly `true`, fail-closed. `runActivity`/`runQuery` check it as the
@@ -260,7 +264,8 @@ supplies the implementation through `ScriptContext.invoke`, resolves the id,
 refuses a non-GET, and blocks re-entry so a GET whose gate invokes itself
 fails instead of hanging. `validateConfig` resolves **literal** ids at
 config-save time (unknown id, or not a GET, is a finding); a computed id is
-left to runtime.
+left to runtime — except on a datasource's path, where it is refused (below,
+"A form's GETs").
 
 **Who may run a GET is the activity's own gate**, exactly as for a write:
 `show_condition` and roles decide, and there is deliberately no second read
@@ -888,6 +893,25 @@ own until step 5 defines `rt_sys_apps`); a condition on any other workflow is an
 error; a record type pointing at a page's list is an error. With no `appLists`,
 none of it applies, so ordinary editing of a record type's workflow is
 untouched.
+
+**A form's GETs** (2026-10-18, APPS_AND_INSTANCES step 4, §2.2). A dropdown's
+datasource is the one capture expression allowed a round trip, and it reaches a
+GET with `invoke('…')` — directly, or through a named function it calls, or one
+those call. An app counts those GETs as on its list, so they must be knowable
+from the model alone. `formGets.ts`: `datasourceInvokes(config)` walks every
+attribute's datasource and the named functions it reaches, answering each
+`invoke` and where it is, its id literal or computed; **`formGetIds(config,
+activityIds)`** answers the literal GET ids the forms of those activities call,
+composite cells included — what the server adds to an app's list.
+**`validateConfig` checks every datasource's path**, not only those of
+activities on a list today (any activity can be put on one later): each id
+must be literal (a computed one is refused, "a form's GET must be named
+literally"), must name an activity some workflow lists (on the full model only — a
+browser's copy leaves out the workflows its user may not read), and must be a
+GET. A
+problem in a function is reported once, at the function, naming the first
+datasource that reaches it. A computed id in a function no datasource reaches
+stays a run-time matter, as in hooks.
 
 **`validateSubmission`'s `canRead`** (2026-10-18, §2.3 check 5): an optional
 last argument, the caller's read rules. Given, a run's reference attribute —
