@@ -1018,7 +1018,10 @@ Each step works on its own and is cold-tested before the next.
    through one; `page.activities`' `{}` with no app answers empty; in the
    browser an app's own form has no `context.record` (the app's record is not
    sent; the server's checks see it). The scripts' type omits `role_ids`
-   (decision 3 of the second review).
+   (decision 3 of the second review), and the record a script holds is
+   trimmed to `page_id`, `label` and `definition` — the step 5 cold test found
+   a GET returning `context.record` whole sent the stored `role_ids` to the
+   browser; fixed the same day.
 6. **One way to open an app.** The step 6 script rewriting links;
    `services.page.open` and the old way of opening (§2.7) removed.
 

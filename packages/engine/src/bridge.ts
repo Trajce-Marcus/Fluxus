@@ -18,7 +18,7 @@ import type {
 import type { Savepoint, WaitingStore } from './store';
 import { mapMaybe, settle, type MaybePromise } from './maybe';
 import { RecordAccessDeniedError } from './errors';
-import { APPS_RECORD_TYPE } from './platformApps';
+import { APPS_RECORD_TYPE, APPS_RECORD_TYPE_DEF } from './platformApps';
 
 /**
  * `context.user` when no authenticated user is injected — the auth-unconfigured
@@ -150,8 +150,19 @@ export function buildDslSchema(config: ClientSolutionConfig, services: ServiceMo
   return { types, services: servicesSchema(services) };
 }
 
+/** The fields of an app's record a script may see (APPS_AND_INSTANCES §2.2):
+ *  its page, name and definition — never its stored `role_ids`. */
+const APP_FIELDS = APPS_RECORD_TYPE_DEF.custom_fields.map((cf) => cf.key);
+
 export function toDslRecord(record: RecordInstance): DslRecord {
-  return { id: record.id, type: shortName(record.typeRef), fields: record.customFields };
+  // An app's record reaches a script only as an app's own activity's
+  // `context.record`. Its type is narrowed at save, but a script that hands
+  // the record on whole (a GET returning `context.record`) would carry every
+  // stored field, so it is trimmed here, where every script record is made.
+  const fields = record.typeRef === APPS_RECORD_TYPE
+    ? Object.fromEntries(APP_FIELDS.filter((k) => k in record.customFields).map((k) => [k, record.customFields[k]]))
+    : record.customFields;
+  return { id: record.id, type: shortName(record.typeRef), fields };
 }
 
 /**

@@ -94,6 +94,18 @@ describe("an app's own activity at run time", () => {
     expect(app().activityHistory).toHaveLength(1);
   });
 
+  it("a script never sees the app's roles, even holding the whole record", async () => {
+    // Found by the step 5 cold test: the type omits role_ids at save, but a
+    // GET returning context.record whole carried the stored row.
+    const config = model();
+    config.activities.push(act('act_whole_app', { record_map: 'GET', returns: 'context.record' }));
+    config.workflows[1].activities.push({ activity_ref: 'act_whole_app' });
+    expect(atSave(config)).toEqual([]);
+    const { engine, find, app } = build(config);
+    const { data } = await engine.runQuery(find('act_whole_app'), {}, app(), { log: false });
+    expect(data).toEqual({ id: 'APP1', page_id: 'pages/board', label: 'North board', definition: '{"region":"north"}' });
+  });
+
   it("its conditions see context.app too", async () => {
     const { engine, find, app } = build();
     const plan = find('act_plan_day');

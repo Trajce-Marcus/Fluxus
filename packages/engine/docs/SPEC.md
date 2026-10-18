@@ -885,7 +885,11 @@ with `context.record` typed as `sys_apps`, and an item's condition on one is
 too; a hook that updates or deletes it is an error. Elsewhere the type is
 reachable by name only — `records.sys_apps` passes the save check, and finds
 nothing at run time, since the records root is built from the solution's own
-types. **At run time** the engine's mutation hosts refuse an update or delete
+types. **A script never holds an app's roles**: `toDslRecord`, where every
+script record is made, trims an app's record to those three fields — the
+narrowed type alone did not stop a GET returning `context.record` whole from
+sending the stored `role_ids` to the browser (found by the step 5 cold test,
+fixed 2026-10-18). **At run time** the engine's mutation hosts refuse an update or delete
 of an app's record (`refuseApp`, bridge.ts) — they key on the record's id
 alone, so without it a hook holding its app as `context.record` could write
 it.
