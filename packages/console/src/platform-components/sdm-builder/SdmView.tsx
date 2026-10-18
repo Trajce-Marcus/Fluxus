@@ -70,6 +70,9 @@ export const css = `
   .sdm-usage-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
   .sdm-usage-row select, .sdm-usage-row input[type=text] { flex: 1; min-width: 0; }
   .sdm-usage-move { display: flex; flex-direction: column; gap: 1px; }
+  /* An app's condition on an item of a page's list (APPS_AND_INSTANCES §2.2). */
+  .sdm-condition { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); font-size: 0.75rem; }
+  .sdm-condition.empty { color: var(--color-text-muted); }
   .sdm-usage-move button {
     line-height: 1; padding: 1px 5px; font-size: 0.7rem; background: none;
     border: 1px solid var(--color-border); color: var(--color-text-muted);

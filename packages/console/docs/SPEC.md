@@ -71,7 +71,7 @@ Bindings render as read-only expression previews; clicking opens the **expressio
 
 The PageEditor preview column embeds `PageRenderer` with the live (possibly unsaved) slot configs and context schema, passing `debug={import.meta.env.DEV}` for the `context.page` debug strip.
 
-The configuration column carries the two **page-level** sections above the selected slot's: **Page Context** (declared `context.page` keys) and, since 2026-08-10, **Page Access** — a checkbox per role, writing `PageDef.access.open` — *until 2026-10-18, when it went: who may open a page is set on each app made from it, in the operation's apps list (APPS_AND_INSTANCES §2.2, §2.6)*. **Page Record** picks the record type the page is about (or a pure view); its one/many choice went the same day (`instances`, page-runtime SPEC). Like every other page edit these persist immediately; there is no Save button in the editor.
+The configuration column carries the two **page-level** sections above the selected slot's: **Page Context** (declared `context.page` keys) and, since 2026-08-10, **Page Access** — a checkbox per role, writing `PageDef.access.open` — *until 2026-10-18, when it went: who may open a page is set on each app made from it, in the operation's apps list (APPS_AND_INSTANCES §2.2, §2.6)*. **Page Record** picks the record type the page is about (or a pure view); its one/many choice went the same day (`instances`, page-runtime SPEC). **Page List** (2026-10-18, APPS_AND_INSTANCES step 3) picks the page's list — `PageDef.workflowId`, chosen from the workflows no record type points to, or none (the page then offers nothing); a list that is no longer a candidate shows as such, since publishing will refuse it. Like every other page edit these persist immediately; there is no Save button in the editor.
 
 ## Planned upgrades (per root ROADMAP)
 
@@ -79,6 +79,17 @@ The configuration column carries the two **page-level** sections above the selec
 2. **Manifest shape contracts** — *deferred by ruling (2026-07-11)*: with attributes captured by the standard form rather than mapped from payloads, contracts lost their main consumer; revisit if silent payload mapping ever becomes needed.
 3. **App modules:** coarse-grained reusable apps (e.g. calendar scheduler) ship as manifest-bearing components, rewired per SDM through slot config. The pattern is model-agnostic (non-SDM backends can sit behind the wiring), but schema validation and the audit spine exist only with an SDM.
 4. **Pages as SDM citizens:** a page file is a declarative definition validated against the model — same species as an entity file. Shape lands with the backend phase (same store, same write path, same audit).
+
+## Page lists in the Workflows editor (2026-10-18, APPS_AND_INSTANCES step 3)
+
+A workflow a page names (from the draft pages, `sdmClient.pages`) is that
+page's **list**: the Workflows editor says whose list it is, and each item gets
+a **condition** button — the app's own condition, which must pass along with the
+activity's own, edited in the expression dialog (`ExpressionDialog`; an empty
+one removes it) and stored on the reference, `{ activity_ref, show_condition }`.
+Other workflows show no such column: only a page's list may carry conditions,
+and the server checks every one at save. Renaming a new activity keeps its
+item's condition.
 
 ## DSL Editor (BUILT 2026-09-21)
 

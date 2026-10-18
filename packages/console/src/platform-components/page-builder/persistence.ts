@@ -99,6 +99,27 @@ export function savePageRecord(path: string, record: PageRecordDef | null): void
   savePage(path, { ...existing, record: record ?? undefined });
 }
 
+/**
+ * The page's list (APPS_AND_INSTANCES §2.2): the workflow its apps offer and
+ * run from. Absent ⇒ none, and the page offers nothing. Stored absent rather
+ * than empty, like the page record.
+ */
+export function loadPageWorkflow(path: string): string | null {
+  return loadPage(path)?.workflowId ?? null;
+}
+
+export function savePageWorkflow(path: string, workflowId: string | null): void {
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, workflowId: workflowId ?? undefined });
+}
+
+/** The workflows a page's list may be — those no record type points to. */
+export function pageListCandidates(): { id: string; name: string }[] {
+  const config = sdmClient.config as { workflows?: { id: string; name: string }[]; recordTypes?: { workflow_ref: string }[] };
+  const typed = new Set((config.recordTypes ?? []).map((rt) => rt.workflow_ref));
+  return (config.workflows ?? []).filter((w) => !typed.has(w.id));
+}
+
 /** The record types a page may be about — every type in the solution's model. */
 export function solutionRecordTypes(): { id: string; name: string }[] {
   return (sdmClient.config as { recordTypes?: { id: string; name: string }[] }).recordTypes ?? [];

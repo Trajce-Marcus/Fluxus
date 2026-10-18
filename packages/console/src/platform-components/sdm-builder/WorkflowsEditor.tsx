@@ -7,12 +7,30 @@
 // edited in the Activities tab. "New activity" is the shortcut that creates one
 // in the pool and adds it here in one step; its details are then filled in
 // there.
+//
+// A workflow a page names is that page's **list** (APPS_AND_INSTANCES §2.2):
+// what the apps made from it offer and run. Each of its items may carry the
+// app's own condition, which must pass along with the activity's own — shown
+// as a condition column, edited in the expression dialog. Only a list may carry
+// conditions; the server checks them at save.
 
 import { useMemo, useState } from 'react';
 import type { SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
 import { readConfig, idProblems, refreshSolutionViews, saveActivities, saveWorkflows, useDirty, useLoadedConfig } from './useSolutionConfig';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 import { initialSelection, useItemGuard } from './useItemGuard';
+import { sdmClient } from '../../sdm-runtime/engine';
+import { ExpressionDialog } from '../page-builder/ExpressionDialog';
+
+/** The workflows pages name as their list, and the pages naming each. */
+function pageLists(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const [path, def] of sdmClient.pages) {
+    const id = (def as { workflowId?: unknown } | null)?.workflowId;
+    if (typeof id === 'string' && id) out.set(id, [...(out.get(id) ?? []), path]);
+  }
+  return out;
+}
 
 export function WorkflowsEditor() {
   const loaded = useLoadedConfig();
@@ -23,6 +41,9 @@ export function WorkflowsEditor() {
   const [dirty, setDirty] = useDirty();
   const [armed, setArmed] = useState(false);
   const [pick, setPick] = useState('');
+  /** The item whose condition the expression dialog is editing. */
+  const [editingCondition, setEditingCondition] = useState<number | null>(null);
+  const lists = useMemo(() => pageLists(), []);
 
   const wfs = draft.workflows;
   const wf: WorkflowRawDef | undefined = wfs[selWf];
@@ -30,6 +51,7 @@ export function WorkflowsEditor() {
   const byId = useMemo(() => new Map(draft.activities.map((a) => [a.id, a])), [draft]);
   const savedActivities = useMemo(() => new Set(loaded.activities.map((a) => a.id)), [loaded]);
   const listed = new Set(refs.map((r) => r.activity_ref));
+  const listOf = wf ? lists.get(wf.id) ?? null : null;
   const addable = draft.activities.filter((a) => !listed.has(a.id));
 
   function setWfs(next: WorkflowRawDef[]) {
@@ -94,7 +116,7 @@ export function WorkflowsEditor() {
         ? d.workflows
         : d.workflows.map((w) => ({
             ...w,
-            activities: w.activities.map((r) => (r.activity_ref === oldId ? { activity_ref: patch.id! } : r)),
+            activities: w.activities.map((r) => (r.activity_ref === oldId ? { ...r, activity_ref: patch.id! } : r)),
           })),
     }));
     setDirty(true);
@@ -172,6 +194,12 @@ export function WorkflowsEditor() {
             <label className="admin-field"><span>Description</span>
               <input value={wf.description} onChange={(e) => editWf({ description: e.target.value })} /></label>
 
+            {listOf && (
+              <p className="admin-hint">
+                The list of {listOf.join(', ')}: the apps made from it offer and run these, and nothing else. Each may carry
+                the app's own condition, which must pass along with the activity's own.
+              </p>
+            )}
             <div className="sdm-fields">
               <div className="sdm-fields-head">Activities</div>
               {refs.length === 0 && <p className="admin-muted">None yet.</p>}
@@ -194,6 +222,15 @@ export function WorkflowsEditor() {
                         <span className="admin-mono">{r.activity_ref}</span>
                         <span className="sdm-list-sub">{act ? `${act.name}${act.record_map ? ` · ${act.record_map}` : ''}` : 'not in the pool'}</span>
                       </span>
+                    )}
+                    {listOf && (
+                      <button
+                        className={`admin-btn admin-btn-ghost sdm-condition${r.show_condition ? '' : ' empty'}`}
+                        title={r.show_condition || 'No condition of the app\'s — the activity\'s own decides'}
+                        onClick={() => setEditingCondition(i)}
+                      >
+                        {r.show_condition ? `when ${r.show_condition}` : '+ condition'}
+                      </button>
                     )}
                     <button className="admin-btn admin-btn-ghost" title="Remove from this workflow — it stays in the pool" onClick={() => setRefs(refs.filter((_, j) => j !== i))}>✕</button>
                   </div>
@@ -218,6 +255,24 @@ export function WorkflowsEditor() {
           <button className="admin-btn" onClick={save} disabled={busy || !dirty || !!idErr}>{busy ? 'Saving…' : 'Save workflows'}</button>
         </div>
       </div>
+      {editingCondition !== null && refs[editingCondition] && (
+        <ExpressionDialog
+          title={`The app's condition on ${refs[editingCondition].activity_ref}`}
+          hint="Offered, and run, only when this and the activity's own condition are both true. context.record is the record it runs on."
+          kind="expression"
+          initialSource={refs[editingCondition].show_condition ?? ''}
+          onSave={(source) => {
+            const at = editingCondition;
+            setRefs(refs.map((r, j) => {
+              if (j !== at) return r;
+              const { show_condition: _old, ...rest } = r;
+              return source.trim() ? { ...rest, show_condition: source } : rest;
+            }));
+            setEditingCondition(null);
+          }}
+          onClose={() => setEditingCondition(null)}
+        />
+      )}
     </>
   );
 }

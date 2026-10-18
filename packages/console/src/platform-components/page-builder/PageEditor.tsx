@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
-import { loadPageLayout, solutionRecordTypes } from './persistence';
+import { loadPageLayout, pageListCandidates, solutionRecordTypes } from './persistence';
 import type { Panel } from './layout-editor/types';
 import type { SlotConfig } from './persistence';
 import {
@@ -15,6 +15,7 @@ import {
   addContextKey,
   removeContextKey,
   setPageRecord,
+  setPageWorkflow,
   setStaticConfig,
   setDynamicProp,
   setCallback,
@@ -381,6 +382,36 @@ function PageRecordSection({ pageRecord, pagePath }: { pageRecord: PageRecordDef
   );
 }
 
+// ── The page's list ──────────────────────────────────────────────────────────
+// What the page's apps offer and run (APPS_AND_INSTANCES §2.2): a workflow no
+// record type points to, built in the Workflows editor, where each item may
+// also carry the app's own condition. With none, the page offers nothing.
+// Publishing checks the choice against the model.
+
+function PageListSection({ pageWorkflow, pagePath }: { pageWorkflow: string | null; pagePath: string }) {
+  const candidates = pageListCandidates();
+  const known = pageWorkflow === null || candidates.some((w) => w.id === pageWorkflow);
+
+  return (
+    <div className="pe-config-section pe-config-divider">
+      <p className="pe-config-label">Page List</p>
+      <div className="pe-ctx-form">
+        <select className="pe-ctx-select" value={pageWorkflow ?? ''} onChange={(e) => setPageWorkflow(pagePath, e.target.value || null)}>
+          <option value="">(no list — the page offers nothing)</option>
+          {!known && <option value={pageWorkflow!}>{pageWorkflow} (not a list any more)</option>}
+          {candidates.map((w) => <option key={w.id} value={w.id}>{w.name || w.id} · {w.id}</option>)}
+        </select>
+      </div>
+      <p className="pe-config-hint">
+        {pageWorkflow
+          ? 'The activities and reads the apps made from this page use — nothing else is offered or runs.'
+          : 'Pick the workflow listing what the page uses (one no record type points to). Without one, nothing on the page can run.'}
+      </p>
+      {!known && <p className="pe-ctx-error">'{pageWorkflow}' is not a workflow a page's list can be — publishing will be refused.</p>}
+    </div>
+  );
+}
+
 // ── FluxScript bindings (dynamic props + callbacks) ──────────────────────────
 // One expression per dynamic prop, one script per callback — the stored
 // artifact is the source text; this UI merely writes it (decision 2/6). The
@@ -498,10 +529,11 @@ interface Col3Props {
   slotConfigs: Record<string, SlotConfig | null>;
   contextSchema: ContextKeyDef[];
   pageRecord: PageRecordDef | null;
+  pageWorkflow: string | null;
   pagePath: string;
 }
 
-function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pagePath }: Col3Props) {
+function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pageWorkflow, pagePath }: Col3Props) {
   const config = selectedSlotId ? (slotConfigs[selectedSlotId] ?? null) : null;
 
   return (
@@ -510,6 +542,7 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, 
       <div className="pe-col-scroll">
         <PageContextSection contextSchema={contextSchema} pagePath={pagePath} />
         <PageRecordSection pageRecord={pageRecord} pagePath={pagePath} />
+        <PageListSection pageWorkflow={pageWorkflow} pagePath={pagePath} />
 
         {selectedSlotId && config && (
           <>
@@ -586,7 +619,7 @@ function PageEditorComponent({ pagePath }: Props) {
 
   const layout = loadPageLayout(pagePath);
   const slots = layout ? collectLeafPanels(layout.root) : [];
-  const { mode, pageComponents, contextSchema, pageRecord, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
+  const { mode, pageComponents, contextSchema, pageRecord, pageWorkflow, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
 
   if (mode === 'layout') {
     return (
@@ -614,7 +647,7 @@ function PageEditorComponent({ pagePath }: Props) {
           <ComponentsColumn pageComponents={pageComponents} selectedComponentName={selectedComponentName} pagePath={pagePath} />
         )}
         <SlotsColumn slots={slots} selectedSlotId={selectedSlotId} selectedComponentName={selectedComponentName} slotConfigs={slotConfigs} pagePath={pagePath} />
-        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pagePath={pagePath} />
+        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pageWorkflow={pageWorkflow} pagePath={pagePath} />
         <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} />
       </div>
     </div>

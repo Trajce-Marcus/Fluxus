@@ -6,6 +6,8 @@ import {
   saveContextSchema,
   loadPageRecord,
   savePageRecord,
+  loadPageWorkflow,
+  savePageWorkflow,
   loadSlotConfigs,
   saveSlotConfigs,
   type PageComponentEntry,
@@ -23,6 +25,8 @@ export interface PageEditorState {
   /** Role ids that may open the page (CONSOLE_RUNTIME_SPEC §6). */
   /** The record the page is about; null on a pure view (step 3). */
   pageRecord: PageRecordDef | null;
+  /** The page's list (`PageDef.workflowId`). */
+  pageWorkflow: string | null;
   selectedComponentName: string | null;
   selectedSlotId: string | null;
   col1Collapsed: boolean;
@@ -38,6 +42,7 @@ function getStore(pagePath: string) {
       pageComponents: loadPageComponents(pagePath),
       contextSchema: loadContextSchema(pagePath),
       pageRecord: loadPageRecord(pagePath),
+      pageWorkflow: loadPageWorkflow(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
       col1Collapsed: false,
@@ -107,6 +112,14 @@ export function setPageRecord(pagePath: string, record: PageRecordDef | null): v
   getStore(pagePath).set((prev) => {
     savePageRecord(pagePath, record);
     return { ...prev, pageRecord: record };
+  });
+}
+
+/** Choose the page's list, or none. */
+export function setPageWorkflow(pagePath: string, workflowId: string | null): void {
+  getStore(pagePath).set((prev) => {
+    savePageWorkflow(pagePath, workflowId);
+    return { ...prev, pageWorkflow: workflowId };
   });
 }
 
