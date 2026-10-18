@@ -18,6 +18,7 @@ import type {
 import type { Savepoint, WaitingStore } from './store';
 import { mapMaybe, settle, type MaybePromise } from './maybe';
 import { RecordAccessDeniedError } from './errors';
+import { APPS_RECORD_TYPE } from './platformApps';
 
 /**
  * `context.user` when no authenticated user is injected — the auth-unconfigured
@@ -240,6 +241,18 @@ function storeQuery(query: RecordQuery): RecordQuery {
 
 type RecordTypesByShortName = Map<string, ClientSolutionConfig['recordTypes'][number]>;
 
+/**
+ * An app in an operation's apps list never changes through a script
+ * (APPS_AND_INSTANCES §2.4) — an app's own activity runs on its record, so a
+ * hook holds it as `context.record`. Checked on every update and delete, since
+ * those key on the record's id alone. `validateConfig` refuses the same at save.
+ */
+function refuseApp(type: string): void {
+  if (fullId(type) === APPS_RECORD_TYPE) {
+    throw new Error("An app in the operation's apps list never changes through a script — it is set up in the Console");
+  }
+}
+
 /** Staged mutations (DSL Phase 2): validate/shape now, persist on commit. */
 function stagedMutations(adapter: WaitingStore, byShortName: RecordTypesByShortName): RecordsMutationHost {
   return {
@@ -248,10 +261,14 @@ function stagedMutations(adapter: WaitingStore, byShortName: RecordTypesByShortN
       if (!rt) throw new Error(`Unknown record type '${type}'`);
       return mapMaybe(adapter.buildRecord(rt.id, serializeFields(fields)), toDslRecord);
     },
-    prepareUpdate: (type, id, fields) => adapter.validateUpdate(String(id), serializeFields(fields)),
+    prepareUpdate: (type, id, fields) => {
+      refuseApp(type);
+      return adapter.validateUpdate(String(id), serializeFields(fields));
+    },
     prepareDelete: (type, id) =>
       settle(
         (function* () {
+          refuseApp(type);
           // Reads the record to prove it exists (getRecord throws if not) and to
           // check it is the type the script named — a script that deleted a
           // record of the wrong type would be silently destructive.
@@ -324,10 +341,14 @@ function writeThroughMutations(adapter: WaitingStore, byShortName: RecordTypesBy
       if (!rt) throw new Error(`Unknown record type '${type}'`);
       return mapMaybe(adapter.createRecord(rt.id, serializeFields(fields)), toDslRecord);
     },
-    update: (type, id, fields) => adapter.updateRecord(String(id), serializeFields(fields)),
+    update: (type, id, fields) => {
+      refuseApp(type);
+      return adapter.updateRecord(String(id), serializeFields(fields));
+    },
     delete: (type, id) =>
       settle(
         (function* () {
+          refuseApp(type);
           const record = (yield adapter.getRecord(String(id))) as RecordInstance;
           if (record.typeRef !== fullId(type)) {
             throw new Error(`Record '${id}' is not a ${type}`);

@@ -13,6 +13,7 @@ import { validateConfig, reportConfigFindings, type Finding, type ValidateConfig
 import { buildLoggerModule } from './services/logger';
 import { attributeFieldRef } from './attributeTypes';
 import { recordTypesByActivity } from './activityPool';
+import type { AppScope } from './platformApps';
 
 export interface EngineOptions<S extends WaitingStore = Store> {
   store: S;
@@ -32,6 +33,12 @@ export interface EngineOptions<S extends WaitingStore = Store> {
    * that only evaluate).
    */
   user?: ContextUser;
+  /**
+   * The app a call came through (APPS_AND_INSTANCES §2.2): every script this
+   * engine runs sees it as `context.app` — conditions, hooks, GETs — as a
+   * page's scripts do. Absent for a call with no app (the Console).
+   */
+  app?: AppScope;
 }
 
 export interface ActivityAvailability {
@@ -124,12 +131,14 @@ export interface Engine<S extends WaitingStore = Store> {
    * hook as a write; no record changes — but the run is logged light on the
    * anchor record, like every other activity (step 3). `condition` is the
    * app's own on the GET, as for a write (`RunActivityOptions.condition`).
+   * `log: false` runs it on its anchor without an entry there — an app's own
+   * GET, which runs on its app's record and leaves no history (§2.4).
    */
   runQuery(
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-    options?: { condition?: string },
+    options?: { condition?: string; log?: boolean },
   ): Promise<QueryActivityResult>;
   /**
    * The read door `invoke(activityId, params)` opens, exposed so a caller can
@@ -203,7 +212,7 @@ function capturedEntryAttributes(
   return entryAttributes;
 }
 
-export function createEngine<S extends WaitingStore = Store>({ store, config, services: hostServices = [], user }: EngineOptions<S>): Engine<S> {
+export function createEngine<S extends WaitingStore = Store>({ store, config, services: hostServices = [], user, app }: EngineOptions<S>): Engine<S> {
   // services.logger — engine-owned (see services/logger.ts): lines noted
   // during a run land on the entry as the reserved `system_log` attribute —
   // only if the run commits an entry (rejected submissions leave no trace,
@@ -216,6 +225,11 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     runLog.push(line);
   });
   const services = [...hostServices, loggerModule];
+
+  // Every script this engine runs, with the app a call came through, if any,
+  // as `context.app` — beside whatever the caller put in the context itself.
+  const evalHost = (script: ScriptContext) =>
+    buildEvalHost(store, config, app ? { ...script, contextExtras: { app, ...script.contextExtras } } : script, services);
 
   // A CREATE activity targets the record type whose workflow lists it —
   // derived from config here so hosts never have to say which type is
@@ -267,7 +281,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   }
 
   function availabilityHost(activity: ActivityDef, anchorRecord: RecordInstance | null) {
-    return buildEvalHost(store, config, { anchorRecord, activity: { id: activity.id, name: activity.name }, user }, services);
+    return evalHost({ anchorRecord, activity: { id: activity.id, name: activity.name }, user });
   }
 
   function failedClosed(activity: ActivityDef, err: unknown): ActivityAvailability {
@@ -341,7 +355,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
   async function runGate(activity: ActivityDef, scriptContext: ScriptContext): Promise<string[]> {
     if (!activity.before_hook) return [];
     try {
-      const result = await executeScriptAsync(activity.before_hook, buildEvalHost(store, config, scriptContext, services), { mode: 'read' });
+      const result = await executeScriptAsync(activity.before_hook, evalHost(scriptContext), { mode: 'read' });
       return result.warnings;
     } catch (err) {
       if (err instanceof FluxFailError) throw new Error(err.message);
@@ -369,9 +383,9 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     activity: ActivityDef,
     captured: Record<string, unknown>,
     anchorRecord: RecordInstance | null,
-    options?: { condition?: string },
+    options?: { condition?: string; log?: boolean },
   ): Promise<QueryActivityResult> {
-    return executeQuery(activity, captured, anchorRecord, { log: true, condition: options?.condition });
+    return executeQuery(activity, captured, anchorRecord, { log: options?.log ?? true, condition: options?.condition });
   }
 
   async function executeQuery(
@@ -437,7 +451,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     try {
       answer = await evaluateExpressionAsync(
         activity.returns,
-        buildEvalHost(store, config, scriptContext, services),
+        evalHost(scriptContext),
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -592,7 +606,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
       try {
         const result = await executeScriptAsync(
           activity.after_hook,
-          buildEvalHost(store, config, { ...scriptContext, anchorRecord: await store.getRecord(targetRecordId) }, services),
+          evalHost({ ...scriptContext, anchorRecord: await store.getRecord(targetRecordId) }),
           { mode: 'mutate' },
         );
         warnings.push(...result.warnings);
@@ -648,8 +662,8 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     runActivity,
     runQuery,
     invoke: (activityId, params, anchorRecord) => invoke(activityId, params, anchorRecord),
-    evaluate: (source, script) => evaluateExpression(source, buildEvalHost(store, config, { user, ...script }, services)),
-    evaluateAsync: (source, script) => evaluateExpressionAsync(source, buildEvalHost(store, config, { user, ...script }, services)),
+    evaluate: (source, script) => evaluateExpression(source, evalHost({ user, ...script })),
+    evaluateAsync: (source, script) => evaluateExpressionAsync(source, evalHost({ user, ...script })),
     validateConfig: (options) => validateConfig(config, services, options),
     reportConfigFindings: () => reportConfigFindings(config, services),
   };

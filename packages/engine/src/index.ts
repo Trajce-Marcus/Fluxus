@@ -10,7 +10,8 @@ export type { Engine, EngineOptions, ActivityAvailability, RunActivityOptions } 
 
 export type { ModelStore, Savepoint, Store, WaitingStore } from './store';
 export { MemoryAdapter, coerceFieldValues, newRecordId, shapeNewRecord, uniqueValues } from './memoryAdapter';
-export { APPS_RECORD_TYPE, APPS_WORKFLOW, CONSOLE_EDIT, MIGRATION_EDIT, RESERVED_IDS } from './platformApps';
+export { APPS_RECORD_TYPE, APPS_RECORD_TYPE_DEF, APPS_WORKFLOW, APPS_WORKFLOW_DEF, CONSOLE_EDIT, MIGRATION_EDIT, RESERVED_IDS } from './platformApps';
+export type { AppScope } from './platformApps';
 export { RecordAccessDeniedError } from './errors';
 export type { MemoryAdapterOptions } from './memoryAdapter';
 

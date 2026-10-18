@@ -4,7 +4,7 @@
 // with the SDM still hand-edited as files, "save time" is app start, and
 // diagnostics land on the console.
 
-import { RESERVED_IDS } from './platformApps';
+import { APPS_RECORD_TYPE, APPS_RECORD_TYPE_DEF, RESERVED_IDS } from './platformApps';
 import { attributeFieldRef } from './attributeTypes';
 import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
 import type { ActivityRawDef, ClientActivityRawDef, ClientSolutionConfig } from './types';
@@ -67,7 +67,11 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   const registry = services.some((m) => m.name.toLowerCase() === 'logger')
     ? services
     : [...services, buildLoggerModule(() => {})];
-  const schema = buildDslSchema(config, registry);
+  // The platform's `rt_sys_apps` is added to the model checked (§2.4), so an
+  // app's own activities are typed against it — and no script may change one.
+  const schema = buildDslSchema({ ...config, recordTypes: [...config.recordTypes, APPS_RECORD_TYPE_DEF] }, registry);
+  const appsType = shortName(APPS_RECORD_TYPE);
+  schema.types[appsType] = { ...schema.types[appsType], readOnly: true };
   const findings: Finding[] = [];
 
   const note = (where: string, message: string) => {
@@ -252,11 +256,15 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   // workflow lists is the app's own: it may only log or read (a CREATE would
   // have no type to make, an UPDATE or DELETE would change the app itself).
   // An item's condition is checked as the activity's own is, against each
-  // record type the activity runs on — untyped for the app's own until step 5
-  // gives `rt_sys_apps` its definition. A condition on any other workflow is an
-  // error, and so is a record type pointing at a page's list.
+  // record type the activity runs on — `rt_sys_apps` for the app's own, which
+  // runs on its app's record. A condition on any other workflow is an error,
+  // and so is a record type pointing at a page's list.
   const appLists = options.appLists ?? new Set<string>();
   const poolById = new Map(pool.map((a) => [a.id, a]));
+  const appsOwn = new Set(config.workflows
+    .filter((w) => appLists.has(w.id))
+    .flatMap((w) => w.activities.map((u) => u.activity_ref))
+    .filter((id) => (typesByActivity.get(id) ?? []).length === 0));
   for (const rt of config.recordTypes) {
     if (appLists.has(rt.workflow_ref)) {
       note(`record type '${rt.id}'`, `points at '${rt.workflow_ref}', which a page names as its app's list — a record type needs a workflow of its own`);
@@ -275,10 +283,10 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
         note(`workflow '${workflow.id}'`, `'${activity.id}' is the app's own (in no record type's workflow), so it may only log or read — not ${activity.record_map}`);
       }
       if (!usage.show_condition?.trim()) continue;
-      const anchors = types.length > 0 ? types : [undefined];
+      const anchors = types.length > 0 ? types : [APPS_RECORD_TYPE];
       for (const typeId of anchors) {
         const diagnostics = validateExpression(usage.show_condition, schema, {
-          anchorType: typeId ? shortName(typeId) : undefined,
+          anchorType: shortName(typeId),
           bannedRoots: ['attributes'],
           functions,
         });
@@ -428,11 +436,13 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
     // fit every type that uses it, so `context.record` is typed as each in
     // turn. A problem every type has (syntax, an unknown function, a bad
     // invoke id) does not depend on the type and is reported once; the rest
-    // name the type they fail on. An activity no record type reaches is
+    // name the type they fail on. An app's own activity (on a page's list, in
+    // no record type's workflow) runs on its app's record, so it is checked
+    // against `rt_sys_apps`. Any other activity no record type reaches is
     // checked untyped, so field typos surface once a workflow includes it.
     const types = typesByActivity.get(activity.id) ?? [];
     if (types.length === 0) {
-      findings.push(...activityScripts(activity, undefined));
+      findings.push(...activityScripts(activity, appsOwn.has(activity.id) ? appsType : undefined));
     } else {
       const perType = types.map((typeId) => ({ typeId, found: activityScripts(activity, shortName(typeId)) }));
       const keyOf = (f: Finding) => `${f.where}\u0000${f.diagnostic.severity}\u0000${f.diagnostic.message}\u0000${f.diagnostic.line}:${f.diagnostic.col}`;

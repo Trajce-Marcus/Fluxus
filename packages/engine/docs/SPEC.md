@@ -125,7 +125,8 @@ the store (`Engine<S>`), so `engine.store` keeps its type — a browser host's
 - `engine.runQuery(activity, captured, anchorRecord, options?)` — the read
   pipeline; see "GET activities" below. Refuses anything that is not a GET.
   Records the run on the anchor, logged light. `options.condition` is the
-  app's own on the GET, gated as a write's is (since 2026-10-18).
+  app's own on the GET, gated as a write's is (since 2026-10-18);
+  `options.log: false` leaves no entry (an app's own GET, step 5).
 - `engine.activityAvailabilityAsync(activity, anchorRecord)` /
   `isActivityAvailableAsync(...)` — the activity-level `show_condition` gate,
   strictly `true`, fail-closed. `runActivity`/`runQuery` check it as the
@@ -870,10 +871,33 @@ solution defines (§2.4). `platformApps.ts` holds the platform's ids for it:
 `APPS_RECORD_TYPE` (`rt_sys_apps`), `APPS_WORKFLOW` (`wf_sys_apps`), and the
 history entries a Console change and the step 2 migration leave on an app,
 `CONSOLE_EDIT` (`sys_console_edit` / "Changed in the Console") and
-`MIGRATION_EDIT` (`sys_migration` / "Created by the migration"). Until step 5
-they are ids only — the engine has no definition of the type, and the server
+`MIGRATION_EDIT` (`sys_migration` / "Created by the migration"). The server
 reads and writes its rows directly. **`validateConfig` refuses a record type,
 workflow or activity using any of the four** (`RESERVED_IDS`).
+
+**The type's definition** (step 5): `APPS_RECORD_TYPE_DEF` — the fields
+`page_id`, `label` and `definition`, not the stored `role_ids` (scripts never
+see an app's roles) — and `APPS_WORKFLOW_DEF`, empty. Defined once, never
+stored, never sent to a browser. **`validateConfig` adds the type to the model
+it checks**, marked `readOnly` in the DSL schema: an **app's own activity** (on
+a workflow in `appLists`, in no record type's workflow) has its scripts checked
+with `context.record` typed as `sys_apps`, and an item's condition on one is
+too; a hook that updates or deletes it is an error. Elsewhere the type is
+reachable by name only — `records.sys_apps` passes the save check, and finds
+nothing at run time, since the records root is built from the solution's own
+types. **At run time** the engine's mutation hosts refuse an update or delete
+of an app's record (`refuseApp`, bridge.ts) — they key on the record's id
+alone, so without it a hook holding its app as `context.record` could write
+it.
+
+**`context.app`** (step 5, §2.2): `createEngine({ …, app })` takes the app a
+call came through (`AppScope`: `pageId`, `label`, `definition` parsed), and
+every script the engine runs sees it as `context.app` — availability
+conditions, hooks, a GET's `returns`, what `invoke` reaches, and
+`evaluate`/`evaluateAsync` — beside whatever the caller put in the context
+(the caller's own `contextExtras.app` wins, as a page's does). **An app's own
+GET is unlogged**: `runQuery(…, { log: false })` runs on its anchor — the
+app's record — without an entry there (§2.4).
 `newRecordId()` issues a record id (UUIDv7, as `shapeNewRecord` always has), so
 the server can issue an app's.
 
@@ -888,8 +912,8 @@ the app's, each strictly `true` and failing closed, with the same `context`.
 app's list to the workflows the caller names (the server passes the ones pages
 name): an activity on one that no record type's workflow lists is the app's
 own and may only log or read; an item's condition is checked as the activity's
-own is, against each record type the activity runs on (untyped for the app's
-own until step 5 defines `rt_sys_apps`); a condition on any other workflow is an
+own is, against each record type the activity runs on (`rt_sys_apps` for the
+app's own, since step 5); a condition on any other workflow is an
 error; a record type pointing at a page's list is an error. With no `appLists`,
 none of it applies, so ordinary editing of a record type's workflow is
 untouched.

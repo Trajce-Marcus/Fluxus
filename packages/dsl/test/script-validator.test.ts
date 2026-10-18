@@ -216,3 +216,19 @@ describe('script validation — named functions', () => {
     expect(diags).toEqual([]);
   });
 });
+
+describe('script validation — a read-only type', () => {
+  // The host marks a type no script may change (the platform's apps,
+  // APPS_AND_INSTANCES §2.4): update and delete are refused, reads are not.
+  const RO: DslSchema = { types: { ...SCHEMA.types, sys_apps: { fields: { label: { type: 'text' } }, readOnly: true } } };
+  const roErrors = (source: string) => validateScript(source, RO, { anchorType: 'sys_apps', mode: 'after' }).map((d) => d.message);
+
+  it('refuses update and delete of the anchor', () => {
+    expect(roErrors("context.record.update({ label: 'x' })")).toEqual([expect.stringMatching(/sys_apps records never change through a script — update\(\)/)]);
+    expect(roErrors('context.record.delete()')).toEqual([expect.stringMatching(/sys_apps records never change through a script — delete\(\)/)]);
+  });
+
+  it('lets a script read it and change other records', () => {
+    expect(roErrors("records.workgroups.where(name = context.record.label).update({ last_assigned: 'x' })")).toEqual([]);
+  });
+});

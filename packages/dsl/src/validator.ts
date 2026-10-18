@@ -25,6 +25,12 @@ export interface FieldSchema {
 
 export interface TypeSchema {
   fields: Record<string, FieldSchema>;
+  /**
+   * A type no script may change: `update()` and `delete()` on its records are
+   * errors. The host says which — e.g. the platform's record of an app in an
+   * operation's apps list, which changes only where it is set up.
+   */
+  readOnly?: boolean;
 }
 
 /** Manifest half of a service function — what the validator checks calls against. */
@@ -776,6 +782,10 @@ class Validator {
       object.kind === 'record' || object.kind === 'recordList'
         ? object.type
         : this.options.anchorType ?? null;
+
+    if (method !== 'create' && type !== null && this.schema.types[type]?.readOnly) {
+      this.error(expr, `${type} records never change through a script — ${method}() is not allowed on them`);
+    }
 
     if (method === 'create') {
       if (object.kind !== 'recordList' || !object.collection) {
