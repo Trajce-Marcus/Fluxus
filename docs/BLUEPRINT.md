@@ -136,7 +136,12 @@ Solutions with no roles in dev (next-solution, primary-school-victoria,
 inspections) go dark until roles are set up.
 
 **Direction — page-level checks on the server come with apps Part 2**
-([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)). Today a call carries the action
+([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md)). *Partly built 2026-10-18 (step
+2): every Runtime call names its app, and the server checks the app is the
+operation's and the caller holds one of its roles, and that the caller may read
+every record the call sends, reference fields included; a call with no app is
+an operation admin's, who reads every record in it. Checking the activity
+against the app's own list comes with steps 3–4.* Today a call carries the action
 and its record, not the page, so the server cannot tell which page it came
 from, and a create — which has no existing record to check — is not
 role-checked. Part 2 makes every call from the Runtime carry the id of its
@@ -514,7 +519,7 @@ other's activities, never by reading each other's records.**
 >   check that an activity runs only on a record whose type's workflow includes
 >   it was deferred on 2026-10-10 and is now Part 2's first step (the user:
 >   "must not pass").
-> - **Apps and the apps list (2026-10-17).** An **app** is the thing that is
+> - **Apps and the apps list (2026-10-17) — BUILT 2026-10-18 (step 2).** An **app** is the thing that is
 >   built: it does something, with or without record types, with a UI or
 >   (later) as an automation. For now a UI app is a page. The solution's apps
 >   are simply its published pages. An operation admin picks apps into the

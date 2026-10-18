@@ -13,7 +13,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { APPS_RECORD_TYPE, CONSOLE_EDIT, newRecordId, type ActivityHistoryEntry, type SolutionConfig } from '@fluxus/engine';
-import type { Db, DbOrTx } from './db/client';
+import type { DbOrTx } from './db/client';
 import { records, type MenuGroup, type MenuItem, type MenuLeaf, type OperationConfig } from './db/schema';
 import { appendHistoryEntry } from './databaseStore';
 import { MenuValidationError, isPagePublished, listPublishedPages } from './host';
@@ -122,11 +122,13 @@ export interface AppInput {
  * changes nothing writes nothing.
  */
 export async function putApp(
-  db: Db,
+  db: DbOrTx,
   operationId: string,
   input: AppInput,
   solution: { publishedPages: ReadonlySet<string>; config: SolutionConfig },
   author: string,
+  /** The history entry's activity: a Console change, or the step 2 migration. */
+  edit: { id: string; name: string } = CONSOLE_EDIT,
 ): Promise<{ id: string }> {
   const findings: string[] = [];
   const label = input.label.trim();
@@ -164,8 +166,8 @@ export async function putApp(
         .where(and(eq(records.operationId, operationId), eq(records.id, id)));
     }
     const entry: ActivityHistoryEntry = {
-      activityId: CONSOLE_EDIT.id,
-      activityName: CONSOLE_EDIT.name,
+      activityId: edit.id,
+      activityName: edit.name,
       author,
       capturedAttributes: changed,
       timestamp: new Date().toISOString(),

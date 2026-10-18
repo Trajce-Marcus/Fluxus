@@ -9,7 +9,9 @@ the 2026-10-16 cold review left. A second cold review the same day left five
 decisions and 18 fixes; the decisions were settled with the user on 2026-10-18
 and Part 2 revised with them and the fixes (§ Second cold review). Built in six
 steps, each checked before the next (§2.10). **Step 1 BUILT 2026-10-18.**
-Step 2's names settled with the user the same day (§ Names). Built from
+Step 2's names settled with the user the same day (§ Names). **Step 2 BUILT
+2026-10-18** (four commits; its script written and tested, not yet run — the
+user runs it after the deploy, §2.8). Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
@@ -789,14 +791,21 @@ draft called an app in the list a "config"; the user ruled the word out.)
 
 ### 2.8 Migration
 
-Measured on the dev database 2026-10-15 (re-measure before building): three
+Measured on the dev database 2026-10-15, **re-measured 2026-10-18 before
+building step 2 — unchanged** (read-only; no `rt_sys_apps` rows, reserved ids
+unused, no page using `instances: 'one'`; links between pages only in
+`projects`: four OpenPage buttons and one `services.page.open`): three
 solutions have pages — `demo/sdm` (2 pages, both on its default menu, 2
 operations), `projects` (8 pages, 1 on its default menu, 1 operation) and
 `inspections` (12 pages, 8 on its default menu, 1 operation).
 `next-solution` and `primary-school-victoria` have no pages and no default
 menu (3 operations), and get nothing. No operation has a menu of its own.
 
-**Step 2 — a one-off TypeScript script** (UUIDv7 ids exist only in
+**Step 2 — a one-off TypeScript script**, `packages/server/scripts/apps-step2.ts`:
+`npx tsx scripts/apps-step2.ts` prints what it would do and writes nothing;
+`--apply` writes it, one transaction per operation; an operation that already
+has apps is skipped, so a second run does nothing; migrations are not applied
+(UUIDv7 ids exist only in
 TypeScript, `memoryAdapter.ts:1,391`), run by the user **after** the step 2
 deploy: old code would refuse every model save once `rt_sys_apps` rows exist
 (`host.ts:651-662`), and the step 2 code excludes them. It prints what it will
@@ -901,7 +910,7 @@ Each step works on its own and is cold-tested before the next.
    page runs an activity on a record of another type (likely source:
    `ComponentContainer.tsx:144` anchors no-record runs on the page's record);
    if one would break, stop and report to the user.
-2. **The apps list and the app menu.** `rt_sys_apps` rows kept out of general
+2. **The apps list and the app menu — BUILT 2026-10-18.** `rt_sys_apps` rows kept out of general
    reads, and calls sending their ids refused; `apps.list`, `apps.put`,
    `apps.user`; the Console's apps list and menu editor; operation admins in
    the Console (who sees what, `config.get`, `pages.publishedPaths`, connecting
@@ -914,6 +923,25 @@ Each step works on its own and is cold-tested before the next.
    `instances` removed; the step 2 script. Until step 3, a call that passes
    checks 1, 2 and 5 is offered and run as today: the record type's workflow
    and the activity's own condition.
+
+   *As built* (choices made in the build that the spec left open, each a
+   working default — mentioned to the user rather than raised): an app's
+   history is fetched by `apps.get` when its dialog opens, not sent with the
+   list (the user's question); a change to the menu leaves no history entry —
+   the menu is the operation's, not an app's; `operations.list` leaves the menu
+   out as `operations.get` does; the Console learns whether the caller may
+   design from a refusal of the draft pages (`solutionAdmin`), and which
+   operations they administer from `me` per operation — its Overview and
+   Settings still count every operation; the model builder's Menu editor and
+   `config.putDefaultMenu` went now, the stored default menu staying until
+   step 3; in the Console's preview `context.app` is the page's own path and an
+   empty definition, and `services.app.open` says it cannot open apps (a
+   preview definition is parked, §2.9); FluxScript folds an object literal's
+   keys, so `{ recordId }` is read without regard to case; the reference read
+   check covers composite cells and references that name no target type;
+   `files.*` also check that the operation runs the solution named. The step 2
+   script is `packages/server/scripts/apps-step2.ts` (§2.8), tested against an
+   in-memory database shaped like dev (`test/appsStep2.test.ts`).
 3. **The app's list — acts.** `PageDef.workflowId` and items' conditions;
    `typeId` on runs; checks 3, 4 and 6 for runs and `page.activities`; the
    app-list rules at model save for workflows pages name; the page's list

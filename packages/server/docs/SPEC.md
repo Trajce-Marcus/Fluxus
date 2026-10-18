@@ -668,6 +668,14 @@ app or none: `operations.get`, `config.getForOperation`, `me`, `apps.user` and
 `perf.*`; draft `pages.list` is solution admins only. With sign-in off, open.
 `callAccess` / `requireNoAppCaller` in the router.
 
+**The step 2 script** (`scripts/apps-step2.ts`, one-off, §2.8) gives every
+operation an app for each published page of its solution — named from its old
+effective menu, roles from the page's old `access.open`, definition `{}`, first
+history entry `sys_migration` — and rebuilds its menu to point at them. It
+prints first; `--apply` writes, one transaction per operation (`putApp` takes
+the entry's activity and the caller's transaction); an operation that has apps
+is skipped. Run by the user after the deploy. Tested in `test/appsStep2.test.ts`.
+
 Tests: `test/apps.test.ts`, `test/menu.test.ts`, `test/rbac.test.ts` ("calls
 with no app"); tests about what a role may read or do go through an app
 (`test/appFor.ts`).
