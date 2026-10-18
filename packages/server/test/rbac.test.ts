@@ -11,6 +11,8 @@ import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
 import type { SolutionConfig, ContextUser } from '@fluxus/engine';
+import { appFor } from './appFor';
+import { appointOpAdmin } from '../src/host';
 
 const SOL = 'test/rbac';
 const OP = 'test/rbac';
@@ -49,6 +51,9 @@ const u2: ContextUser = { id: 'u2', name: 'U2', email: 'u2@example.com', roles: 
 const enforced = (user: ContextUser) => appRouter.createCaller({ db, user, roles: createDbRolesResolver(db), authConfigured: true });
 // Env-stub caller: no authConfigured ⇒ everything open.
 const open = () => appRouter.createCaller({ db });
+// Reads by role go through an app both roles may run (APPS_AND_INSTANCES §2.3).
+let appId: string;
+const admin: ContextUser = { id: 'u-admin', name: 'Admin', email: 'admin@example.com', roles: [] }; // op admin, no roles
 
 beforeAll(async () => {
   db = await createDb();
@@ -65,50 +70,76 @@ beforeAll(async () => {
     await inviteUser(db, { email });
     await addOpUser(db, { operationId: OP, email });
   }
+  await inviteUser(db, { email: 'admin@example.com' });
+  await appointOpAdmin(db, { operationId: OP, email: 'admin@example.com' });
+  appId = await appFor(db, { solutionId: SOL, operationId: OP, roleIds: ['role_a', 'role_b'] });
 });
 
 describe('record-type read filter (default deny, enforced when configured)', () => {
-  it('partition returns only the readable type', async () => {
-    const rows = await enforced(u1).records.partition({ operationId: OP });
-    expect(rows.map((r) => r.id).sort()).toEqual(['A1']); // rt_beta + rt_gamma hidden
-  });
-
   // Access denied, not not-found, since 2026-10-12 (the user's ruling: showing
   // nothing misleads more than saying access is denied).
   it('get refuses an unreadable record as access denied, and a missing one as not found', async () => {
-    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'B1' })).rejects.toThrow('Record access denied');
-    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'NO_SUCH' })).rejects.toThrow(/not found/i);
-    const a = await enforced(u1).records.get({ operationId: OP, recordId: 'A1' });
+    await expect(enforced(u1).records.get({ operationId: OP, appId, recordId: 'B1' })).rejects.toThrow('Record access denied');
+    await expect(enforced(u1).records.get({ operationId: OP, appId, recordId: 'NO_SUCH' })).rejects.toThrow(/not found/i);
+    const a = await enforced(u1).records.get({ operationId: OP, appId, recordId: 'A1' });
     expect(a.id).toBe('A1');
   });
 
-  it('list of an unreadable type is empty, readable type returns rows', async () => {
-    expect(await enforced(u1).records.list({ operationId: OP, typeId: 'rt_beta' })).toEqual([]);
-    expect((await enforced(u1).records.list({ operationId: OP, typeId: 'rt_alpha' })).map((r) => r.id)).toEqual(['A1']);
-  });
-
   it('a type with no access.read is denied (default deny)', async () => {
-    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'G1' })).rejects.toThrow('Record access denied');
+    await expect(enforced(u1).records.get({ operationId: OP, appId, recordId: 'G1' })).rejects.toThrow('Record access denied');
   });
 
   it('running an activity on an unreadable anchor is access denied (before the gate)', async () => {
     await expect(
-      enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_beta', recordId: 'B1', attributes: { note: 'x' } }),
+      enforced(u1).activities.run({ operationId: OP, appId, activityId: 'act_touch_beta', recordId: 'B1', attributes: { note: 'x' } }),
     ).rejects.toThrow('Record access denied');
   });
 
   it('running an activity on a readable anchor proceeds', async () => {
-    const res = await enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_alpha', recordId: 'A1', attributes: { note: 'x' } });
+    const res = await enforced(u1).activities.run({ operationId: OP, appId, activityId: 'act_touch_alpha', recordId: 'A1', attributes: { note: 'x' } });
     expect(res.status).toBe('done');
   });
 
-  it('an unassigned user sees nothing', async () => {
-    expect(await enforced(u2).records.partition({ operationId: OP })).toEqual([]);
+  it('an unassigned user may run no app, so reads nothing', async () => {
+    await expect(enforced(u2).records.get({ operationId: OP, appId, recordId: 'A1' })).rejects.toThrow(/may not run/);
   });
 
   it('the env stub (auth unconfigured) leaves everything open', async () => {
     const rows = await open().records.partition({ operationId: OP });
     expect(rows.map((r) => r.id).sort()).toEqual(['A1', 'B1', 'G1']);
+  });
+});
+
+// A call with no app (APPS_AND_INSTANCES §2.3, ruled 2026-10-17): an admin of
+// the operation, who reads every record in it whatever their roles; refused
+// for anyone else.
+describe('calls with no app — operation admins only', () => {
+  it('lets an operation admin with no roles read every record type', async () => {
+    const rows = await enforced(admin).records.partition({ operationId: OP });
+    expect(rows.map((r) => r.id).sort()).toEqual(['A1', 'B1', 'G1']);
+    expect((await enforced(admin).records.list({ operationId: OP, typeId: 'rt_beta' })).map((r) => r.id)).toEqual(['B1']);
+    await expect(enforced(admin).records.get({ operationId: OP, recordId: 'G1' })).resolves.toMatchObject({ id: 'G1' });
+    await expect(enforced(admin).activities.run({ operationId: OP, activityId: 'act_touch_beta', recordId: 'B1', attributes: { note: 'x' } }))
+      .resolves.toMatchObject({ status: 'done' });
+  });
+
+  it('refuses anyone else, whatever their roles', async () => {
+    const noApp = /names no app, so it is for admins of operation/;
+    await expect(enforced(u1).records.partition({ operationId: OP })).rejects.toThrow(noApp);
+    await expect(enforced(u1).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(noApp);
+    await expect(enforced(u1).records.get({ operationId: OP, recordId: 'A1' })).rejects.toThrow(noApp);
+    await expect(enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_alpha', recordId: 'A1', attributes: { note: 'x' } })).rejects.toThrow(noApp);
+    await expect(enforced(u1).page.activities({ operationId: OP, items: [{ recordId: 'A1' }] })).rejects.toThrow(noApp);
+    await expect(enforced(u1).scripts.query({ operationId: OP, source: 'records.alpha' })).rejects.toThrow(noApp);
+    await expect(enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true })).rejects.toThrow(noApp);
+    await expect(enforced(u1).files.presignGet({ solutionId: SOL, operationId: OP, key: 'k' })).rejects.toThrow(noApp);
+  });
+
+  it('an operation admin is no admin of another operation', async () => {
+    const OTHER = 'test/rbac-other';
+    await ensureOperation(db, OTHER, SOL, 'RBAC other');
+    await addOpUser(db, { operationId: OTHER, email: 'admin@example.com' });
+    await expect(enforced(admin).records.partition({ operationId: OTHER })).rejects.toThrow(/names no app/);
   });
 });
 

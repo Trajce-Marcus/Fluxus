@@ -403,6 +403,16 @@ Pinned by `packages/server/test/scriptResultWire.test.ts`.
 
 ### Access
 
+**Operation admins only, since 2026-10-18** ([APPS_AND_INSTANCES](../../../docs/APPS_AND_INSTANCES.md)
+§2.3). `scripts.query` is a call with no app, and such a call is refused unless
+the caller is an admin of that operation, who then reads every record in it
+whatever their roles — so a script reading every type is theirs. **Reversed: the
+entry gate alone** (below, ruled 2026-09-21). It let any user of the operation
+call this endpoint directly and read every record type, including types their
+roles hide; the user's 2026-10-17 ruling — calls with no app are for operation
+admins only, the operation being the data boundary — closed that. The text
+below is the design as it stood until then.
+
 **Entry gate only: `requireOpUser`** — the same gate the workbench's data door
 uses.
 

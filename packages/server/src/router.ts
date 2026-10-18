@@ -129,12 +129,40 @@ async function operationContext(ctx: AppContext, operationId: string): Promise<{
   return { user, config };
 }
 
-async function readableTypeIds(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; readable: Set<string> | null }> {
-  const user = await resolveUser(ctx, operationId);
-  if (!ctx.authConfigured) return { user, readable: null };
-  const op = await getOperation(ctx.db, operationId);
-  const config = await getSolutionConfig(ctx.db, op.solutionId);
-  return { user, readable: computeReadable(ctx.authConfigured, config, user.roles) };
+/**
+ * A call that names no app (APPS_AND_INSTANCES §2.3) is refused unless the
+ * caller is an **admin of that operation**, who then reads every record in it,
+ * whatever their roles — and nothing in operations they are not admins of. It
+ * governs exactly the calls on the closed list: `activities.run`,
+ * `activities.query`, `page.activities`, `records.get`, `records.list`,
+ * `records.partition`, `scripts.query`, published `pages.list` and `files.*` —
+ * the Console's workbench, DSL Editor and page preview. With sign-in off,
+ * open, as every gate is.
+ */
+async function requireNoAppCaller(ctx: AppContext, op: { id: string; orgId: string }): Promise<void> {
+  if (!ctx.authConfigured) return;
+  if (await isOpAdmin(ctx, op.id, op.orgId)) return;
+  throw new TRPCError({ code: 'FORBIDDEN', message: `This call names no app, so it is for admins of operation '${op.id}' only` });
+}
+
+/**
+ * Who may make a call on the closed list, and which record types they read in
+ * it: with an app, checks 1 and 2 and then their read rules; with none, an
+ * operation admin, who reads them all (null).
+ */
+async function callAccess(
+  ctx: AppContext,
+  op: { id: string; orgId: string; solutionId: string },
+  appId: string | undefined,
+  user: AuthUser,
+  config: SolutionConfig,
+): Promise<Set<string> | null> {
+  if (appId === undefined) {
+    await requireNoAppCaller(ctx, op);
+    return null;
+  }
+  await checkCallApp(ctx, op, appId, user);
+  return computeReadable(ctx.authConfigured, config, user.roles);
 }
 
 /** How far `records.get` follows references: two levels covers a page that
@@ -224,10 +252,9 @@ function withoutMenu<T extends { config: OperationConfig }>(op: T): T {
  * Checks 1 and 2 (APPS_AND_INSTANCES §2.3) for a call that names its app: the
  * app is in the call's operation's apps list with its page published, and the
  * caller holds one of its roles (with sign-in off, open). Run before anything
- * the call asks for. A call naming no app is checked as it was before apps.
+ * the call asks for.
  */
-async function checkCallApp(ctx: AppContext, op: { id: string; solutionId: string }, appId: string | undefined, user: AuthUser): Promise<void> {
-  if (appId === undefined) return;
+async function checkCallApp(ctx: AppContext, op: { id: string; solutionId: string }, appId: string, user: AuthUser): Promise<void> {
   const app = await loadAppForCall(ctx.db, op.id, op.solutionId, appId);
   if (!mayRunApp(app, ctx.authConfigured, user.roles)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: `You may not run '${app.label}'` });
@@ -235,14 +262,15 @@ async function checkCallApp(ctx: AppContext, op: { id: string; solutionId: strin
 }
 
 /** `files.*` (§2.3): the operation's entry gate, the operation running the
- *  solution named, and checks 1–2 when the call names an app. */
+ *  solution named, and checks 1–2 — or, naming no app, an operation admin. */
 async function fileCallAccess(ctx: AppContext, input: { solutionId: string; operationId: string; appId?: string }): Promise<void> {
   const user = await resolveUser(ctx, input.operationId);
   const op = await getOperation(ctx.db, input.operationId);
   if (op.solutionId !== input.solutionId) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: `Operation '${op.id}' does not run solution '${input.solutionId}'` });
   }
-  await checkCallApp(ctx, op, input.appId, user);
+  if (input.appId === undefined) await requireNoAppCaller(ctx, op);
+  else await checkCallApp(ctx, op, input.appId, user);
 }
 
 /** The app a Runtime call names: the id of an app in the operation's apps list. */
@@ -748,13 +776,19 @@ export const appRouter = t.router({
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
           // Failing check 1 or 2 answers empty, not an error (§2.3): the
-          // question is what this caller may do here.
-          try {
-            await checkCallApp(ctx, { id: input.operationId, solutionId: host.solutionId }, input.appId, user);
-          } catch {
-            return input.items.map(() => []);
+          // question is what this caller may do here. Naming no app is the
+          // no-app rule's, and refused for anyone but an operation admin.
+          const op = { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId };
+          let readable: Set<string> | null;
+          if (input.appId === undefined) {
+            readable = await callAccess(ctx, op, undefined, user, host.config);
+          } else {
+            try {
+              readable = await callAccess(ctx, op, input.appId, user, host.config);
+            } catch {
+              return input.items.map(() => []);
+            }
           }
-          const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
           const workflowOf = (typeId: string): ActivityDef[] | null => {
             try { return host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
           };
@@ -794,11 +828,16 @@ export const appRouter = t.router({
             await requireSolAdmin(ctx, input.solutionId);
             return await listPages(ctx.db, input.solutionId);
           }
-          // Published mode: every published page. Who may open one is no longer
-          // the page's to say (`access.open` went, APPS_AND_INSTANCES §2.2) — it
-          // is the app's in the operation's apps list, and the Runtime receives
-          // its pages through `apps.user`.
-          await resolveUser(ctx, input.operationId ?? input.solutionId);
+          // Published mode: every published page, for an operation's admin — a
+          // call with no app (§2.3). Who may open a page is no longer the page's
+          // to say (`access.open` went, §2.2): it is the app's, in the
+          // operation's apps list, and the Runtime receives its apps' pages
+          // through `apps.user`.
+          if (ctx.authConfigured) {
+            const operationId = input.operationId ?? input.solutionId;
+            await resolveUser(ctx, operationId);
+            await requireNoAppCaller(ctx, await getOperation(ctx.db, operationId));
+          }
           return await listPublishedPages(ctx.db, input.solutionId);
         } catch (err) {
           rethrow(err);
@@ -984,13 +1023,13 @@ export const appRouter = t.router({
       .input(z.object({ operationId: operationInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          const { readable } = await readableTypeIds(ctx, input.operationId);
-          // Never the operation's apps (APPS_AND_INSTANCES §2.4) — with sign-in
-          // off `readable` is null and would let them through.
+          // A call with no app (§2.3): an operation admin, who reads every
+          // record type — but never the operation's apps (§2.4).
+          await resolveUser(ctx, input.operationId);
+          await requireNoAppCaller(ctx, await getOperation(ctx.db, input.operationId));
           const rows = await ctx.db.select().from(records)
             .where(and(eq(records.operationId, input.operationId), ne(records.typeRef, APPS_RECORD_TYPE)));
           return rows
-            .filter((r) => readable === null || readable.has(r.typeRef))
             .map((r) => ({
               id: r.id,
               typeRef: r.typeRef,
@@ -1005,9 +1044,10 @@ export const appRouter = t.router({
       .input(z.object({ operationId: operationInput, typeId: z.string().min(1) }))
       .query(async ({ ctx, input }) => {
         try {
-          const { readable } = await readableTypeIds(ctx, input.operationId);
+          // A call with no app (§2.3): an operation admin, who reads every type.
+          await resolveUser(ctx, input.operationId);
+          await requireNoAppCaller(ctx, await getOperation(ctx.db, input.operationId));
           if (input.typeId === APPS_RECORD_TYPE) return [];
-          if (readable !== null && !readable.has(input.typeId)) return [];
           const rows = await ctx.db
             .select()
             .from(records)
@@ -1028,8 +1068,8 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const op = await getOperation(ctx.db, input.operationId);
-          await checkCallApp(ctx, op, input.appId, user);
-          const { readable } = await readableTypeIds(ctx, input.operationId);
+          const config = await getSolutionConfig(ctx.db, op.solutionId);
+          const readable = await callAccess(ctx, op, input.appId, user, config);
           const rows = await ctx.db
             .select()
             .from(records)
@@ -1039,7 +1079,6 @@ export const appRouter = t.router({
           }
           if (isAppRecord(rows[0]) || (readable !== null && !readable.has(rows[0].typeRef))) throw accessDenied();
           const r = rows[0];
-          const config = await getSolutionConfig(ctx.db, op.solutionId);
           const { found, withheld } = await referencedRecords(ctx.db, input.operationId, config, readable, [r]);
           return {
             id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: r.activityHistory,
@@ -1080,7 +1119,7 @@ export const appRouter = t.router({
           // availability gate may read context.user.roles.
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          await checkCallApp(ctx, { id: input.operationId, solutionId: host.solutionId }, input.appId, user);
+          const readable = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -1106,7 +1145,6 @@ export const appRouter = t.router({
               // (2026-10-12; not-found before). Reuses the already-loaded
               // config + resolved roles. An operation's app is never a run's
               // record (APPS_AND_INSTANCES §2.3).
-              const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
               if (isAppRecord(anchorRecord) || (readable !== null && !readable.has(anchorRecord.typeRef))) throw accessDenied();
               // Only an activity that belongs to the record may run on it
               // (APPS_AND_INSTANCES §1.5, Part 2 step 1): the record's type's
@@ -1126,7 +1164,6 @@ export const appRouter = t.router({
 
             // Check 5 (§2.3) covers what the run's reference fields send back:
             // a record the caller may not read is refused, as its anchor is.
-            const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
             const canRead = (r: { typeRef: string }) => !isAppRecord(r) && (readable === null || readable.has(r.typeRef));
             const issues = await withSpan('validate', activity.id, () =>
               validateSubmission(host.engine, activity, input.attributes, anchorRecord, input.waived ?? {}, canRead));
@@ -1198,7 +1235,7 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          await checkCallApp(ctx, { id: input.operationId, solutionId: host.solutionId }, input.appId, user);
+          const readable = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
 
           const activity = findActivity(host, input.activityId);
           if (!activity) {
@@ -1215,7 +1252,6 @@ export const appRouter = t.router({
           let anchorRecord = null;
           if (input.recordId) {
             anchorRecord = await host.store.getRecord(input.recordId);
-            const readable = computeReadable(ctx.authConfigured, host.config, user.roles);
             if (isAppRecord(anchorRecord) || (readable !== null && !readable.has(anchorRecord.typeRef))) throw accessDenied();
           }
 
@@ -1277,12 +1313,13 @@ export const appRouter = t.router({
       )
       .query(async ({ ctx, input }): Promise<ScriptQueryResult> => {
         try {
-          // Entry gate only (DSL_EDITOR_SPEC §10). Deliberately NOT the
-          // readable-type filter `records.partition` applies: a script reads
-          // every type in the operation, accepted because the Console is
-          // reachable only by solution designers.
+          // A call with no app (APPS_AND_INSTANCES §2.3): an admin of the
+          // operation, who reads every record in it — so a script reading every
+          // type is theirs to run. Until 2026-10-18 the entry gate alone let any
+          // user of the operation do it (DSL_EDITOR_SPEC §10, reversed).
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
+          await requireNoAppCaller(ctx, { id: input.operationId, orgId: host.orgId });
 
           const started = Date.now();
           try {

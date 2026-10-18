@@ -47,8 +47,12 @@ beforeAll(async () => {
 
 describe('published pages (APPS_AND_INSTANCES §2.2)', () => {
   it('lists every published page — who may open one is the app\'s to say, not the page\'s', async () => {
-    const pages = await enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true });
+    const pages = await open().pages.list({ solutionId: SOL, operationId: OP, published: true });
     expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1', 'pages/p2', 'pages/p3']);
+  });
+
+  it('is a call with no app, so an operation admin\'s (§2.3)', async () => {
+    await expect(enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true })).rejects.toThrow(/names no app/);
   });
 
   it('draft mode is the design plane: solution admins only (APPS_AND_INSTANCES §2.3)', async () => {

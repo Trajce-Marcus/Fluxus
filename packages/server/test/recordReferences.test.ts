@@ -10,6 +10,7 @@ import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putU
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
+import { appFor } from './appFor';
 import type { ContextUser, SolutionConfig } from '@fluxus/engine';
 
 const SOL = 'test/record-references';
@@ -37,6 +38,7 @@ const config: SolutionConfig = {
 let db: Db;
 const user: ContextUser = { id: 'u1', name: 'U1', email: 'u1@example.com', roles: [] };
 const as = () => appRouter.createCaller({ db, user, roles: createDbRolesResolver(db), authConfigured: true });
+let appId: string;
 const row = (id: string, typeRef: string, customFields: Record<string, unknown>) =>
   ({ operationId: OP, id, typeRef, customFields: { name: id, ...customFields }, activityHistory: [] });
 
@@ -55,18 +57,20 @@ beforeAll(async () => {
   await inviteUser(db, { email: user.email! });
   await addOpUser(db, { operationId: OP, email: user.email! });
   await putUserRoles(db, { operationId: OP, email: user.email!, roleIds: ['role_a'] });
+  // Read through an app the user's role may run (APPS_AND_INSTANCES §2.3).
+  appId = await appFor(db, { solutionId: SOL, operationId: OP, roleIds: ['role_a'] });
 });
 
 describe('records.get — the records a record points at', () => {
   it('follows references two levels, and no further', async () => {
-    const got = await as().records.get({ operationId: OP, recordId: 'F1' });
+    const got = await as().records.get({ operationId: OP, appId, recordId: 'F1' });
     expect(got.id).toBe('F1');
     // F1 → J1 (one level) → O1 (two); O1 → R1 would be a third.
     expect(got.references.map((r) => r.id).sort()).toEqual(['J1', 'O1']);
   });
 
   it('names a record the caller may not read as withheld, and skips a reference to a missing one', async () => {
-    const got = await as().records.get({ operationId: OP, recordId: 'F1' });
+    const got = await as().records.get({ operationId: OP, appId, recordId: 'F1' });
     expect(got.references.map((r) => r.id)).not.toContain('L1');
     expect(got.withheld).toEqual(['L1']);
     expect(got.references.map((r) => r.id)).not.toContain('NO_SUCH');
@@ -74,18 +78,18 @@ describe('records.get — the records a record points at', () => {
   });
 
   it('refuses a record the caller may not read as access denied', async () => {
-    await expect(as().records.get({ operationId: OP, recordId: 'L1' })).rejects.toThrow('Record access denied');
+    await expect(as().records.get({ operationId: OP, appId, recordId: 'L1' })).rejects.toThrow('Record access denied');
   });
 
   it('sends a referenced record whole, so its fields can be read', async () => {
-    const got = await as().records.get({ operationId: OP, recordId: 'J1' });
+    const got = await as().records.get({ operationId: OP, appId, recordId: 'J1' });
     const owner = got.references.find((r) => r.id === 'O1');
     expect(owner?.customFields.name).toBe('O1');
     expect(got.references.map((r) => r.id).sort()).toEqual(['O1', 'R1']);
   });
 
   it('sends nothing for a record that points nowhere', async () => {
-    const got = await as().records.get({ operationId: OP, recordId: 'R1' });
+    const got = await as().records.get({ operationId: OP, appId, recordId: 'R1' });
     expect(got.references).toEqual([]);
   });
 });

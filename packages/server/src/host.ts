@@ -45,6 +45,8 @@ export { DatabaseStore, RecordDeletedMeanwhileError, type WriteCounts } from './
  */
 export interface OperationHost {
   operationId: string;
+  /** The operation's org — what its admin check is asked about. */
+  orgId: string;
   solutionId: string;
   config: SolutionConfig;
   store: DatabaseStore;
@@ -140,7 +142,7 @@ export async function loadOperationHost(db: Db, operationId: string, sink: Notif
       // context.user for gates/hooks; entries record user.id as author.
       user,
     });
-    return { operationId, solutionId: op.solutionId, config, store, engine };
+    return { operationId, orgId: op.orgId, solutionId: op.solutionId, config, store, engine };
   });
 }
 

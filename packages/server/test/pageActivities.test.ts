@@ -11,6 +11,7 @@ import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
 import type { ActivityRawDef, ContextUser, SolutionConfig } from '@fluxus/engine';
+import { appFor } from './appFor';
 
 const SOL = 'test/page-activities';
 const OP = 'test/page-activities';
@@ -58,8 +59,10 @@ const boss: ContextUser = { id: 'u3', name: 'Boss', email: 'boss@example.com', r
 
 const as = (user: ContextUser) => appRouter.createCaller({ db, user, roles: createDbRolesResolver(db), authConfigured: true });
 const ids = (offered: { id: string }[]) => offered.map((a) => a.id);
+// Asked through an app every role here may run (APPS_AND_INSTANCES §2.3).
+let appId: string;
 const offered = async (user: ContextUser, item: { recordId: string } | { typeId: string }) =>
-  ids((await as(user).page.activities({ operationId: OP, items: [item] }))[0]);
+  ids((await as(user).page.activities({ operationId: OP, appId, items: [item] }))[0]);
 
 beforeAll(async () => {
   db = await createDb();
@@ -75,6 +78,7 @@ beforeAll(async () => {
     await addOpUser(db, { operationId: OP, email });
     await putUserRoles(db, { operationId: OP, email, roleIds: [role] });
   }
+  appId = await appFor(db, { solutionId: SOL, operationId: OP, roleIds: ['role_admin', 'role_inspector'] });
 });
 
 describe('page.activities — with the real user', () => {
@@ -85,7 +89,7 @@ describe('page.activities — with the real user', () => {
 
   // One rule: what is not offered is refused when run.
   it('refuses the other inspector when run', async () => {
-    await expect(as(ann).activities.run({ operationId: OP, activityId: 'act_start_jobs', recordId: 'J1' }))
+    await expect(as(ann).activities.run({ operationId: OP, appId, activityId: 'act_start_jobs', recordId: 'J1' }))
       .rejects.toThrow(/not available/);
   });
 
@@ -131,6 +135,7 @@ describe('page.activities — several items', () => {
   it('answers each item on its own, in the order asked', async () => {
     const answers = await as(nick).page.activities({
       operationId: OP,
+      appId,
       items: [{ recordId: 'L1' }, { typeId: 'rt_jobs' }, { recordId: 'J1' }],
     });
     expect(answers.map(ids)).toEqual([[], ['act_create_jobs'], ['act_start_jobs', 'act_note_jobs']]);

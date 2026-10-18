@@ -489,7 +489,10 @@ takes `operationId?` (both default `demo/sdm`):
   **RBAC stage 1**: all three apply the record-type read filter (below) — a
   deny answers "Record access denied" on `get` (FORBIDDEN, since 2026-10-12;
   not-found before, reversed by the user — BLUEPRINT *Access*), a missing record
-  not-found, and unreadable types drop out of `partition`/`list`. **An
+  not-found, and unreadable types drop out of `partition`/`list`. *Since
+  2026-10-18 the read filter applies to a call through an app; a call with no
+  app — `partition` and `list` are always one — is an operation admin's, who
+  reads every type (the no-app rule, below).* **An
   operation's apps never appear** (2026-10-18), whatever the read filter says
   (with sign-in off it lets everything through): `get` of an app's id answers
   "Record access denied", and `partition`/`list` leave them out — see "An
@@ -651,7 +654,23 @@ They apply to `activities.run`, `activities.query`, `page.activities` (failing
 a call that passes them is offered and run as before: the record type's
 workflow and the activity's own condition.
 
-Tests: `test/apps.test.ts`, `test/menu.test.ts`.
+**The no-app rule** (§2.3, ruled 2026-10-17): a call that names no app is
+refused unless the caller is an **admin of that operation** ("This call names
+no app, so it is for admins of operation '<id>' only"), who then reads every
+record in it, whatever their roles — and nothing in operations they are not
+admins of. A closed list: `activities.run`, `activities.query`,
+`page.activities`, `records.get`, `records.list`, `records.partition`,
+`scripts.query`, published `pages.list` and `files.*` — the Console's
+workbench, DSL Editor and page preview. They follow the record type's workflow
+and the activity's own condition only. A solution admin who wants to work on an
+operation's records must also be its admin. Open to the operation's users,
+app or none: `operations.get`, `config.getForOperation`, `me`, `apps.user` and
+`perf.*`; draft `pages.list` is solution admins only. With sign-in off, open.
+`callAccess` / `requireNoAppCaller` in the router.
+
+Tests: `test/apps.test.ts`, `test/menu.test.ts`, `test/rbac.test.ts` ("calls
+with no app"); tests about what a role may read or do go through an app
+(`test/appFor.ts`).
 
 ## Auth (RBAC phase 1, built 2026-07-19 — roles stubbed)
 
@@ -1305,12 +1324,13 @@ so a mutating function passes at its call site.
 a top-level `return` and null otherwise, so a bare expression or query would
 answer null.
 
-**Access: `requireOpUser` — entry gate only.** The same gate the workbench's
-data door uses; the Console is reachable only by solution designers, so no admin
-tier on top. Deliberate departure from `records.partition`, which also filters
-rows by role-readable types: a script here reads **every** type in the
-operation. As with every gate but platform-admin, `requireOpUser` returns early
-when auth is unconfigured, so on such a deployment this endpoint is open.
+**Access: operation admins only** (since 2026-10-18): a call with no app,
+under the no-app rule (see "An operation's apps") — its admins read every record
+type in the operation, so a script reading every type is theirs. *Reversed: the
+entry gate alone* (2026-09-21), which let any user of the operation read every
+record type through a script, including those their roles hide. As with every
+gate but platform-admin, the check returns early when auth is unconfigured, so
+on such a deployment this endpoint is open.
 
 **Quotas** are raised per call (`maxRows: 100_000`, `maxSteps: 2_000_000`,
 `timeoutMs: 15_000`) — an interactive tool. The row quota counts a query's
