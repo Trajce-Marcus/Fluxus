@@ -1025,6 +1025,20 @@ Each step works on its own and is cold-tested before the next.
 6. **One way to open an app.** The step 6 script rewriting links;
    `services.page.open` and the old way of opening (§2.7) removed.
 
+   *As built so far* (2026-10-18): dev measured read-only first — every link
+   literal, drafts the same as what is published, no operation with several
+   apps from one page, every app's definition `{}`; links in `projects` (10
+   action columns, 4 OpenPage buttons, one `services.page.open`) and in
+   `inspections` (4 action columns, not counted by the earlier measurement).
+   The button that opens an app is **`OpenApp`** (§ Names), its `target` a key
+   in the app's definition, read without regard to case as FluxScript reads
+   it; it came first, beside `OpenPage`, so pages the script rewrites work at
+   once. The script is `packages/server/scripts/apps-step6.ts` (dry run by
+   default, `--apply` writes); its dry run on dev proposes 11 keys, rewrites 19
+   links in 11 pages and fills 11 apps' definitions, nothing unresolved. Its
+   definition changes leave `sys_migration` entries; a page gets a new
+   published version made from the latest published, and its draft rewritten.
+
 **Done when:**
 
 - **Step 1:** an UPDATE run on a record of another type is refused — from a

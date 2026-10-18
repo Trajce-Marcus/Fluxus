@@ -745,6 +745,24 @@ prints first; `--apply` writes, one transaction per operation (`putApp` takes
 the entry's activity and the caller's transaction); an operation that has apps
 is skipped. Run by the user after the deploy. Tested in `test/appsStep2.test.ts`.
 
+**The step 6 script** (`scripts/apps-step6.ts`, one-off, §2.8) rewrites every
+literal link between pages to open an app by its id, read from the linking
+app's definition. Each page something links to gets one key, its name in
+camelCase plus `LinkId` (`pages/shift-report` → `shiftReportLinkId`). An
+`OpenPage` button or action column becomes `OpenApp`, its `target` the key, and
+`services.page.open('<page>', record)` in a callback becomes
+`services.app.open(context.app.definition.<key>, { recordId: record })` — found
+with the DSL's lexer, so a string or comment that spells the call is left
+alone, and rewritten in place. In each operation, every app made from a page
+that links gets, under each key its page uses, the id of the operation's only
+app made from the page linked to; none or several, a computed link, or a key
+already set to something else is listed for a person to settle. It prints
+first; `--apply` writes the definitions (`putApp`, a `sys_migration` entry
+each), then a new published version of each page made from the latest
+published one, and the rewritten draft. A second run finds nothing to rewrite.
+Run by the user between the deploy that has `OpenApp` and the one that removes
+the old way. Tested in `test/appsStep6.test.ts`.
+
 Tests: `test/apps.test.ts`, `test/menu.test.ts`, `test/rbac.test.ts` ("calls
 with no app"); tests about what a role may read or do go through an app
 (`test/appFor.ts`).
