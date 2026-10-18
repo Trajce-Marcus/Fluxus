@@ -7,7 +7,7 @@
 // (SESSION_COMPONENTS, componentSchemas) as separate lists — deriving them
 // from this manifest is a floated cleanup, not agreed.
 
-import { OpenPage, RunActivity } from './components/actionComponents';
+import { OpenApp, OpenPage, RunActivity } from './components/actionComponents';
 import { AppHeader } from './components/AppHeader';
 import { Contributions } from './components/Contributions';
 import { InventorList } from './components/InventorList';
@@ -32,6 +32,7 @@ export const componentManifests: Record<string, ComponentManifest> = {
   Map:             { name: 'Map',             version: '1.0.0', component: Map             as unknown as AnyComponent, schema: Map.schema ?? [],        css: Map.css },
   PageHeader:      { name: 'PageHeader',      version: '1.0.0', component: PageHeader      as unknown as AnyComponent, schema: PageHeader.schema,    css: PageHeader.css },
   Photos:          { name: 'Photos',          version: '1.0.0', component: Photos          as unknown as AnyComponent, schema: Photos.schema,        css: Photos.css },
+  OpenApp:         { name: 'OpenApp',         version: '1.0.0', component: OpenApp         as unknown as AnyComponent, schema: OpenApp.schema,         css: OpenApp.css },
   OpenPage:        { name: 'OpenPage',        version: '1.0.0', component: OpenPage        as unknown as AnyComponent, schema: OpenPage.schema,        css: OpenPage.css },
   RecordActivities: { name: 'RecordActivities', version: '1.0.0', component: RecordActivities as unknown as AnyComponent, schema: RecordActivities.schema, css: RecordActivities.css },
   RecordList:      { name: 'RecordList',      version: '1.0.0', component: RecordList      as unknown as AnyComponent, schema: RecordList.schema,     css: RecordList.css },

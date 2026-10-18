@@ -1,11 +1,11 @@
-// The platform's two verbs, as buttons.
+// The platform's verbs, as buttons.
 //
-// A page can already run an activity or open a page — but only from a script
+// A page can already run an activity or open an app — but only from a script
 // the author wired to a callback. These are the same two calls with a button
 // in front, so they can be placed rather than scripted: on their own in a page
 // slot, or drawn once per row by an action column in RecordList.
 //
-// They add no capability. `services.runActivity` and `services.openPage` are
+// They add no capability. `services.runActivity` and `services.openApp` are
 // the identical handlers ComponentContainer already hands to callback scripts,
 // and the server authorises every run regardless of what the browser asked
 // for. What they add is placement — the same button, wherever it is wanted.
@@ -21,7 +21,11 @@ import type { PageServiceHandlers } from '../pageHost';
 export interface ActionProps {
   /** What the button says. */
   label?: string;
-  /** The activity id, or the page path — whichever this component runs. */
+  /**
+   * What this component acts on: the activity id (`RunActivity`), the key in
+   * the app's definition holding the id of the app to open (`OpenApp`), or the
+   * page path (`OpenPage`, the old way until step 6 removes it).
+   */
   target?: string;
   /** The record the act is about. Null for a CREATE, which has no anchor. */
   record?: string | null;
@@ -91,7 +95,25 @@ function OpenPageComponent({ label = 'Open', target, record, services }: ActionP
   );
 }
 
+// Opens the app whose id this app's definition holds under `target` — the
+// page is shared by every operation's apps made from it, and each operation's
+// apps have their own ids, so the button names the key and each operation's
+// definition says which app (APPS_AND_INSTANCES §2.7, step 6).
+function OpenAppComponent({ label = 'Open', target, record, services }: ActionProps) {
+  return (
+    <button className="fx-action-btn" title={target}
+      onClick={() => { if (target) services?.openAppByKey(target, anchor(record)); }}>
+      {label}
+    </button>
+  );
+}
+
 export const RunActivity = Object.assign(RunActivityComponent, { css, schema: runSchema });
+
+export const OpenApp = Object.assign(OpenAppComponent, {
+  css,
+  schema: schema("Key in this app's definition holding the id of the app to open — the record goes with it"),
+});
 
 export const OpenPage = Object.assign(OpenPageComponent, {
   css,
@@ -101,5 +123,6 @@ export const OpenPage = Object.assign(OpenPageComponent, {
 /** The action components a RecordList column may name. */
 export const actionComponents: Record<string, FunctionComponent<ActionProps>> = {
   RunActivity: RunActivityComponent,
+  OpenApp: OpenAppComponent,
   OpenPage: OpenPageComponent,
 };

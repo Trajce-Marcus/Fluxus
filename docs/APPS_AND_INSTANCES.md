@@ -1490,4 +1490,19 @@ the cold review sections keeps the old name as written then):
 - `packages/server/scripts/apps-step2.ts` — the step 2 script; it prints what
   it would do, and writes only with `--apply`.
 
+Settled 2026-10-18, at the start of the step 6 build:
+
+- **`OpenApp`** — the button that opens an app, replacing `OpenPage`; its
+  `target` holds the key in the app's definition whose value is the id of the
+  app to open, on a page and in a RecordList action column alike (Claude's
+  proposal, the user's OK). An app id cannot be stored there: the page is
+  shared by every operation's apps made from it, and each has its own ids.
+- `packages/server/scripts/apps-step6.ts` — the step 6 script (Claude's, in the
+  playback). The keys it proposes are the target page's name in camelCase plus
+  `LinkId` (`shiftReportLinkId`), like the spec's `jobLinkId`, printed for the
+  user to check before `--apply`.
+- The script's changes to definitions leave `sys_migration` history entries as
+  the step 2 script's did, under the name "Created by the migration" (the user:
+  not concerned with the history — the data so far is all testing).
+
 None open.

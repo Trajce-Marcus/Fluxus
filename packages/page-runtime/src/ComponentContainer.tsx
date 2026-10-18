@@ -7,6 +7,7 @@ import { ActivityFormModal } from './ActivityFormModal';
 import { fill, hasHoles, holes } from './interpolate';
 import { NO_TABS, type PageTabs } from './pageTabs';
 import {
+  definitionValue,
   packCallbackData,
   type AttributeSeed,
   type PageContext,
@@ -233,6 +234,13 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     }
   }, [runtime, onError, manifest.name]);
 
+  // An OpenApp button: the app whose id this app's definition holds under the
+  // button's key — `services.app.open(context.app.definition.<key>, …)` with a
+  // button in front (APPS_AND_INSTANCES step 6).
+  const openAppByKey = useCallback((key: string, record: unknown) => {
+    openApp(definitionValue(pageCtx.app.definition, key), { recordId: record });
+  }, [openApp, pageCtx.app]);
+
   // Which activities apply to a record — asked by a component that draws them,
   // never by a script (pageHost, `listActivities`). The server decides, with
   // the signed-in user (`page.activities`, ACTIONS_OFFERED_BY_SERVER); the
@@ -259,6 +267,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     runActivity: launchActivity,
     openPage,
     openApp,
+    openAppByKey,
     listActivities,
     // A stored key → a presigned address, so a component can draw a photo
     // (COMPONENT_PHOTOS §2). Like `listActivities` it is on the handler set but
@@ -273,7 +282,7 @@ export function ComponentContainer({ runtime, manifest, config, pageCtx, onConte
     activeTab: tabs.active,
     selectTab: tabs.select,
     watchTabs: tabs.watch,
-  }), [onContextChange, launchActivity, openPage, openApp, listActivities, runtime, tabs]);
+  }), [onContextChange, launchActivity, openPage, openApp, openAppByKey, listActivities, runtime, tabs]);
 
   // Re-evaluate dynamic-prop expressions whenever the page context changes or
   // an activity run completes. Expressions are opaque (ruled: ctx.page.* is

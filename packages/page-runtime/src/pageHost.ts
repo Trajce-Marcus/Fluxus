@@ -101,6 +101,17 @@ export interface PageServiceHandlers {
    */
   openApp(appId: unknown, params: unknown): void;
   /**
+   * Open the app whose id this app's definition holds under `key`, optionally
+   * about a record — what an `OpenApp` button does (APPS_AND_INSTANCES step 6):
+   * `services.app.open(context.app.definition.<key>, { recordId })` with a
+   * button in front. The key is read without regard to case, as FluxScript
+   * reads `context.app.definition.<key>`; a definition without it says the app
+   * is not set up for this operation. A **component** door, absent from
+   * `buildPageServices` like `listActivities`: a script reads the definition
+   * itself.
+   */
+  openAppByKey(key: string, record: unknown): void;
+  /**
    * Which activities apply to a record right now (2026-09-14) — the workflow's
    * record-level acts, minus the ones their `show_condition` rules out. The
    * server answers (`page.activities`, ACTIONS_OFFERED_BY_SERVER), with the
@@ -206,7 +217,7 @@ export function buildPageServices(handlers: PageServiceHandlers): ServiceModuleD
 /** Manifest-only modules for validation — same schema, no live handlers. */
 export const pageServicesStub = (): ServiceModuleDef[] =>
   buildPageServices({
-    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {},
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {}, openAppByKey: () => {},
     // Not in any module below, so nothing can name them in a script — they are
     // here only because the handler set is one interface.
     listActivities: async () => [],
@@ -232,6 +243,18 @@ export interface PageAppContext {
   pageId: string;
   label: string;
   definition: unknown;
+}
+
+/**
+ * What an app's definition holds under `key`, the key read without regard to
+ * case — as FluxScript reads `context.app.definition.<key>`. Null when the
+ * definition is not an object or has no such key.
+ */
+export function definitionValue(definition: unknown, key: string): unknown {
+  if (definition === null || typeof definition !== 'object' || Array.isArray(definition)) return null;
+  const lower = key.trim().toLowerCase();
+  const found = Object.entries(definition as Record<string, unknown>).find(([k]) => k.toLowerCase() === lower);
+  return found ? found[1] : null;
 }
 
 /** The ctx root's page-host members: platform built-ins + the page layer. */

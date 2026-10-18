@@ -99,13 +99,14 @@ export interface RecordListColumn {
   /** Currency code for a `C` format: `AUD`, or `row.<field>` for one per row. */
   currency?: string;
   /**
-   * Names an action component — `RunActivity` or `OpenPage` — making this an
+   * Names an action component — `RunActivity` or `OpenApp` — making this an
    * **unbound** column: it reads nothing from the row and draws a button once
    * per row instead of a value. `label` is then the button's text and the
    * heading is blank, since a column of buttons has nothing to head.
    */
   component?: string;
-  /** What the action component acts on: an activity id, or a page path. */
+  /** What the action component acts on: an activity id, or the key in the
+   *  app's definition holding the id of the app to open. */
   target?: string;
   /**
    * `RunActivity` only: the activity attribute this row's record fills, rather
@@ -818,8 +819,8 @@ const columnItems: PropSchema[] = [
   { name: 'type',     kind: 'static-config', type: 'string', required: false, description: 'text (default), int, decimal, datetime, time, boolean, photo, file' },
   { name: 'format',   kind: 'static-config', type: 'string', required: false, description: 'N2, F2, C2, P1, dd/MM/yyyy, HH:mm — blank for the type default' },
   { name: 'currency',  kind: 'static-config', type: 'string', required: false, description: 'Code for a C format: AUD, or row.<field> for one per row' },
-  { name: 'component', kind: 'static-config', type: 'string', required: false, description: 'Action column: RunActivity or OpenPage — leave blank for a data column' },
-  { name: 'target',    kind: 'static-config', type: 'string', required: false, description: 'What the action acts on: an activity id, or a page path' },
+  { name: 'component', kind: 'static-config', type: 'string', required: false, description: 'Action column: RunActivity or OpenApp — leave blank for a data column' },
+  { name: 'target',    kind: 'static-config', type: 'string', required: false, description: "What the action acts on: an activity id, or the key in this app's definition holding the id of the app to open" },
   { name: 'attribute', kind: 'static-config', type: 'string', required: false, description: 'RunActivity only: activity attribute this row fills instead of anchoring the run' },
 ];
 

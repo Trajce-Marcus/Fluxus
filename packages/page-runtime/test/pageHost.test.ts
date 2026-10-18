@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryAdapter, type ClientSolutionConfig } from '@fluxus/engine';
-import { evaluatePageExpression, pageServicesStub, runPageCallback, validatePageCallback, type PageContext, type PageQueryFn, type PageServiceHandlers } from '../src/pageHost';
+import { definitionValue, evaluatePageExpression, pageServicesStub, runPageCallback, validatePageCallback, type PageContext, type PageQueryFn, type PageServiceHandlers } from '../src/pageHost';
 
 // The client's grade of a tiny model: one record type whose workflow declares
 // the GET a page would name. `returns` is absent by design — the query lives on
@@ -200,13 +200,21 @@ describe('context.app and services.app.open', () => {
   it('is a script a page may save', () => {
     expect(validatePageCallback(CONFIG, 'services.app.open(context.app.definition.jobLinkId, { recordId: callbackData.value })')).toEqual([]);
   });
+
+  it('finds the id an OpenApp button names as FluxScript would — without regard to case', () => {
+    expect(definitionValue(water.app.definition, 'jobLinkId')).toBe('app-jobs');
+    expect(definitionValue(water.app.definition, 'JOBLINKID')).toBe('app-jobs');
+    expect(definitionValue(water.app.definition, 'sewerLinkId')).toBeNull();
+    expect(definitionValue({}, 'jobLinkId')).toBeNull();
+    expect(definitionValue(null, 'jobLinkId')).toBeNull();
+  });
 });
 
 /** Handlers that do nothing, for a test to override the one it watches. */
 function pageServicesStubHandlers(): PageServiceHandlers {
   void pageServicesStub;
   return {
-    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {},
+    setContext: () => {}, hideComponent: () => {}, runActivity: () => {}, openPage: () => {}, openApp: () => {}, openAppByKey: () => {},
     listActivities: async () => [], resolveUrl: async () => '', goBack: () => {}, canGoBack: () => false,
     tabs: [], activeTab: null, selectTab: () => {}, watchTabs: () => () => {},
   };
