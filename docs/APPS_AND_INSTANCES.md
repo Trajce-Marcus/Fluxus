@@ -10,8 +10,12 @@ decisions and 18 fixes; the decisions were settled with the user on 2026-10-18
 and Part 2 revised with them and the fixes (§ Second cold review). Built in six
 steps, each checked before the next (§2.10). **Step 1 BUILT 2026-10-18.**
 Step 2's names settled with the user the same day (§ Names). **Step 2 BUILT
-2026-10-18** (four commits; its script written and tested, not yet run — the
-user runs it after the deploy, §2.8). Built from
+2026-10-18** (four commits), and its script run on the dev database the same
+day at the user's go-ahead, after a dry run he reviewed: 24 apps in four
+operations (inspections-dev 12, projects-dev 8, demo/sdm and
+nicks-inspection-business 2 each), each with its `sys_migration` entry, and
+their menus rebuilt; the three operations whose solutions have no pages were
+skipped (§2.8). Built from
 the exploration in [ideas/apps-and-instances.md](ideas/apps-and-instances.md)
 and the user's rulings below.
 
