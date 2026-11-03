@@ -1213,14 +1213,17 @@ the field its roles come from).
 and for it to be unavailable"; an expired app "can still be seen as an app,
 just expired. The data should be kept" (the user's). The word and its meaning
 follow users' `expired` — the end of the relationship, the row kept (Claude's,
-the user agreed); the field is `status` (the user's OK).
+the user agreed); the field is `status` (the user's OK). **Built 2026-11-03.**
 
 - **`status`** on the app's record — `active` or `expired`. An app with no
   `status` (every app before this) is `active`; nothing is migrated. Scripts
   do not see it: `rt_sys_apps` as scripts read it (§2.4) is unchanged. The
   server's `App` (`appFromRow`) and the client's `App` gain `status`.
-- **Expiring is final**, as for users. Nothing un-expires an app. Expiring an
-  app already expired is refused, saying so.
+- **Expiring is final.** Nothing un-expires an app (unlike users, who can be
+  unexpired — corrected 2026-11-03 at the build: this said "as for users", and
+  users are not final; final for apps is kept, the simpler thing, until a need
+  to bring one back appears). Expiring an app already expired is refused,
+  saying so.
 - **Console** (§2.6): the apps list keeps showing an expired app, marked
   Expired. Its dialog still opens with its name, roles, definition and
   history, read-only. An active app's dialog has an **Expire** button, asking

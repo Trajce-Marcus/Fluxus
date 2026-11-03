@@ -45,7 +45,7 @@ export function OperationMenuSection({ operationId }: { operationId: string; sol
   }
 
   // Said here rather than by the server after a round trip.
-  const problems = menuProblems(menu ?? []);
+  const problems = menuProblems(menu ?? [], apps);
 
   return (
     <div className="admin-section">

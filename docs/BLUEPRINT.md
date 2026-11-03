@@ -151,6 +151,12 @@ made from it starts with, which the operation admin changes freely. They never
 decide who may run anything, so the two layers stay one
 ([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) §3.3; a limit was considered and
 rejected for that reason).
+*Refined 2026-11-03:* **an app is never removed, it is expired** — "let's not
+delete anything" (the user's). An expired app no longer runs and leaves the
+menu, but stays in the operation's apps list with its history, read-only
+([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) §3.2). The same idea is expected
+to retire an old version no longer used, once versioning lands (the user's; § Versioning).
+
 **Actions follow the page and the record type.** Whoever can open a page sees
 its actions; an action is restricted further only where it matters, by its
 availability condition (e.g. a payment only for admins). On the server, an

@@ -3,14 +3,16 @@
 // its own name, who may run it, and its definition — what it needs set for
 // this operation, as JSON. One page may be added more than once (a water
 // scheduler and a sewer scheduler). Adding and changing happen in a dialog,
-// which also shows the app's history; every change leaves an entry there. No
-// removing in Part 2. Requires op admin.
+// which also shows the app's history; every change leaves an entry there.
+// Nothing is removed: an app is expired (§3.2) — final, kept in the list
+// marked Expired, its dialog read-only. Requires op admin.
 
 import { useEffect, useState } from 'react';
 import type { App, AppInput } from '@fluxus/client';
 import type { ActivityHistoryEntry } from '@fluxus/engine';
 import { consoleClient } from '../../sdm-runtime/engine';
 import { Dialog } from '../users/dialogs/Dialog';
+import { StatusPill } from '../users/shared/UserTabs';
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -62,8 +64,8 @@ export function OperationAppsSection({ operationId, solutionId }: { operationId:
           <thead><tr><th>Name</th><th>Page</th><th>Who may run it</th></tr></thead>
           <tbody>
             {apps.map((app) => (
-              <tr key={app.id} className="apps-row" onClick={() => setEditing(app)}>
-                <td>{app.label}</td>
+              <tr key={app.id} className={`apps-row${app.status === 'expired' ? ' apps-row-expired' : ''}`} onClick={() => setEditing(app)}>
+                <td>{app.label}{app.status === 'expired' && <> <StatusPill status="expired" title="No longer runs; kept with its history" /></>}</td>
                 <td className="admin-mono">{app.pageId}</td>
                 <td>{app.roleIds.length === 0 ? <span className="admin-muted">Nobody</span> : app.roleIds.map(roleName).join(', ')}</td>
               </tr>
@@ -103,6 +105,9 @@ function AppDialog({ operationId, solutionId, app, roles, paths, onClose, onDone
   const [history, setHistory] = useState<ActivityHistoryEntry[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  /** Asking before expiring: it is final. */
+  const [confirming, setConfirming] = useState(false);
+  const expired = app?.status === 'expired';
 
   // The history is fetched for this one app when its dialog opens, not with
   // the list (it grows with every change).
@@ -148,14 +153,32 @@ function AppDialog({ operationId, solutionId, app, roles, paths, onClose, onDone
     }
   }
 
+  async function expire() {
+    if (!app) return;
+    setBusy(true);
+    setFailed(null);
+    try {
+      await consoleClient.expireApp(operationId, app.id);
+      onDone();
+    } catch (err) {
+      setFailed(message(err));
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Dialog
       title={app ? app.label : 'Add app'}
-      sub="An app is made from one published page. Who may run it is set here, on the app."
+      sub={expired
+        ? 'This app has expired: it no longer runs and is off the menu. It is kept, with its history, and cannot be changed.'
+        : 'An app is made from one published page. Who may run it is set here, on the app.'}
       error={failed}
       onClose={onClose}
     >
       <form className="admin-modal-form" onSubmit={save}>
+        <fieldset className="apps-fields" disabled={expired}>
         <label className="admin-field">
           <span>Page</span>
           <select value={pageId} onChange={(e) => setPageId(e.target.value)}>
@@ -188,12 +211,33 @@ function AppDialog({ operationId, solutionId, app, roles, paths, onClose, onDone
           <span>Definition — what the app needs set for this operation, as JSON</span>
           <textarea className="admin-mono apps-definition" value={definition} onChange={(e) => setDefinition(e.target.value)} rows={5} spellCheck={false} />
         </label>
-        <div className="admin-row admin-modal-actions">
-          <button type="submit" className="admin-btn" disabled={busy || !pageId || !label.trim()}>
-            {busy ? 'Saving…' : app ? 'Save changes' : 'Add app'}
-          </button>
-          <button type="button" className="admin-link" onClick={onClose}>Cancel</button>
-        </div>
+        </fieldset>
+        {confirming ? (
+          <div className="apps-confirm">
+            <p style={{ margin: 0 }}>
+              Expire <strong>{app?.label}</strong>? It stops running for everyone and leaves the menu. It is not
+              deleted — it stays here with its history — but it cannot be brought back.
+            </p>
+            <div className="admin-row admin-modal-actions">
+              <button type="button" className="admin-btn is-danger" disabled={busy} onClick={() => void expire()}>
+                {busy ? 'Expiring…' : 'Expire app'}
+              </button>
+              <button type="button" className="admin-link" onClick={() => setConfirming(false)}>Cancel</button>
+            </div>
+          </div>
+        ) : expired ? (
+          <div className="admin-row admin-modal-actions">
+            <button type="button" className="admin-btn" onClick={onClose}>Close</button>
+          </div>
+        ) : (
+          <div className="admin-row admin-modal-actions">
+            <button type="submit" className="admin-btn" disabled={busy || !pageId || !label.trim()}>
+              {busy ? 'Saving…' : app ? 'Save changes' : 'Add app'}
+            </button>
+            <button type="button" className="admin-link" onClick={onClose}>Cancel</button>
+            {app && <button type="button" className="admin-link is-danger apps-expire" disabled={busy} onClick={() => setConfirming(true)}>Expire</button>}
+          </div>
+        )}
       </form>
       {app && (
         <div className="apps-history">
@@ -220,6 +264,10 @@ function AppDialog({ operationId, solutionId, app, roles, paths, onClose, onDone
 
 export const css = `
   .apps-row { cursor: pointer; }
+  .apps-row-expired td { opacity: 0.55; }
+  .apps-fields { border: none; margin: 0; padding: 0; min-width: 0; display: contents; }
+  .apps-expire { margin-left: auto; }
+  .apps-confirm { display: flex; flex-direction: column; gap: 10px; }
   .apps-row:hover td { background: var(--color-surface-hover, rgba(255,255,255,0.04)); }
   .apps-definition {
     background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);

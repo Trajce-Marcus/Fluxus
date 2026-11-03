@@ -625,12 +625,13 @@ added more than once — a water scheduler and a sewer scheduler.
   `sys_migration` are reserved — `validateConfig` refuses a record type,
   workflow or activity using one.
 - **`apps.list`** `{ operationId }` → `{ apps: { id, pageId, label, roleIds,
-  definition }[] }`, in the order added, without history. **`apps.get`**
+  definition, status }[] }`, in the order added, without history. **`apps.get`**
   `{ operationId, appId }` → one app with its `activityHistory`, for the
   Console's dialog (history grows with every change, so the list does not carry
   it). **`apps.put`** `{ operationId, id?, pageId, label, roleIds, definition }`
-  → `{ id }`: no `id` adds an app. All three are **op admin** (sign-in off:
-  open); an app of another operation is not found.
+  → `{ id }`: no `id` adds an app; an expired app is refused. **`apps.expire`**
+  `{ operationId, appId }` → `{ ok }` (2026-11-03, §3.2). All four are **op
+  admin** (sign-in off: open); an app of another operation is not found.
 - **Checked at save** (`putApp`): the page is a published page of the
   solution; every role exists in it; the name is not blank; the definition is
   JSON (blank is `{}`).
@@ -642,7 +643,16 @@ added more than once — a water scheduler and a sewer scheduler.
   goes through `appendHistoryEntry` (`databaseStore.ts`), the same one-statement
   append an activity run uses, so it lands in `activity_history` and
   `rpt_activities` / `rpt_attributes` like any other.
-- No removing an app in Part 2.
+- **Nothing is removed: an app is expired** (2026-11-03, APPS_AND_INSTANCES
+  §3.2). `expireApp` writes `status: 'expired'` on the app's record (absent is
+  active; nothing was migrated) and the Console's history entry with
+  `status: expired` captured. Final: expiring again, and `apps.put` on it, are
+  refused. The record and its history stay; `apps.list` keeps it. In the
+  Runtime it is not set up: `apps.user` leaves it out (and so its menu items),
+  check 1 refuses a call naming it with "This app has expired"
+  (`AppExpiredError`, a not-found), `page.activities` answers empty for it,
+  `config.getForOperation` sends no list of its, and saving a menu that
+  points at it is refused, naming it. Scripts never see `status`.
 - **`apps.list` also answers the operation's app menu** (`menu`), for the
   Console's menu editor; the menu is saved with `operations.putConfig`.
 
@@ -663,8 +673,9 @@ with that way (2026-10-18).
 
 **Checks on a call that names its app** (§2.3), `checkCallApp` in the router:
 
-1. the app is in the call's operation's apps list and its page has a published
-   version — otherwise "This app is not set up for this operation" (not found);
+1. the app is in the call's operation's apps list, not expired, and its page
+   has a published version — otherwise "This app is not set up for this
+   operation", or "This app has expired" (not found);
 2. the caller holds one of the app's roles (with sign-in off, open) — otherwise
    "You may not run '<name>'" (forbidden);
 5. the caller may read every record the call sends — its record, as before, and

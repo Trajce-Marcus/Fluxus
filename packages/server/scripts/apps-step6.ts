@@ -319,7 +319,8 @@ export async function planStep6(db: Db): Promise<SolutionPlan[]> {
 
     // Definitions: each operation of the solution, each app made from a page that links.
     for (const op of operations.filter((o) => o.solutionId === solutionId).sort((a, b) => a.id.localeCompare(b.id))) {
-      const apps = await listApps(db, op.id);
+      // An expired app is neither filled nor a link's target (§3.2).
+      const apps = (await listApps(db, op.id)).filter((a) => a.status === 'active');
       const byPage = new Map<string, App[]>();
       for (const a of apps) byPage.set(a.pageId, [...(byPage.get(a.pageId) ?? []), a]);
       for (const app of apps) {

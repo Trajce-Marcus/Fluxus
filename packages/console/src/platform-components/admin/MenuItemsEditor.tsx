@@ -28,12 +28,14 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
-/** Leaves that point at nothing yet. The server refuses these; said here
- *  rather than after a round trip. An empty group is fine — one is made
- *  before it is filled, and it shows to nobody until it has a leaf. */
-export function menuProblems(menu: MenuItem[]): { id: string; fix: string }[] {
+/** Leaves that point at nothing yet, or at an expired app (§3.2). The server
+ *  refuses these; said here rather than after a round trip. An empty group is
+ *  fine — one is made before it is filled, and it shows to nobody until it
+ *  has a leaf. */
+export function menuProblems(menu: MenuItem[], apps: App[] = []): { id: string; fix: string }[] {
+  const expired = new Set(apps.filter((a) => a.status === 'expired').map((a) => a.id));
   const leaves = menu.flatMap((it) => (isMenuGroup(it) ? it.items : [it]));
-  return leaves.filter((l) => !l.appId).map((l) => ({ id: l.id, fix: 'pick its app' }));
+  return leaves.flatMap((l) => (!l.appId ? [{ id: l.id, fix: 'pick its app' }] : expired.has(l.appId) ? [{ id: l.id, fix: 'remove it — its app has expired' }] : []));
 }
 
 /** The item with this id, and the group holding it (null when top level). */
@@ -97,7 +99,7 @@ export function MenuItemsEditor({ menu, onChange, apps, roles }: MenuItemsEditor
   }
 
   function firstFreeApp(): string {
-    return apps.find((a) => !placed.has(a.id))?.id ?? '';
+    return apps.find((a) => a.status === 'active' && !placed.has(a.id))?.id ?? '';
   }
 
   function addLeaf() {
@@ -198,7 +200,10 @@ export function MenuItemsEditor({ menu, onChange, apps, roles }: MenuItemsEditor
         ) : (
           <>
             <span className="menu-row-label">{leafName(it)}</span>
-            {appById.get(it.appId) ? (
+            {appById.get(it.appId)?.status === 'expired' ? (
+              // Its app no longer runs; the save is refused until it goes.
+              <span className="menu-row-page problem" title="Remove it — its app has expired">expired</span>
+            ) : appById.get(it.appId) ? (
               <span className="menu-row-page">{appById.get(it.appId)!.pageId}</span>
             ) : (
               // Not a warning about style — the save will be refused.
@@ -252,8 +257,8 @@ export function MenuItemsEditor({ menu, onChange, apps, roles }: MenuItemsEditor
                 <span>App</span>
                 <select value={selected.appId} onChange={(e) => replace(selected.id, { ...selected, appId: e.target.value })}>
                   <option value="">(no app)</option>
-                  {apps.filter((a) => a.id === selected.appId || !placed.has(a.id)).map((a) => (
-                    <option key={a.id} value={a.id}>{a.label}</option>
+                  {apps.filter((a) => a.id === selected.appId || (a.status === 'active' && !placed.has(a.id))).map((a) => (
+                    <option key={a.id} value={a.id}>{a.label}{a.status === 'expired' ? ' (expired)' : ''}</option>
                   ))}
                 </select>
                 <span className="admin-hint">The item shows the app's name, to those who may run it.</span>
@@ -300,7 +305,7 @@ export function MenuItemsEditor({ menu, onChange, apps, roles }: MenuItemsEditor
  *  group shows if it keeps one leaf. */
 function EffectiveMenu({ menu, apps, viewRoles }: { menu: MenuItem[]; apps: Map<string, App>; viewRoles: string[] }) {
   const held = new Set(viewRoles);
-  const runs = (l: MenuLeaf) => (apps.get(l.appId)?.roleIds ?? []).some((r) => held.has(r));
+  const runs = (l: MenuLeaf) => apps.get(l.appId)?.status === 'active' && (apps.get(l.appId)?.roleIds ?? []).some((r) => held.has(r));
   const visible = menu.flatMap((it): MenuItem[] => {
     if (!isMenuGroup(it)) return runs(it) ? [it] : [];
     const kept = it.items.filter(runs);

@@ -176,6 +176,8 @@ export interface App {
   roleIds: string[];
   /** JSON, as text. */
   definition: string;
+  /** Expired is final; the app stays listed, read-only (APPS_AND_INSTANCES §3.2). */
+  status: 'active' | 'expired';
 }
 
 /** What adding or changing an app sends: no `id` adds one. */
@@ -495,6 +497,10 @@ export class ConsoleClient {
   /** Add an app (no `id`) or change one; every change leaves a history entry. */
   putApp(operationId: string, app: AppInput): Promise<{ id: string }> {
     return this.trpc.apps.put.mutate({ operationId, ...app });
+  }
+  /** Expire an app: final, and nothing is deleted. */
+  expireApp(operationId: string, appId: string): Promise<{ ok: true }> {
+    return this.trpc.apps.expire.mutate({ operationId, appId });
   }
 }
 

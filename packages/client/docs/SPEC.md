@@ -190,8 +190,10 @@ since 2026-10-18, the admins of the solution's operations).
 `listApps(operationId)` → `{ apps: App[], menu: MenuItem[] }` (the menu is
 saved with `putOperationConfig`), `getApp(operationId, appId)` →
 the app with its `activityHistory`, `putApp(operationId, AppInput)` → `{ id }`
-(no `id` adds one). `App` is `{ id, pageId, label, roleIds, definition }`,
-`definition` being JSON as text. Op admin, server-side.
+(no `id` adds one), `expireApp(operationId, appId)` (2026-11-03, §3.2 —
+final; nothing is deleted). `App` is `{ id, pageId, label, roleIds,
+definition, status }`, `definition` being JSON as text and `status`
+`'active' | 'expired'`. Op admin, server-side.
 
 ## Contracts and postures
 

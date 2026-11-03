@@ -65,7 +65,7 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
-import { appDefaults, appFromRow, appListOf, appsForUser, PageNotPublishedError, getAppRecord, isAppRecord, listApps, listWorkflowOf, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
+import { appDefaults, appFromRow, expireApp, appListOf, appsForUser, PageNotPublishedError, getAppRecord, isAppRecord, listApps, listWorkflowOf, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
 import {
@@ -604,7 +604,7 @@ export const appRouter = t.router({
           rethrow(err);
         }
       }),
-    /** Add an app (no `id`) or change one. No removing in Part 2. */
+    /** Add an app (no `id`) or change one; an expired app is refused. */
     put: t.procedure
       .input(z.object({
         operationId: operationInput,
@@ -624,6 +624,19 @@ export const appRouter = t.router({
           ]);
           const { operationId, ...app } = input;
           return await putApp(ctx.db, operationId, app, { publishedPages: new Set(published.map((p) => p.path)), config }, (ctx.user ?? DEMO_USER).id);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
+    /** Expire an app (§3.2): final; nothing is deleted. */
+    expire: t.procedure
+      .input(z.object({ operationId: operationInput, appId: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireOpAdmin(ctx, input.operationId, op.orgId);
+          await expireApp(ctx.db, input.operationId, input.appId, (ctx.user ?? DEMO_USER).id);
+          return { ok: true as const };
         } catch (err) {
           rethrow(err);
         }
@@ -672,7 +685,7 @@ export const appRouter = t.router({
           // their own activities (step 5).
           const op = await getOperation(ctx.db, input.operationId);
           const appLists = new Set<string>();
-          for (const pageId of new Set((await listApps(ctx.db, op.id)).filter((a) => mayRunApp(a, ctx.authConfigured, user.roles)).map((a) => a.pageId))) {
+          for (const pageId of new Set((await listApps(ctx.db, op.id)).filter((a) => a.status === 'active' && mayRunApp(a, ctx.authConfigured, user.roles)).map((a) => a.pageId))) {
             const list = await listWorkflowOf(ctx.db, op.solutionId, pageId, config);
             if (list) appLists.add(list.id);
           }

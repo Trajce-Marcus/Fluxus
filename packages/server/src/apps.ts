@@ -29,6 +29,8 @@ export interface App {
   roleIds: string[];
   /** What it needs set for this operation: JSON, as text. */
   definition: string;
+  /** `expired` once expired (§3.2) — final; absent on the record is active. */
+  status: 'active' | 'expired';
 }
 
 /** The stored record fields: snake_case like every record field. `role_ids`
@@ -38,6 +40,8 @@ interface AppFields extends Record<string, unknown> {
   label: string;
   role_ids: string;
   definition: string;
+  /** Written only by `expireApp` (§3.2); absent is active. */
+  status?: 'expired';
 }
 
 type RecordRow = typeof records.$inferSelect;
@@ -45,6 +49,14 @@ type RecordRow = typeof records.$inferSelect;
 export class AppNotFoundError extends Error {
   constructor(appId: string) {
     super(`This app is not set up for this operation (${appId})`);
+  }
+}
+
+/** Check 1 on an expired app (§3.2): not set up, saying why. */
+export class AppExpiredError extends AppNotFoundError {
+  constructor(appId: string) {
+    super(appId);
+    this.message = `This app has expired (${appId})`;
   }
 }
 
@@ -71,6 +83,7 @@ export function appFromRow(row: Pick<RecordRow, 'id' | 'customFields'>): App {
     label: String(f.label ?? ''),
     roleIds: parseRoleIds(f.role_ids),
     definition: String(f.definition ?? '{}'),
+    status: f.status === 'expired' ? 'expired' : 'active',
   };
 }
 
@@ -158,6 +171,7 @@ export async function putApp(
     } else {
       const existing = await getAppRecord(tx, operationId, id);
       if (!existing) throw new AppNotFoundError(id);
+      if (existing.customFields.status === 'expired') throw new AppValidationError([`"${String(existing.customFields.label)}" has expired and cannot be changed`]);
       const before = existing.customFields;
       changed = Object.fromEntries(Object.entries(fields).filter(([k, v]) => before[k] !== v));
       if (Object.keys(changed).length === 0) return { id };
@@ -177,6 +191,30 @@ export async function putApp(
   });
 }
 
+/**
+ * Expire an app (§3.2): final, and nothing is deleted — the record and its
+ * history stay, and the Console keeps showing it. The change leaves the
+ * Console's history entry, like every other.
+ */
+export async function expireApp(db: DbOrTx, operationId: string, appId: string, author: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const existing = await getAppRecord(tx, operationId, appId);
+    if (!existing) throw new AppNotFoundError(appId);
+    if (existing.customFields.status === 'expired') throw new AppValidationError([`"${String(existing.customFields.label)}" has expired already`]);
+    await tx.update(records)
+      .set({ customFields: { ...existing.customFields, status: 'expired' }, updatedAt: new Date() })
+      .where(and(eq(records.operationId, operationId), eq(records.id, appId)));
+    const entry: ActivityHistoryEntry = {
+      activityId: CONSOLE_EDIT.id,
+      activityName: CONSOLE_EDIT.name,
+      author,
+      capturedAttributes: { status: 'expired' },
+      timestamp: new Date().toISOString(),
+    };
+    await appendHistoryEntry(tx, operationId, appId, entry);
+  });
+}
+
 /** Whether a caller may run an app — check 2 (§2.3): they hold one of its
  *  roles. With sign-in off there is nobody to check, so everyone may. */
 export function mayRunApp(app: App, authConfigured: boolean | undefined, roles: string[] | undefined): boolean {
@@ -185,10 +223,12 @@ export function mayRunApp(app: App, authConfigured: boolean | undefined, roles: 
   return app.roleIds.some((r) => held.has(r));
 }
 
-/** Check 1 (§2.3): the app is in this operation's apps list and its page has
- *  a published version; otherwise it is not set up for this operation. */
+/** Check 1 (§2.3): the app is in this operation's apps list, not expired
+ *  (§3.2), and its page has a published version; otherwise it is not set up
+ *  for this operation. */
 export async function loadAppForCall(db: DbOrTx, operationId: string, solutionId: string, appId: string): Promise<App> {
   const app = await getApp(db, operationId, appId);
+  if (app?.status === 'expired') throw new AppExpiredError(appId);
   if (!app || !(await isPagePublished(db, solutionId, app.pageId))) throw new AppNotFoundError(appId);
   return app;
 }
@@ -250,8 +290,8 @@ export const menuSchema = z.array(z.union([menuGroupSchema, menuLeafSchema]));
 
 const isGroup = (item: MenuItem): item is MenuGroup => 'items' in item;
 
-/** Checked at save: every leaf points at an app of this operation, an app
- *  appears at most once, and item ids are unique. */
+/** Checked at save: every leaf points at an active app of this operation
+ *  (§3.2), an app appears at most once, and item ids are unique. */
 export function validateAppMenu(menu: MenuItem[], apps: App[]): void {
   const known = new Map(apps.map((a) => [a.id, a]));
   const errors: string[] = [];
@@ -265,6 +305,7 @@ export function validateAppMenu(menu: MenuItem[], apps: App[]): void {
     seeId(l.id);
     const app = known.get(l.appId);
     if (!app) { errors.push(`"${l.appId}" is not an app of this operation`); return; }
+    if (app.status === 'expired') errors.push(`"${app.label}" has expired — take it off the menu`);
     if (placed.has(l.appId)) errors.push(`"${app.label}" is on the menu more than once`);
     placed.add(l.appId);
   };
@@ -338,7 +379,7 @@ export async function appsForUser(
 ): Promise<UserApps> {
   const [all, published] = await Promise.all([listApps(db, op.id), listPublishedPages(db, op.solutionId)]);
   const defs = new Map(published.map((p) => [p.path, p.def]));
-  const runnable = all.filter((a) => defs.has(a.pageId) && mayRunApp(a, authConfigured, roles));
+  const runnable = all.filter((a) => a.status === 'active' && defs.has(a.pageId) && mayRunApp(a, authConfigured, roles));
   const runnableIds = new Set(runnable.map((a) => a.id));
   return {
     apps: runnable.map(({ id, label, pageId, definition }) => ({ id, label, pageId, definition })),
