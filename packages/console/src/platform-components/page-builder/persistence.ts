@@ -127,6 +127,27 @@ export function savePageExample(path: string, example: string): void {
   savePage(path, { ...existing, exampleDefinition: example.trim() === '' ? undefined : example });
 }
 
+/** The roles the solution declares — what a page's default roles may be. */
+export function solutionRoles(): { id: string; name: string }[] {
+  return (sdmClient.config as { access?: { roles?: { id: string; name: string }[] } }).access?.roles ?? [];
+}
+
+/**
+ * The page's default roles (APPS_AND_INSTANCES §3.3): the roles a new app made
+ * from it starts with. Saving drops any id the solution no longer declares —
+ * it has no checkbox to untick. None is stored absent.
+ */
+export function loadPageRoles(path: string): string[] {
+  return loadPage(path)?.roleIds ?? [];
+}
+
+export function savePageRoles(path: string, roleIds: string[]): void {
+  const declared = new Set(solutionRoles().map((r) => r.id));
+  const kept = roleIds.filter((r) => declared.has(r));
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, roleIds: kept.length > 0 ? kept : undefined });
+}
+
 /** The workflows a page's list may be — those no record type points to. */
 export function pageListCandidates(): { id: string; name: string }[] {
   const config = sdmClient.config as { workflows?: { id: string; name: string }[]; recordTypes?: { workflow_ref: string }[] };

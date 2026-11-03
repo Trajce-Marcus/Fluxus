@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
-import { loadPageLayout, pageListCandidates, solutionRecordTypes } from './persistence';
+import { loadPageLayout, pageListCandidates, solutionRecordTypes, solutionRoles } from './persistence';
 import type { Panel } from './layout-editor/types';
 import type { SlotConfig } from './persistence';
 import {
@@ -17,6 +17,7 @@ import {
   setPageRecord,
   setPageWorkflow,
   setPageExample,
+  togglePageRole,
   setStaticConfig,
   setDynamicProp,
   setCallback,
@@ -459,6 +460,36 @@ function PageExampleSection({ pageExample, pagePath }: { pageExample: string; pa
   );
 }
 
+// ── The page's default roles ─────────────────────────────────────────────────
+// The roles a new app made from this page starts with (APPS_AND_INSTANCES
+// §3.3); the operation admin changes them freely. A default, never a limit:
+// who may run an app is set only on the app.
+
+function PageRolesSection({ pageRoles, pagePath }: { pageRoles: string[]; pagePath: string }) {
+  const roles = solutionRoles();
+  return (
+    <div className="pe-config-section pe-config-divider">
+      <p className="pe-config-label">Default Roles</p>
+      {roles.length === 0 ? (
+        <p className="pe-config-hint">The solution declares no roles yet.</p>
+      ) : (
+        <ul className="pe-ctx-list">
+          {roles.map((role) => (
+            <li key={role.id} className="pe-ctx-item">
+              <label className="pe-role-check">
+                <input type="checkbox" checked={pageRoles.includes(role.id)} onChange={() => togglePageRole(pagePath, role.id)} />
+                <span className="pe-ctx-key">{role.name}</span>
+              </label>
+              <span className="pe-ctx-type">{role.id}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="pe-config-hint">Ticked for a new app made from this page. Who may run an app is set on the app, in the operation's apps list.</p>
+    </div>
+  );
+}
+
 // ── FluxScript bindings (dynamic props + callbacks) ──────────────────────────
 // One expression per dynamic prop, one script per callback — the stored
 // artifact is the source text; this UI merely writes it (decision 2/6). The
@@ -578,10 +609,11 @@ interface Col3Props {
   pageRecord: PageRecordDef | null;
   pageWorkflow: string | null;
   pageExample: string;
+  pageRoles: string[];
   pagePath: string;
 }
 
-function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pageWorkflow, pageExample, pagePath }: Col3Props) {
+function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pageWorkflow, pageExample, pageRoles, pagePath }: Col3Props) {
   const config = selectedSlotId ? (slotConfigs[selectedSlotId] ?? null) : null;
 
   return (
@@ -592,6 +624,7 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, 
         <PageRecordSection pageRecord={pageRecord} pagePath={pagePath} />
         <PageListSection pageWorkflow={pageWorkflow} pagePath={pagePath} />
         <PageExampleSection pageExample={pageExample} pagePath={pagePath} />
+        <PageRolesSection pageRoles={pageRoles} pagePath={pagePath} />
 
         {selectedSlotId && config && (
           <>
@@ -673,7 +706,7 @@ function PageEditorComponent({ pagePath }: Props) {
 
   const layout = loadPageLayout(pagePath);
   const slots = layout ? collectLeafPanels(layout.root) : [];
-  const { mode, pageComponents, contextSchema, pageRecord, pageWorkflow, pageExample, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
+  const { mode, pageComponents, contextSchema, pageRecord, pageWorkflow, pageExample, pageRoles, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
 
   if (mode === 'layout') {
     return (
@@ -701,7 +734,7 @@ function PageEditorComponent({ pagePath }: Props) {
           <ComponentsColumn pageComponents={pageComponents} selectedComponentName={selectedComponentName} pagePath={pagePath} />
         )}
         <SlotsColumn slots={slots} selectedSlotId={selectedSlotId} selectedComponentName={selectedComponentName} slotConfigs={slotConfigs} pagePath={pagePath} />
-        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pageWorkflow={pageWorkflow} pageExample={pageExample} pagePath={pagePath} />
+        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pageWorkflow={pageWorkflow} pageExample={pageExample} pageRoles={pageRoles} pagePath={pagePath} />
         <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} pageExample={pageExample} />
       </div>
     </div>
@@ -790,6 +823,8 @@ export const css = `
   .pe-ctx-input { flex: 1; min-width: 80px; background: var(--color-bg); border: 1px solid var(--color-accent); border-radius: 3px; color: var(--color-text); font-size: 0.775rem; padding: 2px 5px; outline: none; }
   .pe-ctx-select { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); font-size: 0.72rem; padding: 2px 4px; }
   .pe-ctx-confirm { background: var(--color-accent); border: none; border-radius: 3px; color: #fff; cursor: pointer; font-size: 0.72rem; padding: 2px 8px; }
+  .pe-role-check { display: flex; align-items: center; gap: 5px; flex: 1; cursor: pointer; }
+  .pe-role-check input { accent-color: var(--color-accent); margin: 0; }
   .pe-example-input { width: 100%; box-sizing: border-box; resize: vertical; font-family: monospace; }
   .pe-ctx-error { width: 100%; margin: 2px 0 0; font-size: 0.7rem; color: #f48771; }
 

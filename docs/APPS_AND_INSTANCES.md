@@ -1256,7 +1256,7 @@ the user agreed); the field is `status` (the user's OK). **Built 2026-11-03.**
 (the user's, on Claude's recommendation). A limit would bring back the two
 layers that could disagree, dropped 2026-10-18 (BLUEPRINT § Access). Who may
 run an app is still set only on it in the apps list; the page's roles never
-decide who may run anything.
+decide who may run anything. **Built 2026-11-03.**
 
 - **`PageDef.roleIds`** — optional list of the solution's role ids, the page's
   default roles (the name the user's, over Claude's `defaultRoleIds`).

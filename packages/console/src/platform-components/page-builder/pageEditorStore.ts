@@ -10,6 +10,8 @@ import {
   savePageWorkflow,
   loadPageExample,
   savePageExample,
+  loadPageRoles,
+  savePageRoles,
   loadSlotConfigs,
   saveSlotConfigs,
   type PageComponentEntry,
@@ -31,6 +33,8 @@ export interface PageEditorState {
   pageWorkflow: string | null;
   /** The page's example definition, as typed (`PageDef.exampleDefinition`). */
   pageExample: string;
+  /** The page's default roles (`PageDef.roleIds`). */
+  pageRoles: string[];
   selectedComponentName: string | null;
   selectedSlotId: string | null;
   col1Collapsed: boolean;
@@ -48,6 +52,7 @@ function getStore(pagePath: string) {
       pageRecord: loadPageRecord(pagePath),
       pageWorkflow: loadPageWorkflow(pagePath),
       pageExample: loadPageExample(pagePath),
+      pageRoles: loadPageRoles(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
       col1Collapsed: false,
@@ -133,6 +138,15 @@ export function setPageExample(pagePath: string, example: string): void {
   getStore(pagePath).set((prev) => {
     savePageExample(pagePath, example);
     return { ...prev, pageExample: example };
+  });
+}
+
+/** Tick or untick one of the page's default roles. */
+export function togglePageRole(pagePath: string, roleId: string): void {
+  getStore(pagePath).set((prev) => {
+    const next = prev.pageRoles.includes(roleId) ? prev.pageRoles.filter((r) => r !== roleId) : [...prev.pageRoles, roleId];
+    savePageRoles(pagePath, next);
+    return { ...prev, pageRoles: loadPageRoles(pagePath) };
   });
 }
 

@@ -118,14 +118,14 @@ function AppDialog({ operationId, solutionId, app, roles, paths, onClose, onDone
       .catch((e) => setFailed(message(e)));
   }, [operationId, app]);
 
-  // A new app starts with its page's example definition, filled again
-  // whenever another page is chosen (APPS_AND_INSTANCES §3.1). An existing
-  // app's definition is never touched.
+  // A new app starts with its page's example definition and default roles,
+  // set again whenever another page is chosen (APPS_AND_INSTANCES §3.1,
+  // §3.3). An existing app is never touched.
   useEffect(() => {
     if (app || !pageId) return;
     let current = true;
     consoleClient.pageAppDefaults(solutionId, pageId)
-      .then((d) => { if (current) setDefinition(d.definition ?? '{}'); })
+      .then((d) => { if (current) { setDefinition(d.definition ?? '{}'); setPicked(new Set(d.roleIds)); } })
       .catch((e) => { if (current) setFailed(message(e)); });
     return () => { current = false; };
   }, [solutionId, app, pageId]);

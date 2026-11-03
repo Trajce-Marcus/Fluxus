@@ -79,8 +79,8 @@ describe('appDefaults roles and gate (§3.3)', () => {
 });
 
 describe('neither reaches the Runtime (§3.1–3.3)', () => {
-  it('apps.user sends the page without its example', async () => {
-    await publish('pages/runtime', { exampleDefinition: '{"x":1}' });
+  it('apps.user sends the page without its example or default roles', async () => {
+    await publish('pages/runtime', { exampleDefinition: '{"x":1}', roleIds: ['role_crew'] });
     await open().apps.put({ operationId: OP, pageId: 'pages/runtime', label: 'Runtime app', roleIds: ['role_crew'], definition: '{}' });
     const mine = await as(crew).apps.user({ operationId: OP });
     const page = mine.pages.find((p) => p.path === 'pages/runtime');

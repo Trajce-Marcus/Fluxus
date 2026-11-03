@@ -83,12 +83,19 @@ export interface PageDef {
    * and it never reaches the Runtime. Checked to be JSON when published.
    */
   exampleDefinition?: string;
+  /**
+   * The page's default roles (APPS_AND_INSTANCES §3.3): the roles a new app
+   * made from it starts with, which the operation admin changes freely. A
+   * default, never a limit — who may run an app is set only on the app. Never
+   * reaches the Runtime.
+   */
+  roleIds?: string[];
   layout?: LayoutDefinition;
   componentDependencies?: PageComponentEntry[];
   contextSchema?: ContextKeyDef[];
   slotConfigs?: Record<string, SlotConfig | null>;
   // `access` (who may open the page) went with apps Part 2 step 2: who may run
-  // an app is set on it in the operation's apps list, and the page carries no
-  // roles "for now" (APPS_AND_INSTANCES §2.2). Old page versions keep it;
-  // nothing reads it.
+  // an app is set on it in the operation's apps list (APPS_AND_INSTANCES §2.2);
+  // `roleIds` above is only a new app's default. Old page versions keep
+  // `access`; nothing reads it.
 }

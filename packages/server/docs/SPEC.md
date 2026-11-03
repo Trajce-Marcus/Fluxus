@@ -665,7 +665,7 @@ roles. A menu written in the old shape (labels, pages, roles) reads as empty
 what the Runtime receives at sign-in (§2.7), open to the operation's users:
 `apps`, those the caller may run (checks 1–2), each `{ id, label, pageId,
 definition }`; `pages`, their pages' latest published definitions, without the example
-definition (§3.1 — authoring only); `menu`, the
+definition and default roles (§3.1, §3.3 — authoring only); `menu`, the
 leaves whose app they may run and the groups that keep one, in the stored order
 (`menuFor`). Until step 6 it also answered `appIdByPageId` — each page's only
 app in the operation, for the old way of opening a page by its path; removed

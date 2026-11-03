@@ -364,10 +364,10 @@ export async function appDefaults(db: DbOrTx, solutionId: string, path: string, 
 }
 
 /** A published page as the Runtime gets it: without what only authoring reads
- *  — its example definition (§3.1). */
+ *  — its example definition (§3.1) and default roles (§3.3). */
 function withoutAuthoring(def: unknown): unknown {
   if (!def || typeof def !== 'object') return def;
-  const { exampleDefinition: _example, ...rest } = def as Record<string, unknown>;
+  const { exampleDefinition: _example, roleIds: _roles, ...rest } = def as Record<string, unknown>;
   return rest;
 }
 
