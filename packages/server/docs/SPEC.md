@@ -133,7 +133,12 @@ src/host.ts            — loadOperationHost (resolve operation → solution, lo
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
                          putOperationConfig)
-scripts/retire-id-field.ts
+scripts/               — bootstrap, migrate, the three check-* scripts (rerun
+                         as needed), apps-step3 and apps-step6 (tests import
+                         them). The 40 one-off data scripts were deleted
+                         2026-11-03, before the config → model rename; a doc
+                         that names one finds it in git history
+scripts/retire-id-field.ts (deleted 2026-11-03)
                        — one-off, 2026-09-18: drops `id_field` from every stored
                          record type (every record now gets an issued UUIDv7).
                          Idempotent, `--dry`. Ran against `projects` (3 types)
