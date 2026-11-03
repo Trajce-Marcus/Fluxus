@@ -291,7 +291,7 @@ const appIdInput = z.string().min(1).optional();
 
 /**
  * The put half of one collection's per-entity mutations. `def` is opaque on the
- * wire exactly as `config.put`'s whole config is — the entity's shape is the
+ * wire exactly as `model.put`'s whole config is — the entity's shape is the
  * graph validation's business, not the transport's; all this layer insists on is
  * that a def is an object carrying its own identity.
  */
@@ -654,7 +654,7 @@ export const appRouter = t.router({
     // authoring them is the job. **Sol admin, or an admin of one of the
     // solution's operations** (APPS_AND_INSTANCES §2.6, 2026-10-18): operation
     // admins use the Console's workbench on their records, which runs on this
-    // model. Writing it (`config.put` and the per-entity writes) stays sol admin.
+    // model. Writing it (`model.put` and the per-entity writes) stays sol admin.
     get: t.procedure
       .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
@@ -704,7 +704,7 @@ export const appRouter = t.router({
       }),
 
     // Per-entity model writes (model storage split, step 1). Same tier as
-    // config.put — sol admin — and the same validation: the consistency unit is
+    // model.put — sol admin — and the same validation: the consistency unit is
     // the whole graph, only the *write* unit narrows to one entity. That is what
     // ends the lost update two admins editing two different record types used to
     // suffer. `def` is the entity verbatim, carrying its own key/id.
@@ -754,9 +754,18 @@ export const appRouter = t.router({
           rethrow(err);
         }
       }),
+    // The model's version history — the designer's tool, so sol admins, like
+    // publishing and rollback (gated 2026-11-03; it was open).
     versions: t.procedure
       .input(z.object({ solutionId: solutionInput }).default({}))
-      .query(async ({ ctx, input }) => listModelVersions(ctx.db, input.solutionId)),
+      .query(async ({ ctx, input }) => {
+        try {
+          await requireSolAdmin(ctx, input.solutionId);
+          return await listModelVersions(ctx.db, input.solutionId);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
     // Rollback republishes an older version as a new one AND restores it as the
     // draft — the config draft is what hosts evaluate, so nothing else would
     // make the rollback observable.
@@ -929,9 +938,18 @@ export const appRouter = t.router({
           rethrow(err);
         }
       }),
+    // A page's version history — sol admins, like publishing and rollback
+    // (gated 2026-11-03; it was open).
     versions: t.procedure
       .input(z.object({ solutionId: solutionInput, path: z.string().min(1) }))
-      .query(async ({ ctx, input }) => listPageVersions(ctx.db, input.solutionId, input.path)),
+      .query(async ({ ctx, input }) => {
+        try {
+          await requireSolAdmin(ctx, input.solutionId);
+          return await listPageVersions(ctx.db, input.solutionId, input.path);
+        } catch (err) {
+          rethrow(err);
+        }
+      }),
     // Rollback = republish an older version's def as a NEW version; the draft
     // is untouched (append-only, never delete/edit).
     rollback: t.procedure
@@ -946,13 +964,20 @@ export const appRouter = t.router({
         }
       }),
     // A specific version's def — the rollback source (republish it as a new
-    // version). Diffing is a non-goal.
+    // version). Diffing is a non-goal. Sol admins (gated 2026-11-03; it was
+    // open, and a version carries what only authoring reads — the example
+    // definition and default roles, APPS_AND_INSTANCES §3.1–3.3).
     getVersion: t.procedure
       .input(z.object({ solutionId: solutionInput, path: z.string().min(1), version: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {
-        const def = await getPageVersion(ctx.db, input.solutionId, input.path, input.version);
-        if (def === null) throw new TRPCError({ code: 'NOT_FOUND', message: `No version ${input.version} of '${input.path}'` });
-        return { def };
+        try {
+          await requireSolAdmin(ctx, input.solutionId);
+          const def = await getPageVersion(ctx.db, input.solutionId, input.path, input.version);
+          if (def === null) throw new TRPCError({ code: 'NOT_FOUND', message: `No version ${input.version} of '${input.path}'` });
+          return { def };
+        } catch (err) {
+          rethrow(err);
+        }
       }),
   }),
 

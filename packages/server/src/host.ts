@@ -627,7 +627,7 @@ export async function pageLists(db: DbOrTx, solutionId: string): Promise<Map<str
 
 /**
  * Everything a stored model has to satisfy, whichever door it came through:
- * `config.put` (the whole graph at once) and the per-entity mutations below run
+ * `model.put` (the whole graph at once) and the per-entity mutations below run
  * exactly this. The consistency unit is the **whole graph** — a workflow
  * references attributes — so no per-entity write gets a smaller check.
  */
@@ -734,7 +734,7 @@ export async function putModel(
 
 // ── The model as tables (storage split, step 2) ───────────────────────────────
 // The consistency unit is the whole graph; the **change unit is one entity**.
-// The blob conflated the two, so `config.put` was last-write-wins across the
+// The blob conflated the two, so `model.put` was last-write-wins across the
 // entire model — two sol admins editing two different record types had no
 // logical conflict, yet one silently lost their work. Step 1 narrowed the write
 // API to one entity per call; this is the storage underneath it.

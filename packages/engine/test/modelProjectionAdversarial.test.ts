@@ -551,7 +551,7 @@ describe('a config with a dangling workflow reference', () => {
 
   // The server's save gate (host.ts validateModelGraph) calls
   // getRecordTypeDef on every type, so this config cannot be written through
-  // config.put today. It is still the difference between "the model query
+  // model.put today. It is still the difference between "the model query
   // answers nothing" and "every scripts.query call, records.* included, 500s".
   it('builds a host WITH modelTypes', () => {
     const c = dangling();

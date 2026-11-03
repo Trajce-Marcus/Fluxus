@@ -1017,7 +1017,7 @@ class Evaluator {
         const inner = ((this.v = this.leaf(callee.object.object, scope)) !== NOT_LEAF ? this.v : yield* this.eval(callee.object.object, scope));
         if (inner instanceof RecordsRoot) {
           // The model is read-only in every host: it changes through the
-          // Console's SDM editors and `config.put*`, never through a script.
+          // Console's SDM editors and `model.put*`, never through a script.
           // Both spellings are refused as read-only, not as unknown.
           if (inner.prefix !== '' || callee.object.name.startsWith(MODEL_PREFIX)) {
             throw new FluxRuntimeError(`The model is read-only — '${method}' is not available on model.${callee.object.name}`, callee.object.pos);

@@ -31,7 +31,7 @@ export interface RolesResolver {
   runtimeRoles(email: string | null | undefined, operation: string): Promise<string[]>;
   /**
    * Design plane: does this person build this solution (`sol_admins`)?
-   * Server-only — consumed by config.put/page save/publish, never in the script
+   * Server-only — consumed by model.put/page save/publish, never in the script
    * environment. One grade, so one boolean: the read/write split it replaces
    * guarded nothing once appointment moved onto the admin tiers (2026-08-04).
    *

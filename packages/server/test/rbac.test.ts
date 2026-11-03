@@ -143,8 +143,8 @@ describe('calls with no app — operation admins only', () => {
 });
 
 // The model was the asymmetry (CLIENT_TRUST_BOUNDARY §2): the data has been
-// filtered since M2, while `config.get` handed every runtime user the whole
-// SDM. `config.getForOperation` closes it with the same answer that filters the
+// filtered since M2, while `model.get` handed every runtime user the whole
+// SDM. `model.getForOperation` closes it with the same answer that filters the
 // partition — projectModel's own cases live in projection.test.ts.
 describe('the model is filtered the same way the data is', () => {
   it('ships only what this caller may read, and no hooks', async () => {

@@ -760,11 +760,11 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
     // pages.list is the reachability probe (it never throws for an existing
     // solution). The catch is now belt-and-braces: since the model moved into
     // tables (2026-08-09) a solution with nothing authored yet simply assembles
-    // to the empty model, and `config.get` throws only for a solution that does
+    // to the empty model, and `model.get` throws only for a solution that does
     // not exist — which this call has no way to recover from anyway. Kept so an
     // older server still opens the editor blank rather than failing boot.
     //
-    // A refusal is NOT swallowed: `config.get` is sol-admin gated since the
+    // A refusal is NOT swallowed: `model.get` is sol-admin gated since the
     // client trim (CLIENT_TRUST_BOUNDARY §2), and a Console user who may open
     // the org but does not build this solution must be told that, not shown an
     // empty model they will then fail to save into.

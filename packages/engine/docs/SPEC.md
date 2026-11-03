@@ -400,7 +400,7 @@ unreachable rather than merely filtered at runtime. The engine defines the
 shapes; `projectModel` (server) is the only thing that performs the trim.
 
 Everything here that takes a config takes the **narrow** grade —
-`MemoryAdapter`, `EngineOptions.config`, the bridge, `validateModel` — because
+`MemoryAdapter`, `EngineOptions.model`, the bridge, `validateModel` — because
 the full grade is assignable to it and nothing in the engine needs a stripped
 field. Two places do read hooks off a raw config (`MemoryAdapter`'s pool
 resolution, `validateModel`'s hook pass) and both go through

@@ -1,10 +1,10 @@
-// Per-entity model writes (model storage split, step 1): `config.putAttribute`
+// Per-entity model writes (model storage split, step 1): `model.putAttribute`
 // and its nine siblings. (`config.putDefaultMenu` went with apps Part 2 step 2,
 // and the default menu itself with step 3.)
 //
 // The point of the exercise is the concurrency fix — two sol admins editing two
 // different entities have no logical conflict, and must both keep their work.
-// `config.put` cannot give them that: it writes the whole graph, so the second
+// `model.put` cannot give them that: it writes the whole graph, so the second
 // save silently overwrites the first. Everything else here guards the property
 // that makes the narrower write safe: the *write* unit narrows to one entity,
 // the *consistency* unit stays the whole graph.
@@ -74,7 +74,7 @@ beforeEach(async () => {
 
 describe('the lost update this replaces', () => {
   it('two admins editing two different entities both keep their work', async () => {
-    // Both read the same starting model — the situation config.put resolves by
+    // Both read the same starting model — the situation model.put resolves by
     // dropping whichever save lands second.
     const before = await getSolutionModel(db, SOL);
     expect(before.attributes).toHaveLength(1);
@@ -234,7 +234,7 @@ describe('the tables are truth', () => {
     expect(updated.updatedBy).toBe('outsider@example.com');
   });
 
-  it('config.put is the import path — rows absent from the incoming config go', async () => {
+  it('model.put is the import path — rows absent from the incoming config go', async () => {
     await stub().model.putAttribute({
       solutionId: SOL,
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
@@ -269,7 +269,7 @@ describe('the tables are truth', () => {
   });
 });
 
-describe('the gate is sol admin, exactly like config.put', () => {
+describe('the gate is sol admin, exactly like model.put', () => {
   it('lets the appointed sol admin through', async () => {
     await expect(as(admin).model.putAttribute({
       solutionId: SOL,

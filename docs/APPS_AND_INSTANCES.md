@@ -1354,7 +1354,9 @@ use the new names; dated design docs keep the old ones as written.
   `operations.putConfig` → `operations.putMenu`, its input
   `{ operationId, menu }`; `putOperationConfig` → `putOperationMenu`, on the
   server and the client; `OperationRow.config` and the client's
-  `Operation.config` → `menu`; `withoutMenu` goes with them.
+  `Operation.config` → `menu`; `withoutMenu` goes with them. *(Corrected
+  2026-11-03 at the cold test: `withoutMenu` stays — it keeps the new `menu`
+  column out of `operations.list` / `get`, §2.3.)*
 - **Scripts:** the seven kept (`bootstrap`, `migrate`, the three `check-*`,
   `apps-step3`, `apps-step6`) are renamed with the rest. The 40 one-off data
   scripts were deleted first (0f118cb, the user's call), so nothing is left

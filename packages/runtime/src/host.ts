@@ -150,7 +150,7 @@ export async function initHost(auth?: HostAuth): Promise<void> {
     goBack: () => window.history.back(),
     canGoBack: () => historyDepth() > 0,
   });
-  // The stored config was validated at config.put; re-reporting here is a
+  // The stored config was validated at model.put; re-reporting here is a
   // free safety net against server/client engine version drift.
   createEngine({
     store: client.adapter,

@@ -286,7 +286,7 @@ takes `operationId?` (both default `demo/sdm`):
   | `solAdmins.*`, `opAdmins.appoint` / `remove` | org admin |
   | `opUsers.add` | op admin **or** org admin |
   | `opUsers.remove`, `userRoles.*`, `operations.putMenu`, `apps.list` / `get` / `put` | op admin |
-  | `model.put`, the per-entity model writes, `pages.*` (draft `pages.list` included), `publish` | sol admin |
+  | `model.put`, the per-entity model writes, `pages.*` (draft `pages.list` included), `publish`, `model.versions` / `pages.versions` / `pages.getVersion` (gated 2026-11-03) | sol admin |
   | `model.get`, `pages.publishedPaths` | sol admin **or** op admin of one of the solution's operations (2026-10-18) |
 
   **Sol admins have no user-facing grant at all** — including `solAdmins.list`,
@@ -572,6 +572,10 @@ takes `operationId?` (both default `demo/sdm`):
   **`pages.versions`** `{ solutionId?, path }` / **`pages.getVersion`**
   `{ solutionId?, path, version }` → `{ def }` / **`pages.rollback`**
   `{ solutionId?, path, version }` → `{ version }` (M3, sol-user `write`).
+  **All four are sol admin** — `pages.versions` and `pages.getVersion` were
+  open until 2026-11-03 (the Part 3 cold test found any caller could read a
+  version's example definition and default roles), and `model.versions` with
+  them.
   Publish snapshots the current draft at `max(version)+1` with required
   release notes; `page_versions` is **append-only, immutable** — rollback
   republishes an older version's def as a new version (draft untouched),

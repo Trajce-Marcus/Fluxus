@@ -1,4 +1,4 @@
-// M5 design plane: `sol_admins` gates the Console write surfaces (config.put,
+// M5 design plane: `sol_admins` gates the Console write surfaces (model.put,
 // pages.*, publish).
 //
 // **Strict, not dormant** (ruled 2026-08-02): you build a solution only if you
@@ -75,7 +75,7 @@ describe('sol-admin enforcement', () => {
 
   it('reading the model is the same grant as building it', async () => {
     // What the retired `read` grade would have bought. Someone who may open the
-    // solution may look at it; someone who may not, may not — `config.get` is
+    // solution may look at it; someone who may not, may not — `model.get` is
     // the design plane's door and hands over hooks and access rules whole
     // (CLIENT_TRUST_BOUNDARY §2). The runtime plane has its own, trimmed door.
     await expect(as(builder).model.get({ solutionId: SOL })).resolves.toBeDefined();

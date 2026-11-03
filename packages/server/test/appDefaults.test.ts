@@ -79,6 +79,13 @@ describe('appDefaults roles and gate (§3.3)', () => {
 });
 
 describe('neither reaches the Runtime (§3.1–3.3)', () => {
+  it('the version history is for sol admins: a role holder reads neither field there', async () => {
+    await publish('pages/history', { exampleDefinition: '{"secret":1}', roleIds: ['role_crew'] });
+    await expect(as(crew).pages.getVersion({ solutionId: SOL, path: 'pages/history', version: 1 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(as(crew).pages.versions({ solutionId: SOL, path: 'pages/history' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(as(crew).model.versions({ solutionId: SOL })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
   it('apps.user sends the page without its example or default roles', async () => {
     await publish('pages/runtime', { exampleDefinition: '{"x":1}', roleIds: ['role_crew'] });
     await open().apps.put({ operationId: OP, pageId: 'pages/runtime', label: 'Runtime app', roleIds: ['role_crew'], definition: '{}' });

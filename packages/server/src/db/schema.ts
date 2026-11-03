@@ -280,7 +280,7 @@ export const solAdmins = pgTable('sol_admins', {
 // ── The model, one table per collection (split from the blob 2026-08-08) ──────
 // The consistency unit is the whole graph (a workflow references attributes, so
 // validation is always global) while the change unit is ONE entity. A blob made
-// the *write* unit the whole graph too, so `config.put` was last-write-wins
+// the *write* unit the whole graph too, so `model.put` was last-write-wins
 // across the entire model: two sol admins editing two different record types
 // had no logical conflict, yet one silently lost their work.
 //

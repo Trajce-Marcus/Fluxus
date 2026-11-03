@@ -1,7 +1,7 @@
 // The client projection (docs/CLIENT_TRUST_BOUNDARY.md §2): what the runtime
 // plane is given, and — the part that matters — what it is not. `projectModel`
 // is pure, so these run without a database; the wiring into
-// `config.getForOperation` is covered in rbac.test.ts.
+// `model.getForOperation` is covered in rbac.test.ts.
 
 import { describe, expect, it } from 'vitest';
 import type { ActivityRawDef, AttributeUsageDef, ClientAttributeDef, ClientAttributeTypeConfig, SolutionModel } from '@fluxus/engine';
