@@ -84,7 +84,7 @@ export function SolutionsAdmin() {
         <div className="admin-panel-head admin-head-row">
           <div>
             <h2 className="admin-title">Solutions</h2>
-            <p className="admin-sub">Design artifacts — SDM config, pages and role defs. <strong>Open</strong> one to design it and to manage the operations running it.</p>
+            <p className="admin-sub">Design artifacts — the model, pages and roles. <strong>Open</strong> one to design it and to manage the operations running it.</p>
           </div>
           <button className="admin-btn" onClick={() => setDialog(true)}>New solution</button>
         </div>

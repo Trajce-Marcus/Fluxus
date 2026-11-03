@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateExpression, executeScript, validateExpression } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, modelSchemaTypes, MemoryAdapter } from '../src/index';
-import type { SolutionConfig } from '../src/types';
+import type { SolutionModel } from '../src/types';
 
 const config = {
   recordTypes: [
@@ -51,7 +51,7 @@ const config = {
   ],
   functions: [{ id: 'fn_total', name: 'total', description: 'Adds up', body: 'function total(a, b) { return a }' }],
   access: { roles: [{ id: 'role_supervisors', name: 'Supervisors' }] },
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
 function host() {
   const adapter = new MemoryAdapter(config, { initialRecords: [] });

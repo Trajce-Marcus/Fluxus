@@ -12,9 +12,9 @@
 
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { APPS_RECORD_TYPE, CONSOLE_EDIT, formGetIds, newRecordId, type ActivityHistoryEntry, type SolutionConfig } from '@fluxus/engine';
+import { APPS_RECORD_TYPE, CONSOLE_EDIT, formGetIds, newRecordId, type ActivityHistoryEntry, type SolutionModel } from '@fluxus/engine';
 import type { DbOrTx } from './db/client';
-import { pageVersions, records, type MenuGroup, type MenuItem, type MenuLeaf, type OperationConfig } from './db/schema';
+import { pageVersions, records, type MenuGroup, type MenuItem, type MenuLeaf } from './db/schema';
 import { appendHistoryEntry } from './databaseStore';
 import { MenuValidationError, isPagePublished, listPublishedPages } from './host';
 
@@ -138,7 +138,7 @@ export async function putApp(
   db: DbOrTx,
   operationId: string,
   input: AppInput,
-  solution: { publishedPages: ReadonlySet<string>; config: SolutionConfig },
+  solution: { publishedPages: ReadonlySet<string>; config: SolutionModel },
   author: string,
   /** The history entry's activity: a Console change, or the step 2 migration. */
   edit: { id: string; name: string } = CONSOLE_EDIT,
@@ -252,7 +252,7 @@ const EMPTY_LIST: AppList = { ids: new Set(), conditions: new Map(), formGets: n
 
 /** The workflow a page's latest published version names as its list, if it
  *  is one: it exists, and no record type points to it. */
-export async function listWorkflowOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<SolutionConfig['workflows'][number] | null> {
+export async function listWorkflowOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionModel): Promise<SolutionModel['workflows'][number] | null> {
   const [latest] = await db.select({ def: pageVersions.def }).from(pageVersions)
     .where(and(eq(pageVersions.solutionId, solutionId), eq(pageVersions.path, pageId)))
     .orderBy(desc(pageVersions.version))
@@ -264,7 +264,7 @@ export async function listWorkflowOf(db: DbOrTx, solutionId: string, pageId: str
   return workflow;
 }
 
-export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionConfig): Promise<AppList> {
+export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, config: SolutionModel): Promise<AppList> {
   const workflow = await listWorkflowOf(db, solutionId, pageId, config);
   if (!workflow) return EMPTY_LIST;
   const ids = new Set(workflow.activities.map((u) => u.activity_ref));
@@ -276,7 +276,7 @@ export async function appListOf(db: DbOrTx, solutionId: string, pageId: string, 
 }
 
 // ── The app menu (§2.5) ──────────────────────────────────────────────────────
-// Stored on the operation (`operations.config.menu`): pointers at apps in its
+// Stored on the operation (`operations.menu`): pointers at apps in its
 // apps list, in groups one level deep, with no roles of their own.
 
 const menuLeafSchema: z.ZodType<MenuLeaf> = z.object({ id: z.string().min(1), appId: z.string().min(1) });
@@ -318,8 +318,8 @@ export function validateAppMenu(menu: MenuItem[], apps: App[]): void {
 /** The stored app menu, keeping only items in its shape — a menu written
  *  before apps Part 2 (labels and pages) reads as empty until the step 2
  *  script rebuilds it. */
-export function readMenu(config: OperationConfig | null | undefined): MenuItem[] {
-  return (config?.menu ?? []).flatMap((item) => {
+export function readMenu(menu: unknown[] | null | undefined): MenuItem[] {
+  return (menu ?? []).flatMap((item) => {
     const parsed = z.union([menuGroupSchema, menuLeafSchema]).safeParse(item);
     return parsed.success ? [parsed.data] : [];
   });
@@ -353,7 +353,7 @@ export class PageNotPublishedError extends Error {}
  * default roles the solution still declares, so a stale id never reaches
  * `putApp`'s unknown-role refusal.
  */
-export async function appDefaults(db: DbOrTx, solutionId: string, path: string, config: SolutionConfig): Promise<{ definition: string | null; roleIds: string[] }> {
+export async function appDefaults(db: DbOrTx, solutionId: string, path: string, config: SolutionModel): Promise<{ definition: string | null; roleIds: string[] }> {
   const page = (await listPublishedPages(db, solutionId)).find((p) => p.path === path);
   if (!page) throw new PageNotPublishedError(`no published page '${path}'`);
   const def = (page.def ?? {}) as { exampleDefinition?: unknown; roleIds?: unknown };
@@ -373,7 +373,7 @@ function withoutAuthoring(def: unknown): unknown {
 
 export async function appsForUser(
   db: DbOrTx,
-  op: { id: string; solutionId: string; config: OperationConfig },
+  op: { id: string; solutionId: string; menu: unknown[] },
   authConfigured: boolean | undefined,
   roles: string[] | undefined,
 ): Promise<UserApps> {
@@ -384,6 +384,6 @@ export async function appsForUser(
   return {
     apps: runnable.map(({ id, label, pageId, definition }) => ({ id, label, pageId, definition })),
     pages: [...new Set(runnable.map((a) => a.pageId))].map((path) => ({ path, def: withoutAuthoring(defs.get(path)) })),
-    menu: menuFor(readMenu(op.config), (appId) => runnableIds.has(appId)),
+    menu: menuFor(readMenu(op.menu), (appId) => runnableIds.has(appId)),
   };
 }

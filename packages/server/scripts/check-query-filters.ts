@@ -10,7 +10,7 @@ import { desc } from 'drizzle-orm';
 import { validateExpression, validateScript, type Diagnostic } from '@fluxus/dsl';
 import { buildDslSchema, createEngine, functionSignatures, MemoryAdapter, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import { createDb, closeDb } from '../src/db/client';
-import { getSolutionConfig, listOrgs, listSolutions } from '../src/host';
+import { getSolutionModel, listOrgs, listSolutions } from '../src/host';
 import { pages, pageVersions } from '../src/db/schema';
 import { buildNotifyModule, consoleNotifySink } from '../src/services/notify';
 
@@ -27,12 +27,12 @@ const isRefusal = (d: Diagnostic) => /query filter/.test(d.message);
 
 let offenders = 0;
 const fieldTypes = new Map<string, number>();
-const configs = new Map<string, Awaited<ReturnType<typeof getSolutionConfig>>>();
+const configs = new Map<string, Awaited<ReturnType<typeof getSolutionModel>>>();
 
 for (const org of await listOrgs(db)) {
   for (const sol of await listSolutions(db, org.id)) {
     if (configs.has(sol.id)) continue;
-    const config = await getSolutionConfig(db, sol.id);
+    const config = await getSolutionModel(db, sol.id);
     configs.set(sol.id, config);
     for (const rt of config.recordTypes) {
       for (const cf of rt.custom_fields) fieldTypes.set(cf.type, (fieldTypes.get(cf.type) ?? 0) + 1);
@@ -40,10 +40,10 @@ for (const org of await listOrgs(db)) {
     const adapter = new MemoryAdapter(config);
     const engine = createEngine({
       store: adapter,
-      config,
+      model: config,
       services: [buildNotifyModule(consoleNotifySink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
     });
-    const found = engine.validateConfig().filter((f) => isRefusal(f.diagnostic));
+    const found = engine.validateModel().filter((f) => isRefusal(f.diagnostic));
     console.log(`── model ${sol.id}: ${found.length === 0 ? 'clean' : `${found.length} refused`}`);
     for (const f of found) console.log(`   ${f.where} [${f.diagnostic.line}:${f.diagnostic.col}] ${f.diagnostic.message}`);
     offenders += found.length;

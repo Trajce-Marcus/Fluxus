@@ -29,7 +29,7 @@ import {
   type RecordTypeDef,
   type ReverseRefEntry,
   type Savepoint,
-  type SolutionConfig,
+  type SolutionModel,
   type WaitingStore,
   type WorkflowDef,
   type ActivityDef,
@@ -94,7 +94,7 @@ export class DatabaseStore implements WaitingStore {
   constructor(
     private readonly db: Db,
     readonly operationId: string,
-    config: SolutionConfig,
+    config: SolutionModel,
   ) {
     this.model = new MemoryAdapter(config);
     this.recordTypes = new Map(config.recordTypes.map((rt) => [rt.id, rt]));

@@ -8,11 +8,11 @@
 // package); the rounds loop itself is the engine's and is tested there.
 
 import { describe, expect, it, vi } from 'vitest';
-import { MemoryAdapter, evaluateWithGets, type ClientSolutionConfig, type GetQueryFn } from '@fluxus/engine';
+import { MemoryAdapter, evaluateWithGets, type ClientSolutionModel, type GetQueryFn } from '@fluxus/engine';
 import { evaluateCapture } from '../src/pageHost';
 import type { CaptureScript } from '../src/capture/host';
 
-const CONFIG: ClientSolutionConfig = {
+const CONFIG: ClientSolutionModel = {
   attributes: [
     { key: 'region', label: 'Region', description: 'Where the job is', type: 'text' },
     {

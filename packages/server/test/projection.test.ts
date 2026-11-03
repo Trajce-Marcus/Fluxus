@@ -1,11 +1,11 @@
 // The client projection (docs/CLIENT_TRUST_BOUNDARY.md §2): what the runtime
-// plane is given, and — the part that matters — what it is not. `projectConfig`
+// plane is given, and — the part that matters — what it is not. `projectModel`
 // is pure, so these run without a database; the wiring into
 // `config.getForOperation` is covered in rbac.test.ts.
 
 import { describe, expect, it } from 'vitest';
-import type { ActivityRawDef, AttributeUsageDef, ClientAttributeDef, ClientAttributeTypeConfig, SolutionConfig } from '@fluxus/engine';
-import { projectConfig } from '../src/projection';
+import type { ActivityRawDef, AttributeUsageDef, ClientAttributeDef, ClientAttributeTypeConfig, SolutionModel } from '@fluxus/engine';
+import { projectModel } from '../src/projection';
 
 const activity = (id: string, refs: string[]): ActivityRawDef => ({
   id,
@@ -17,7 +17,7 @@ const activity = (id: string, refs: string[]): ActivityRawDef => ({
   after_hook: 'notify("done")',
 });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_a', name: 'As' }, { id: 'role_b', name: 'Bs' }] },
   attributes: [
     { key: 'note', label: 'Note', description: '', type: 'text', validation: 'value != ""', validation_message: 'required' },
@@ -62,11 +62,11 @@ const config: SolutionConfig = {
   ],
 };
 
-const asRoleA = () => projectConfig(config, { roles: ['role_a'], enforced: true });
+const asRoleA = () => projectModel(config, { roles: ['role_a'], enforced: true });
 
 /** Every key anywhere in the projected object — the growth-proof assertion:
  *  a field added to the model later cannot appear here unless someone named
- *  it in `projectConfig`. */
+ *  it in `projectModel`. */
 function allKeys(value: unknown, into = new Set<string>()): Set<string> {
   if (Array.isArray(value)) {
     for (const item of value) allKeys(item, into);
@@ -79,15 +79,15 @@ function allKeys(value: unknown, into = new Set<string>()): Set<string> {
   return into;
 }
 
-describe('projectConfig — what never leaves the server', () => {
+describe('projectModel — what never leaves the server', () => {
   it('carries no hook, anywhere, under any grade of access', () => {
     for (const roles of [['role_a'], ['role_a', 'role_b'], []]) {
-      const keys = allKeys(projectConfig(config, { roles, enforced: true }));
+      const keys = allKeys(projectModel(config, { roles, enforced: true }));
       expect(keys.has('before_hook')).toBe(false);
       expect(keys.has('after_hook')).toBe(false);
     }
     // …including the open posture, where every row survives the row cut.
-    expect(allKeys(projectConfig(config, { roles: [], enforced: false })).has('after_hook')).toBe(false);
+    expect(allKeys(projectModel(config, { roles: [], enforced: false })).has('after_hook')).toBe(false);
   });
 
   // The server answers which actions are offered (`page.activities`,
@@ -100,10 +100,10 @@ describe('projectConfig — what never leaves the server', () => {
         ? { ...a, attributes: [{ attribute_ref: 'note', show_condition: 'true' }] }
         : a)),
     };
-    for (const act of projectConfig(withQuestion, { roles: ['role_a', 'role_b'], enforced: true }).activities) {
+    for (const act of projectModel(withQuestion, { roles: ['role_a', 'role_b'], enforced: true }).activities) {
       expect('show_condition' in act).toBe(false);
     }
-    const usage = projectConfig(withQuestion, { roles: ['role_a'], enforced: true }).activities[0].attributes[0];
+    const usage = projectModel(withQuestion, { roles: ['role_a'], enforced: true }).activities[0].attributes[0];
     expect(usage).toEqual({ attribute_ref: 'note', show_condition: 'true' });
   });
 
@@ -130,7 +130,7 @@ describe('projectConfig — what never leaves the server', () => {
   });
 });
 
-describe('projectConfig — the role cut', () => {
+describe('projectModel — the role cut', () => {
   it('drops unreadable record types and the workflows that serve them', () => {
     const projected = asRoleA();
     expect(projected.recordTypes.map((rt) => rt.id)).toEqual(['rt_alpha']);
@@ -142,7 +142,7 @@ describe('projectConfig — the role cut', () => {
   // §1.3): only what a shipped workflow lists, each once.
   it('sends a pool activity no shipped workflow lists not at all', () => {
     const withUnused = { ...config, activities: [...config.activities, activity('act_unused', ['orphan'])] };
-    const projected = projectConfig(withUnused, { roles: ['role_a', 'role_b'], enforced: true });
+    const projected = projectModel(withUnused, { roles: ['role_a', 'role_b'], enforced: true });
     expect(projected.activities.map((a) => a.id).sort()).toEqual(['act_touch_alphas', 'act_touch_betas']);
     expect(projected.attributes.map((a) => a.key)).not.toContain('orphan');
   });
@@ -153,7 +153,7 @@ describe('projectConfig — the role cut', () => {
       workflows: config.workflows.map((wf) =>
         wf.id === 'wf_beta' ? { ...wf, activities: [...wf.activities, { activity_ref: 'act_touch_alphas' }] } : wf),
     };
-    const projected = projectConfig(shared, { roles: ['role_a', 'role_b'], enforced: true });
+    const projected = projectModel(shared, { roles: ['role_a', 'role_b'], enforced: true });
     expect(projected.activities.filter((a) => a.id === 'act_touch_alphas')).toHaveLength(1);
     expect(projected.workflows.find((wf) => wf.id === 'wf_beta')?.activities)
       .toEqual([{ activity_ref: 'act_touch_betas' }, { activity_ref: 'act_touch_alphas' }]);
@@ -169,7 +169,7 @@ describe('projectConfig — the role cut', () => {
   });
 
   it('ships nothing at all to a caller with no roles', () => {
-    const projected = projectConfig(config, { roles: [], enforced: true });
+    const projected = projectModel(config, { roles: [], enforced: true });
     expect(projected.recordTypes).toEqual([]);
     expect(projected.workflows).toEqual([]);
     expect(projected.activities).toEqual([]);
@@ -178,17 +178,17 @@ describe('projectConfig — the role cut', () => {
   });
 
   it('ships everything readable only in an unconfigured environment (env stub)', () => {
-    expect(projectConfig(config, { roles: [], enforced: false }).recordTypes.map((rt) => rt.id))
+    expect(projectModel(config, { roles: [], enforced: false }).recordTypes.map((rt) => rt.id))
       .toEqual(['rt_alpha', 'rt_beta']);
   });
 
   it('ships nothing when the solution declares no roles — strict, 2026-10-11', () => {
     const { access: _dropped, ...noRoles } = config;
-    expect(projectConfig(noRoles, { roles: [], enforced: true }).recordTypes).toEqual([]);
+    expect(projectModel(noRoles, { roles: [], enforced: true }).recordTypes).toEqual([]);
   });
 });
 
-describe('projectConfig — what the client does need', () => {
+describe('projectModel — what the client does need', () => {
   it('keeps validation expressions: the client validates inline, the server revalidates', () => {
     const note = asRoleA().attributes.find((a) => a.key === 'note');
     expect(note?.validation).toBe('value != ""');
@@ -205,12 +205,12 @@ describe('projectConfig — what the client does need', () => {
     const alpha = asRoleA().recordTypes[0];
     expect(alpha.custom_fields[0].label).toBe('Note');
     // The beta type's field was authored before labels existed.
-    const beta = projectConfig(config, { roles: ['role_b'], enforced: true }).recordTypes[0];
+    const beta = projectModel(config, { roles: ['role_b'], enforced: true }).recordTypes[0];
     expect(beta.custom_fields[0].label).toBeUndefined();
   });
 
   it('keeps FK wiring, which is how a browser displays and traverses a reference', () => {
-    const beta = projectConfig(config, { roles: ['role_b'], enforced: true }).recordTypes[0];
+    const beta = projectModel(config, { roles: ['role_b'], enforced: true }).recordTypes[0];
     expect(beta.custom_fields[0]).toEqual({ key: 'ref', type: 'fk_ref', fk_record_type: 'rt_alpha', fk_display_field: 'note' });
   });
 
@@ -226,7 +226,7 @@ describe('projectConfig — what the client does need', () => {
       ...config,
       attributes: config.attributes.map((a) => (a.key === 'crew' ? { ...a, type_config: { datasource: 'pricing()' } } : a)),
     };
-    expect(projectConfig(calling, { roles: ['role_a'], enforced: true }).functions?.map((f) => f.name).sort())
+    expect(projectModel(calling, { roles: ['role_a'], enforced: true }).functions?.map((f) => f.name).sort())
       .toEqual(['pricing', 'rate']);
   });
 });
@@ -241,7 +241,7 @@ describe('projectConfig — what the client does need', () => {
 // add a field to `AttributeUsageDef` or `ClientAttributeDef` and the literal
 // below stops compiling until it is listed here, at which point the assertion
 // makes it a decision — ships, or named as deliberately withheld.
-describe('projectConfig — every field is decided, none dropped by omission', () => {
+describe('projectModel — every field is decided, none dropped by omission', () => {
   /** Fields deliberately withheld from the browser. Adding to these is a
    *  trust-boundary call (docs/CLIENT_TRUST_BOUNDARY.md §2), not a formality. */
   const WITHHELD_FROM_USAGE: string[] = [];
@@ -264,7 +264,7 @@ describe('projectConfig — every field is decided, none dropped by omission', (
       validation_message: 'required',
       can_waive: true,
     };
-    const projected = projectConfig(
+    const projected = projectModel(
       { ...config, activities: [{ ...activity('act_touch_alphas', []), attributes: [full] }] },
       { roles: ['role_a'], enforced: true },
     ).activities[0].attributes[0];
@@ -292,7 +292,7 @@ describe('projectConfig — every field is decided, none dropped by omission', (
       max_count: 3,
       attributes: [{ attribute_ref: 'part_a' }],
     };
-    const projected = projectConfig(
+    const projected = projectModel(
       { ...config, attributes: config.attributes.map((a) => (a.key === 'note' ? { ...a, type_config: full } : a)) },
       { roles: ['role_a'], enforced: true },
     ).attributes.find((a) => a.key === 'note')?.type_config;
@@ -318,7 +318,7 @@ describe('projectConfig — every field is decided, none dropped by omission', (
       validation_message: 'required',
       can_waive: true,
     };
-    const projected = projectConfig(
+    const projected = projectModel(
       { ...config, attributes: [full, ...config.attributes.filter((a) => a.key !== 'note')] },
       { roles: ['role_a'], enforced: true },
     ).attributes.find((a) => a.key === 'note');

@@ -6,11 +6,11 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
-import type { SolutionConfig, ContextUser } from '@fluxus/engine';
+import type { SolutionModel, ContextUser } from '@fluxus/engine';
 import { appFor } from './appFor';
 import { appointOpAdmin } from '../src/host';
 
@@ -22,7 +22,7 @@ const touch = (id: string) => ({
   attributes: [{ attribute_ref: 'note' }], before_hook: null, after_hook: null,
 });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_a', name: 'As' }, { id: 'role_b', name: 'Bs' }] },
   attributes: [
     { key: 'id', label: 'ID', description: '', type: 'text' },
@@ -58,7 +58,7 @@ const admin: ContextUser = { id: 'u-admin', name: 'Admin', email: 'admin@example
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'RBAC');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'RBAC');
   await db.insert(records).values([
     { operationId: OP, id: 'A1', typeRef: 'rt_alpha', customFields: {}, activityHistory: [] },
@@ -145,10 +145,10 @@ describe('calls with no app — operation admins only', () => {
 // The model was the asymmetry (CLIENT_TRUST_BOUNDARY §2): the data has been
 // filtered since M2, while `config.get` handed every runtime user the whole
 // SDM. `config.getForOperation` closes it with the same answer that filters the
-// partition — projectConfig's own cases live in projection.test.ts.
+// partition — projectModel's own cases live in projection.test.ts.
 describe('the model is filtered the same way the data is', () => {
   it('ships only what this caller may read, and no hooks', async () => {
-    const model = await enforced(u1).config.getForOperation({ operationId: OP });
+    const model = await enforced(u1).model.getForOperation({ operationId: OP });
     expect(model.recordTypes.map((rt) => rt.id)).toEqual(['rt_alpha']);
     expect(model.workflows.map((wf) => wf.id)).toEqual(['wf_alpha']);
     expect(JSON.stringify(model)).not.toContain('_hook');
@@ -156,17 +156,17 @@ describe('the model is filtered the same way the data is', () => {
   });
 
   it('an unassigned user gets an empty model, as they get an empty partition', async () => {
-    const model = await enforced(u2).config.getForOperation({ operationId: OP });
+    const model = await enforced(u2).model.getForOperation({ operationId: OP });
     expect(model.recordTypes).toEqual([]);
   });
 
   it('entry is checked before anything is trimmed', async () => {
     const stranger: ContextUser = { id: 'u3', name: 'U3', email: 'u3@example.com', roles: [] };
-    await expect(enforced(stranger).config.getForOperation({ operationId: OP })).rejects.toThrow(/not a user/i);
+    await expect(enforced(stranger).model.getForOperation({ operationId: OP })).rejects.toThrow(/not a user/i);
   });
 
   it('the env stub gets the whole model, minus what never ships', async () => {
-    const model = await open().config.getForOperation({ operationId: OP });
+    const model = await open().model.getForOperation({ operationId: OP });
     expect(model.recordTypes.map((rt) => rt.id).sort()).toEqual(['rt_alpha', 'rt_beta', 'rt_gamma']);
     expect(JSON.stringify(model)).not.toContain('_hook');
   });

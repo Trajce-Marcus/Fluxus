@@ -6,7 +6,7 @@
 // design plane may see. The narrow one is declared first and the full one
 // extends it, deliberately: code typed against the narrow grade cannot compile
 // a reference to a stripped field, so the trim is structurally unreachable
-// rather than merely filtered at runtime. `projectConfig` (server) is the one
+// rather than merely filtered at runtime. `projectModel` (server) is the one
 // place that turns the full grade into the narrow one.
 
 export interface ClientCustomFieldDef {
@@ -268,7 +268,7 @@ export interface ActivityUsage {
    * An app's condition on this item (APPS_AND_INSTANCES §2.2) — only on the
    * list of an app (a workflow a page names): the activity is offered, and
    * runs, only when its own condition and this both pass. Never sent to a
-   * browser (`projectConfig` sends `activity_ref` alone).
+   * browser (`projectModel` sends `activity_ref` alone).
    */
   show_condition?: string;
 }
@@ -331,7 +331,7 @@ export interface FunctionDef {
 
 /**
  * The model as a browser on the runtime plane receives it — the output of
- * `projectConfig` and the input every client-side host is typed against
+ * `projectModel` and the input every client-side host is typed against
  * (CLIENT_TRUST_BOUNDARY §2). Trimmed two ways: field by field (no hooks, no
  * storage gate, no read rules) and row by row (no unreadable record type, no
  * unrunnable activity, no unreferenced attribute or function).
@@ -339,7 +339,7 @@ export interface FunctionDef {
  * `access` is absent entirely — the client learns its own roles from `me`, and
  * has no business knowing the rules that exclude it.
  */
-export interface ClientSolutionConfig {
+export interface ClientSolutionModel {
   attributes: ClientAttributeDef[];
   /**
    * The activity pool (APPS_AND_INSTANCES Part 1): every activity, stored once
@@ -353,11 +353,11 @@ export interface ClientSolutionConfig {
 }
 
 // One solution's model, exactly as stored: the six `sdm_*` tables assembled by
-// `getSolutionConfig`, and every snapshot in `sdm_config_versions`. Renamed from
+// `getSolutionModel`, and every snapshot in `sdm_config_versions`. Renamed from
 // `ConfigRaw` 2026-08-07 — the `Raw` suffix paired with nothing (there is no
 // cooked top-level config), while the inner `*RawDef` types still do carry the
 // unresolved-vs-resolved distinction.
-export interface SolutionConfig extends ClientSolutionConfig {
+export interface SolutionModel extends ClientSolutionModel {
   attributes: AttributeDef[];
   activities: ActivityRawDef[];
   recordTypes: RecordTypeDef[];

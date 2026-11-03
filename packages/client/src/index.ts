@@ -13,14 +13,14 @@ import type {
   ActivityOption,
   ActivityRawDef,
   AttributeDef,
-  ClientSolutionConfig,
+  ClientSolutionModel,
   FunctionDef,
   QueryActivityResult,
   RecordInstance,
   RecordTypeDef,
   RoleDef,
   RunActivityResult,
-  SolutionConfig,
+  SolutionModel,
   WorkflowRawDef,
 } from '@fluxus/engine';
 import type { AppRouter, ScriptQueryResult } from '@fluxus/server';
@@ -140,10 +140,6 @@ export interface MenuLeaf { id: string; appId: string }
 export interface MenuGroup { id: string; label: string; items: MenuLeaf[] }
 export const isMenuGroup = (item: MenuItem): item is MenuGroup => 'items' in item;
 
-export interface OperationConfig {
-  menu?: MenuItem[];
-}
-
 /** An app the caller may run, as the Runtime receives it (`apps.user`). */
 export interface UserApp {
   id: string;
@@ -160,7 +156,8 @@ export interface OperationRow {
    *  solution (ruled 2026-07-27). There is deliberately no write path. */
   solutionId: string;
   name: string;
-  config: OperationConfig;
+  // Its app menu is not sent with it (APPS_AND_INSTANCES §2.3): the Runtime
+  // gets each caller's from `apps.user`, the Console from `apps.list`.
 }
 
 /**
@@ -329,13 +326,13 @@ export class ConsoleClient {
   createOperation(input: { id: string; solutionId: string; name: string }): Promise<{ ok: true }> {
     return this.trpc.operations.create.mutate(input);
   }
-  putOperationConfig(operationId: string, config: OperationConfig): Promise<{ ok: true }> {
-    return this.trpc.operations.putConfig.mutate({ operationId, config });
+  putOperationMenu(operationId: string, menu: MenuItem[]): Promise<{ ok: true }> {
+    return this.trpc.operations.putMenu.mutate({ operationId, menu });
   }
   /** The solution's stored config artifact (opaque here) — MenuAdmin reads
    *  `default_menu` off it to show what an operation inherits (M10). */
-  getSolutionConfig(solutionId: string): Promise<unknown> {
-    return this.trpc.config.get.query({ solutionId });
+  getSolutionModel(solutionId: string): Promise<unknown> {
+    return this.trpc.model.get.query({ solutionId });
   }
 
   // Governance (RBAC stage 1): user roles per operation, sol users per
@@ -486,7 +483,7 @@ export class ConsoleClient {
   }
 
   // An operation's apps list and its menu (APPS_AND_INSTANCES §2.5–§2.6) —
-  // its admins only. The menu is saved with `putOperationConfig`.
+  // its admins only. The menu is saved with `putOperationMenu`.
   listApps(operationId: string): Promise<{ apps: App[]; menu: MenuItem[] }> {
     return this.trpc.apps.list.query({ operationId }) as Promise<{ apps: App[]; menu: MenuItem[] }>;
   }
@@ -653,22 +650,22 @@ export interface QueryInput {
  * The connected client for one operation's snapshot.
  *
  * Generic in the **grade of model it holds** (CLIENT_TRUST_BOUNDARY §2):
- * `connect` (the runtime plane) yields a `ClientSolutionConfig` — hooks, access
+ * `connect` (the runtime plane) yields a `ClientSolutionModel` — hooks, access
  * rules and the storage gate never left the server — while `connectSolution`
- * (the design plane, sol admin) yields the full `SolutionConfig`, because
+ * (the design plane, sol admin) yields the full `SolutionModel`, because
  * authoring hooks is the job. Hosts that only render and run take
  * `FluxusClient` unparameterised and get the narrow grade, which is what makes
  * a stray `config.workflows[0].activities[0].before_hook` a compile error there
  * rather than a runtime `undefined`.
  */
-export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig> {
+export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   private constructor(
     private readonly trpc: Trpc,
     /** The operation this client runs; its record partition key. */
     readonly operationId: string,
     /** The operation's linked solution; the config + pages key. */
     readonly solutionId: string,
-    readonly config: C,
+    readonly model: C,
     readonly adapter: MemoryAdapter,
     /**
      * Page definitions (path → def), snapshotted at connect like the record
@@ -757,7 +754,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     solutionId: string;
     operationId?: string;
     getToken?: () => Promise<string | null>;
-  }): Promise<FluxusClient<SolutionConfig>> {
+  }): Promise<FluxusClient<SolutionModel>> {
     const trpc = createTrpc(options.url ?? DEFAULT_URL, options.getToken);
     const { solutionId, operationId } = options;
     // pages.list is the reachability probe (it never throws for an existing
@@ -781,9 +778,9 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
         solutionAdmin = false;
         return [] as { path: string; def: unknown }[];
       }),
-      (trpc.config.get.query({ solutionId }) as Promise<SolutionConfig>).catch((err) => {
+      (trpc.model.get.query({ solutionId }) as Promise<SolutionModel>).catch((err) => {
         if (err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN') throw err;
-        return { attributes: [], activities: [], recordTypes: [], workflows: [] } as SolutionConfig;
+        return { attributes: [], activities: [], recordTypes: [], workflows: [] } as SolutionModel;
       }),
       operationId
         ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
@@ -815,8 +812,8 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
   /** Replace the solution's whole SDM config — the **import** path (installing a
    *  config, rolling one back), not the editing path. Editors save one entity at
    *  a time; see the per-entity writes below. */
-  async saveConfig(config: SolutionConfig): Promise<void> {
-    await this.trpc.config.put.mutate({ solutionId: this.solutionId, config });
+  async saveModel(config: SolutionModel): Promise<void> {
+    await this.trpc.model.put.mutate({ solutionId: this.solutionId, model: config });
   }
 
   // ── Per-entity model writes ────────────────────────────────────────────────
@@ -824,51 +821,51 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
   // attribute it touched, not the graph it happens to hold. The server still
   // validates the whole graph under a per-solution lock, so two people editing
   // two different entities no longer overwrite each other. The caller reloads
-  // afterwards to rebuild the adapter/pageRuntime, as with saveConfig.
+  // afterwards to rebuild the adapter/pageRuntime, as with saveModel.
 
   async putAttribute(def: AttributeDef): Promise<void> {
-    await this.trpc.config.putAttribute.mutate({ solutionId: this.solutionId, def });
+    await this.trpc.model.putAttribute.mutate({ solutionId: this.solutionId, def });
   }
   async deleteAttribute(key: string): Promise<void> {
-    await this.trpc.config.deleteAttribute.mutate({ solutionId: this.solutionId, key });
+    await this.trpc.model.deleteAttribute.mutate({ solutionId: this.solutionId, key });
   }
 
   async putRecordType(def: RecordTypeDef): Promise<void> {
-    await this.trpc.config.putRecordType.mutate({ solutionId: this.solutionId, def });
+    await this.trpc.model.putRecordType.mutate({ solutionId: this.solutionId, def });
   }
   async deleteRecordType(id: string): Promise<void> {
-    await this.trpc.config.deleteRecordType.mutate({ solutionId: this.solutionId, id });
+    await this.trpc.model.deleteRecordType.mutate({ solutionId: this.solutionId, id });
   }
 
   /** One activity in the solution's pool (APPS_AND_INSTANCES §1.6). Save it
    *  before a workflow that lists it; delete it only once no workflow does. */
   async putActivity(def: ActivityRawDef): Promise<void> {
-    await this.trpc.config.putActivity.mutate({ solutionId: this.solutionId, def });
+    await this.trpc.model.putActivity.mutate({ solutionId: this.solutionId, def });
   }
   async deleteActivity(id: string): Promise<void> {
-    await this.trpc.config.deleteActivity.mutate({ solutionId: this.solutionId, id });
+    await this.trpc.model.deleteActivity.mutate({ solutionId: this.solutionId, id });
   }
 
   /** A workflow is a name and an ordered list of pool activity references. */
   async putWorkflow(def: WorkflowRawDef): Promise<void> {
-    await this.trpc.config.putWorkflow.mutate({ solutionId: this.solutionId, def });
+    await this.trpc.model.putWorkflow.mutate({ solutionId: this.solutionId, def });
   }
   async deleteWorkflow(id: string): Promise<void> {
-    await this.trpc.config.deleteWorkflow.mutate({ solutionId: this.solutionId, id });
+    await this.trpc.model.deleteWorkflow.mutate({ solutionId: this.solutionId, id });
   }
 
   async putFunction(def: FunctionDef): Promise<void> {
-    await this.trpc.config.putFunction.mutate({ solutionId: this.solutionId, def });
+    await this.trpc.model.putFunction.mutate({ solutionId: this.solutionId, def });
   }
   async deleteFunction(id: string): Promise<void> {
-    await this.trpc.config.deleteFunction.mutate({ solutionId: this.solutionId, id });
+    await this.trpc.model.deleteFunction.mutate({ solutionId: this.solutionId, id });
   }
 
   async putRole(def: RoleDef): Promise<void> {
-    await this.trpc.config.putRole.mutate({ solutionId: this.solutionId, def });
+    await this.trpc.model.putRole.mutate({ solutionId: this.solutionId, def });
   }
   async deleteRole(id: string): Promise<void> {
-    await this.trpc.config.deleteRole.mutate({ solutionId: this.solutionId, id });
+    await this.trpc.model.deleteRole.mutate({ solutionId: this.solutionId, id });
   }
 
   /**
@@ -876,17 +873,17 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
    * since M3, and what replaces git as the record of model change now that the
    * database is the source of truth. Append-only: rollback republishes.
    */
-  async publishConfig(readme: string): Promise<{ version: number }> {
-    return this.trpc.config.publish.mutate({ solutionId: this.solutionId, readme });
+  async publishModel(readme: string): Promise<{ version: number }> {
+    return this.trpc.model.publish.mutate({ solutionId: this.solutionId, readme });
   }
 
-  async configVersions(): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]> {
-    return this.trpc.config.versions.query({ solutionId: this.solutionId }) as Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]>;
+  async modelVersions(): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]> {
+    return this.trpc.model.versions.query({ solutionId: this.solutionId }) as Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]>;
   }
 
   /** Restore an older version as the draft and record it as a new version. */
-  async rollbackConfig(version: number): Promise<{ version: number }> {
-    return this.trpc.config.rollback.mutate({ solutionId: this.solutionId, version });
+  async rollbackModel(version: number): Promise<{ version: number }> {
+    return this.trpc.model.rollback.mutate({ solutionId: this.solutionId, version });
   }
 
   /**
@@ -909,7 +906,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     const published = options.pages === 'published';
     const recordsMode = options.records ?? 'partition';
     const [config, partition, userApps, draftPages, me] = await Promise.all([
-      trpc.config.getForOperation.query({ operationId }) as Promise<ClientSolutionConfig>,
+      trpc.model.getForOperation.query({ operationId }) as Promise<ClientSolutionModel>,
       recordsMode === 'none'
         ? Promise.resolve([] as RecordInstance[])
         : (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>),

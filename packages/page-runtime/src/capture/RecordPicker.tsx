@@ -39,7 +39,7 @@ export const SEARCH_MIN_CHARS = 2;
  * declaration anywhere to consult and never will. A reference does — the target
  * field's `fk_display_field` — so guessing here would draw plausible-looking
  * rows over a modelling gap and hide it from the one person who can fix it
- * (the user's call, 2026-09-23). `validateConfig` refuses such a field at save;
+ * (the user's call, 2026-09-23). `validateModel` refuses such a field at save;
  * this is the net under a model that drifted after it.
  */
 const NO_DISPLAY_FIELD =

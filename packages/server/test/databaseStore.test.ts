@@ -7,11 +7,11 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { DatabaseStore, ensureOperation, ensureSolution, findActivity, loadOperationHost, putConfig } from '../src/host';
+import { DatabaseStore, ensureOperation, ensureSolution, findActivity, loadOperationHost, putModel } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
-import type { ActivityHistoryEntry, SolutionConfig } from '@fluxus/engine';
+import type { ActivityHistoryEntry, SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/database-store';
 const OP = 'test/database-store';
@@ -86,7 +86,7 @@ const config = {
     { id: 'wf_parts', name: 'Parts', description: '', activities: [act('act_create_parts', 'CREATE', ['name', 'item_id'])] },
     { id: 'wf_tags', name: 'Tags', description: '', activities: [act('act_create_tags', 'CREATE', ['name'])] },
   ],
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
 let db: Db;
 const notifications: NotificationEvent[] = [];
@@ -117,7 +117,7 @@ async function clearTags() {
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
   await ensureSolution(db, SOL, 'Database store');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Database store');
 });
 

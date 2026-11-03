@@ -22,7 +22,7 @@ import {
   type ActivityRawDef,
   type AttributeDef,
   type FunctionDef,
-  type SolutionConfig,
+  type SolutionModel,
   type ContextUser,
   type Engine,
   type RecordTypeDef,
@@ -30,7 +30,7 @@ import {
   type WorkflowRawDef,
 } from '@fluxus/engine';
 import type { Db, DbOrTx } from './db/client';
-import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmConfigVersions, sdmFunctions, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type OperationConfig, type StoredConfigBeforePool } from './db/schema';
+import { attachments, solAdmins, operations, orgs, pageVersions, pages, records, sdmActivities, sdmAttributes, sdmModelVersions, sdmFunctions, sdmRecordTypes, sdmRoles, sdmWorkflows, solutions, users, type MenuItem, type StoredModelBeforePool } from './db/schema';
 import { normaliseEmail } from './users';
 import { buildNotifyModule, consoleNotifySink, type NotifySink } from './services/notify';
 import { withSpan } from './perf';
@@ -49,7 +49,7 @@ export interface OperationHost {
   /** The operation's org — what its admin check is asked about. */
   orgId: string;
   solutionId: string;
-  config: SolutionConfig;
+  model: SolutionModel;
   store: DatabaseStore;
   engine: Engine<DatabaseStore>;
   /**
@@ -70,7 +70,7 @@ export function appScope(app: { pageId: string; label: string; definition: strin
 
 export class SolutionNotFoundError extends Error {
   constructor(solutionId: string) {
-    super(`No SDM config stored for solution '${solutionId}' — author one in the Console, or put one via config.put`);
+    super(`No model stored for solution '${solutionId}' — author one in the Console, or put one via model.put`);
   }
 }
 
@@ -96,7 +96,7 @@ export class OrgNotFoundError extends Error {
  * unknown solution has no row at all and throws. Ordering is by identity —
  * rows carry no authored order, by design.
  */
-export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise<SolutionConfig> {
+export async function getSolutionModel(db: DbOrTx, solutionId: string): Promise<SolutionModel> {
   const [row] = await db
     .select({
       attributes: sql<AttributeDef[] | null>`(SELECT jsonb_agg(${sdmAttributes.def} ORDER BY ${sdmAttributes.key}) FROM ${sdmAttributes} WHERE ${eq(sdmAttributes.solutionId, solutionId)})`,
@@ -119,7 +119,7 @@ export async function getSolutionConfig(db: DbOrTx, solutionId: string): Promise
     // an empty array would not say.
     ...(row.functions ? { functions: row.functions } : {}),
     ...(row.roles ? { access: { roles: row.roles } } : {}),
-  } as SolutionConfig;
+  } as SolutionModel;
 }
 
 export interface OperationRow {
@@ -127,7 +127,8 @@ export interface OperationRow {
   orgId: string;
   solutionId: string;
   name: string;
-  config: OperationConfig;
+  /** The app menu as stored (`readMenu` keeps only items in its shape). */
+  menu: unknown[];
 }
 
 /** An operation resolved to its linked solution — the runtime call's two keys. */
@@ -135,7 +136,7 @@ export async function getOperation(db: Db, operationId: string): Promise<Operati
   const rows = await db.select().from(operations).where(eq(operations.id, operationId));
   if (rows.length === 0) throw new OperationNotFoundError(operationId);
   const r = rows[0];
-  return { id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, config: r.config };
+  return { id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, menu: r.menu };
 }
 
 /**
@@ -146,14 +147,14 @@ export async function getOperation(db: Db, operationId: string): Promise<Operati
 export async function loadOperationHost(db: Db, operationId: string, sink: NotifySink = consoleNotifySink, user?: ContextUser): Promise<OperationHost> {
   return withSpan('host_load', operationId, async () => {
     const op = await getOperation(db, operationId);
-    const config = await getSolutionConfig(db, op.solutionId);
+    const config = await getSolutionModel(db, op.solutionId);
     const store = new DatabaseStore(db, operationId, config);
     const services = [buildNotifyModule(sink), buildGeoModule(store), buildTimeModule(), buildMathModule()];
     // context.user for gates/hooks; entries record user.id as author.
     const host: OperationHost = {
-      operationId, orgId: op.orgId, solutionId: op.solutionId, config, store,
-      engine: createEngine({ store, config, services, user }),
-      useApp: (app) => { host.engine = createEngine({ store, config, services, user, app: appScope(app) }); },
+      operationId, orgId: op.orgId, solutionId: op.solutionId, model: config, store,
+      engine: createEngine({ store, model: config, services, user }),
+      useApp: (app) => { host.engine = createEngine({ store, model: config, services, user, app: appScope(app) }); },
     };
     return host;
   });
@@ -209,7 +210,7 @@ export async function insertPendingAttachment(
 // ── Page storage ──────────────────────────────────────────────────────────────
 // Pages ride the config pipeline (server = runtime truth, repo files = deploy
 // input) but stay opaque jsonb: PageDef and validatePage belong to the page
-// builder, and the server never depends on a peer host — so unlike putConfig
+// builder, and the server never depends on a peer host — so unlike putModel
 // there is no save-time validation here. put is an unconditional upsert:
 // a deploy overwrites the stored page, which is the files-win semantics.
 
@@ -260,7 +261,7 @@ export class PageListError extends Error {}
 async function checkPageList(db: Db, solutionId: string, path: string, def: unknown): Promise<void> {
   const workflowId = (def as { workflowId?: unknown } | null)?.workflowId;
   if (workflowId === undefined || workflowId === null) return;
-  const config = await getSolutionConfig(db, solutionId);
+  const config = await getSolutionModel(db, solutionId);
   if (typeof workflowId !== 'string' || !config.workflows.some((w) => w.id === workflowId)) {
     throw new PageListError(`'${path}' names '${String(workflowId)}' as its list, and there is no such workflow`);
   }
@@ -544,7 +545,7 @@ export async function listOperations(db: Db): Promise<OperationRow[]> {
   // unordered read (Postgres heap order, which moves as rows are written) made
   // "which records the workbench shows" nondeterministic between loads.
   const rows = await db.select().from(operations).orderBy(asc(operations.name));
-  return rows.map((r) => ({ id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, config: r.config }));
+  return rows.map((r) => ({ id: r.id, orgId: r.orgId, solutionId: r.solutionId, name: r.name, menu: r.menu }));
 }
 
 /** Create an operation against an existing solution (the linked FK is enforced). */
@@ -569,9 +570,9 @@ export async function getSolutionOrg(db: Db, solutionId: string): Promise<string
   return rows[0].orgId;
 }
 
-/** Persist the operation's runtime config (menu, §5). */
-export async function putOperationConfig(db: Db, operationId: string, config: OperationConfig): Promise<void> {
-  const res = await db.update(operations).set({ config }).where(eq(operations.id, operationId)).returning({ id: operations.id });
+/** Persist the operation's app menu (APPS_AND_INSTANCES §2.5). */
+export async function putOperationMenu(db: Db, operationId: string, menu: MenuItem[]): Promise<void> {
+  const res = await db.update(operations).set({ menu }).where(eq(operations.id, operationId)).returning({ id: operations.id });
   if (res.length === 0) throw new OperationNotFoundError(operationId);
 }
 
@@ -599,9 +600,9 @@ export * from './users';
 
 // ── Config storage ────────────────────────────────────────────────────────────
 
-export class ConfigValidationError extends Error {
+export class ModelValidationError extends Error {
   constructor(public findings: string[]) {
-    super(`SDM config rejected:\n${findings.join('\n')}`);
+    super(`Model rejected:\n${findings.join('\n')}`);
   }
 }
 
@@ -630,10 +631,10 @@ export async function pageLists(db: DbOrTx, solutionId: string): Promise<Map<str
  * exactly this. The consistency unit is the **whole graph** — a workflow
  * references attributes — so no per-entity write gets a smaller check.
  */
-async function validateConfigGraph(
+async function validateModelGraph(
   db: DbOrTx,
   solutionId: string,
-  config: SolutionConfig,
+  config: SolutionModel,
   sink: NotifySink,
   /** The workflows the stored model had before this save — so a save that
    *  removes a page's list can say so. */
@@ -645,7 +646,7 @@ async function validateConfigGraph(
   const kept = new Set(config.workflows.map((w) => w.id));
   const removed = [...lists].filter(([id]) => previousWorkflowIds.has(id) && !kept.has(id));
   if (removed.length > 0) {
-    throw new ConfigValidationError(removed.map(([id, paths]) => `workflow '${id}': it is the list of ${paths.join(', ')} — change the page first`));
+    throw new ModelValidationError(removed.map(([id, paths]) => `workflow '${id}': it is the list of ${paths.join(', ')} — change the page first`));
   }
   // A workflow listing an activity the pool does not hold — what deleting a
   // pool activity still in use leaves behind. Said for every workflow before
@@ -654,7 +655,7 @@ async function validateConfigGraph(
   const dangling = config.workflows.flatMap((wf) => wf.activities
     .filter((usage) => !poolIds.has(usage.activity_ref))
     .map((usage) => `workflow '${wf.id}': activity '${usage.activity_ref}' is not in the activity pool`));
-  if (dangling.length > 0) throw new ConfigValidationError(dangling);
+  if (dangling.length > 0) throw new ModelValidationError(dangling);
   // Structural check next — MemoryAdapter resolves every attribute_ref,
   // activity_ref and workflow_ref, throwing on danglers…
   const adapter = new MemoryAdapter(config);
@@ -662,12 +663,12 @@ async function validateConfigGraph(
   // …then every FluxScript surface against the schema + service registry.
   const engine = createEngine({
     store: adapter,
-    config,
+    model: config,
     services: [buildNotifyModule(sink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
   });
-  const errors = engine.validateConfig({ appLists: new Set(lists.keys()) }).filter((f) => f.diagnostic.severity === 'error');
+  const errors = engine.validateModel({ appLists: new Set(lists.keys()) }).filter((f) => f.diagnostic.severity === 'error');
   if (errors.length > 0) {
-    throw new ConfigValidationError(errors.map((f) => `${f.where}: ${f.diagnostic.message}`));
+    throw new ModelValidationError(errors.map((f) => `${f.where}: ${f.diagnostic.message}`));
   }
 
   // The config must also survive the data it already governs: a stored record's
@@ -685,7 +686,7 @@ async function validateConfigGraph(
   // solution defines (APPS_AND_INSTANCES §2.4) — not strays.
   const orphaned = stored.map((r) => r.typeRef).filter((t) => t !== APPS_RECORD_TYPE && !ids.includes(t));
   if (orphaned.length > 0) {
-    throw new ConfigValidationError(
+    throw new ModelValidationError(
       orphaned.map((t) => `recordTypes: stored records still reference '${t}' — rename or remove is blocked while records of this type exist`),
     );
   }
@@ -702,22 +703,22 @@ async function validateConfigGraph(
  * Since the storage split this is the **import** path, not the editing path
  * (the Console saves one entity at a time): it explodes the incoming config
  * into rows, replacing all six collections and the menu, and **rows absent
- * from the incoming config are deleted**. `rollbackConfig` depends on it, and
+ * from the incoming config are deleted**. `rollbackModel` depends on it, and
  * installing a solution package will too.
  *
  * A model in the shape before the activity pool (activities nested in their
  * workflows) is converted first, by the rules migration 0022 applied
  * (`toActivityPool`), so an old export still imports.
  */
-export async function putConfig(
+export async function putModel(
   db: Db,
   solutionId: string,
-  config: SolutionConfig,
+  config: SolutionModel,
   sink: NotifySink = consoleNotifySink,
   author: string | null = null,
 ): Promise<void> {
   config = poolShaped(config);
-  await editConfig(db, solutionId, sink, async (tx) => {
+  await editModel(db, solutionId, sink, async (tx) => {
     // Deletes walk the FK order backwards and precede every insert: a record
     // type that is going has to go before the workflow it points at can.
     for (const collection of [...COLLECTIONS_IN_FK_ORDER].reverse()) {
@@ -739,7 +740,7 @@ export async function putConfig(
 // API to one entity per call; this is the storage underneath it.
 //
 // **The tables are the only copy.** A write changes rows and then validates the
-// model those rows assemble to (`getSolutionConfig`, one round trip). The
+// model those rows assemble to (`getSolutionModel`, one round trip). The
 // derived `sdm_configs` snapshot that stood beside them for a day was dropped
 // 2026-08-09 — see migration 0020.
 
@@ -752,10 +753,10 @@ export async function putConfig(
  * lift out of an incoming config — the import path's exploder needs nothing
  * reconstructed, and assembly is `jsonb_agg` in the database.
  */
-export interface ConfigCollection<T> {
+export interface ModelCollection<T> {
   name: string;
   idField: 'key' | 'id';
-  read(config: SolutionConfig): T[];
+  read(config: SolutionModel): T[];
   /** Every def for a solution, ordered by identity — assembly is deterministic
    *  by key, since rows carry no authored order (lost at migration, by design). */
   list(tx: DbOrTx, solutionId: string): Promise<T[]>;
@@ -767,7 +768,7 @@ export interface ConfigCollection<T> {
   removeExcept(tx: DbOrTx, solutionId: string, keep: string[]): Promise<void>;
 }
 
-export const configCollections = {
+export const modelCollections = {
   attributes: {
     name: 'attributes',
     idField: 'key',
@@ -795,7 +796,7 @@ export const configCollections = {
         keep.length > 0 ? not(inArray(sdmAttributes.key, keep)) : undefined,
       ));
     },
-  } as ConfigCollection<AttributeDef>,
+  } as ModelCollection<AttributeDef>,
 
   // The activity pool (APPS_AND_INSTANCES Part 1). Activities rode inside
   // their workflow until 2026-10-04; a workflow now stores references only.
@@ -826,7 +827,7 @@ export const configCollections = {
         keep.length > 0 ? not(inArray(sdmActivities.id, keep)) : undefined,
       ));
     },
-  } as ConfigCollection<ActivityRawDef>,
+  } as ModelCollection<ActivityRawDef>,
 
   // A workflow is a name and an ordered list of `{ activity_ref }`.
   workflows: {
@@ -856,7 +857,7 @@ export const configCollections = {
         keep.length > 0 ? not(inArray(sdmWorkflows.id, keep)) : undefined,
       ));
     },
-  } as ConfigCollection<WorkflowRawDef>,
+  } as ModelCollection<WorkflowRawDef>,
 
   recordTypes: {
     name: 'recordTypes',
@@ -888,7 +889,7 @@ export const configCollections = {
         keep.length > 0 ? not(inArray(sdmRecordTypes.id, keep)) : undefined,
       ));
     },
-  } as ConfigCollection<RecordTypeDef>,
+  } as ModelCollection<RecordTypeDef>,
 
   functions: {
     name: 'functions',
@@ -917,7 +918,7 @@ export const configCollections = {
         keep.length > 0 ? not(inArray(sdmFunctions.id, keep)) : undefined,
       ));
     },
-  } as ConfigCollection<FunctionDef>,
+  } as ModelCollection<FunctionDef>,
 
   roles: {
     name: 'access.roles',
@@ -946,7 +947,7 @@ export const configCollections = {
         keep.length > 0 ? not(inArray(sdmRoles.id, keep)) : undefined,
       ));
     },
-  } as ConfigCollection<RoleDef>,
+  } as ModelCollection<RoleDef>,
 } as const;
 
 /**
@@ -958,21 +959,21 @@ export const configCollections = {
 // Typed at `unknown` because this list is walked heterogeneously: each entry
 // only ever hands its own defs back to its own methods, so the element type is
 // the one thing no caller here needs to know.
-const COLLECTIONS_IN_FK_ORDER: readonly ConfigCollection<unknown>[] = [
-  configCollections.attributes,
-  configCollections.activities,
-  configCollections.workflows,
-  configCollections.recordTypes,
-  configCollections.functions,
-  configCollections.roles,
+const COLLECTIONS_IN_FK_ORDER: readonly ModelCollection<unknown>[] = [
+  modelCollections.attributes,
+  modelCollections.activities,
+  modelCollections.workflows,
+  modelCollections.recordTypes,
+  modelCollections.functions,
+  modelCollections.roles,
 ];
 
 /** The identity an entity carries in its own def — nothing reconstructs it, so
  *  a def that lacks one has nowhere to live. */
-function identityOf<T>(collection: ConfigCollection<T>, entity: unknown): string {
+function identityOf<T>(collection: ModelCollection<T>, entity: unknown): string {
   const id = (entity as Record<string, unknown> | null | undefined)?.[collection.idField];
   if (typeof id !== 'string' || id.trim() === '') {
-    throw new ConfigValidationError([`${collection.name}: the entity carries no '${collection.idField}'`]);
+    throw new ModelValidationError([`${collection.name}: the entity carries no '${collection.idField}'`]);
   }
   return id;
 }
@@ -994,7 +995,7 @@ function identityOf<T>(collection: ConfigCollection<T>, entity: unknown): string
  * the database would refuse anyway — asked here so it reads as "no such
  * solution" rather than as a constraint violation.
  */
-async function editConfig(
+async function editModel(
   db: Db,
   solutionId: string,
   sink: NotifySink,
@@ -1009,22 +1010,22 @@ async function editConfig(
     if (!solution) throw new SolutionNotFoundError(solutionId);
     const before = await tx.select({ id: sdmWorkflows.id }).from(sdmWorkflows).where(eq(sdmWorkflows.solutionId, solutionId));
     await writeRows(tx);
-    const next = await getSolutionConfig(tx, solutionId);
-    await validateConfigGraph(tx, solutionId, next, sink, new Set(before.map((r) => r.id)));
+    const next = await getSolutionModel(tx, solutionId);
+    await validateModelGraph(tx, solutionId, next, sink, new Set(before.map((r) => r.id)));
   });
 }
 
 /** Add or replace one entity of a collection, by the identity its def carries. */
-export async function putConfigEntity<T>(
+export async function putModelEntity<T>(
   db: Db,
   solutionId: string,
-  collection: ConfigCollection<T>,
+  collection: ModelCollection<T>,
   entity: unknown,
   sink: NotifySink = consoleNotifySink,
   author: string | null = null,
 ): Promise<void> {
   const id = identityOf(collection, entity);
-  await editConfig(db, solutionId, sink, (tx) => collection.put(tx, solutionId, id, entity as T, author));
+  await editModel(db, solutionId, sink, (tx) => collection.put(tx, solutionId, id, entity as T, author));
 }
 
 /**
@@ -1034,14 +1035,14 @@ export async function putConfigEntity<T>(
  * still points at) fails validation and rolls back — the FK catches the
  * record-type case earlier and more cheaply.
  */
-export async function deleteConfigEntity<T>(
+export async function deleteModelEntity<T>(
   db: Db,
   solutionId: string,
-  collection: ConfigCollection<T>,
+  collection: ModelCollection<T>,
   id: string,
   sink: NotifySink = consoleNotifySink,
 ): Promise<void> {
-  await editConfig(db, solutionId, sink, (tx) => collection.remove(tx, solutionId, id));
+  await editModel(db, solutionId, sink, (tx) => collection.remove(tx, solutionId, id));
 }
 
 // ── SDM config publishing (ruled 2026-07-26) ─────────────────────────────────
@@ -1050,18 +1051,18 @@ export async function deleteConfigEntity<T>(
 // change record has to live beside the artifact. Identical posture to
 // page_versions — append-only, readme required, rollback republishes.
 
-export class ConfigDraftNotFoundError extends Error {
-  constructor(solutionId: string) { super(`Solution '${solutionId}' has no SDM config to publish`); }
+export class ModelDraftNotFoundError extends Error {
+  constructor(solutionId: string) { super(`Solution '${solutionId}' has no model to publish`); }
 }
 
 /** Append `config` as the next immutable version of a solution's model. */
-async function appendConfigVersion(db: Db, solutionId: string, config: SolutionConfig, readme: string, publishedBy: string): Promise<{ version: number }> {
+async function appendModelVersion(db: Db, solutionId: string, config: SolutionModel, readme: string, publishedBy: string): Promise<{ version: number }> {
   const [row] = await db
-    .select({ maxV: sql<number | null>`MAX(${sdmConfigVersions.version})` })
-    .from(sdmConfigVersions)
-    .where(eq(sdmConfigVersions.solutionId, solutionId));
+    .select({ maxV: sql<number | null>`MAX(${sdmModelVersions.version})` })
+    .from(sdmModelVersions)
+    .where(eq(sdmModelVersions.solutionId, solutionId));
   const version = (row?.maxV ?? 0) + 1;
-  await db.insert(sdmConfigVersions).values({ solutionId, version, config, readme, publishedBy });
+  await db.insert(sdmModelVersions).values({ solutionId, version, model: config, readme, publishedBy });
   return { version };
 }
 
@@ -1074,16 +1075,16 @@ async function appendConfigVersion(db: Db, solutionId: string, config: SolutionC
  * tables it means an **empty model**, which is the same condition stated
  * against the truth instead of against a snapshot.
  */
-export async function publishConfig(db: Db, solutionId: string, readme: string, publishedBy: string): Promise<{ version: number }> {
-  const config = await getSolutionConfig(db, solutionId);
+export async function publishModel(db: Db, solutionId: string, readme: string, publishedBy: string): Promise<{ version: number }> {
+  const config = await getSolutionModel(db, solutionId);
   const empty = config.attributes.length === 0
     && config.activities.length === 0
     && config.recordTypes.length === 0
     && config.workflows.length === 0
     && (config.functions?.length ?? 0) === 0
     && (config.access?.roles?.length ?? 0) === 0;
-  if (empty) throw new ConfigDraftNotFoundError(solutionId);
-  return appendConfigVersion(db, solutionId, config, readme, publishedBy);
+  if (empty) throw new ModelDraftNotFoundError(solutionId);
+  return appendModelVersion(db, solutionId, config, readme, publishedBy);
 }
 
 /**
@@ -1098,45 +1099,45 @@ export async function publishConfig(db: Db, solutionId: string, readme: string, 
  * version itself is never rewritten. One whose workflows define the same
  * activity id differently cannot be converted, and the rollback is refused.
  */
-export async function rollbackConfig(db: Db, solutionId: string, version: number, readme: string, publishedBy: string): Promise<{ version: number }> {
-  const stored = await getConfigVersion(db, solutionId, version);
-  if (stored === null) throw new ConfigDraftNotFoundError(`${solutionId} (version ${version})`);
-  const config = poolShaped(stored as SolutionConfig);
-  await putConfig(db, solutionId, config);
-  return appendConfigVersion(db, solutionId, config, readme, publishedBy);
+export async function rollbackModel(db: Db, solutionId: string, version: number, readme: string, publishedBy: string): Promise<{ version: number }> {
+  const stored = await getModelVersion(db, solutionId, version);
+  if (stored === null) throw new ModelDraftNotFoundError(`${solutionId} (version ${version})`);
+  const config = poolShaped(stored as SolutionModel);
+  await putModel(db, solutionId, config);
+  return appendModelVersion(db, solutionId, config, readme, publishedBy);
 }
 
 /** `toActivityPool`, with a refusal reported the way every other rejected
  *  model is. */
-function poolShaped(config: SolutionConfig): SolutionConfig {
+function poolShaped(config: SolutionModel): SolutionModel {
   // The solution's default menu went with apps Part 2 step 3: an old model —
   // a published version rolled back to, or an export imported — still carries
   // one, and it is dropped (each operation sets up its own apps and menu).
-  const { default_menu: _menu, ...rest } = config as SolutionConfig & { default_menu?: unknown };
-  config = rest as SolutionConfig;
+  const { default_menu: _menu, ...rest } = config as SolutionModel & { default_menu?: unknown };
+  config = rest as SolutionModel;
   try {
     return toActivityPool(config);
   } catch (err) {
-    if (err instanceof ActivityPoolConflictError) throw new ConfigValidationError([err.message]);
+    if (err instanceof ActivityPoolConflictError) throw new ModelValidationError([err.message]);
     throw err;
   }
 }
 
 /** Version history for a solution's model, newest first. */
-export async function listConfigVersions(db: Db, solutionId: string): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: Date }[]> {
+export async function listModelVersions(db: Db, solutionId: string): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: Date }[]> {
   const rows = await db
-    .select({ version: sdmConfigVersions.version, readme: sdmConfigVersions.readme, publishedBy: sdmConfigVersions.publishedBy, publishedAt: sdmConfigVersions.publishedAt })
-    .from(sdmConfigVersions)
-    .where(eq(sdmConfigVersions.solutionId, solutionId));
+    .select({ version: sdmModelVersions.version, readme: sdmModelVersions.readme, publishedBy: sdmModelVersions.publishedBy, publishedAt: sdmModelVersions.publishedAt })
+    .from(sdmModelVersions)
+    .where(eq(sdmModelVersions.solutionId, solutionId));
   return rows.sort((a, b) => b.version - a.version);
 }
 
 /** One specific published config — the rollback source. As stored: a version
  *  published before the activity pool is in the old shape. */
-export async function getConfigVersion(db: Db, solutionId: string, version: number): Promise<SolutionConfig | StoredConfigBeforePool | null> {
+export async function getModelVersion(db: Db, solutionId: string, version: number): Promise<SolutionModel | StoredModelBeforePool | null> {
   const rows = await db
-    .select({ config: sdmConfigVersions.config })
-    .from(sdmConfigVersions)
-    .where(and(eq(sdmConfigVersions.solutionId, solutionId), eq(sdmConfigVersions.version, version)));
-  return rows[0]?.config ?? null;
+    .select({ model: sdmModelVersions.model })
+    .from(sdmModelVersions)
+    .where(and(eq(sdmModelVersions.solutionId, solutionId), eq(sdmModelVersions.version, version)));
+  return rows[0]?.model ?? null;
 }

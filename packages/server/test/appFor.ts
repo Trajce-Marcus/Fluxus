@@ -7,7 +7,7 @@
 // lists existed.
 
 import type { Db } from '../src/db/client';
-import { getSolutionConfig } from '../src/host';
+import { getSolutionModel } from '../src/host';
 import { appRouter } from '../src/router';
 
 export async function appFor(db: Db, opts: { solutionId: string; operationId: string; roleIds: string[]; pageId?: string; activities?: string[] }): Promise<string> {
@@ -24,11 +24,11 @@ export async function pageWithList(db: Db, solutionId: string, pageId: string, a
   const open = appRouter.createCaller({ db });
   const published = await open.pages.publishedPaths({ solutionId });
   if (published.includes(pageId)) return;
-  const config = await getSolutionConfig(db, solutionId);
+  const config = await getSolutionModel(db, solutionId);
   const typed = new Set(config.recordTypes.map((rt) => rt.workflow_ref));
   const ids = activities ?? [...new Set(config.workflows.filter((w) => typed.has(w.id)).flatMap((w) => w.activities.map((u) => u.activity_ref)))];
   const workflowId = `wf_app_${pageId.replace(/[^A-Za-z0-9_]/g, '_')}`;
-  await open.config.putWorkflow({ solutionId, def: { id: workflowId, name: pageId, description: 'A test page\'s list', activities: ids.map((activity_ref) => ({ activity_ref })) } });
+  await open.model.putWorkflow({ solutionId, def: { id: workflowId, name: pageId, description: 'A test page\'s list', activities: ids.map((activity_ref) => ({ activity_ref })) } });
   await open.pages.put({ solutionId, path: pageId, def: { workflowId } });
   await open.pages.publish({ solutionId, path: pageId, readme: 'test app' });
 }

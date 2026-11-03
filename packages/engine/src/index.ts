@@ -64,7 +64,7 @@ export type { AttributeFieldRef, AttributeTypeSpec, DescriptorField, DescriptorF
 
 export { modelSchemaTypes, modelRows, withModelTypes } from './modelProjection';
 export type { ModelProjectionOptions } from './modelProjection';
-export { validateConfig, reportConfigFindings } from './validateConfig';
+export { validateModel, reportModelFindings } from './validateModel';
 export {
   ActivityPoolConflictError,
   hasNestedActivities,
@@ -74,7 +74,7 @@ export {
   workflowActivities,
 } from './activityPool';
 export { formGetIds } from './formGets';
-export type { Finding, ValidateConfigOptions } from './validateConfig';
+export type { Finding, ValidateModelOptions } from './validateModel';
 
 export type {
   ActivityDef,
@@ -86,7 +86,7 @@ export type {
   AttributeTypeConfig,
   AttributeUsageDef,
   SectionMarkerDef,
-  SolutionConfig,
+  SolutionModel,
   ContextUser,
   CustomFieldDef,
   FunctionDef,
@@ -109,6 +109,6 @@ export type {
   ClientAttributeTypeConfig,
   ClientCustomFieldDef,
   ClientRecordTypeDef,
-  ClientSolutionConfig,
+  ClientSolutionModel,
   ClientWorkflowRawDef,
 } from './types';

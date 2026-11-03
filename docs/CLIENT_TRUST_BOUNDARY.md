@@ -5,8 +5,8 @@
 - **the storage split** (`sdm_configs` → six `sdm_*` tables), 2026-08-08/09 —
   [packages/server/docs/SPEC.md](../packages/server/docs/SPEC.md) "Model
   storage: the SDM config as tables";
-- **§2, trim by role** (sequencing step 1), 2026-08-09 — `ClientSolutionConfig`,
-  `projectConfig`, `config.getForOperation`, `config.get` tightened to sol
+- **§2, trim by role** (sequencing step 1), 2026-08-09 — `ClientSolutionModel`,
+  `projectModel`, `model.getForOperation`, `model.get` tightened to sol
   admin. Specced in the same file under "What the client is given", in
   [packages/engine/docs/SPEC.md](../packages/engine/docs/SPEC.md) "Two grades of
   model", and in [packages/client/docs/SPEC.md](../packages/client/docs/SPEC.md).
@@ -155,7 +155,7 @@ the first commits, and it can be retried without repeating the first.
 **BUILT 2026-08-09**, except the per-page cut at the end of this section. What
 follows is the design as written; where the build differs, a note says so.
 
-**Before it.** `config.get` returned the entire `SolutionConfig`, unfiltered — no
+**Before it.** `model.get` returned the entire `SolutionModel`, unfiltered — no
 role filter, no trimming. Records *are* filtered, by `computeReadable`. That
 asymmetry is the finding: **the data is filtered, the model is not.** A runtime
 user who can read one record type still receives every other type's
@@ -168,15 +168,15 @@ The design plane genuinely needs the whole model: a sol admin authoring in the
 Console must see hooks, because writing them is the job. So this is not one
 endpoint that filters harder — it is two endpoints with different audiences.
 
-- **`config.get` `{ solutionId }` → `SolutionConfig`** — the design plane.
+- **`model.get` `{ solutionId }` → `SolutionModel`** — the design plane.
   Unchanged in shape, but **tightened to sol admin** (it is the authoring
-  door; `config.put` already requires sol admin, and read and write of a model
+  door; `model.put` already requires sol admin, and read and write of a model
   are the same privilege in a one-grade world). `FluxusClient.connectSolution`
   keeps using it. *Widened 2026-10-18 (APPS_AND_INSTANCES §2.6):* the admins
   of the solution's operations read it too — they use the Console's workbench
   on their records, which runs on the whole model. Writing it stays sol
   admin.
-- **`config.getForOperation` `{ operationId }` → `ClientSolutionConfig`** —
+- **`model.getForOperation` `{ operationId }` → `ClientSolutionModel`** —
   the runtime plane. Keyed on the **operation**, not the solution, because what
   survives the trim is decided by the caller's roles *in that operation*.
   `FluxusClient.connect` switches to it.
@@ -184,7 +184,7 @@ endpoint that filters harder — it is two endpoints with different audiences.
 ### One pure function, and it names what goes in
 
 The trim is **one pure server-side function** —
-`projectConfig(config, { roles, enforced }) → ClientSolutionConfig` — so there
+`projectModel(config, { roles, enforced }) → ClientSolutionModel` — so there
 is a single place to audit and a single place to test.
 
 It **builds its output by naming each field that goes in.** Removing fields
@@ -238,14 +238,14 @@ above did:
 - **`default_menu` rides through untouched.** The runtime cannot render its
   navigation without it, and the operation's own override — which usually wins —
   arrives untrimmed from `operations.get` anyway. It is not part of
-  `ClientSolutionConfig`: the engine is menu-blind. *Reversed 2026-10-18
+  `ClientSolutionModel`: the engine is menu-blind. *Reversed 2026-10-18
   (APPS_AND_INSTANCES §2.5): it is no longer sent — the Runtime's menu is the
   operation's app menu, which `apps.user` builds for each caller, and
   `operations.get` no longer carries a menu.*
 
 ### Make the type system enforce it
 
-Define `ClientSolutionConfig` first, then have `SolutionConfig` **extend** it.
+Define `ClientSolutionModel` first, then have `SolutionModel` **extend** it.
 Client-side code typed against the narrow one then *cannot compile* a
 reference to `before_hook` — the trim becomes structurally unreachable rather
 than merely filtered at runtime. Add one test asserting the output contains no
@@ -254,7 +254,7 @@ hook keys anywhere, and the guarantee survives model growth.
 ### Two cuts, not one
 
 Trimming by **role** — this person's readable types and runnable activities —
-is the security win, and it is what `projectConfig` above does.
+is the security win, and it is what `projectModel` above does.
 
 Trimming by **page** is the payload win, and it is much the larger of the two.
 A page is about one record type, so it needs that type, its workflow, and what
@@ -262,26 +262,26 @@ it reaches through relationships — not everything the user could touch anywher
 in the operation. It also shrinks as the model grows, where the role cut grows
 with it.
 
-Both are the same function: `projectConfig(model, { roles, page })` rather than
+Both are the same function: `projectModel(model, { roles, page })` rather than
 `{ roles }`. The page cut is blocked on §7 and is the only part of this
 document that is.
 
 ### What this costs the client
 
 `MemoryAdapter` is constructed from the config on every host. Under the trim
-the runtime plane hands it a `ClientSolutionConfig`, so its parameter type
+the runtime plane hands it a `ClientSolutionModel`, so its parameter type
 widens to the narrow one. Hooks arrive absent, which is already a legal state
 (`before_hook: null`), and safe: **the client never executes hooks** — scripts
 and persistence are server-side by ruling, and the client evaluates
 expressions only (a form's `show_condition`s, `validation`, datasources — an
 action's availability is the server's since 2026-10-11). The Console is
-unaffected: it still receives the full model through `config.get`.
+unaffected: it still receives the full model through `model.get`.
 
 **The storage split helps.** Now that the model is rows rather than one blob,
 the trim selects the columns and rows it wants, and "unreadable types" and
 "unrunnable activities" become `WHERE` clauses rather than a filter pass.
 
-**As built:** in memory, over the model `getSolutionConfig` already assembles —
+**As built:** in memory, over the model `getSolutionModel` already assembles —
 one round trip either way, and a pure function is testable without a database.
 Pushing the row cuts into SQL stays available as an optimisation.
 
@@ -647,7 +647,7 @@ concept, two implementations.
 ## Sequencing
 
 1. ~~**Trim by role**~~ — **DONE 2026-08-09.** Biggest security win per unit of
-   work, and independent of everything else once `ClientSolutionConfig` exists.
+   work, and independent of everything else once `ClientSolutionModel` exists.
 2. ~~**Gap 1, `callbackData`**~~ — **DONE 2026-08-09**, as step 0 of
    [DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md): removed rather
    than declared.
@@ -661,7 +661,7 @@ concept, two implementations.
 
 ## Names
 
-**Endorsed 2026-08-08:** `ClientSolutionConfig` · `config.getForOperation` ·
+**Endorsed 2026-08-08:** `ClientSolutionModel` · `model.getForOperation` ·
 **projection** · **handle** · **operation handle** · **record handle** (now
 *page handle*, since it is issued per open page) · **confirmation token**.
 
@@ -676,7 +676,7 @@ instances }`) and the reserved read-entry keys `system_outcome` /
 **Introduced by the build, awaiting endorsement:** the per-entity narrow types
 (`ClientAttributeDef`, `ClientAttributeTypeConfig`, `ClientCustomFieldDef`,
 `ClientRecordTypeDef`, `ClientActivityRawDef`, `ClientWorkflowRawDef`) —
-mechanical derivations of the endorsed `ClientSolutionConfig`, renameable
+mechanical derivations of the endorsed `ClientSolutionModel`, renameable
 together if the prefix is not wanted.
 
 GLOSSARY carries the endorsed set; the rest go in when they are settled.
@@ -688,7 +688,7 @@ GLOSSARY carries the endorsed set; the rest go in when they are settled.
 Console's DSL Editor, hook and `returns` source included.
 
 What that means for §2's grades: this is a **third reader of the server grade**,
-alongside `config.get`. It is not gated the way `config.get` is — that requires
+alongside `model.get`. It is not gated the way `model.get` is — that requires
 sol admin, while `scripts.query` requires only `requireOpUser`. The ruling
 (2026-09-22, the user) is that the Console is the gate and operation users have
 no Console access. The endpoint is nonetheless callable directly with an

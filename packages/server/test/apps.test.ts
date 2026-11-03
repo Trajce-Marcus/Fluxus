@@ -6,11 +6,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, appointOpAdmin, appointSolAdmin, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, appointOpAdmin, appointSolAdmin, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records, rptActivities } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
-import type { ActivityRawDef, ContextUser, SolutionConfig } from '@fluxus/engine';
+import type { ActivityRawDef, ContextUser, SolutionModel } from '@fluxus/engine';
 import { pageWithList } from './appFor';
 
 const SOL = 'test/apps';
@@ -21,7 +21,7 @@ const act = (id: string, record_map: ActivityRawDef['record_map']): ActivityRawD
   id, name: id, description: '', record_map, attributes: [], before_hook: null, after_hook: null,
 });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_admin', name: 'Admin' }, { id: 'role_crew', name: 'Crew' }] },
   attributes: [{ key: 'ledger', label: 'Ledger', description: '', type: 'reference', type_config: { fk_record_type: 'rt_ledgers' } }],
   recordTypes: [
@@ -54,7 +54,7 @@ const water = { pageId: 'pages/scheduler', label: 'Water scheduler', roleIds: ['
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Apps');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Apps');
   await ensureOperation(db, OTHER_OP, SOL, 'Apps, other');
   for (const path of ['pages/scheduler', 'pages/board']) await pageWithList(db, SOL, path);
@@ -139,19 +139,19 @@ describe('who sets up apps — the operation\'s admins', () => {
 
 describe('operation admins in the Console (§2.6)', () => {
   it('lets an operation admin read the model and the published pages, but not change the model', async () => {
-    await expect(as(opBoss).config.get({ solutionId: SOL })).resolves.toMatchObject({ recordTypes: [{ id: 'rt_jobs' }, { id: 'rt_ledgers' }] });
+    await expect(as(opBoss).model.get({ solutionId: SOL })).resolves.toMatchObject({ recordTypes: [{ id: 'rt_jobs' }, { id: 'rt_ledgers' }] });
     await expect(as(opBoss).pages.publishedPaths({ solutionId: SOL })).resolves.toEqual(['pages/board', 'pages/scheduler']);
-    await expect(as(opBoss).config.put({ solutionId: SOL, config })).rejects.toThrow(/admin of this solution/);
+    await expect(as(opBoss).model.put({ solutionId: SOL, model: config })).rejects.toThrow(/admin of this solution/);
     await expect(as(opBoss).pages.list({ solutionId: SOL })).rejects.toThrow(/admin of this solution/);
   });
 
   it('still refuses someone who administers neither', async () => {
-    await expect(as(crew).config.get({ solutionId: SOL })).rejects.toThrow(/admin of this solution or of one of its operations/);
+    await expect(as(crew).model.get({ solutionId: SOL })).rejects.toThrow(/admin of this solution or of one of its operations/);
     await expect(as(crew).pages.publishedPaths({ solutionId: SOL })).rejects.toThrow(/admin of this solution or of one of its operations/);
   });
 
   it('a solution admin keeps designing', async () => {
-    await expect(as(solBoss).config.get({ solutionId: SOL })).resolves.toBeDefined();
+    await expect(as(solBoss).model.get({ solutionId: SOL })).resolves.toBeDefined();
     await expect(as(solBoss).pages.list({ solutionId: SOL })).resolves.toHaveLength(3);
   });
 });
@@ -179,12 +179,12 @@ describe('apps are kept out of every general read (§2.4)', () => {
   });
 
   it('does not count as a stray record type when the model is saved', async () => {
-    await expect(open().config.putRecordType({ solutionId: SOL, def: config.recordTypes[0] })).resolves.toEqual({ ok: true });
+    await expect(open().model.putRecordType({ solutionId: SOL, def: config.recordTypes[0] })).resolves.toEqual({ ok: true });
   });
 
   it('reserves the platform\'s ids', async () => {
-    await expect(open().config.putActivity({ solutionId: SOL, def: act('sys_console_edit', 'UPDATE') })).rejects.toThrow(/reserved by the platform/);
-    await expect(open().config.putWorkflow({ solutionId: SOL, def: { id: 'wf_sys_apps', name: 'X', description: '', activities: [] } })).rejects.toThrow(/reserved by the platform/);
+    await expect(open().model.putActivity({ solutionId: SOL, def: act('sys_console_edit', 'UPDATE') })).rejects.toThrow(/reserved by the platform/);
+    await expect(open().model.putWorkflow({ solutionId: SOL, def: { id: 'wf_sys_apps', name: 'X', description: '', activities: [] } })).rejects.toThrow(/reserved by the platform/);
   });
 });
 
@@ -204,9 +204,9 @@ describe('the Runtime through apps (§2.3, §2.5, §2.7)', () => {
     ({ id: water } = await open().apps.put({ operationId: USER_OP, pageId: 'pages/scheduler', label: 'Water scheduler', roleIds: ['role_crew'], definition: '{"network":"water"}' }));
     ({ id: sewer } = await open().apps.put({ operationId: USER_OP, pageId: 'pages/scheduler', label: 'Sewer scheduler', roleIds: ['role_admin'], definition: '{"network":"sewer"}' }));
     ({ id: board } = await open().apps.put({ operationId: USER_OP, pageId: 'pages/board', label: 'Board', roleIds: ['role_crew', 'role_admin'], definition: '{}' }));
-    await open().operations.putConfig({
+    await open().operations.putMenu({
       operationId: USER_OP,
-      config: { menu: [{ id: 'g1', label: 'Schedulers', items: [{ id: 'm1', appId: water }, { id: 'm2', appId: sewer }] }, { id: 'm3', appId: board }] },
+      menu: [{ id: 'g1', label: 'Schedulers', items: [{ id: 'm1', appId: water }, { id: 'm2', appId: sewer }] }, { id: 'm3', appId: board }],
     });
     await db.insert(records).values([
       { operationId: USER_OP, id: 'J2', typeRef: 'rt_jobs', customFields: { note: '' }, activityHistory: [] },
@@ -236,8 +236,8 @@ describe('the Runtime through apps (§2.3, §2.5, §2.7)', () => {
 
   it('no longer sends the menu with the operation', async () => {
     const op = await as(crew).operations.get({ operationId: USER_OP });
-    expect(op.config).toEqual({});
-    expect((await open().operations.list()).every((o) => !('menu' in o.config))).toBe(true);
+    expect(op).not.toHaveProperty('menu');
+    expect((await open().operations.list()).every((o) => !('menu' in o))).toBe(true);
   });
 
   it('runs a call through an app the caller may run', async () => {

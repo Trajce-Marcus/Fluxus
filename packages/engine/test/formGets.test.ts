@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { formGetIds } from '../src/formGets';
-import { validateConfig } from '../src/validateConfig';
-import type { ActivityRawDef, AttributeDef, FunctionDef, SolutionConfig } from '../src/types';
+import { validateModel } from '../src/validateModel';
+import type { ActivityRawDef, AttributeDef, FunctionDef, SolutionModel } from '../src/types';
 
 const get = (id: string): ActivityRawDef => ({
   id, name: id, description: '', record_map: 'GET', attributes: [], before_hook: null, after_hook: null, returns: 'records.jobs',
@@ -16,7 +16,7 @@ const list = (key: string, datasource: string): AttributeDef => ({
 });
 const fn = (name: string, body: string): FunctionDef => ({ id: `fn_${name}`, name, description: 'd', body });
 
-function model({ attributes = [], functions = [] }: { attributes?: AttributeDef[]; functions?: FunctionDef[] } = {}): SolutionConfig {
+function model({ attributes = [], functions = [] }: { attributes?: AttributeDef[]; functions?: FunctionDef[] } = {}): SolutionModel {
   return {
     attributes: [
       list('crew', "invoke('act_list_crews')"),
@@ -45,11 +45,11 @@ function model({ attributes = [], functions = [] }: { attributes?: AttributeDef[
       activities: ['act_assign_jobs', 'act_plan_jobs', 'act_close_jobs', 'act_list_crews', 'act_list_regions', 'act_list_cell_crews', 'act_list_jobs']
         .map((activity_ref) => ({ activity_ref })),
     }],
-  } as SolutionConfig;
+  } as SolutionModel;
 }
 
-const onPath = (config: SolutionConfig) =>
-  validateConfig(config).filter((f) => f.diagnostic.message.includes('invoke'));
+const onPath = (config: SolutionModel) =>
+  validateModel(config).filter((f) => f.diagnostic.message.includes('invoke'));
 
 describe('formGetIds', () => {
   it("names the GETs an activity's datasources invoke", () => {
@@ -97,7 +97,7 @@ describe('a datasource at model save', () => {
     // The trimmed copy: no hooks keys, and the GET's workflow not sent.
     const config = model({ attributes: [list('area', "invoke('act_list_areas')")] });
     const trimmed = { ...config, activities: config.activities!.map(({ before_hook: _b, after_hook: _a, returns: _r, ...rest }) => rest) };
-    expect(onPath(trimmed as SolutionConfig)).toEqual([]);
+    expect(onPath(trimmed as SolutionModel)).toEqual([]);
     expect(onPath(config).map((f) => f.diagnostic.message)).toEqual(["invoke('act_list_areas') — no such activity"]);
   });
 

@@ -1297,6 +1297,17 @@ list). "config" is the code's old name for a solution's model; the user ruled
 it out for apps and asked for this tidy-up. A rename only — nothing behaves
 differently — done in its own commits, after §3.1–§3.3.
 
+**Built 2026-11-03.** Three departures from the list, taken at the build:
+the client's `OperationRow` loses `config` rather than gaining `menu`
+(`operations.list` / `get` never send the menu, §2.3, so there is nothing to
+carry); `config.put`'s input key became `model` too; and only the named
+properties were renamed (`client.model`, `EngineOptions.model`,
+`PageRuntime.model`, `OperationHost.model`, `MemoryAdapter`'s argument) — local
+variables named `config` inside functions were left, about a thousand uses
+mixed with other meanings. Living docs (package SPECs and READMEs,
+ARCHITECTURE, GLOSSARY, ROADMAP, CONSOLE_RUNTIME_SPEC, CLIENT_TRUST_BOUNDARY)
+use the new names; dated design docs keep the old ones as written.
+
 - **Server calls:** `config.*` → `model.*`, the names after the dot unchanged
   (`get`, `getForOperation`, `put`, the `put…` and `delete…` per-entity calls,
   `publish`, `versions`, `rollback`). Two things are now called `model.*`:

@@ -9,11 +9,11 @@
 // board on every page open.
 
 import { describe, expect, it, vi } from 'vitest';
-import { MemoryAdapter, type ClientSolutionConfig } from '@fluxus/engine';
+import { MemoryAdapter, type ClientSolutionModel } from '@fluxus/engine';
 import { resolvePageAnchor } from '../src/pageAnchor';
 import type { PageRuntime } from '../src/runtime';
 
-const CONFIG: ClientSolutionConfig = {
+const CONFIG: ClientSolutionModel = {
   attributes: [],
   recordTypes: [
     {

@@ -129,7 +129,7 @@ function DslEditorViewComponent() {
   //
   // `attributes` stays banned — no activity is in flight here.
   const schema = useMemo(() => {
-    const built = buildDslSchema(sdmClient.config);
+    const built = buildDslSchema(sdmClient.model);
     // The model collections, so `model.record_types` validates here exactly as
     // the endpoint answers it. Declared in the editor and nowhere else — the
     // page builder's dialog and every hook leave them out, which is what keeps
@@ -143,7 +143,7 @@ function DslEditorViewComponent() {
         ? []
         : validateExpression(text, schema, {
             bannedRoots: ['attributes'],
-            functions: functionSignatures(sdmClient.config),
+            functions: functionSignatures(sdmClient.model),
           }),
     [schema],
   );

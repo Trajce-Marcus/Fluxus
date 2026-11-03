@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MemoryAdapter } from '../src/memoryAdapter';
-import type { ClientSolutionConfig } from '../src/types';
+import type { ClientSolutionModel } from '../src/types';
 
 const config = {
   attributes: [],
@@ -20,7 +20,7 @@ const config = {
     ] },
   ],
   workflows: [{ id: 'wf_cbs_nodes', name: 'CBS', activities: [] }],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 const adapter = () => new MemoryAdapter(config);
 

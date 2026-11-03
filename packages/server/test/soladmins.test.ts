@@ -21,15 +21,15 @@
 // Callers here carry emails, and a caller with none can never match a row.
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { appointOrgAdmin, appointSolAdmin, ensureOperation, ensureOrg, ensureSolution, inviteUser, putConfig } from '../src/host';
+import { appointOrgAdmin, appointSolAdmin, ensureOperation, ensureOrg, ensureSolution, inviteUser, putModel } from '../src/host';
 import { createDb, type Db } from '../src/db/client';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { SolutionConfig, ContextUser } from '@fluxus/engine';
+import type { SolutionModel, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/impl';
 const OP = 'test/impl';
-const config: SolutionConfig = { attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }], recordTypes: [], workflows: [] };
+const config: SolutionModel = { attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }], recordTypes: [], workflows: [] };
 
 let db: Db;
 const builder: ContextUser = { id: 'builder', name: 'B', email: 'builder@example.com', roles: [] };
@@ -51,7 +51,7 @@ beforeAll(async () => {
   await appointOrgAdmin(db, { email: 'boss@example.com' }); // creates solutions
   await inviteUser(db, { email: 'builder@example.com' });
   await ensureSolution(db, SOL, 'Impl');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Impl');
 });
 
@@ -59,18 +59,18 @@ describe('sol-admin enforcement', () => {
   it('strict: a solution nobody builds admits nobody to the design plane', async () => {
     // The old posture let an unconfigured solution stay open to everyone. That
     // is gone — this asks "do you belong to this", and an empty list answers it.
-    await expect(as(builder).config.put({ solutionId: SOL, config })).rejects.toThrow(denied);
-    await expect(as(outsider).config.put({ solutionId: SOL, config })).rejects.toThrow(denied);
+    await expect(as(builder).model.put({ solutionId: SOL, model: config })).rejects.toThrow(denied);
+    await expect(as(outsider).model.put({ solutionId: SOL, model: config })).rejects.toThrow(denied);
   });
 
   it('once appointed, they build; everyone else is still refused', async () => {
     await appointSolAdmin(db, { solutionId: SOL, email: 'builder@example.com' });
 
-    await expect(as(builder).config.put({ solutionId: SOL, config })).resolves.toEqual({ ok: true });
+    await expect(as(builder).model.put({ solutionId: SOL, model: config })).resolves.toEqual({ ok: true });
     await expect(as(builder).pages.put({ solutionId: SOL, path: 'pages/x', def: {} })).resolves.toEqual({ ok: true });
     await expect(as(builder).pages.publish({ solutionId: SOL, path: 'pages/x', readme: 'v1' })).resolves.toMatchObject({ version: 1 });
 
-    await expect(as(outsider).config.put({ solutionId: SOL, config })).rejects.toThrow(denied);
+    await expect(as(outsider).model.put({ solutionId: SOL, model: config })).rejects.toThrow(denied);
   });
 
   it('reading the model is the same grant as building it', async () => {
@@ -78,20 +78,20 @@ describe('sol-admin enforcement', () => {
     // solution may look at it; someone who may not, may not — `config.get` is
     // the design plane's door and hands over hooks and access rules whole
     // (CLIENT_TRUST_BOUNDARY §2). The runtime plane has its own, trimmed door.
-    await expect(as(builder).config.get({ solutionId: SOL })).resolves.toBeDefined();
-    await expect(as(outsider).config.get({ solutionId: SOL })).rejects.toThrow(denied);
+    await expect(as(builder).model.get({ solutionId: SOL })).resolves.toBeDefined();
+    await expect(as(outsider).model.get({ solutionId: SOL })).rejects.toThrow(denied);
   });
 
   it('a caller with no email can never match a row', async () => {
     // The key is the email; an auth id alone has nothing to match against. This
     // is why the rekey had to come with the pool — identity arrives by
     // invitation, and an invitation is an email.
-    await expect(as(anonymous).config.put({ solutionId: SOL, config })).rejects.toThrow(denied);
+    await expect(as(anonymous).model.put({ solutionId: SOL, model: config })).rejects.toThrow(denied);
   });
 
   it('rows are matched case-insensitively, like every other email key', async () => {
     await expect(
-      as({ ...builder, email: 'BUILDER@Example.com' }).config.put({ solutionId: SOL, config }),
+      as({ ...builder, email: 'BUILDER@Example.com' }).model.put({ solutionId: SOL, model: config }),
     ).resolves.toEqual({ ok: true });
   });
 
@@ -99,8 +99,8 @@ describe('sol-admin enforcement', () => {
     // The bootstrap that strictness forces. Creating a solution and appointing
     // its first admin are one act — the rule the org tier already follows.
     await as(boss).solutions.create({ id: 'test/fresh', name: 'Fresh' });
-    await expect(as(boss).config.put({ solutionId: 'test/fresh', config })).resolves.toEqual({ ok: true });
-    await expect(as(outsider).config.put({ solutionId: 'test/fresh', config })).rejects.toThrow(denied);
+    await expect(as(boss).model.put({ solutionId: 'test/fresh', model: config })).resolves.toEqual({ ok: true });
+    await expect(as(outsider).model.put({ solutionId: 'test/fresh', model: config })).rejects.toThrow(denied);
   });
 
   it('bootstrapOrgAdmin opens solutions that already have nobody', async () => {
@@ -119,6 +119,6 @@ describe('sol-admin enforcement', () => {
   });
 
   it('the env stub (no auth) keeps the design plane open', async () => {
-    await expect(stub().config.put({ solutionId: SOL, config })).resolves.toEqual({ ok: true });
+    await expect(stub().model.put({ solutionId: SOL, model: config })).resolves.toEqual({ ok: true });
   });
 });

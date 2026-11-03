@@ -18,13 +18,13 @@ import {
   ensureOperation,
   ensureOrg,
   ensureSolution,
-  getSolutionConfig,
+  getSolutionModel,
   inviteUser,
-  putConfig,
+  putModel,
 } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { ContextUser, SolutionConfig } from '@fluxus/engine';
+import type { ContextUser, SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/entities';
 const OP = 'test/entities';
@@ -32,7 +32,7 @@ const OP = 'test/entities';
 /** A small but complete model: one attribute, one workflow that captures it,
  *  one record type bound to that workflow. Every dangling-reference case below
  *  is one deletion away from here. */
-const config: SolutionConfig = {
+const config: SolutionModel = {
   attributes: [{ key: 'name', label: 'Name', description: '', type: 'text' }],
   recordTypes: [{ id: 'rt_assets', name: 'Assets', description: '', workflow_ref: 'wf_assets', custom_fields: [] }],
   activities: [
@@ -68,7 +68,7 @@ beforeEach(async () => {
   await inviteUser(db, { email: 'outsider@example.com' });
   await ensureSolution(db, SOL, 'Entities');
   await appointSolAdmin(db, { email: 'admin@example.com', solutionId: SOL });
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Entities');
 });
 
@@ -76,63 +76,63 @@ describe('the lost update this replaces', () => {
   it('two admins editing two different entities both keep their work', async () => {
     // Both read the same starting model — the situation config.put resolves by
     // dropping whichever save lands second.
-    const before = await getSolutionConfig(db, SOL);
+    const before = await getSolutionModel(db, SOL);
     expect(before.attributes).toHaveLength(1);
 
-    await stub().config.putAttribute({
+    await stub().model.putAttribute({
       solutionId: SOL,
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
     });
-    await stub().config.putRecordType({
+    await stub().model.putRecordType({
       solutionId: SOL,
       def: { ...before.recordTypes[0], name: 'Plant assets' },
     });
 
-    const after = await getSolutionConfig(db, SOL);
+    const after = await getSolutionModel(db, SOL);
     expect(after.attributes.map((a) => a.key)).toEqual(['name', 'serial']);
     expect(after.recordTypes[0].name).toBe('Plant assets');
   });
 
   it('the whole-config door still works — it is the import path', async () => {
-    await stub().config.put({ solutionId: SOL, config: { ...config, functions: [] } });
-    expect((await getSolutionConfig(db, SOL)).recordTypes).toHaveLength(1);
+    await stub().model.put({ solutionId: SOL, model: { ...config, functions: [] } });
+    expect((await getSolutionModel(db, SOL)).recordTypes).toHaveLength(1);
   });
 });
 
 describe('put', () => {
   it('replaces an entity in place, by the identity its def carries', async () => {
-    await stub().config.putAttribute({
+    await stub().model.putAttribute({
       solutionId: SOL,
       def: { key: 'name', label: 'Asset name', description: '', type: 'text' },
     });
-    const after = await getSolutionConfig(db, SOL);
+    const after = await getSolutionModel(db, SOL);
     expect(after.attributes).toHaveLength(1);
     expect(after.attributes[0].label).toBe('Asset name');
   });
 
   it('rejects a def with no identity', async () => {
-    await expect(stub().config.putAttribute({ solutionId: SOL, def: { label: 'Nameless' } }))
+    await expect(stub().model.putAttribute({ solutionId: SOL, def: { label: 'Nameless' } }))
       .rejects.toThrow(/carries no 'key'/);
   });
 
   it('authors into a solution that has no model yet', async () => {
     await ensureSolution(db, 'test/blank', 'Blank');
-    await stub().config.putWorkflow({
+    await stub().model.putWorkflow({
       solutionId: 'test/blank',
       def: { id: 'wf_a', name: 'A', description: '', activities: [] },
     });
-    const created = await getSolutionConfig(db, 'test/blank');
+    const created = await getSolutionModel(db, 'test/blank');
     expect(created.workflows.map((w) => w.id)).toEqual(['wf_a']);
     expect(created.recordTypes).toEqual([]);
   });
 
   it('writes functions and roles too', async () => {
-    await stub().config.putFunction({
+    await stub().model.putFunction({
       solutionId: SOL,
       def: { id: 'fn_double', name: 'double', description: 'Twice n', body: 'function double(n) {\n  return n * 2\n}' },
     });
-    await stub().config.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
-    const after = await getSolutionConfig(db, SOL);
+    await stub().model.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
+    const after = await getSolutionModel(db, SOL);
     expect(after.functions?.map((f) => f.id)).toEqual(['fn_double']);
     expect(after.access?.roles?.map((r) => r.id)).toEqual(['role_crew', 'role_leads']);
   });
@@ -140,24 +140,24 @@ describe('put', () => {
 
 describe('delete', () => {
   it('removes an entity nothing references', async () => {
-    await stub().config.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
-    await stub().config.deleteRole({ solutionId: SOL, id: 'role_leads' });
-    expect((await getSolutionConfig(db, SOL)).access?.roles?.map((r) => r.id)).toEqual(['role_crew']);
+    await stub().model.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
+    await stub().model.deleteRole({ solutionId: SOL, id: 'role_leads' });
+    expect((await getSolutionModel(db, SOL)).access?.roles?.map((r) => r.id)).toEqual(['role_crew']);
   });
 
   it('is idempotent — an id already gone is a delete that already happened', async () => {
-    await stub().config.deleteFunction({ solutionId: SOL, id: 'fn_never' });
-    expect((await getSolutionConfig(db, SOL)).functions ?? []).toEqual([]);
+    await stub().model.deleteFunction({ solutionId: SOL, id: 'fn_never' });
+    expect((await getSolutionModel(db, SOL)).functions ?? []).toEqual([]);
   });
 
   it('refuses an attribute an activity still captures, and rolls back', async () => {
-    await expect(stub().config.deleteAttribute({ solutionId: SOL, key: 'name' })).rejects.toThrow();
-    expect((await getSolutionConfig(db, SOL)).attributes.map((a) => a.key)).toEqual(['name']);
+    await expect(stub().model.deleteAttribute({ solutionId: SOL, key: 'name' })).rejects.toThrow();
+    expect((await getSolutionModel(db, SOL)).attributes.map((a) => a.key)).toEqual(['name']);
   });
 
   it('refuses a workflow a record type still points at, and rolls back', async () => {
-    await expect(stub().config.deleteWorkflow({ solutionId: SOL, id: 'wf_assets' })).rejects.toThrow();
-    expect((await getSolutionConfig(db, SOL)).workflows.map((w) => w.id)).toEqual(['wf_assets']);
+    await expect(stub().model.deleteWorkflow({ solutionId: SOL, id: 'wf_assets' })).rejects.toThrow();
+    expect((await getSolutionModel(db, SOL)).workflows.map((w) => w.id)).toEqual(['wf_assets']);
   });
 
   it('refuses a record type stored records still reference', async () => {
@@ -166,15 +166,15 @@ describe('delete', () => {
       activityId: 'act_create_assets',
       attributes: { name: 'Pump 1' },
     });
-    await expect(stub().config.deleteRecordType({ solutionId: SOL, id: 'rt_assets' }))
+    await expect(stub().model.deleteRecordType({ solutionId: SOL, id: 'rt_assets' }))
       .rejects.toThrow(/stored records still reference/);
-    expect((await getSolutionConfig(db, SOL)).recordTypes).toHaveLength(1);
+    expect((await getSolutionModel(db, SOL)).recordTypes).toHaveLength(1);
   });
 });
 
 describe('the graph is validated on every entity write', () => {
   it('an entity that dangles is rejected whole', async () => {
-    await expect(stub().config.putWorkflow({
+    await expect(stub().model.putWorkflow({
       solutionId: SOL,
       def: {
         id: 'wf_ghost',
@@ -184,7 +184,7 @@ describe('the graph is validated on every entity write', () => {
         activities: [{ activity_ref: 'act_ghost' }],
       },
     })).rejects.toThrow();
-    expect((await getSolutionConfig(db, SOL)).workflows.map((w) => w.id)).toEqual(['wf_assets']);
+    expect((await getSolutionModel(db, SOL)).workflows.map((w) => w.id)).toEqual(['wf_assets']);
   });
 });
 
@@ -192,16 +192,16 @@ describe('the graph is validated on every entity write', () => {
 // an imported model that still carries one has it dropped.
 describe('the default menu is gone', () => {
   it('drops the default menu an imported model carries', async () => {
-    const current = await getSolutionConfig(db, SOL);
-    await stub().config.put({ solutionId: SOL, config: { ...current, default_menu: [{ label: 'Home', page: 'pages/home', roles: ['role_crew'] }] } as SolutionConfig });
-    expect(await getSolutionConfig(db, SOL)).not.toHaveProperty('default_menu');
+    const current = await getSolutionModel(db, SOL);
+    await stub().model.put({ solutionId: SOL, model: { ...current, default_menu: [{ label: 'Home', page: 'pages/home', roles: ['role_crew'] }] } as SolutionModel });
+    expect(await getSolutionModel(db, SOL)).not.toHaveProperty('default_menu');
   });
 });
 
 // Step 2: the six sdm_* tables are truth and sdm_configs.config is derived.
 describe('the tables are truth', () => {
   it('a put lands as a row, and the snapshot is assembled from the rows', async () => {
-    await stub().config.putAttribute({
+    await stub().model.putAttribute({
       solutionId: SOL,
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
     });
@@ -209,39 +209,39 @@ describe('the tables are truth', () => {
     expect(rows.map((r) => r.key).sort()).toEqual(['name', 'serial']);
     // `def` is the entity verbatim, its own key included — assembly is a lift.
     expect(rows.find((r) => r.key === 'serial')?.def).toMatchObject({ key: 'serial', label: 'Serial' });
-    expect((await getSolutionConfig(db, SOL)).attributes.map((a) => a.key)).toEqual(['name', 'serial']);
+    expect((await getSolutionModel(db, SOL)).attributes.map((a) => a.key)).toEqual(['name', 'serial']);
   });
 
   it('promotes workflow_ref into its own column, and the FK blocks a dangling one', async () => {
     const [rt] = await db.select().from(sdmRecordTypes).where(eq(sdmRecordTypes.solutionId, SOL));
     expect(rt.workflowRef).toBe('wf_assets');
     expect(rt.def.workflow_ref).toBe('wf_assets'); // the column is a lift, not a move
-    await expect(stub().config.putRecordType({
+    await expect(stub().model.putRecordType({
       solutionId: SOL,
       def: { id: 'rt_ghost', name: 'Ghost', description: '', workflow_ref: 'wf_nope', custom_fields: [] },
     })).rejects.toThrow();
   });
 
   it('records authorship per entity — created_by on insert, updated_by on update', async () => {
-    await as(admin).config.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
+    await as(admin).model.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Leads' } });
     const [created] = await db.select().from(sdmRoles).where(and(eq(sdmRoles.solutionId, SOL), eq(sdmRoles.id, 'role_leads')));
     expect(created.createdBy).toBe('admin@example.com');
 
     await appointSolAdmin(db, { email: 'outsider@example.com', solutionId: SOL });
-    await as(outsider).config.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Team leads' } });
+    await as(outsider).model.putRole({ solutionId: SOL, def: { id: 'role_leads', name: 'Team leads' } });
     const [updated] = await db.select().from(sdmRoles).where(and(eq(sdmRoles.solutionId, SOL), eq(sdmRoles.id, 'role_leads')));
     expect(updated.createdBy).toBe('admin@example.com'); // the author of record survives
     expect(updated.updatedBy).toBe('outsider@example.com');
   });
 
   it('config.put is the import path — rows absent from the incoming config go', async () => {
-    await stub().config.putAttribute({
+    await stub().model.putAttribute({
       solutionId: SOL,
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
     });
     expect((await db.select().from(sdmAttributes).where(eq(sdmAttributes.solutionId, SOL)))).toHaveLength(2);
     // The original config knows nothing of `serial`, so importing it removes it.
-    await stub().config.put({ solutionId: SOL, config });
+    await stub().model.put({ solutionId: SOL, model: config });
     const rows = await db.select().from(sdmAttributes).where(eq(sdmAttributes.solutionId, SOL));
     expect(rows.map((r) => r.key)).toEqual(['name']);
   });
@@ -258,11 +258,11 @@ describe('the tables are truth', () => {
 
   it('a solution with nothing authored yet reads as the empty model', async () => {
     await ensureSolution(db, 'test/blank2', 'Blank');
-    expect(await getSolutionConfig(db, 'test/blank2')).toEqual({ attributes: [], activities: [], recordTypes: [], workflows: [] });
+    expect(await getSolutionModel(db, 'test/blank2')).toEqual({ attributes: [], activities: [], recordTypes: [], workflows: [] });
   });
 
   it('a model cannot exist without its solution', async () => {
-    await expect(stub().config.putAttribute({
+    await expect(stub().model.putAttribute({
       solutionId: 'test/ghost',
       def: { key: 'x', label: 'X', description: '', type: 'text' },
     })).rejects.toThrow(/test\/ghost/);
@@ -271,18 +271,18 @@ describe('the tables are truth', () => {
 
 describe('the gate is sol admin, exactly like config.put', () => {
   it('lets the appointed sol admin through', async () => {
-    await expect(as(admin).config.putAttribute({
+    await expect(as(admin).model.putAttribute({
       solutionId: SOL,
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
     })).resolves.toEqual({ ok: true });
   });
 
   it('refuses everyone else, on put and on delete', async () => {
-    await expect(as(outsider).config.putAttribute({
+    await expect(as(outsider).model.putAttribute({
       solutionId: SOL,
       def: { key: 'serial', label: 'Serial', description: '', type: 'text' },
     })).rejects.toThrow(/admin of this solution/);
-    await expect(as(outsider).config.deleteAttribute({ solutionId: SOL, key: 'name' }))
+    await expect(as(outsider).model.deleteAttribute({ solutionId: SOL, key: 'name' }))
       .rejects.toThrow(/admin of this solution/);
   });
 });

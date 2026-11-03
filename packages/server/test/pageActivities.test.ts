@@ -6,11 +6,11 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
-import type { ActivityRawDef, ContextUser, SolutionConfig } from '@fluxus/engine';
+import type { ActivityRawDef, ContextUser, SolutionModel } from '@fluxus/engine';
 import { appFor } from './appFor';
 
 const SOL = 'test/page-activities';
@@ -23,7 +23,7 @@ const act = (id: string, record_map: ActivityRawDef['record_map'], show_conditio
   ...(record_map === 'GET' ? { returns: 'records.jobs' } : {}),
 });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_admin', name: 'Admin' }, { id: 'role_inspector', name: 'Inspector' }] },
   attributes: [],
   recordTypes: [
@@ -67,7 +67,7 @@ const offered = async (user: ContextUser, item: { recordId: string } | { typeId:
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Page activities');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Page activities');
   await db.insert(records).values([
     { operationId: OP, id: 'J1', typeRef: 'rt_jobs', customFields: { inspector_email: 'Nick@Example.com' }, activityHistory: [] },

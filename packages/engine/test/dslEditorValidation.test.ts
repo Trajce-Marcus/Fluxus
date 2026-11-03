@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateExpression } from '@fluxus/dsl';
 import { buildDslSchema, functionSignatures } from '../src/index';
-import type { ClientSolutionConfig } from '../src/types';
+import type { ClientSolutionModel } from '../src/types';
 
 const config = {
   recordTypes: [
@@ -30,7 +30,7 @@ const config = {
   attributes: [],
   roles: [],
   functions: [],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 /** Exactly what DslEditorView builds. */
 function editorValidate(source: string) {

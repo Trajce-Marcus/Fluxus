@@ -6,18 +6,18 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, putModel } from '../src/host';
 import { appRouter } from '../src/router';
 import { pageVersions, pages } from '../src/db/schema';
 import { getApp, getAppRecord } from '../src/apps';
 import { applySolutionPlan, keyFor, planStep6 } from '../scripts/apps-step6';
-import type { SolutionConfig } from '@fluxus/engine';
+import type { SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/step6';
 const OP = 'test/step6';
 const TWO = 'test/step6-two';
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_crew', name: 'Crew' }] },
   attributes: [],
   recordTypes: [{ id: 'rt_jobs', name: 'Jobs', description: '', workflow_ref: 'wf_jobs', custom_fields: [] }],
@@ -51,7 +51,7 @@ let jobsApp: string, jobApp: string, reportApp: string, twoJobsApp: string;
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Step 6');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Step 6');
   await ensureOperation(db, TWO, SOL, 'Step 6, two schedulers');
   // The job page links nowhere, but its component list still names OpenPage.

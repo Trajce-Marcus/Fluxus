@@ -127,12 +127,12 @@ src/databaseStore.ts   — DatabaseStore: reads on demand, writes through, the
                          queries (`queryRecords`)
 src/recordQuery.ts     — a record query as one SQL statement (step 3)
 src/host.ts            — loadOperationHost (resolve operation → solution, load
-                         the model, build the store + engine) / putConfig +
-                         the per-entity model writes (configCollections,
-                         putConfigEntity/deleteConfigEntity);
+                         the model, build the store + engine) / putModel +
+                         the per-entity model writes (modelCollections,
+                         putModelEntity/deleteModelEntity);
                          orgs + solutions + operations helpers (ensure/list/
                          create/getOrg/putOrgProfile/getOperation/
-                         putOperationConfig)
+                         putOperationMenu)
 scripts/               — bootstrap, migrate, the three check-* scripts (rerun
                          as needed), apps-step3 and apps-step6 (tests import
                          them). The 40 one-off data scripts were deleted
@@ -151,7 +151,7 @@ scripts/retire-id-field.ts (deleted 2026-11-03)
                          removed in the Console
 src/projection.ts      — the client projection: computeReadable (the record-type
                          read filter, shared by the data and model cuts) and
-                         projectConfig (the stored model → the browser's copy).
+                         projectModel (the stored model → the browser's copy).
                          The ONE place that decides what leaves the server.
                          Its per-field whitelists are locked to the model types
                          by three tests (2026-09-18) — a field added to a usage
@@ -161,8 +161,8 @@ src/projection.ts      — the client projection: computeReadable (the record-ty
                          both lost for three days
 src/router.ts          — the tRPC router: orgs.get/putProfile,
                          solutions.list/create/update/delete,
-                         operations.list/get/create/putConfig,
-                         config.get/getForOperation/put
+                         operations.list/get/create/putModel,
+                         model.get/getForOperation/put
                          + the per-entity model writes (putAttribute…
                          deleteRole), apps.*, pages.*, page.activities,
                          records.*, activities.run, files.*, perf.*
@@ -222,14 +222,15 @@ takes `operationId?` (both default `demo/sdm`):
   the two open questions (R2 blobs, whether a deletion is recorded).
 - **`operations.list`** →
   `OperationRow[]` / **`operations.get`** `{ operationId? }` →
-  `{ id, orgId, solutionId, name, config, solutionName, orgName }` — both
-  **without the menu** since 2026-10-18 (`config` carries no `menu`): the
+  `{ id, orgId, solutionId, name, solutionName, orgName }` — both
+  **without the menu** since 2026-10-18 (and with no `config` since
+  2026-11-03, when the menu became its own column): the
   Runtime gets the caller's menu from `apps.user`, the Console from
   `apps.list` (the display
   names ride along for the Runtime header's identity line — solution M10, org
   M13; both fall back to their id so a missing row can't break boot)
   / **`operations.create`**
-  `{ id, solutionId, name }` (**org admin**) / **`operations.putConfig`**
+  `{ id, solutionId, name }` (**org admin**) / **`operations.putMenu`**
   `{ operationId?, config }` (**op admin** since 2026-08-02) — the operation's
   **app menu** since 2026-10-18 (APPS_AND_INSTANCES §2.5): leaves
   `{ id, appId }` and groups `{ id, label, items }` of leaves, one level deep,
@@ -284,9 +285,9 @@ takes `operationId?` (both default `demo/sdm`):
   | `orgAdmins.appoint` / `remove` | **owner only** |
   | `solAdmins.*`, `opAdmins.appoint` / `remove` | org admin |
   | `opUsers.add` | op admin **or** org admin |
-  | `opUsers.remove`, `userRoles.*`, `operations.putConfig`, `apps.list` / `get` / `put` | op admin |
-  | `config.put`, the per-entity model writes, `pages.*` (draft `pages.list` included), `publish` | sol admin |
-  | `config.get`, `pages.publishedPaths` | sol admin **or** op admin of one of the solution's operations (2026-10-18) |
+  | `opUsers.remove`, `userRoles.*`, `operations.putMenu`, `apps.list` / `get` / `put` | op admin |
+  | `model.put`, the per-entity model writes, `pages.*` (draft `pages.list` included), `publish` | sol admin |
+  | `model.get`, `pages.publishedPaths` | sol admin **or** op admin of one of the solution's operations (2026-10-18) |
 
   **Sol admins have no user-facing grant at all** — including `solAdmins.list`,
   which carries real emails. A person building the model has no business over
@@ -428,7 +429,7 @@ takes `operationId?` (both default `demo/sdm`):
   (no transaction), including on the way out of a failure, because the read
   happened either way. The app names a GET activity
   and the model answers; the query itself never reaches the browser (`returns`
-  lives on the server grade of the model and `projectConfig` cannot copy it).
+  lives on the server grade of the model and `projectModel` cannot copy it).
   The parameters are the activity's attributes and go through the same
   `validateSubmission`. `recordId` is optional and, when given, is read-gated
   like any anchor (unreadable ⇒ "Record access denied"). Authorisation is the activity's own
@@ -505,7 +506,7 @@ takes `operationId?` (both default `demo/sdm`):
   (with sign-in off it lets everything through): `get` of an app's id answers
   "Record access denied", and `partition`/`list` leave them out — see "An
   operation's apps" below.
-- **`config.get` / `config.put`** `{ solutionId?, config }` — the **design
+- **`model.get` / `model.put`** `{ solutionId?, config }` — the **design
   plane's** door: the whole model, hooks and access rules included, because
   authoring them is the job. Since 2026-08-09 `get` requires **sol admin** like
   `put` — reading a model and writing it are the same privilege in a one-grade
@@ -515,7 +516,7 @@ takes `operationId?` (both default `demo/sdm`):
   (APPS_AND_INSTANCES §2.6); `put` stays sol admin. The Phase 4 shift:
   the SDM config is a stored artifact and "config-save-time validation" is
   literal. `put` rejects on structural danglers (MemoryAdapter resolution),
-  any error-severity `validateConfig` finding, or (2026-07-26) a record-type
+  any error-severity `validateModel` finding, or (2026-07-26) a record-type
   id that stored records still reference — the config must survive the data it
   already governs: mutation is activity-only, so orphaned `typeRef`s would be
   unreachable forever. Config is solution-plane and owns no records, and since
@@ -540,22 +541,22 @@ takes `operationId?` (both default `demo/sdm`):
   into a bare label, which this rule then refused — they stopped.
   Since 2026-08-08 `put` is the **import** path, not the editing path: the
   Console saves one entity at a time through the eleven per-entity mutations
-  (`config.putAttribute` … `config.deleteRole`), which run this same
+  (`model.putAttribute` … `model.deleteRole`), which run this same
   validation under a per-solution lock. See "Model storage: the SDM config as
   tables".
-- **`config.getForOperation`** `{ operationId? }` → `ClientSolutionConfig` — the
+- **`model.getForOperation`** `{ operationId? }` → `ClientSolutionModel` — the
   **runtime plane's** door (BUILT 2026-08-09): the model trimmed to what this
   caller may see. Keyed on the operation, not the solution, because what
   survives is decided by the caller's roles *in that operation*; entry
   (`requireOpUser`) is checked before anything is trimmed.
   `FluxusClient.connect` uses this; `connectSolution` (Console) uses
-  `config.get`. See "What the client is given" below. Since step 5 it also
+  `model.get`. See "What the client is given" below. Since step 5 it also
   carries the **app's own activities** of the apps the caller may run: each
-  such app's list, holding only those (`projectConfig`'s `appLists`).
+  such app's list, holding only those (`projectModel`'s `appLists`).
 - **`pages.list` / `pages.put` / `pages.delete`** `{ solutionId?, path, def }`
   (backend stage 3, 2026-07-16) — page definitions on the config pipeline.
   Defs are **opaque jsonb**: `PageDef` and `validatePage` live in the page
-  builder, and the server never depends on a peer host, so unlike `config.put`
+  builder, and the server never depends on a peer host, so unlike `model.put`
   there is no save-time validation here. `put` is an unconditional upsert, and
   the only caller is the Console: pages are authored artifacts, and no repo file
   installs one (the "deploying pages = deploying files" posture and the demo
@@ -620,9 +621,9 @@ added more than once — a water scheduler and a sewer scheduler.
   `scripts.query` whose record is an app is refused ("Record access denied");
   `page.activities` answers an app with nothing; `records.get`'s references
   withhold one; the stray-record-type check at model save
-  (`validateConfigGraph`) ignores them. Scripts cannot name the type: it is in no
+  (`validateModelGraph`) ignores them. Scripts cannot name the type: it is in no
   model. The ids `rt_sys_apps`, `wf_sys_apps`, `sys_console_edit` and
-  `sys_migration` are reserved — `validateConfig` refuses a record type,
+  `sys_migration` are reserved — `validateModel` refuses a record type,
   workflow or activity using one.
 - **`apps.list`** `{ operationId }` → `{ apps: { id, pageId, label, roleIds,
   definition, status }[] }`, in the order added, without history. **`apps.get`**
@@ -651,12 +652,13 @@ added more than once — a water scheduler and a sewer scheduler.
   Runtime it is not set up: `apps.user` leaves it out (and so its menu items),
   check 1 refuses a call naming it with "This app has expired"
   (`AppExpiredError`, a not-found), `page.activities` answers empty for it,
-  `config.getForOperation` sends no list of its, and saving a menu that
+  `model.getForOperation` sends no list of its, and saving a menu that
   points at it is refused, naming it. Scripts never see `status`.
 - **`apps.list` also answers the operation's app menu** (`menu`), for the
-  Console's menu editor; the menu is saved with `operations.putConfig`.
+  Console's menu editor; the menu is saved with `operations.putMenu`.
 
-**The app menu** (§2.5) lives on the operation, `operations.config.menu`: leaves
+**The app menu** (§2.5) lives on the operation, in its `menu` column (its own
+since migration 0024, 2026-11-03; it was `operations.config.menu`): leaves
 `{ id, appId }`, groups `{ id, label, items }` of leaves, one level deep, no
 roles. A menu written in the old shape (labels, pages, roles) reads as empty
 (`readMenu`) until the step 2 script rebuilds it.
@@ -738,12 +740,12 @@ never a call's record (above), an app's own activity cannot be a CREATE,
 UPDATE or DELETE, and a script may not update or delete one (refused at save
 and at run time, engine SPEC).
 
-**At model save** (`validateConfigGraph`), the workflows pages name — on their
+**At model save** (`validateModelGraph`), the workflows pages name — on their
 drafts and latest published versions, `pageLists` — are passed to
-`validateConfig` as `appLists`, whose rules apply to those only (engine SPEC).
+`validateModel` as `appLists`, whose rules apply to those only (engine SPEC).
 **A page's list is protected**: a save that removes a workflow a page names —
-`config.deleteWorkflow`, or an import or rollback without it — is refused,
-naming the page (`editConfig` reads the workflows before the write). **At
+`model.deleteWorkflow`, or an import or rollback without it — is refused,
+naming the page (`editModel` reads the workflows before the write). **At
 publish** (`publishPage`), a page naming a list must name a workflow that
 exists and that no record type points to (`PageListError`). **A page rollback**
 to a version from before lists carries the current list forward.
@@ -758,7 +760,7 @@ admins of. A closed list: `activities.run`, `activities.query`,
 workbench, DSL Editor and page preview. They follow the record type's workflow
 and the activity's own condition only. A solution admin who wants to work on an
 operation's records must also be its admin. Open to the operation's users,
-app or none: `operations.get`, `config.getForOperation`, `me`, `apps.user` and
+app or none: `operations.get`, `model.getForOperation`, `me`, `apps.user` and
 `perf.*`; draft `pages.list` is solution admins only. With sign-in off, open.
 `callAccess` / `requireNoAppCaller` in the router.
 
@@ -824,7 +826,7 @@ rev 6 §0). What the server implements:
   it. One grade, so one boolean (2026-08-04); the `read`/`write` split bought
   nothing once appointment moved onto the admin tiers. Keyed on **email**, so a
   caller with no email can never match. Checked by
-  `config.put`, the per-entity model writes, `pages.*` and `publish` via `requireSolAdmin`;
+  `model.put`, the per-entity model writes, `pages.*` and `publish` via `requireSolAdmin`;
   `solutions.update|delete`, operations, users and roles left this check when the
   admin tiers landed. `requireSolAdmin` is a **no-op when auth is unconfigured**
   (env stub open, §7).
@@ -836,7 +838,7 @@ rev 6 §0). What the server implements:
   `access.read` lists a role the caller holds. Applied by `records.*`, by
   the `activities.run` anchor check (unreadable anchor ⇒ "Record access denied", *before*
   the run gate), by `page.activities` (an unreadable record offers nothing,
-  2026-10-11), and since 2026-08-09 by `projectConfig` — one answer
+  2026-10-11), and since 2026-08-09 by `projectModel` — one answer
   (`computeReadable`, `src/projection.ts`) governing both halves of a snapshot,
   the data and the model. Activity `run` itself is the engine's existing
   availability gate reading `context.user.roles`.
@@ -948,9 +950,9 @@ rev 6 §0). What the server implements:
 
 **Solution history** (M9, ruled 2026-07-26): the database is the source of
 truth for a solution, so its change record lives beside it — `page_versions`
-for pages (M3) and `sdm_config_versions` for the model. Both append-only with
+for pages (M3) and `sdm_model_versions` for the model. Both append-only with
 required release notes; rollback republishes rather than deleting. One
-difference: `rollbackConfig` also restores the older config **as the draft**,
+difference: `rollbackModel` also restores the older config **as the draft**,
 because the config draft is what every host evaluates against, whereas a page
 draft is the builder's working copy. Nothing installs a config or a page: a
 migrated database is empty and stays empty until someone authors into it.
@@ -965,7 +967,12 @@ runtime migrator reads only those two. `createDb()` applies outstanding migratio
 idempotently at connect on both drivers (unless `applyMigrations: false` —
 the Vercel entry, where the bundle ships without migrations/ on disk), and
 `npm run db:migrate` runs the same step explicitly against `DATABASE_URL` —
-the required pre-deploy step for schema changes. Driver selection
+the required pre-deploy step for schema changes. **0024 (2026-11-03, the
+"config" → "model" rename, APPS_AND_INSTANCES §3.4)** renames
+`sdm_config_versions` to `sdm_model_versions` (its `config` column to `model`)
+and moves the operation's menu to `operations.menu`: once it has applied, an
+older server, Console or Runtime breaks, so migrate and deploy them together.
+Driver selection
 is the connection string: `DATABASE_URL` set → node-postgres (Neon/RDS/local),
 unset → PGlite (dev/tests, no Postgres install needed); `packages/server/.env`
 supplies it for local dev (loaded by the dev server and scripts, never by the
@@ -978,7 +985,7 @@ server-side, and an unhandled error event would crash the process.
 
 Design authority: root [docs/CLIENT_TRUST_BOUNDARY.md](../../../docs/CLIENT_TRUST_BOUNDARY.md) §2,
 step 1 of its sequencing. The finding it closes: **the data was filtered, the
-model was not.** `config.get` returned the entire `SolutionConfig` to anyone —
+model was not.** `model.get` returned the entire `SolutionModel` to anyone —
 so a runtime user who could read one record type still received every other
 type's definition, every activity, **every hook body**, and the `access.read`
 rules that excluded them.
@@ -989,14 +996,14 @@ two audiences**:
 
 | | Audience | Gate | Returns |
 |---|---|---|---|
-| `config.get` `{ solutionId }` | design plane (Console) | **sol admin**, or op admin of one of its operations (2026-10-18) | `SolutionConfig`, whole |
-| `config.getForOperation` `{ operationId }` | runtime plane | op user, then the role trim | `ClientSolutionConfig` |
+| `model.get` `{ solutionId }` | design plane (Console) | **sol admin**, or op admin of one of its operations (2026-10-18) | `SolutionModel`, whole |
+| `model.getForOperation` `{ operationId }` | runtime plane | op user, then the role trim | `ClientSolutionModel` |
 
-**One pure function.** `projectConfig(config, { roles, enforced, appLists })` in
+**One pure function.** `projectModel(config, { roles, enforced, appLists })` in
 `src/projection.ts` is the only thing that turns one into the other — one place
 to audit, one place to test (`test/projection.test.ts`).
 
-It trims **in memory**, over the model `getSolutionConfig` already assembled,
+It trims **in memory**, over the model `getSolutionModel` already assembled,
 rather than pushing the cuts down as `WHERE` clauses. That is a deliberate first
 cut: assembly is one round trip either way, and a pure function is testable
 without a database. Pushing the row cuts into SQL is a later optimisation, not a
@@ -1026,19 +1033,19 @@ it anyway), and the server revalidates regardless.
 navigation without it; since 2026-10-18 the Runtime's menu is the operation's
 app menu, built for each caller by `apps.user`, and it stays on the server.
 
-**The type system enforces it.** `ClientSolutionConfig` is declared first in
-`@fluxus/engine` and `SolutionConfig` **extends** it, so client-side code typed
+**The type system enforces it.** `ClientSolutionModel` is declared first in
+`@fluxus/engine` and `SolutionModel` **extends** it, so client-side code typed
 against the narrow grade cannot compile a reference to `before_hook`: the trim
 is structurally unreachable, not merely filtered at runtime. `FluxusClient` is
 generic in its grade — see the client SPEC.
 
-**Consequences to know about**, both from the `config.get` tightening:
+**Consequences to know about**, both from the `model.get` tightening:
 
 - An org admin who is not a sol admin of a solution can no longer open its model
   in the Console. `connectSolution` surfaces the refusal rather than opening a
   blank editor. (Since 2026-10-18 an op admin of one of its operations can.)
-- The operation-menu screen's "inherited default" read (`getSolutionConfig`)
-  goes through `config.get`, so an op admin who does not build the solution sees
+- The operation-menu screen's "inherited default" read (`getSolutionModel`)
+  goes through `model.get`, so an op admin who does not build the solution sees
   an empty inherited menu. Its call already catches and degrades.
 
 **Still to come** (§2, blocked on §7): the second cut, **by page** — the larger
@@ -1051,7 +1058,7 @@ attributes, record types, workflows, functions and `access.roles`. The mismatch
 that forced the change: the **consistency unit is the whole graph** (a workflow
 references attributes, so validation is always global) while the **change unit
 is one entity** (an author edits one attribute) — and a blob makes the *write*
-unit the whole graph too. `config.put` is therefore last-write-wins across the
+unit the whole graph too. `model.put` is therefore last-write-wins across the
 entire model: two sol admins editing two different record types have no logical
 conflict, yet one silently loses their work. There is also no per-entity
 authorship and no "what uses attribute X", the prerequisite for any safe
@@ -1065,7 +1072,7 @@ pipeline and the invariant does not block this.
 
 **Direction: the tables are truth; the assembled config is derived.**
 Considered and rejected: keeping the blob and adding an etag/version to
-`config.put`. That protects against loss but still forces every author to
+`model.put`. That protects against loss but still forces every author to
 serialise on the whole model.
 
 ### The six tables
@@ -1123,7 +1130,7 @@ cannot live inside any one of them: activities are stored once per solution in
 `sdm_activities` (the *activity pool*), and a workflow's def holds an ordered
 list of `{ "activity_ref": "<id>" }` — an object rather than a bare id, so
 settings per workflow can be added later without a reshape. The ruling's "a
-migration with no API change" did not hold: `config.putActivity` /
+migration with no API change" did not hold: `model.putActivity` /
 `deleteActivity` are new.
 
 **Migration 0022** moved them: for each workflow, its nested activities ordered
@@ -1135,10 +1142,10 @@ not. Applied to the dev database 2026-10-10 (111 activities, two solutions, no
 conflicts). Code and migration must ship together: old code cannot read the
 new shape, and new code cannot read the old.
 
-**Published versions keep the old shape** — `sdm_config_versions` is immutable.
+**Published versions keep the old shape** — `sdm_model_versions` is immutable.
 `toActivityPool` (engine) states the migration's rules again in TypeScript, and
-every path that accepts a whole model runs it: `config.put` (import) and
-`rollbackConfig`. A rollback stores the **converted** model as its new version,
+every path that accepts a whole model runs it: `model.put` (import) and
+`rollbackModel`. A rollback stores the **converted** model as its new version,
 so the newest version always matches the live tables; an old snapshot that
 defines one activity id two ways cannot be converted, and the rollback is
 refused naming the id. One test fixture runs through both the SQL and the
@@ -1146,25 +1153,25 @@ converter (`test/activityPool.test.ts`).
 
 ### What does not change
 
-- **`sdm_config_versions`** — untouched. Publish still assembles the graph into
+- **`sdm_model_versions`** — untouched. Publish still assembles the graph into
   one immutable jsonb snapshot; that is already the right artifact for
   install / share / version.
 - ~~**`sdm_configs`**~~ — **DROPPED 2026-08-09, migration 0020.** It survived
   the split for one day as a derived snapshot, on the premise that assembling
-  the model cost six round trips and `config.get` should stay one. It costs
-  **one**: `jsonb_agg` subqueries in a single SELECT, which `getSolutionConfig`
+  the model cost six round trips and `model.get` should stay one. It costs
+  **one**: `jsonb_agg` subqueries in a single SELECT, which `getSolutionModel`
   now issues `FROM solutions` so the same statement also answers "does this
   solution exist". With the premise gone the snapshot was a second copy of the
   truth buying nothing — and the copy every host actually read, so any drift
   would have run hosts on a model the tables disagreed with, invisibly. The
   lock moved to the `solutions` row (below). Reversibility was never at stake:
   a derived table is rebuildable by definition.
-- **`config.get`** — unchanged by the split (it assembles the tables). Since
+- **`model.get`** — unchanged by the split (it assembles the tables). Since
   2026-08-09 it is sol-admin gated and no longer the runtime plane's door — see
   "What the client is given" above.
-- **`config.put`** (whole config) — kept, as the **import** path: it explodes an
+- **`model.put`** (whole config) — kept, as the **import** path: it explodes an
   incoming config into rows, replacing all six collections and the menu (rows
-  absent from the incoming config are deleted). `rollbackConfig` depends on it,
+  absent from the incoming config are deleted). `rollbackModel` depends on it,
   and installing a solution package will too. A model in the shape before the
   activity pool is converted first (`toActivityPool`).
 
@@ -1178,13 +1185,13 @@ position). Callers that sorted by `sort_order` take the list as given.
 
 ### The write path (BUILT 2026-08-08)
 
-Thirteen per-entity mutations sit beside `config.put`: `config.putAttribute` /
-`deleteAttribute`, `config.putActivity` / `deleteActivity` (the pool, since
-2026-10-10), `config.putRecordType` / `deleteRecordType`,
-`config.putWorkflow` / `deleteWorkflow`, `config.putFunction` /
-`deleteFunction` and `config.putRole` / `deleteRole` (`config.putDefaultMenu`
+Thirteen per-entity mutations sit beside `model.put`: `model.putAttribute` /
+`deleteAttribute`, `model.putActivity` / `deleteActivity` (the pool, since
+2026-10-10), `model.putRecordType` / `deleteRecordType`,
+`model.putWorkflow` / `deleteWorkflow`, `model.putFunction` /
+`deleteFunction` and `model.putRole` / `deleteRole` (`model.putDefaultMenu`
 went 2026-10-18, with the default menu's editor) — sol admin, like
-`config.put`. Each runs one transaction:
+`model.put`. Each runs one transaction:
 
 1. `SELECT … FROM solutions WHERE id = $1 FOR UPDATE` — this **serialises
    validation per solution** while leaving writes per entity. Two admins editing
@@ -1196,9 +1203,9 @@ went 2026-10-18, with the default menu's editor) — sol admin, like
    settles existence in the same statement, too — every entity row is FK'd to
    `solutions`, so a model without its solution is an orphan either way.
 2. write the entity row (`created_by` on insert, `updated_by` on update).
-3. re-read the graph (`getSolutionConfig`, one round trip).
+3. re-read the graph (`getSolutionModel`, one round trip).
 4. run the **existing** validation unchanged — MemoryAdapter resolution,
-   error-severity `validateConfig` findings, the stored-`typeRef` orphan check,
+   error-severity `validateModel` findings, the stored-`typeRef` orphan check,
    and `default_menu` shape/reference validation. Global validation is not
    relaxed by the split; only the storage shape moves.
 5. any error → rollback, so the entity write disappears with it.
@@ -1211,7 +1218,7 @@ earlier and more cheaply. For a pool activity the refusal names **every**
 workflow still listing it, checked before the adapter (which would stop at the
 first).
 
-**The activity pool's save rules** (engine `validateConfig`, APPS_AND_INSTANCES
+**The activity pool's save rules** (engine `validateModel`, APPS_AND_INSTANCES
 §1.4) run here too: pool ids unique; every `activity_ref` resolves and none is
 listed twice in one workflow; **a CREATE reached through two record types is
 refused** (the engine takes the type a CREATE makes from the one type whose
@@ -1241,7 +1248,7 @@ Details settled in the build:
 
 - **A put addresses the entity by the identity its own `def` carries** — the
   wire input is `{ solutionId, def }`, and `def` is opaque exactly as
-  `config.put`'s whole config is. A def with no `key`/`id` is rejected before
+  `model.put`'s whole config is. A def with no `key`/`id` is rejected before
   anything is locked: assembly never reconstructs an identity, so a def without
   one has nowhere to live. A delete names it explicitly, in the collection's own
   spelling: `deleteAttribute({ key })`, the other four `({ id })`.
@@ -1253,7 +1260,7 @@ Details settled in the build:
 - **`default_menu` validation moved into the host** (`validateDefaultMenu`) so
   both doors run one implementation, and it runs on **every** entity write, not
   just menu writes — that is what makes deleting a role a menu item still names
-  fail. `config.put`'s own behaviour and error text are unchanged.
+  fail. `model.put`'s own behaviour and error text are unchanged.
 - A **rename is not one call**: it is `put` of the new identity plus `delete` of
   the old, and the delete fails while anything still references the old one.
   That is the same answer the whole-config door gave (a renamed attribute its
@@ -1277,7 +1284,7 @@ since a test database is migrated from empty and has nothing to backfill.
 
 One behaviour the FKs add beyond the storage move: **a model cannot exist
 without its solution.** Every entity row references `solutions.id`, so
-`config.put` (and every per-entity write) on an unknown solution is refused —
+`model.put` (and every per-entity write) on an unknown solution is refused —
 asked explicitly up front, so it reads as "no such solution" rather than as a
 constraint violation. Two older tests stored configs for solutions they never
 created and were fixed to create them.
@@ -1293,12 +1300,12 @@ signatures and the Console's call sites are all final. Two admins editing
 different record types both keep their work from this step onwards — which is
 the point of the whole exercise.
 
-What landed, and where the seam is: `configCollections` in `src/host.ts` names
+What landed, and where the seam is: `modelCollections` in `src/host.ts` names
 the five collections, each with the identity field its entities carry and a
-`read`/`write` pair over a config. `putConfigEntity` / `deleteConfigEntity`
-share one `editConfig` transaction (lock → splice → validate →
+`read`/`write` pair over a config. `putModelEntity` / `deleteModelEntity`
+share one `editModel` transaction (lock → splice → validate →
 write back); the procedures are thin gate-plus-call. **The `write` half of each
-collection and the splice inside `editConfig` are the only throwaway parts** —
+collection and the splice inside `editModel` are the only throwaway parts** —
 step 2 replaces them with a table write plus assembly, and touches nothing else.
 Step 1 keeps authored array order (a put replaces in place); step 2 drops it, as
 *Ordering* above says.
@@ -1306,9 +1313,9 @@ Step 1 keeps authored array order (a put replaces in place); step 2 drops it, as
 **Step 3 — drop the snapshot. BUILT 2026-08-09** (migration
 `0020_drop_sdm_configs`). Prompted by the user asking why a second copy of the
 model was being kept at all. It was: the read-cost premise behind it was wrong,
-assembly is one round trip. `getSolutionConfig` became a single `jsonb_agg`
-SELECT, the write lock moved to the `solutions` row, `publishConfig` snapshots
-the assembled model, and `ConfigCollection.write` died with the JS assembler
+assembly is one round trip. `getSolutionModel` became a single `jsonb_agg`
+SELECT, the write lock moved to the `solutions` row, `publishModel` snapshots
+the assembled model, and `ModelCollection.write` died with the JS assembler
 that used it. "Nothing to publish" now means an **empty model** rather than a
 missing row — the same condition stated against the truth. A solution with
 nothing authored yet reads as the empty model instead of throwing, which removed
@@ -1319,8 +1326,8 @@ a special case the client had been carrying.
 row-write-plus-assemble. No API change, no app change — the Console was not
 touched, which is the whole return on doing the API first. What the swap
 actually moved: each collection gained `list`/`put`/`remove`/`removeExcept` over
-its table, `editConfig` became lock → write rows → `assembleConfig` → validate →
-refresh snapshot, and `putConfig` became the exploder described above.
+its table, `editModel` became lock → write rows → `assembleConfig` → validate →
+refresh snapshot, and `putModel` became the exploder described above.
 
 Rejected: storage first, under an unchanged Console. It delivers nothing until
 step 2, and it leaves the editor to change its storage *and* its API in one
@@ -1329,14 +1336,14 @@ immediately.
 
 **Per-entity authorship** arrived with the tables, as planned: `created_by` on
 insert, `updated_by` on update, both the caller's email, both null for backfilled
-rows. Covered by `test/configentities.test.ts`, whose first case is the lost
+rows. Covered by `test/modelentities.test.ts`, whose first case is the lost
 update itself — two writers, two different entities, both saved.
 
 ### Deliberately deferred
 
 - **Per-entity history** ("who changed this attribute in March") — the split
   gives last-writer columns only; real history needs a second append-only
-  table. Not built: it has never existed, and `sdm_config_versions` still
+  table. Not built: it has never existed, and `sdm_model_versions` still
   records every publish.
 - **A usage edge table** — activity → attribute edges live inside `def`, so
   "what uses attribute X" is a jsonb containment query, not a join, and
@@ -1382,7 +1389,7 @@ What was removed, and why each had to go:
 | Removed | What it did | Why |
 |---|---|---|
 | `scripts/seed.ts` (+ `npm run seed`, `npm run seed:server`) | Installed a demo org/solution/operation, the repo's SDM config, the demo page, and demo records | A database that fills itself is a database whose contents nobody chose |
-| `seedOperationRecords` + `SolutionConfig.seeds` | Inserted demo records into an operation's partition | A second write path into records, straight past activities — the pipeline invariant allows none |
+| `seedOperationRecords` + `SolutionModel.seeds` | Inserted demo records into an operation's partition | A second write path into records, straight past activities — the pipeline invariant allows none |
 | `INSERT` in migration `0008_orgs` | Invented `('default', 'Northwind Utilities')` | A migration's job is schema; inventing a tenant row is seeding |
 | `packages/console/pages/work-orders-demo.json` | The demo page the seed pushed | Pages are authored, not shipped |
 
@@ -1400,7 +1407,7 @@ Two things deliberately stayed, because neither installs content:
 function may well be built. The rule is that it runs because someone asked for
 it, once, by name; it never installs itself, and if it creates records it does
 so by running activities. It has no material waiting for it: the model under
-`packages/runtime/config/` was cut down on 2026-08-11 to what the tests reach,
+`packages/runtime/model/` was cut down on 2026-08-11 to what the tests reach,
 precisely so that nothing in the repo doubles as a solution — a sample would be
 authored, not lifted from there.
 

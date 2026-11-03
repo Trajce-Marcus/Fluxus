@@ -8,9 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryAdapter } from '../src/memoryAdapter';
 import { createEngine } from '../src/engine';
-import { validateConfig } from '../src/validateConfig';
+import { validateModel } from '../src/validateModel';
 import { APPS_RECORD_TYPE } from '../src/platformApps';
-import type { ActivityDef, ActivityRawDef, SolutionConfig, WorkflowRawDef } from '../src/types';
+import type { ActivityDef, ActivityRawDef, SolutionModel, WorkflowRawDef } from '../src/types';
 
 const act = (id: string, over: Partial<ActivityRawDef> = {}): ActivityRawDef => ({
   id, name: id, description: '', attributes: [], before_hook: null, after_hook: null, ...over,
@@ -19,7 +19,7 @@ const wf = (id: string, refs: (string | { activity_ref: string; show_condition?:
   id, name: id, description: '', activities: refs.map((r) => (typeof r === 'string' ? { activity_ref: r } : r)),
 });
 
-function model(over: { own?: ActivityRawDef; list?: WorkflowRawDef } = {}): SolutionConfig {
+function model(over: { own?: ActivityRawDef; list?: WorkflowRawDef } = {}): SolutionModel {
   return {
     attributes: [],
     recordTypes: [
@@ -37,8 +37,8 @@ function model(over: { own?: ActivityRawDef; list?: WorkflowRawDef } = {}): Solu
   };
 }
 
-const atSave = (config: SolutionConfig, appLists = new Set(['wf_app_board'])) =>
-  validateConfig(config, [], { appLists }).map((f) => `${f.where}: ${f.diagnostic.message}`);
+const atSave = (config: SolutionModel, appLists = new Set(['wf_app_board'])) =>
+  validateModel(config, [], { appLists }).map((f) => `${f.where}: ${f.diagnostic.message}`);
 
 describe("an app's own activity at model save", () => {
   it("is checked against rt_sys_apps: its page, name and definition, never its roles", () => {
@@ -67,7 +67,7 @@ function build(config = model(), app = { pageId: 'pages/board', label: 'North bo
   const adapter = new MemoryAdapter(config);
   const appRecord = { id: 'APP1', typeRef: APPS_RECORD_TYPE, customFields: { page_id: 'pages/board', label: 'North board', role_ids: '[]', definition: '{"region":"north"}' }, activityHistory: [] };
   adapter.insertRecord(appRecord);
-  const engine = createEngine({ store: adapter, config, user: { id: 'u', name: 'u', email: null, roles: [] }, app });
+  const engine = createEngine({ store: adapter, model: config, user: { id: 'u', name: 'u', email: null, roles: [] }, app });
   const find = (id: string) => adapter.listWorkflows().flatMap((w) => w.activities).find((a) => a.id === id) as ActivityDef;
   return { adapter, engine, find, app: () => adapter.getRecord('APP1') };
 }

@@ -11,7 +11,7 @@ import type { AuthUser, RolesResolver } from './auth';
 import type { BlobStore } from './services/blob';
 import type { NotifySink } from './services/notify';
 import {
-  ConfigValidationError,
+  ModelValidationError,
   NotImplementedError,
   OperationNotFoundError,
   OrgExistsError,
@@ -168,7 +168,7 @@ export function rethrow(err: unknown): never {
   if (err instanceof OrgNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof OrgExistsError) throw new TRPCError({ code: 'CONFLICT', message: err.message });
   if (err instanceof RecordDeletedMeanwhileError) throw new TRPCError({ code: 'CONFLICT', message: err.message });
-  if (err instanceof ConfigValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
+  if (err instanceof ModelValidationError) throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
   if (err instanceof AppNotFoundError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
   if (err instanceof TRPCError) throw err;
   throw new TRPCError({

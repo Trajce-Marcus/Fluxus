@@ -13,10 +13,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, findActivity, loadOperationHost, putConfig, RecordDeletedMeanwhileError, type OperationHost } from '../src/host';
+import { ensureOperation, ensureSolution, findActivity, loadOperationHost, putModel, RecordDeletedMeanwhileError, type OperationHost } from '../src/host';
 import { appRouter } from '../src/router';
 import { records, rptActivities } from '../src/db/schema';
-import type { ActivityHistoryEntry, SolutionConfig } from '@fluxus/engine';
+import type { ActivityHistoryEntry, SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/write-back';
 const OP = 'test/write-back';
@@ -50,7 +50,7 @@ const config = {
   workflows: [
     { id: 'wf_items', name: 'Items', description: '', activities: [{ activity_ref: 'act_create_items' }, { activity_ref: 'act_rename_items' }, { activity_ref: 'act_recount_items' }, { activity_ref: 'act_delete_items' }, { activity_ref: 'act_get_items' }, { activity_ref: 'act_rename_failing_items' }] },
   ],
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
 let db: Db;
 const caller = () => appRouter.createCaller({ db });
@@ -79,7 +79,7 @@ async function runOn(host: OperationHost, activityId: string, attributes: Record
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
   await ensureSolution(db, SOL, 'Write-back');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Write-back');
 });
 

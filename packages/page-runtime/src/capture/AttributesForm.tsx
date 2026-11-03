@@ -634,7 +634,7 @@ export function AttributesForm({ activity, anchorRecord, recordTypeId, seed, pag
         // has no field declaration to consult and never will; a reference does,
         // so guessing here would hide a modelling gap behind plausible-looking
         // rows (the user's call). Undefined reaches the picker and the picker
-        // says what is missing. `validateConfig` refuses such a field at save,
+        // says what is missing. `validateModel` refuses such a field at save,
         // so this is the net under a model that drifted, not the usual path.
         const fkDisplayField = attr.type_config?.display_field
           ?? (ref

@@ -4,10 +4,10 @@
 // does this workflow have" and "which record types reach this activity" are
 // each answered in one place.
 
-import type { ActivityRawDef, ActivityUsage, ClientActivityRawDef, ClientSolutionConfig, SolutionConfig } from './types';
+import type { ActivityRawDef, ActivityUsage, ClientActivityRawDef, ClientSolutionModel, SolutionModel } from './types';
 
 /** The pool activities a workflow lists, in its order. A reference the pool
- *  does not hold is skipped — `validateConfig` reports it at save. */
+ *  does not hold is skipped — `validateModel` reports it at save. */
 export function workflowActivities<A extends ClientActivityRawDef>(
   pool: readonly A[],
   workflow: { activities: readonly ActivityUsage[] },
@@ -23,7 +23,7 @@ export function workflowActivities<A extends ClientActivityRawDef>(
 
 /** Every activity id some workflow lists — the activities that can run. A pool
  *  activity no workflow includes cannot (§1.5). */
-export function includedActivityIds(config: Pick<ClientSolutionConfig, 'workflows'>): Set<string> {
+export function includedActivityIds(config: Pick<ClientSolutionModel, 'workflows'>): Set<string> {
   const ids = new Set<string>();
   for (const wf of config.workflows) {
     for (const usage of wf.activities) ids.add(usage.activity_ref);
@@ -36,7 +36,7 @@ export function includedActivityIds(config: Pick<ClientSolutionConfig, 'workflow
  * An activity may have several (a shared activity) or none (in the pool only,
  * or only in a workflow no record type points at).
  */
-export function recordTypesByActivity(config: Pick<ClientSolutionConfig, 'recordTypes' | 'workflows'>): Map<string, string[]> {
+export function recordTypesByActivity(config: Pick<ClientSolutionModel, 'recordTypes' | 'workflows'>): Map<string, string[]> {
   const wfById = new Map(config.workflows.map((wf) => [wf.id, wf]));
   const out = new Map<string, string[]>();
   for (const rt of config.recordTypes) {
@@ -96,9 +96,9 @@ function canonical(v: unknown): string {
  *    activity; with different definitions it is refused, naming the id.
  *
  * A model already in the pool shape comes back unchanged. Run by every path
- * that accepts a whole model: import (`putConfig`) and rollback.
+ * that accepts a whole model: import (`putModel`) and rollback.
  */
-export function toActivityPool(config: SolutionConfig): SolutionConfig {
+export function toActivityPool(config: SolutionModel): SolutionModel {
   if (!hasNestedActivities(config)) {
     return { ...config, activities: config.activities ?? [] };
   }

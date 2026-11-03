@@ -129,7 +129,7 @@ export function savePageExample(path: string, example: string): void {
 
 /** The roles the solution declares — what a page's default roles may be. */
 export function solutionRoles(): { id: string; name: string }[] {
-  return (sdmClient.config as { access?: { roles?: { id: string; name: string }[] } }).access?.roles ?? [];
+  return (sdmClient.model as { access?: { roles?: { id: string; name: string }[] } }).access?.roles ?? [];
 }
 
 /**
@@ -150,14 +150,14 @@ export function savePageRoles(path: string, roleIds: string[]): void {
 
 /** The workflows a page's list may be — those no record type points to. */
 export function pageListCandidates(): { id: string; name: string }[] {
-  const config = sdmClient.config as { workflows?: { id: string; name: string }[]; recordTypes?: { workflow_ref: string }[] };
+  const config = sdmClient.model as { workflows?: { id: string; name: string }[]; recordTypes?: { workflow_ref: string }[] };
   const typed = new Set((config.recordTypes ?? []).map((rt) => rt.workflow_ref));
   return (config.workflows ?? []).filter((w) => !typed.has(w.id));
 }
 
 /** The record types a page may be about — every type in the solution's model. */
 export function solutionRecordTypes(): { id: string; name: string }[] {
-  return (sdmClient.config as { recordTypes?: { id: string; name: string }[] }).recordTypes ?? [];
+  return (sdmClient.model as { recordTypes?: { id: string; name: string }[] }).recordTypes ?? [];
 }
 
 export function listPagePaths(): string[] {

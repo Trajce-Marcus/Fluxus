@@ -46,7 +46,7 @@ functions, roles — are ordinary record types in the **same type table**, named
 `sdm_*`. `model.record_types` resolves `sdm_record_types` and returns the same
 shape `records.<type>` returns, so every chain method, the record/row rule, FK
 dereference and static validation apply unchanged. The prefix never appears in
-a script, and `validateConfig` refuses a solution record type that would
+a script, and `validateModel` refuses a solution record type that would
 collide with it.
 
 The four roots above are unaffected: `model` adds no new environment, injects
@@ -186,7 +186,7 @@ host's knowledge, supplied through `EvalHost.invoke`, and a host that runs no
 activities leaves it absent so `invoke` fails loudly instead of answering
 null. The host also refuses re-entry, so a GET whose gate invokes itself
 fails rather than hangs. Literal ids are resolved at config-save time by the
-engine's `validateConfig` — the DSL stays scope-blind. A host whose answer is a
+engine's `validateModel` — the DSL stays scope-blind. A host whose answer is a
 round trip away rather than in hand supplies `invoke` all the same and waits
 outside the evaluator: the page runtime re-evaluates the expression in rounds
 until nothing new is asked for (page-runtime SPEC). The language does not know

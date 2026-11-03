@@ -8,12 +8,12 @@ import { asc, eq } from 'drizzle-orm';
 import type { ContextUser } from '@fluxus/engine';
 import { createDb, type Db } from '../src/db/client';
 import { perfSpans, records } from '../src/db/schema';
-import { ensureOperation, ensureSolution, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, putModel } from '../src/host';
 import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
 import { deleteSettings, invalidateSettingsCache, resetSweepClock, setSettings } from '../src/perf';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
-import { config } from '../../runtime/src/config';
+import { model as config } from '../../runtime/src/model';
 
 let db: Db;
 const notifications: NotificationEvent[] = [];
@@ -37,7 +37,7 @@ beforeAll(async () => {
   process.env.FLUXUS_PLATFORM_ADMINS = 'vendor@fluxus.dev';
   db = await createDb();
   await ensureSolution(db, DEFAULT_SOLUTION, 'Demo');
-  await putConfig(db, DEFAULT_SOLUTION, config, sink);
+  await putModel(db, DEFAULT_SOLUTION, config, sink);
   await ensureOperation(db, DEFAULT_OPERATION, DEFAULT_SOLUTION, 'Demo');
 });
 

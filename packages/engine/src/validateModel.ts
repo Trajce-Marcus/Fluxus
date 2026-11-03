@@ -7,7 +7,7 @@
 import { APPS_RECORD_TYPE, APPS_RECORD_TYPE_DEF, RESERVED_IDS } from './platformApps';
 import { attributeFieldRef } from './attributeTypes';
 import { validateExpression, validateScript, validateFunction, parseFunction, parseScript, lintSchema, type Diagnostic, type ServiceModuleDef, type Stmt } from '@fluxus/dsl';
-import type { ActivityRawDef, ClientActivityRawDef, ClientSolutionConfig } from './types';
+import type { ActivityRawDef, ClientActivityRawDef, ClientSolutionModel } from './types';
 import { attributeTypeSpec } from './attributeTypes';
 import { activityHooks, buildDslSchema, joinScript, shortName } from './bridge';
 import { buildLoggerModule } from './services/logger';
@@ -49,7 +49,7 @@ const serverGrade = (activity: ClientActivityRawDef): boolean =>
 const DATASOURCE_ROOTS = ['term'];
 
 /** What a model save knows beyond the model itself. */
-export interface ValidateConfigOptions {
+export interface ValidateModelOptions {
   /**
    * The workflows pages name as their app's list (`PageDef.workflowId`,
    * drafts and latest published versions; APPS_AND_INSTANCES §2.2). The rules
@@ -60,7 +60,7 @@ export interface ValidateConfigOptions {
   appLists?: ReadonlySet<string>;
 }
 
-export function validateConfig(config: ClientSolutionConfig, services: ServiceModuleDef[] = [], options: ValidateConfigOptions = {}): Finding[] {
+export function validateModel(config: ClientSolutionModel, services: ServiceModuleDef[] = [], options: ValidateModelOptions = {}): Finding[] {
   // services.logger is engine-owned and part of every host's registry
   // (createEngine appends it, name reserved) — validation must see the same
   // registry the engine runs with, whoever is validating.
@@ -483,13 +483,13 @@ export function validateConfig(config: ClientSolutionConfig, services: ServiceMo
   return findings;
 }
 
-export function reportConfigFindings(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): void {
-  const findings = validateConfig(config, services);
+export function reportModelFindings(config: ClientSolutionModel, services: ServiceModuleDef[] = []): void {
+  const findings = validateModel(config, services);
   for (const { where, diagnostic } of findings) {
     const log = diagnostic.severity === 'error' ? console.error : console.warn;
-    log(`[SDM config ${diagnostic.severity}] ${where}: ${diagnostic.message}`);
+    log(`[model ${diagnostic.severity}] ${where}: ${diagnostic.message}`);
   }
   if (findings.length === 0) {
-    console.info('[SDM config] all FluxScript expressions validated clean');
+    console.info('[model] all FluxScript expressions validated clean');
   }
 }

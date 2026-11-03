@@ -29,9 +29,9 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { and, eq, sql } from 'drizzle-orm';
 import { parseExpression, parseScript, type Call, type Expr } from '@fluxus/dsl';
-import { fullId, joinScript, type SolutionConfig } from '@fluxus/engine';
+import { fullId, joinScript, type SolutionModel } from '@fluxus/engine';
 import { createDb, closeDb, type Db } from '../src/db/client';
-import { configCollections, getSolutionConfig, listPublishedPages, putConfigEntity, putPage } from '../src/host';
+import { modelCollections, getSolutionModel, listPublishedPages, putModelEntity, putPage } from '../src/host';
 import { pageVersions, pages, solutions } from '../src/db/schema';
 import { consoleNotifySink } from '../src/services/notify';
 
@@ -100,7 +100,7 @@ export async function planStep3(db: Db): Promise<PagePlan[]> {
   for (const solutionId of ids.sort()) {
     const published = await listPublishedPages(db, solutionId);
     if (published.length === 0) continue;
-    const config = await getSolutionConfig(db, solutionId);
+    const config = await getSolutionModel(db, solutionId);
     for (const { path, def } of [...published].sort((a, b) => a.path.localeCompare(b.path))) {
       plans.push(planPage(config, solutionId, path, def as StoredPage));
     }
@@ -108,7 +108,7 @@ export async function planStep3(db: Db): Promise<PagePlan[]> {
   return plans;
 }
 
-export function planPage(config: SolutionConfig, solutionId: string, path: string, def: StoredPage): PagePlan {
+export function planPage(config: SolutionModel, solutionId: string, path: string, def: StoredPage): PagePlan {
   const workflowId = listIdFor(path);
   const plan: PagePlan = { solutionId, path, workflowId, activityIds: [], types: [], gets: [], unresolved: [] };
   if (def.workflowId) { plan.skipped = `already has a list (${def.workflowId})`; return plan; }
@@ -236,7 +236,7 @@ export function planPage(config: SolutionConfig, solutionId: string, path: strin
 export async function applyPagePlan(db: Db, plan: PagePlan): Promise<void> {
   if (plan.skipped) return;
   if (!plan.reuse) {
-    await putConfigEntity(db, plan.solutionId, configCollections.workflows, {
+    await putModelEntity(db, plan.solutionId, modelCollections.workflows, {
       id: plan.workflowId,
       name: plan.path,
       description: `What the page ${plan.path} uses (apps Part 2 step 3)`,

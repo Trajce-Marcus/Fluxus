@@ -6,11 +6,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, getSolutionConfig, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, getSolutionModel, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
 import { pageVersions, records } from '../src/db/schema';
-import type { ActivityRawDef, ContextUser, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
+import type { ActivityRawDef, ContextUser, SolutionModel, WorkflowRawDef } from '@fluxus/engine';
 
 const SOL = 'test/app-lists';
 const OP = 'test/app-lists';
@@ -23,7 +23,7 @@ const wf = (id: string, refs: (string | { activity_ref: string; show_condition?:
   id, name: id, description: '', activities: refs.map((r) => (typeof r === 'string' ? { activity_ref: r } : r)),
 });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_crew', name: 'Crew' }] },
   attributes: [],
   recordTypes: [
@@ -56,11 +56,11 @@ const offered = async (item: { recordId: string } | { typeId: string }, app = ap
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'App lists');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'App lists');
   await open().pages.put({ solutionId: SOL, path: 'pages/board', def: { workflowId: 'wf_app_board' } });
   await open().pages.publish({ solutionId: SOL, path: 'pages/board', readme: 'v1' });
-  await open().config.putWorkflow({ solutionId: SOL, def: boardList });
+  await open().model.putWorkflow({ solutionId: SOL, def: boardList });
   await open().pages.put({ solutionId: SOL, path: 'pages/bare', def: {} });
   await open().pages.publish({ solutionId: SOL, path: 'pages/bare', readme: 'v1' });
   ({ id: appId } = await open().apps.put({ operationId: OP, pageId: 'pages/board', label: 'Board', roleIds: ['role_crew'], definition: '{}' }));
@@ -84,8 +84,8 @@ describe('an app offers only what its list holds (check 3)', () => {
   });
 
   it('does not offer an activity added to the record type\'s workflow afterwards', async () => {
-    await open().config.putActivity({ solutionId: SOL, def: act('act_hold_jobs') });
-    await open().config.putWorkflow({ solutionId: SOL, def: wf('wf_jobs', ['act_create_jobs', 'act_start_jobs', 'act_close_jobs', 'act_list_jobs', 'act_hold_jobs']) });
+    await open().model.putActivity({ solutionId: SOL, def: act('act_hold_jobs') });
+    await open().model.putWorkflow({ solutionId: SOL, def: wf('wf_jobs', ['act_create_jobs', 'act_start_jobs', 'act_close_jobs', 'act_list_jobs', 'act_hold_jobs']) });
     expect(await offered({ recordId: 'J1' })).not.toContain('act_hold_jobs');
   });
 
@@ -135,40 +135,40 @@ describe('a run names the record type it is about (check 4)', () => {
 
 describe('the app-list rules at model save, for workflows pages name', () => {
   it('refuses a condition on a workflow no page names', async () => {
-    await expect(open().config.putWorkflow({ solutionId: SOL, def: wf('wf_notes', ['act_create_notes', { activity_ref: 'act_touch_notes', show_condition: 'true' }]) }))
+    await expect(open().model.putWorkflow({ solutionId: SOL, def: wf('wf_notes', ['act_create_notes', { activity_ref: 'act_touch_notes', show_condition: 'true' }]) }))
       .rejects.toThrow(/only an app's list may/);
   });
 
   it('checks an item\'s condition as the activity\'s own is checked', async () => {
-    await expect(open().config.putWorkflow({ solutionId: SOL, def: wf('wf_app_board', ['act_create_jobs', { activity_ref: 'act_start_jobs', show_condition: 'context.record.no_such_field = 1' }, 'act_touch_notes']) }))
+    await expect(open().model.putWorkflow({ solutionId: SOL, def: wf('wf_app_board', ['act_create_jobs', { activity_ref: 'act_start_jobs', show_condition: 'context.record.no_such_field = 1' }, 'act_touch_notes']) }))
       .rejects.toThrow(/act_start_jobs' condition/);
   });
 
   it('lets the app\'s own activity only log or read', async () => {
-    await open().config.putActivity({ solutionId: SOL, def: act('act_wipe', 'DELETE') });
-    await expect(open().config.putWorkflow({ solutionId: SOL, def: wf('wf_app_board', ['act_create_jobs', 'act_start_jobs', 'act_touch_notes', 'act_wipe']) }))
+    await open().model.putActivity({ solutionId: SOL, def: act('act_wipe', 'DELETE') });
+    await expect(open().model.putWorkflow({ solutionId: SOL, def: wf('wf_app_board', ['act_create_jobs', 'act_start_jobs', 'act_touch_notes', 'act_wipe']) }))
       .rejects.toThrow(/may only log or read — not DELETE/);
   });
 
   it('refuses pointing a record type at a page\'s list, and re-pointing one elsewhere works as before', async () => {
-    const rt = (await getSolutionConfig(db, SOL)).recordTypes.find((r) => r.id === 'rt_notes')!;
-    await expect(open().config.putRecordType({ solutionId: SOL, def: { ...rt, workflow_ref: 'wf_app_board' } })).rejects.toThrow(/names as its app's list/);
-    await open().config.putWorkflow({ solutionId: SOL, def: wf('wf_notes_2', ['act_create_notes', 'act_touch_notes']) });
-    await expect(open().config.putRecordType({ solutionId: SOL, def: { ...rt, workflow_ref: 'wf_notes_2' } })).resolves.toEqual({ ok: true });
+    const rt = (await getSolutionModel(db, SOL)).recordTypes.find((r) => r.id === 'rt_notes')!;
+    await expect(open().model.putRecordType({ solutionId: SOL, def: { ...rt, workflow_ref: 'wf_app_board' } })).rejects.toThrow(/names as its app's list/);
+    await open().model.putWorkflow({ solutionId: SOL, def: wf('wf_notes_2', ['act_create_notes', 'act_touch_notes']) });
+    await expect(open().model.putRecordType({ solutionId: SOL, def: { ...rt, workflow_ref: 'wf_notes_2' } })).resolves.toEqual({ ok: true });
   });
 });
 
 describe('a page\'s list is protected, and checked when the page is published', () => {
   it('refuses deleting a workflow a page names, naming the page', async () => {
-    await expect(open().config.deleteWorkflow({ solutionId: SOL, id: 'wf_app_board' })).rejects.toThrow(/list of pages\/board/);
+    await expect(open().model.deleteWorkflow({ solutionId: SOL, id: 'wf_app_board' })).rejects.toThrow(/list of pages\/board/);
   });
 
   it('refuses a model rollback that would remove one', async () => {
     // Importing a model that lacks the list is what a rollback to an older
     // version does (rollback goes through the same import).
-    const { version } = await open().config.publish({ solutionId: SOL, readme: 'with the list' });
-    const current = await getSolutionConfig(db, SOL);
-    await expect(open().config.put({ solutionId: SOL, config: { ...current, workflows: current.workflows.filter((w) => w.id !== 'wf_app_board') } }))
+    const { version } = await open().model.publish({ solutionId: SOL, readme: 'with the list' });
+    const current = await getSolutionModel(db, SOL);
+    await expect(open().model.put({ solutionId: SOL, model: { ...current, workflows: current.workflows.filter((w) => w.id !== 'wf_app_board') } }))
       .rejects.toThrow(/list of pages\/board/);
     expect(version).toBeGreaterThan(0);
   });

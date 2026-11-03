@@ -26,7 +26,7 @@ import type {
   FunctionDef,
   RecordTypeDef,
   RoleDef,
-  SolutionConfig,
+  SolutionModel,
   WorkflowRawDef,
 } from '@fluxus/engine';
 
@@ -105,17 +105,14 @@ export const operations = pgTable('operations', {
   // absence — there is no update path, and none may be added.
   solutionId: text('solution_id').notNull().references(() => solutions.id),
   name: text('name').notNull(),
-  config: jsonb('config').$type<OperationConfig>().notNull().default({}),
+  /** The operation's app menu (APPS_AND_INSTANCES §2.5) — its own column
+   *  since migration 0024; it was `config.menu`. */
+  menu: jsonb('menu').$type<MenuItem[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('operations_solution').on(t.solutionId),
 ]);
 
-/** operations.config shape: the operation's **app menu** (APPS_AND_INSTANCES
- *  §2.5, reshaped 2026-10-18), and future runtime settings. */
-export interface OperationConfig {
-  menu?: MenuItem[];
-}
 /**
  * One app menu item: a **leaf** pointing at one of the operation's apps, or a
  * **group** of leaves, one level deep. No roles and no page on either (the
@@ -276,8 +273,8 @@ export const solAdmins = pgTable('sol_admins', {
 // subqueries in a single SELECT — so the snapshot was a second copy of the truth
 // buying nothing, and the copy hosts actually read: any drift would have run
 // every host on a model the tables disagreed with, silently. Its other job, the
-// per-solution write lock, moved to the `solutions` row (`getSolutionConfig` /
-// `editConfig` in host.ts). `sdm_config_versions` is unaffected — published
+// per-solution write lock, moved to the `solutions` row (`getSolutionModel` /
+// `editModel` in host.ts). `sdm_config_versions` is unaffected — published
 // versions are immutable history, not a copy of live truth.
 
 // ── The model, one table per collection (split from the blob 2026-08-08) ──────
@@ -399,17 +396,17 @@ export const sdmRoles = pgTable('sdm_roles', {
 /** A model as published before the activity pool: each workflow carries its
  *  activities, each with a `sort_order`, and there is no `activities`
  *  collection. */
-export type StoredConfigBeforePool = Omit<SolutionConfig, 'activities' | 'workflows'> & {
+export type StoredModelBeforePool = Omit<SolutionModel, 'activities' | 'workflows'> & {
   workflows: (Omit<WorkflowRawDef, 'activities'> & { activities: (ActivityRawDef & { sort_order?: number })[] })[];
 };
 
-export const sdmConfigVersions = pgTable('sdm_config_versions', {
+export const sdmModelVersions = pgTable('sdm_model_versions', {
   solutionId: text('solution_id').notNull(),
   version: integer('version').notNull(),
   // Immutable, so a version published before the activity pool (migration
   // 0022) keeps its activities nested inside its workflows. Read it through
   // `toActivityPool` — rollback does.
-  config: jsonb('config').$type<SolutionConfig | StoredConfigBeforePool>().notNull(),
+  model: jsonb('model').$type<SolutionModel | StoredModelBeforePool>().notNull(),
   readme: text('readme').notNull(),
   publishedBy: text('published_by').notNull(),
   publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),

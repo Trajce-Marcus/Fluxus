@@ -1,12 +1,12 @@
 // Slice 1 (ATTRIBUTE_TYPES_FILES_SCALARS): the type registry, the new scalar
 // coercions, structured (descriptor/multi) threading, and the config-key rules
-// validateConfig now enforces.
+// validateModel now enforces.
 
 import { describe, expect, it } from 'vitest';
 import { coerceValue, coerceCapturedValue, isBlank } from '../src/bridge';
 import { ATTRIBUTE_TYPES, descriptorShapeIssues, geoPoint, geoPointText, isDescriptorType, isUploadType } from '../src/attributeTypes';
-import { validateConfig } from '../src/validateConfig';
-import type { SolutionConfig } from '../src/types';
+import { validateModel } from '../src/validateModel';
+import type { SolutionModel } from '../src/types';
 
 describe('coerceValue — new scalar types', () => {
   it('datetime parses to a Date (offset-bearing ISO)', () => {
@@ -104,13 +104,13 @@ describe('geopoint', () => {
   });
 });
 
-describe('validateConfig — type_config key rules (§3/§11)', () => {
-  const base = (attributes: SolutionConfig['attributes']): SolutionConfig => ({
+describe('validateModel — type_config key rules (§3/§11)', () => {
+  const base = (attributes: SolutionModel['attributes']): SolutionModel => ({
     attributes,
     recordTypes: [],
     workflows: [],
   });
-  const errorsOf = (cfg: SolutionConfig) => validateConfig(cfg).map((f) => f.diagnostic.message);
+  const errorsOf = (cfg: SolutionModel) => validateModel(cfg).map((f) => f.diagnostic.message);
 
   it('accepts a well-formed photo/file config', () => {
     const cfg = base([
@@ -128,13 +128,13 @@ describe('validateConfig — type_config key rules (§3/§11)', () => {
   });
 
   it('rejects a reference field that declares no display field', () => {
-    const cfg: SolutionConfig = {
+    const cfg: SolutionModel = {
       attributes: [],
       workflows: [],
       recordTypes: [{
         id: 'rt_shift_wbs', name: 'Shift WBS', workflow_ref: 'wf_x',
         custom_fields: [{ key: 'wbs_id', label: 'WBS', type: 'fk_ref', fk_record_type: 'rt_wbs_nodes' }],
-      }] as unknown as SolutionConfig['recordTypes'],
+      }] as unknown as SolutionModel['recordTypes'],
     };
     expect(errorsOf(cfg)).toContain(
       "reference field 'wbs_id' declares no fk_display_field — a picker has nothing readable to show",
@@ -142,25 +142,25 @@ describe('validateConfig — type_config key rules (§3/§11)', () => {
   });
 
   it('accepts a reference field that declares one', () => {
-    const cfg: SolutionConfig = {
+    const cfg: SolutionModel = {
       attributes: [],
       workflows: [],
       recordTypes: [{
         id: 'rt_shift_wbs', name: 'Shift WBS', workflow_ref: 'wf_x',
         custom_fields: [{ key: 'wbs_id', label: 'WBS', type: 'fk_ref', fk_record_type: 'rt_wbs_nodes', fk_display_field: 'name' }],
-      }] as unknown as SolutionConfig['recordTypes'],
+      }] as unknown as SolutionModel['recordTypes'],
     };
     expect(errorsOf(cfg).filter((m) => m.includes('fk_display_field'))).toEqual([]);
   });
 
   it('leaves a non-reference field alone', () => {
-    const cfg: SolutionConfig = {
+    const cfg: SolutionModel = {
       attributes: [],
       workflows: [],
       recordTypes: [{
         id: 'rt_shift_wbs', name: 'Shift WBS', workflow_ref: 'wf_x',
         custom_fields: [{ key: 'note', label: 'Note', type: 'text' }],
-      }] as unknown as SolutionConfig['recordTypes'],
+      }] as unknown as SolutionModel['recordTypes'],
     };
     expect(errorsOf(cfg).filter((m) => m.includes('fk_display_field'))).toEqual([]);
   });

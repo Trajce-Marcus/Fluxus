@@ -10,9 +10,9 @@ import type {
   AttributeDef,
   ClientActivityRawDef,
   ClientCustomFieldDef,
-  ClientSolutionConfig,
+  ClientSolutionModel,
   ContextUser,
-  SolutionConfig,
+  SolutionModel,
   RecordInstance,
 } from './types';
 import type { Savepoint, WaitingStore } from './store';
@@ -87,22 +87,22 @@ export function toComponentValue(value: unknown): unknown {
 }
 
 /** Named function sources for the evaluator/validator (bodies joined). */
-export function resolveFunctions(config: ClientSolutionConfig): string[] {
+export function resolveFunctions(config: ClientSolutionModel): string[] {
   return (config.functions ?? []).map((fn) => joinScript(fn.body) ?? '');
 }
 
 /**
  * Signature map for ValidateOptions.functions, parsed from the bodies.
- * Unparseable bodies are skipped — validateConfig reports those.
+ * Unparseable bodies are skipped — validateModel reports those.
  */
-export function functionSignatures(config: ClientSolutionConfig): Record<string, { params: string[] }> {
+export function functionSignatures(config: ClientSolutionModel): Record<string, { params: string[] }> {
   const out: Record<string, { params: string[] }> = {};
   for (const fn of config.functions ?? []) {
     try {
       const decl = parseFunction(joinScript(fn.body) ?? '');
       out[decl.name] = { params: decl.params };
     } catch {
-      // reported by validateConfig
+      // reported by validateModel
     }
   }
   return out;
@@ -133,7 +133,7 @@ export function serializeFields(fields: Record<string, unknown>): Record<string,
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, serializeFieldValue(v)]));
 }
 
-export function buildDslSchema(config: ClientSolutionConfig, services: ServiceModuleDef[] = []): DslSchema {
+export function buildDslSchema(config: ClientSolutionModel, services: ServiceModuleDef[] = []): DslSchema {
   const types: DslSchema['types'] = {};
   for (const rt of config.recordTypes) {
     const fields: DslSchema['types'][string]['fields'] = {};
@@ -170,7 +170,7 @@ export function toDslRecord(record: RecordInstance): DslRecord {
  * MemoryAdapter every answer is plain, over the database store a promise the
  * waiting evaluator awaits (SERVER_DATA_LOADING §4).
  */
-export function buildRecordsHost(adapter: WaitingStore, config: ClientSolutionConfig): RecordsHost {
+export function buildRecordsHost(adapter: WaitingStore, config: ClientSolutionModel): RecordsHost {
   const byShortName = new Map(config.recordTypes.map((rt) => [shortName(rt.id), rt]));
 
   return {
@@ -250,13 +250,13 @@ function storeQuery(query: RecordQuery): RecordQuery {
   };
 }
 
-type RecordTypesByShortName = Map<string, ClientSolutionConfig['recordTypes'][number]>;
+type RecordTypesByShortName = Map<string, ClientSolutionModel['recordTypes'][number]>;
 
 /**
  * An app in an operation's apps list never changes through a script
  * (APPS_AND_INSTANCES §2.4) — an app's own activity runs on its record, so a
  * hook holds it as `context.record`. Checked on every update and delete, since
- * those key on the record's id alone. `validateConfig` refuses the same at save.
+ * those key on the record's id alone. `validateModel` refuses the same at save.
  */
 function refuseApp(type: string): void {
   if (fullId(type) === APPS_RECORD_TYPE) {
@@ -592,7 +592,7 @@ export function coerceValue(type: string | undefined, raw: string): unknown {
 
 export function buildEvalHost(
   adapter: WaitingStore,
-  config: ClientSolutionConfig,
+  config: ClientSolutionModel,
   script: ScriptContext,
   services: ServiceModuleDef[] = [],
 ): EvalHost {
@@ -611,7 +611,7 @@ export function buildEvalHost(
   let records = buildRecordsHost(adapter, config);
   if (script.readonlyRecords) delete records.mutate;
   if (script.modelTypes) {
-    records = withModelTypes(records, config as SolutionConfig, {
+    records = withModelTypes(records, config as SolutionModel, {
       resolvedAttributes: resolvedCaptureLists(adapter),
     });
   }

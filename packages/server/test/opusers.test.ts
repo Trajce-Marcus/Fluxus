@@ -30,7 +30,7 @@ import {
   listOpUsers,
   listOrgAdmins,
   listUsers,
-  putConfig,
+  putModel,
   putUserRoles,
   expireUser,
   removeOpUser,
@@ -39,12 +39,12 @@ import {
 } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { SolutionConfig, ContextUser } from '@fluxus/engine';
+import type { SolutionModel, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/opusers';
 const OP = 'test/opusers';
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_a', name: 'As' }] },
   attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }],
   recordTypes: [
@@ -68,7 +68,7 @@ beforeEach(async () => {
   // Nothing installs an org any more, so the tenancy under test is built here.
   await ensureOrg(db, 'default', 'Op Users Org');
   await ensureSolution(db, SOL, 'Op users');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Op users');
 });
 

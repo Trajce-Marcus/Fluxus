@@ -7,11 +7,11 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
 import { records } from '../src/db/schema';
-import type { ActivityRawDef, AttributeDef, ContextUser, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
+import type { ActivityRawDef, AttributeDef, ContextUser, SolutionModel, WorkflowRawDef } from '@fluxus/engine';
 
 const SOL = 'test/app-reads';
 const OP = 'test/app-reads';
@@ -29,7 +29,7 @@ const wf = (id: string, refs: (string | { activity_ref: string; show_condition?:
   id, name: id, description: '', activities: refs.map((r) => (typeof r === 'string' ? { activity_ref: r } : r)),
 });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_crew', name: 'Crew' }] },
   attributes: [
     list('crew', "invoke('act_list_crews')"),
@@ -74,11 +74,11 @@ const query = (activityId: string, recordId?: string, app = appId) =>
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'App reads');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'App reads');
   await open().pages.put({ solutionId: SOL, path: 'pages/board', def: { workflowId: 'wf_app_board' } });
   await open().pages.publish({ solutionId: SOL, path: 'pages/board', readme: 'v1' });
-  await open().config.putWorkflow({ solutionId: SOL, def: boardList });
+  await open().model.putWorkflow({ solutionId: SOL, def: boardList });
   await open().pages.put({ solutionId: SOL, path: 'pages/bare', def: {} });
   await open().pages.publish({ solutionId: SOL, path: 'pages/bare', readme: 'v1' });
   ({ id: appId } = await open().apps.put({ operationId: OP, pageId: 'pages/board', label: 'Board', roleIds: ['role_crew'], definition: '{}' }));

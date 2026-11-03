@@ -251,7 +251,7 @@ function walk(node: unknown, visit: (call: Call) => void): void {
   }
 }
 
-/** Console reporting, same voice as the engine's reportConfigFindings. */
+/** Console reporting, same voice as the engine's reportModelFindings. */
 export function reportPageFindings(host: PageValidationHost, pagePath: string, def: PageDef): PageFinding[] {
   const findings = validatePage(host, def);
   for (const { where, diagnostic } of findings) {

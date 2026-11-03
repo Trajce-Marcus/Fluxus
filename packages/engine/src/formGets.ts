@@ -4,12 +4,12 @@
 // counts the GETs its listed activities' forms call as on its list without
 // their being added, so the server must be able to work them out from the
 // model alone: from the literal ids on that path. A computed id there is
-// refused at model save (`validateConfig`), so what is worked out here is the
+// refused at model save (`validateModel`), so what is worked out here is the
 // whole answer.
 
 import { parseExpression, parseFunction, type Call } from '@fluxus/dsl';
 import { joinScript } from './bridge';
-import type { ClientSolutionConfig } from './types';
+import type { ClientSolutionModel } from './types';
 
 /** Visit every Call node reachable from a parsed script (statements, args). */
 export function walkCalls(node: unknown, visit: (call: Call) => void): void {
@@ -40,7 +40,7 @@ export interface DatasourceInvoke {
  * attributes with no datasource are absent. A source that does not parse is
  * skipped — the validator reports it.
  */
-export function datasourceInvokes(config: Pick<ClientSolutionConfig, 'attributes' | 'functions'>): Map<string, DatasourceInvoke[]> {
+export function datasourceInvokes(config: Pick<ClientSolutionModel, 'attributes' | 'functions'>): Map<string, DatasourceInvoke[]> {
   const bodies = new Map((config.functions ?? []).map((fn) => [fn.name.toLowerCase(), fn]));
   const out = new Map<string, DatasourceInvoke[]>();
   for (const attr of config.attributes) {
@@ -83,7 +83,7 @@ export function datasourceInvokes(config: Pick<ClientSolutionConfig, 'attributes
  * those datasources reach. What counts as on an app's list besides the list
  * itself (§2.2).
  */
-export function formGetIds(config: ClientSolutionConfig, activityIds: Iterable<string>): Set<string> {
+export function formGetIds(config: ClientSolutionModel, activityIds: Iterable<string>): Set<string> {
   const invokes = datasourceInvokes(config);
   const attrByKey = new Map(config.attributes.map((a) => [a.key, a]));
   const poolById = new Map((config.activities ?? []).map((a) => [a.id, a]));

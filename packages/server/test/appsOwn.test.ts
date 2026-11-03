@@ -9,11 +9,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
 import { records } from '../src/db/schema';
-import type { ActivityHistoryEntry, ActivityRawDef, ContextUser, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
+import type { ActivityHistoryEntry, ActivityRawDef, ContextUser, SolutionModel, WorkflowRawDef } from '@fluxus/engine';
 
 const SOL = 'test/apps-own';
 const OP = 'test/apps-own';
@@ -26,7 +26,7 @@ const wf = (id: string, refs: (string | { activity_ref: string; show_condition?:
 });
 
 const planDay = act('act_plan_day', { after_hook: 'records.jobs.create({ region: context.app.definition.region })' });
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_crew', name: 'Crew' }, { id: 'role_other', name: 'Other' }] },
   attributes: [],
   recordTypes: [
@@ -67,11 +67,11 @@ const regions = async () => (await db.select().from(records).where(and(eq(record
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Apps own');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Apps own');
   await open().pages.put({ solutionId: SOL, path: 'pages/board', def: { workflowId: 'wf_app_board' } });
   await open().pages.publish({ solutionId: SOL, path: 'pages/board', readme: 'v1' });
-  await open().config.putWorkflow({ solutionId: SOL, def: boardList });
+  await open().model.putWorkflow({ solutionId: SOL, def: boardList });
   // Two apps from one page: a north board and a south board.
   ({ id: north } = await open().apps.put({ operationId: OP, pageId: 'pages/board', label: 'North board', roleIds: ['role_crew'], definition: '{"region":"north"}' }));
   ({ id: south } = await open().apps.put({ operationId: OP, pageId: 'pages/board', label: 'South board', roleIds: ['role_crew'], definition: '{"region":"south"}' }));
@@ -105,7 +105,7 @@ describe("an app's own activity runs on its app", () => {
   });
 
   it('may not change the app: a hook that tries is refused at model save', async () => {
-    await expect(open().config.putActivity({ solutionId: SOL, def: { ...planDay, after_hook: "context.record.update({ label: 'renamed' })" } }))
+    await expect(open().model.putActivity({ solutionId: SOL, def: { ...planDay, after_hook: "context.record.update({ label: 'renamed' })" } }))
       .rejects.toThrow(/sys_apps records never change through a script/);
   });
 });
@@ -143,7 +143,7 @@ describe('what an app offers', () => {
 
 describe('the model a Runtime user receives', () => {
   it("holds the own activities of the apps they may run, in their lists", async () => {
-    const model = await as().config.getForOperation({ operationId: OP });
+    const model = await as().model.getForOperation({ operationId: OP });
     const list = model.workflows.find((w) => w.id === 'wf_app_board');
     expect(list?.activities.map((u) => u.activity_ref)).toEqual(['act_plan_day', 'act_count_regions', 'act_hidden_step']);
     expect(model.activities.map((a) => a.id)).toEqual(expect.arrayContaining(['act_plan_day', 'act_count_regions']));
@@ -151,7 +151,7 @@ describe('the model a Runtime user receives', () => {
 
   it('holds none for a user who may run no app', async () => {
     await putUserRoles(db, { operationId: OP, email: 'crew@example.com', roleIds: ['role_other'] });
-    const model = await as().config.getForOperation({ operationId: OP });
+    const model = await as().model.getForOperation({ operationId: OP });
     expect(model.workflows.map((w) => w.id)).not.toContain('wf_app_board');
     expect(model.activities.map((a) => a.id)).not.toContain('act_plan_day');
     await putUserRoles(db, { operationId: OP, email: 'crew@example.com', roleIds: ['role_crew'] });

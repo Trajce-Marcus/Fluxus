@@ -1,4 +1,4 @@
-// SDM Workflows editor: the solution's workflows (SolutionConfig.workflows). A
+// SDM Workflows editor: the solution's workflows (SolutionModel.workflows). A
 // record type binds one workflow; a workflow is a named, ordered list of
 // activities from the solution's pool (APPS_AND_INSTANCES §1.6).
 //
@@ -15,8 +15,8 @@
 // conditions; the server checks them at save.
 
 import { useMemo, useState } from 'react';
-import type { SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
-import { readConfig, idProblems, refreshSolutionViews, saveActivities, saveWorkflows, useDirty, useLoadedConfig } from './useSolutionConfig';
+import type { SolutionModel, WorkflowRawDef } from '@fluxus/engine';
+import { readModel, idProblems, refreshSolutionViews, saveActivities, saveWorkflows, useDirty, useLoadedModel } from './useSolutionModel';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 import { initialSelection, useItemGuard } from './useItemGuard';
 import { sdmClient } from '../../sdm-runtime/engine';
@@ -33,8 +33,8 @@ function pageLists(): Map<string, string[]> {
 }
 
 export function WorkflowsEditor() {
-  const loaded = useLoadedConfig();
-  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
+  const loaded = useLoadedModel();
+  const [draft, setDraft] = useState<SolutionModel>(() => readModel());
   const [selWf, setSelWf] = useState(() => initialSelection('workflows', draft.workflows, (w) => w.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

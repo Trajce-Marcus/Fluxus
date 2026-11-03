@@ -1,4 +1,4 @@
-// validateConfig runs on both grades of config, and one rule cannot be written
+// validateModel runs on both grades of config, and one rule cannot be written
 // blind to which (2026-09-12).
 //
 // A GET's `returns` is required on the server grade and **absent by design**
@@ -12,8 +12,8 @@
 // model, and there is no hook".
 
 import { describe, expect, it } from 'vitest';
-import { validateConfig } from '../src/validateConfig';
-import type { ClientSolutionConfig, SolutionConfig } from '../src/types';
+import { validateModel } from '../src/validateModel';
+import type { ClientSolutionModel, SolutionModel } from '../src/types';
 
 const RETURNS = 'records.jobs.select(id, name)';
 
@@ -50,11 +50,11 @@ function buildConfig({ grade, returns }: { grade: 'server' | 'client'; returns?:
         activities: [{ activity_ref: 'act_list_jobs' }],
       },
     ],
-  } as unknown as SolutionConfig & ClientSolutionConfig;
+  } as unknown as SolutionModel & ClientSolutionModel;
 }
 
-const missingReturns = (config: ClientSolutionConfig) =>
-  validateConfig(config).filter((f) => f.diagnostic.message.includes("needs a 'returns'"));
+const missingReturns = (config: ClientSolutionModel) =>
+  validateModel(config).filter((f) => f.diagnostic.message.includes("needs a 'returns'"));
 
 describe('a GET with no returns', () => {
   it('is an error on the server grade — the expression IS the activity', () => {
@@ -73,7 +73,7 @@ describe('a GET with a returns', () => {
   });
 
   it('still validates the expression itself', () => {
-    const findings = validateConfig(buildConfig({ grade: 'server', returns: 'records.nope.select(id)' }));
+    const findings = validateModel(buildConfig({ grade: 'server', returns: 'records.nope.select(id)' }));
     expect(findings.length).toBeGreaterThan(0);
   });
 });

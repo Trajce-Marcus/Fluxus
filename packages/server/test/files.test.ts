@@ -6,11 +6,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, insertPendingAttachment, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, insertPendingAttachment, putModel } from '../src/host';
 import { appRouter } from '../src/router';
 import { attachments, rptActivities, rptAttributes } from '../src/db/schema';
 import type { BlobStore } from '../src/services/blob';
-import type { SolutionConfig } from '@fluxus/engine';
+import type { SolutionModel } from '@fluxus/engine';
 
 // One id serves as both solution (config) and operation (records) for the test.
 const SCOPE = 'test/files';
@@ -26,7 +26,7 @@ const blob: BlobStore = {
 
 // Minimal self-contained SDM: a widget with a code, a multi photo attribute,
 // and a single-file attribute with an accept filter.
-const config: SolutionConfig = {
+const config: SolutionModel = {
   attributes: [
     { key: 'id', label: 'ID', description: '', type: 'text' },
     { key: 'code', label: 'Code', description: '', type: 'text' },
@@ -59,7 +59,7 @@ const caller = (withBlob = true) => appRouter.createCaller({ db, ...(withBlob ? 
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SCOPE, 'Test');
-  await putConfig(db, SCOPE, config);
+  await putModel(db, SCOPE, config);
   await ensureOperation(db, SCOPE, SCOPE, 'Test');
 });
 

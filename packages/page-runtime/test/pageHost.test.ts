@@ -9,13 +9,13 @@
 // whatever the test says the model said.
 
 import { describe, expect, it, vi } from 'vitest';
-import { MemoryAdapter, type ClientSolutionConfig } from '@fluxus/engine';
+import { MemoryAdapter, type ClientSolutionModel } from '@fluxus/engine';
 import { definitionValue, evaluatePageExpression, pageServicesStub, runPageCallback, validatePageCallback, type PageContext, type PageQueryFn, type PageServiceHandlers } from '../src/pageHost';
 
 // The client's grade of a tiny model: one record type whose workflow declares
 // the GET a page would name. `returns` is absent by design — the query lives on
 // the server, which is the whole point of the step.
-const CONFIG: ClientSolutionConfig = {
+const CONFIG: ClientSolutionModel = {
   attributes: [
     { key: 'status', label: 'Status', description: 'Work order status', type: 'text' },
   ],

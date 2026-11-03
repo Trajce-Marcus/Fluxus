@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryAdapter } from '../src/memoryAdapter';
 import { createEngine } from '../src/engine';
-import type { ActivityDef, ClientSolutionConfig, ContextUser } from '../src/types';
+import type { ActivityDef, ClientSolutionModel, ContextUser } from '../src/types';
 
 const act = (id: string, record_map: string | undefined, show_condition?: string) => ({
   id, name: id.replace('act_', ''), description: '', ...(record_map ? { record_map } : {}),
@@ -40,7 +40,7 @@ const config = {
       'act_note_jobs', 'act_raise_jobs', 'act_quote_jobs', 'act_broken_jobs',
     ].map((activity_ref) => ({ activity_ref })) },
   ],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 const nick: ContextUser = { id: 'u1', name: 'Nick', email: 'nick@example.com', roles: ['role_inspector'] };
 const ann: ContextUser = { id: 'u2', name: 'Ann', email: 'ann@example.com', roles: ['role_inspector'] };
@@ -49,7 +49,7 @@ const boss: ContextUser = { id: 'u3', name: 'Boss', email: 'boss@example.com', r
 function build(user: ContextUser) {
   const adapter = new MemoryAdapter(config);
   const job = adapter.createRecord('rt_jobs', { status: 'Scheduled', inspector_email: 'nick@example.com' });
-  const engine = createEngine({ store: adapter, config, user });
+  const engine = createEngine({ store: adapter, model: config, user });
   const activities = adapter.getRecordTypeDef('rt_jobs').workflow.activities as ActivityDef[];
   const byId = (id: string) => activities.find((a) => a.id === id)!;
   return { adapter, engine, activities, byId, job };

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { MemoryAdapter } from '../src/memoryAdapter';
 import { createEngine } from '../src/engine';
 import { validateSubmission } from '../src/validateSubmission';
-import type { ActivityDef, ClientSolutionConfig } from '../src/types';
+import type { ActivityDef, ClientSolutionModel } from '../src/types';
 
 const config = {
   attributes: [
@@ -41,14 +41,14 @@ const config = {
     { id: 'wf_projects', name: 'Projects', activities: [] },
     { id: 'wf_wbs_nodes', name: 'WBS', activities: [{ activity_ref: 'act_create_wbs_nodes' }] },
   ],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 // The platform issues every id (2026-09-18), so the project's is whatever the
 // create returned — the fixture reads it back rather than assuming its code.
 const build = () => {
   const adapter = new MemoryAdapter(config);
   const project = adapter.createRecord('rt_projects', { code: 'P26-011' });
-  const engine = createEngine({ store: adapter, config, user: { id: 'u', name: 'u', email: null, roles: [] } });
+  const engine = createEngine({ store: adapter, model: config, user: { id: 'u', name: 'u', email: null, roles: [] } });
   const activity = adapter.getRecordTypeDef('rt_wbs_nodes').workflow.activities[0] as ActivityDef;
   return { adapter, engine, activity, projectId: project.id };
 };

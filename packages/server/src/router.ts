@@ -9,11 +9,11 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { eq, and, inArray, ne } from 'drizzle-orm';
 import { FkPointer } from '@fluxus/dsl';
-import { AfterHookFailedError, APPS_RECORD_TYPE, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionConfig, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
+import { AfterHookFailedError, APPS_RECORD_TYPE, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionModel, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
-  ConfigValidationError,
+  ModelValidationError,
   NotImplementedError,
   OperationNotFoundError,
   OrgNotFoundError,
@@ -30,11 +30,11 @@ import {
   getSolutionName,
   getSolutionOrg,
   putOrgProfile,
-  getSolutionConfig,
-  configCollections,
-  deleteConfigEntity,
-  putConfigEntity,
-  listConfigVersions,
+  getSolutionModel,
+  modelCollections,
+  deleteModelEntity,
+  putModelEntity,
+  listModelVersions,
   getPageVersion,
   insertPendingAttachment,
   listOperations,
@@ -46,15 +46,15 @@ import {
   updateSolution,
   deleteSolution,
   loadOperationHost,
-  publishConfig,
+  publishModel,
   publishPage,
-  rollbackConfig,
+  rollbackModel,
   rollbackPage,
-  putConfig,
-  putOperationConfig,
+  putModel,
+  putOperationMenu,
   putPage,
   usedStorageBytes,
-  type ConfigCollection,
+  type ModelCollection,
 } from './host';
 import {
   opAdminsRouter,
@@ -64,7 +64,7 @@ import {
   userRolesRouter,
   usersRouter,
 } from './routers/users';
-import { computeReadable, projectConfig } from './projection';
+import { computeReadable, projectModel } from './projection';
 import { appDefaults, appFromRow, expireApp, appListOf, appsForUser, PageNotPublishedError, getAppRecord, isAppRecord, listApps, listWorkflowOf, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
@@ -99,7 +99,6 @@ export { DEFAULT_OPERATION, DEFAULT_ORG, DEFAULT_SOLUTION, type AppContext };
 import { consoleNotifySink } from './services/notify';
 import { isPlatformAdmin, stubRolesResolver, type AuthUser, type RolesResolver } from './auth';
 import { ENV_FUSE_BYTES, PLATFORM_MAX_BYTES, makeStorageKey, type BlobStore } from './services/blob';
-import type { OperationConfig } from './db/schema';
 
 /**
  * Runtime-plane identity for one call: the verified user with `roles`
@@ -120,10 +119,10 @@ async function resolveUser(ctx: AppContext, operationId: string) {
 }
 
 /** The caller's resolved roles + the operation's linked-solution config. */
-async function operationContext(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; config: SolutionConfig }> {
+async function operationContext(ctx: AppContext, operationId: string): Promise<{ user: AuthUser; config: SolutionModel }> {
   const user = await resolveUser(ctx, operationId);
   const op = await getOperation(ctx.db, operationId);
-  const config = await getSolutionConfig(ctx.db, op.solutionId);
+  const config = await getSolutionModel(ctx.db, op.solutionId);
   return { user, config };
 }
 
@@ -153,7 +152,7 @@ async function callAccess(
   op: { id: string; orgId: string; solutionId: string },
   appId: string | undefined,
   user: AuthUser,
-  config: SolutionConfig,
+  config: SolutionModel,
 ): Promise<{ readable: Set<string> | null; app: App | null }> {
   if (appId === undefined) {
     await requireNoAppCaller(ctx, op);
@@ -164,7 +163,7 @@ async function callAccess(
 }
 
 /** The record types whose workflow lists an activity — where it runs (§2.2). */
-function typesListing(config: SolutionConfig, activityId: string): string[] {
+function typesListing(config: SolutionModel, activityId: string): string[] {
   return config.recordTypes
     .filter((rt) => config.workflows.find((w) => w.id === rt.workflow_ref)?.activities.some((u) => u.activity_ref === activityId))
     .map((rt) => rt.id);
@@ -203,7 +202,7 @@ type RecordRow = typeof records.$inferSelect;
 async function referencedRecords(
   db: AppContext['db'],
   operationId: string,
-  config: SolutionConfig,
+  config: SolutionModel,
   readable: Set<string> | null,
   roots: RecordRow[],
 ): Promise<{ found: RecordRow[]; withheld: string[] }> {
@@ -253,18 +252,12 @@ function matchesAccept(accept: string[], mime: string, name: string): boolean {
   });
 }
 
-// The operation's app menu (APPS_AND_INSTANCES §2.5) — validated on
-// operations.putConfig against the operation's apps list.
-const operationConfigSchema: z.ZodType<OperationConfig> = z.object({
-  menu: menuSchema.optional(),
-});
-
 /** An operation as `operations.list` / `operations.get` answer it: without its
  *  menu (§2.3), which the Runtime gets from `apps.user`, built for each caller,
  *  and the Console from `apps.list`. */
-function withoutMenu<T extends { config: OperationConfig }>(op: T): T {
-  const { menu: _menu, ...config } = op.config;
-  return { ...op, config };
+function withoutMenu<T extends { menu: unknown }>(op: T): Omit<T, 'menu'> {
+  const { menu: _menu, ...rest } = op;
+  return rest;
 }
 
 /**
@@ -302,13 +295,13 @@ const appIdInput = z.string().min(1).optional();
  * graph validation's business, not the transport's; all this layer insists on is
  * that a def is an object carrying its own identity.
  */
-function entityPut<T>(collection: ConfigCollection<T>) {
+function entityPut<T>(collection: ModelCollection<T>) {
   return t.procedure
     .input(z.object({ solutionId: solutionInput, def: z.unknown() }))
     .mutation(async ({ ctx, input }) => {
       try {
         await requireSolAdmin(ctx, input.solutionId);
-        await putConfigEntity(ctx.db, input.solutionId, collection, input.def, ctx.sink, ctx.user?.email ?? null);
+        await putModelEntity(ctx.db, input.solutionId, collection, input.def, ctx.sink, ctx.user?.email ?? null);
         return { ok: true as const };
       } catch (err) {
         rethrow(err);
@@ -318,10 +311,10 @@ function entityPut<T>(collection: ConfigCollection<T>) {
 
 /** The delete half — its input names the entity's own identity field, so each
  *  procedure asks for a `key` or an `id` as the model spells it. */
-async function entityDelete<T>(ctx: AppContext, solutionId: string, collection: ConfigCollection<T>, id: string) {
+async function entityDelete<T>(ctx: AppContext, solutionId: string, collection: ModelCollection<T>, id: string) {
   try {
     await requireSolAdmin(ctx, solutionId);
-    await deleteConfigEntity(ctx.db, solutionId, collection, id, ctx.sink);
+    await deleteModelEntity(ctx.db, solutionId, collection, id, ctx.sink);
     return { ok: true as const };
   } catch (err) {
     rethrow(err);
@@ -537,8 +530,10 @@ export const appRouter = t.router({
           rethrow(err);
         }
       }),
-    putConfig: t.procedure
-      .input(z.object({ operationId: operationInput, config: operationConfigSchema }))
+    // The operation's app menu (APPS_AND_INSTANCES §2.5), checked against its
+    // apps list.
+    putMenu: t.procedure
+      .input(z.object({ operationId: operationInput, menu: menuSchema }))
       .mutation(async ({ ctx, input }) => {
         try {
           const op = await getOperation(ctx.db, input.operationId);
@@ -547,8 +542,8 @@ export const appRouter = t.router({
           await requireOpAdmin(ctx, input.operationId, op.orgId);
           // Checked at save (§2.5): every leaf points at an app of this
           // operation, at most once.
-          validateAppMenu(input.config.menu ?? [], await listApps(ctx.db, input.operationId));
-          await putOperationConfig(ctx.db, input.operationId, input.config);
+          validateAppMenu(input.menu, await listApps(ctx.db, input.operationId));
+          await putOperationMenu(ctx.db, input.operationId, input.menu);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
@@ -568,7 +563,7 @@ export const appRouter = t.router({
         try {
           const op = await getOperation(ctx.db, input.operationId);
           await requireOpAdmin(ctx, input.operationId, op.orgId);
-          return { apps: await listApps(ctx.db, input.operationId), menu: readMenu(op.config) };
+          return { apps: await listApps(ctx.db, input.operationId), menu: readMenu(op.menu) };
         } catch (err) {
           rethrow(err);
         }
@@ -620,7 +615,7 @@ export const appRouter = t.router({
           await requireOpAdmin(ctx, input.operationId, op.orgId);
           const [published, config] = await Promise.all([
             listPublishedPages(ctx.db, op.solutionId),
-            getSolutionConfig(ctx.db, op.solutionId),
+            getSolutionModel(ctx.db, op.solutionId),
           ]);
           const { operationId, ...app } = input;
           return await putApp(ctx.db, operationId, app, { publishedPages: new Set(published.map((p) => p.path)), config }, (ctx.user ?? DEMO_USER).id);
@@ -653,7 +648,7 @@ export const appRouter = t.router({
   opUsers: opUsersRouter,
   userRoles: userRolesRouter,
 
-  config: t.router({
+  model: t.router({
     // Two doors, not one filter (CLIENT_TRUST_BOUNDARY §2). This is the design
     // plane's: the whole model, hooks and access rules included, because
     // authoring them is the job. **Sol admin, or an admin of one of the
@@ -665,7 +660,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         try {
           await requireSolOrOpAdmin(ctx, input.solutionId);
-          return await getSolutionConfig(ctx.db, input.solutionId);
+          return await getSolutionModel(ctx.db, input.solutionId);
         } catch (err) {
           rethrow(err);
         }
@@ -689,19 +684,19 @@ export const appRouter = t.router({
             const list = await listWorkflowOf(ctx.db, op.solutionId, pageId, config);
             if (list) appLists.add(list.id);
           }
-          return projectConfig(config, { roles: user.roles, enforced: ctx.authConfigured, appLists });
+          return projectModel(config, { roles: user.roles, enforced: ctx.authConfigured, appLists });
         } catch (err) {
           rethrow(err);
         }
       }),
     put: t.procedure
-      .input(z.object({ solutionId: solutionInput, config: z.unknown() }))
+      .input(z.object({ solutionId: solutionInput, model: z.unknown() }))
       .mutation(async ({ ctx, input }) => {
         try {
           await requireSolAdmin(ctx, input.solutionId);
           // An imported model's `default_menu` is dropped (apps Part 2 step 3):
           // each operation sets up its own apps and menu.
-          await putConfig(ctx.db, input.solutionId, input.config as SolutionConfig, ctx.sink, ctx.user?.email ?? null);
+          await putModel(ctx.db, input.solutionId, input.model as SolutionModel, ctx.sink, ctx.user?.email ?? null);
           return { ok: true as const };
         } catch (err) {
           rethrow(err);
@@ -713,37 +708,37 @@ export const appRouter = t.router({
     // the whole graph, only the *write* unit narrows to one entity. That is what
     // ends the lost update two admins editing two different record types used to
     // suffer. `def` is the entity verbatim, carrying its own key/id.
-    putAttribute: entityPut(configCollections.attributes),
+    putAttribute: entityPut(modelCollections.attributes),
     deleteAttribute: t.procedure
       .input(z.object({ solutionId: solutionInput, key: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.attributes, input.key)),
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, modelCollections.attributes, input.key)),
 
-    putRecordType: entityPut(configCollections.recordTypes),
+    putRecordType: entityPut(modelCollections.recordTypes),
     deleteRecordType: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.recordTypes, input.id)),
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, modelCollections.recordTypes, input.id)),
 
     // The activity pool (APPS_AND_INSTANCES §1.6). Deleting one a workflow
     // still lists fails validation, naming each such workflow.
-    putActivity: entityPut(configCollections.activities),
+    putActivity: entityPut(modelCollections.activities),
     deleteActivity: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.activities, input.id)),
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, modelCollections.activities, input.id)),
 
-    putWorkflow: entityPut(configCollections.workflows),
+    putWorkflow: entityPut(modelCollections.workflows),
     deleteWorkflow: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.workflows, input.id)),
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, modelCollections.workflows, input.id)),
 
-    putFunction: entityPut(configCollections.functions),
+    putFunction: entityPut(modelCollections.functions),
     deleteFunction: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.functions, input.id)),
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, modelCollections.functions, input.id)),
 
-    putRole: entityPut(configCollections.roles),
+    putRole: entityPut(modelCollections.roles),
     deleteRole: t.procedure
       .input(z.object({ solutionId: solutionInput, id: z.string().min(1) }))
-      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, configCollections.roles, input.id)),
+      .mutation(async ({ ctx, input }) => entityDelete(ctx, input.solutionId, modelCollections.roles, input.id)),
 
     // Model history (ruled 2026-07-26) — the same publish surface pages have.
     // Readme required: a version without release notes is a diff nobody can
@@ -754,14 +749,14 @@ export const appRouter = t.router({
         try {
           await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
-          return await publishConfig(ctx.db, input.solutionId, input.readme, publishedBy);
+          return await publishModel(ctx.db, input.solutionId, input.readme, publishedBy);
         } catch (err) {
           rethrow(err);
         }
       }),
     versions: t.procedure
       .input(z.object({ solutionId: solutionInput }).default({}))
-      .query(async ({ ctx, input }) => listConfigVersions(ctx.db, input.solutionId)),
+      .query(async ({ ctx, input }) => listModelVersions(ctx.db, input.solutionId)),
     // Rollback republishes an older version as a new one AND restores it as the
     // draft — the config draft is what hosts evaluate, so nothing else would
     // make the rollback observable.
@@ -771,7 +766,7 @@ export const appRouter = t.router({
         try {
           await requireSolAdmin(ctx, input.solutionId);
           const publishedBy = ctx.user?.id ?? DEMO_USER.id;
-          return await rollbackConfig(ctx.db, input.solutionId, input.version, `Rollback to v${input.version}`, publishedBy);
+          return await rollbackModel(ctx.db, input.solutionId, input.version, `Rollback to v${input.version}`, publishedBy);
         } catch (err) {
           rethrow(err);
         }
@@ -817,10 +812,10 @@ export const appRouter = t.router({
           const op = { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId };
           let access: Awaited<ReturnType<typeof callAccess>>;
           if (input.appId === undefined) {
-            access = await callAccess(ctx, op, undefined, user, host.config);
+            access = await callAccess(ctx, op, undefined, user, host.model);
           } else {
             try {
-              access = await callAccess(ctx, op, input.appId, user, host.config);
+              access = await callAccess(ctx, op, input.appId, user, host.model);
             } catch {
               return input.items.map(() => []);
             }
@@ -829,7 +824,7 @@ export const appRouter = t.router({
           if (app) host.useApp(app);
           // Through an app, only what its list holds (check 3), each with the
           // app's condition beside the activity's own (check 6, §2.3).
-          const list = app ? await appListOf(ctx.db, host.solutionId, app.pageId, host.config) : null;
+          const list = app ? await appListOf(ctx.db, host.solutionId, app.pageId, host.model) : null;
           const workflowOf = (typeId: string): ActivityDef[] | null => {
             let activities: ActivityDef[];
             try { activities = host.store.getRecordTypeDef(typeId).workflow.activities; } catch { return null; }
@@ -847,7 +842,7 @@ export const appRouter = t.router({
               answers.push(activities ? await host.engine.offeredActivities(activities, null, list?.conditions) : []);
             } else if (app && list) {
               const own = [...list.ids]
-                .filter((id) => typesListing(host.config, id).length === 0)
+                .filter((id) => typesListing(host.model, id).length === 0)
                 .map((id) => findActivity(host, id))
                 .filter((a): a is ActivityDef => a !== null);
               answers.push(own.length > 0 ? await host.engine.offeredActivities(own, await host.store.getRecord(app.id), list.conditions) : []);
@@ -928,7 +923,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         try {
           await requireSolOrOpAdmin(ctx, input.solutionId);
-          return await appDefaults(ctx.db, input.solutionId, input.path, await getSolutionConfig(ctx.db, input.solutionId));
+          return await appDefaults(ctx.db, input.solutionId, input.path, await getSolutionModel(ctx.db, input.solutionId));
         } catch (err) {
           if (err instanceof PageNotPublishedError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
           rethrow(err);
@@ -997,7 +992,7 @@ export const appRouter = t.router({
           if (!blob?.configured) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Blob storage is not configured (FLUXUS_R2_*)' });
           }
-          const config = await getSolutionConfig(ctx.db, input.solutionId);
+          const config = await getSolutionModel(ctx.db, input.solutionId);
           const attr = config.attributes.find((a) => a.key === input.attributeKey);
           if (!attr) throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown attribute '${input.attributeKey}'` });
           if (!isUploadType(attr.type)) {
@@ -1119,7 +1114,7 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const op = await getOperation(ctx.db, input.operationId);
-          const config = await getSolutionConfig(ctx.db, op.solutionId);
+          const config = await getSolutionModel(ctx.db, op.solutionId);
           const { readable } = await callAccess(ctx, op, input.appId, user, config);
           const rows = await ctx.db
             .select()
@@ -1174,7 +1169,7 @@ export const appRouter = t.router({
           // availability gate may read context.user.roles.
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.model);
           if (app) host.useApp(app);
 
           const activity = findActivity(host, input.activityId);
@@ -1185,7 +1180,7 @@ export const appRouter = t.router({
           // its item may carry the app's own condition (check 6, below).
           let condition: string | undefined;
           if (app) {
-            const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.config);
+            const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.model);
             if (!list.ids.has(activity.id)) {
               throw new TRPCError({ code: 'FORBIDDEN', message: `'${activity.id}' is not on the list of '${app.label}'` });
             }
@@ -1194,7 +1189,7 @@ export const appRouter = t.router({
           // Check 4: the call matches the model. Where an activity runs is the
           // model's to say — a record type whose workflow lists it, or, for one
           // no record type lists, the app's own record (step 5).
-          const owners = typesListing(host.config, activity.id);
+          const owners = typesListing(host.model, activity.id);
           const appsOwn = owners.length === 0;
           if (appsOwn) {
             assertAppsOwnCall(activity.id, app, input);
@@ -1332,7 +1327,7 @@ export const appRouter = t.router({
         try {
           const user = await resolveUser(ctx, input.operationId);
           const host = await loadOperationHost(ctx.db, input.operationId, ctx.sink ?? consoleNotifySink, user);
-          const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.config);
+          const { readable, app } = await callAccess(ctx, { id: input.operationId, orgId: host.orgId, solutionId: host.solutionId }, input.appId, user, host.model);
           if (app) host.useApp(app);
 
           const activity = findActivity(host, input.activityId);
@@ -1348,7 +1343,7 @@ export const appRouter = t.router({
           // cannot tell a form's call from the page's.
           let condition: string | undefined;
           if (app) {
-            const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.config);
+            const list = await appListOf(ctx.db, host.solutionId, app.pageId, host.model);
             if (!list.ids.has(activity.id) && !list.formGets.has(activity.id)) {
               throw new TRPCError({ code: 'FORBIDDEN', message: `'${activity.id}' is not on the list of '${app.label}'` });
             }
@@ -1359,7 +1354,7 @@ export const appRouter = t.router({
           // only where its entry lands. One in none is the app's own (step 5):
           // only through its app, naming no record, on the app's record, and
           // leaving no entry there (§2.4).
-          const appsOwn = typesListing(host.config, activity.id).length === 0;
+          const appsOwn = typesListing(host.model, activity.id).length === 0;
           if (appsOwn) assertAppsOwnCall(activity.id, app, input);
 
           // No transaction: a GET only reads, and its one write — the light

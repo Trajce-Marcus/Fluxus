@@ -154,8 +154,8 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   // free safety net against server/client engine version drift.
   createEngine({
     store: client.adapter,
-    config: client.config,
+    model: client.model,
     services: [buildNotifyModule(notificationLog), buildGeoModule(client.adapter), buildTimeModule(), buildMathModule()],
     user,
-  }).reportConfigFindings();
+  }).reportModelFindings();
 }

@@ -6,10 +6,10 @@
 // toasts, console channels) stay with the host.
 
 import { evaluateExpression, evaluateExpressionAsync, executeScriptAsync, FluxFailError, type ServiceModuleDef } from '@fluxus/dsl';
-import type { ActivityDef, ActivityOption, ClientSolutionConfig, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
+import type { ActivityDef, ActivityOption, ClientSolutionModel, ContextUser, QueryActivityResult, RecordInstance, RunActivityResult } from './types';
 import type { Store, WaitingStore } from './store';
 import { blockingReferences, buildEvalHost, coerceCaptured, compositeSubs, flattenCaptured, nestComposite, serializeFields, toComponentValue, type ScriptContext } from './bridge';
-import { validateConfig, reportConfigFindings, type Finding, type ValidateConfigOptions } from './validateConfig';
+import { validateModel, reportModelFindings, type Finding, type ValidateModelOptions } from './validateModel';
 import { buildLoggerModule } from './services/logger';
 import { attributeFieldRef } from './attributeTypes';
 import { recordTypesByActivity } from './activityPool';
@@ -24,7 +24,7 @@ export interface EngineOptions<S extends WaitingStore = Store> {
    * same either way — a browser simply has no hook bodies to run, which is the
    * point.
    */
-  config: ClientSolutionConfig;
+  model: ClientSolutionModel;
   services?: ServiceModuleDef[];
   /**
    * The identity every evaluation sees as `context.user` and every committed
@@ -164,9 +164,9 @@ export interface Engine<S extends WaitingStore = Store> {
   /** `evaluate`, waiting on the store, services and `invoke`. */
   evaluateAsync(source: string, script: ScriptContext): Promise<unknown>;
   /** Config-save-time validation of every FluxScript script in the config. */
-  validateConfig(options?: ValidateConfigOptions): Finding[];
-  /** validateConfig with diagnostics reported to the console. */
-  reportConfigFindings(): void;
+  validateModel(options?: ValidateModelOptions): Finding[];
+  /** validateModel with diagnostics reported to the console. */
+  reportModelFindings(): void;
 }
 
 /** Drop null cells from a composite's live value. */
@@ -212,7 +212,7 @@ function capturedEntryAttributes(
   return entryAttributes;
 }
 
-export function createEngine<S extends WaitingStore = Store>({ store, config, services: hostServices = [], user, app }: EngineOptions<S>): Engine<S> {
+export function createEngine<S extends WaitingStore = Store>({ store, model: config, services: hostServices = [], user, app }: EngineOptions<S>): Engine<S> {
   // services.logger — engine-owned (see services/logger.ts): lines noted
   // during a run land on the entry as the reserved `system_log` attribute —
   // only if the run commits an entry (rejected submissions leave no trace,
@@ -233,7 +233,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
 
   // A CREATE activity targets the record type whose workflow lists it —
   // derived from config here so hosts never have to say which type is
-  // "selected" (the pipeline must work headless). `validateConfig` refuses a
+  // "selected" (the pipeline must work headless). `validateModel` refuses a
   // CREATE that two record types reach, so there is one.
   const createTypeByActivity = new Map<string, string>();
   const creates = new Set((config.activities ?? []).filter((a) => a.record_map === 'CREATE').map((a) => a.id));
@@ -664,7 +664,7 @@ export function createEngine<S extends WaitingStore = Store>({ store, config, se
     invoke: (activityId, params, anchorRecord) => invoke(activityId, params, anchorRecord),
     evaluate: (source, script) => evaluateExpression(source, evalHost({ user, ...script })),
     evaluateAsync: (source, script) => evaluateExpressionAsync(source, evalHost({ user, ...script })),
-    validateConfig: (options) => validateConfig(config, services, options),
-    reportConfigFindings: () => reportConfigFindings(config, services),
+    validateModel: (options) => validateModel(config, services, options),
+    reportModelFindings: () => reportModelFindings(config, services),
   };
 }

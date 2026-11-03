@@ -8,11 +8,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, putModel } from '../src/host';
 import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import { records, rptActivities, rptAttributes } from '../src/db/schema';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
-import { config } from '../../runtime/src/config';
+import { model as config } from '../../runtime/src/model';
 
 let db: Db;
 const notifications: NotificationEvent[] = [];
@@ -36,7 +36,7 @@ let woId: string;
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
   await ensureSolution(db, DEFAULT_SOLUTION, 'Demo');
-  await putConfig(db, DEFAULT_SOLUTION, config, sink);
+  await putModel(db, DEFAULT_SOLUTION, config, sink);
   await ensureOperation(db, DEFAULT_OPERATION, DEFAULT_SOLUTION, 'Demo');
 
   // An operation starts empty and has no seeding path, so everything the
@@ -70,7 +70,7 @@ beforeAll(async () => {
 
 describe('config storage', () => {
   it('serves the stored config back', async () => {
-    const stored = await caller().config.get({});
+    const stored = await caller().model.get({});
     expect(stored.recordTypes.map((rt) => rt.id)).toContain('rt_work_orders');
   });
 
@@ -80,7 +80,7 @@ describe('config storage', () => {
     const SOL = 'demo/fresh';
     const OP = 'demo/fresh-op';
     await ensureSolution(db, SOL, 'Fresh');
-    await putConfig(db, SOL, config, sink);
+    await putModel(db, SOL, config, sink);
     await ensureOperation(db, OP, SOL, 'Fresh');
     const stored = await db.select().from(records).where(eq(records.operationId, OP));
     expect(stored).toEqual([]);
@@ -91,11 +91,11 @@ describe('config storage', () => {
     const first = broken.activities.find((a) => a.id === broken.workflows[0].activities[0].activity_ref)!;
     first.before_hook = 'records.nonexistent_type.count() > 0';
     await ensureSolution(db, 'demo/broken', 'Broken');
-    await expect(caller().config.put({ solutionId: 'demo/broken', config: broken })).rejects.toThrow(/SDM config rejected/);
+    await expect(caller().model.put({ solutionId: 'demo/broken', model: broken })).rejects.toThrow(/Model rejected/);
   });
 
   it('refuses a config for a solution that does not exist', async () => {
-    await expect(caller().config.put({ solutionId: 'demo/ghost', config })).rejects.toThrow(/No SDM config stored for solution 'demo\/ghost'/);
+    await expect(caller().model.put({ solutionId: 'demo/ghost', model: config })).rejects.toThrow(/No model stored for solution 'demo\/ghost'/);
   });
 
   it('blocks removing/renaming a record type that stored records still reference', async () => {
@@ -107,14 +107,14 @@ describe('config storage', () => {
     withGuardType.workflows.push({ id: 'wf_guard_only', name: 'Guard Only', description: '', activities: [] });
     withGuardType.recordTypes.push({ id: 'rt_guard_only', name: 'Guard Only', description: '', workflow_ref: 'wf_guard_only', custom_fields: [] });
     await ensureSolution(db, SOL, 'Guard');
-    await putConfig(db, SOL, withGuardType, sink);
+    await putModel(db, SOL, withGuardType, sink);
     await ensureOperation(db, OP, SOL, 'Guard');
     // A stored record of the type (test fixture insert — not an app write path).
     await db.insert(records).values({ operationId: OP, id: 'GUARD-1', typeRef: 'rt_guard_only', customFields: { id: 'GUARD-1' }, activityHistory: [] });
     // Saving a config without the type would orphan GUARD-1 — must be rejected.
-    await expect(caller().config.put({ solutionId: SOL, config })).rejects.toThrow(/stored records still reference 'rt_guard_only'/);
+    await expect(caller().model.put({ solutionId: SOL, model: config })).rejects.toThrow(/stored records still reference 'rt_guard_only'/);
     // The type back in place saves fine.
-    await expect(caller().config.put({ solutionId: SOL, config: withGuardType })).resolves.toEqual({ ok: true });
+    await expect(caller().model.put({ solutionId: SOL, model: withGuardType })).resolves.toEqual({ ok: true });
   });
 });
 

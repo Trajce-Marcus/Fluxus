@@ -19,7 +19,7 @@
 //
 // Three consumers read it: the client upload core (what descriptor fields to
 // write), validateSubmission (server-authoritative descriptor shape check), and
-// validateConfig (which config keys / multi a type accepts). `multi` itself is
+// validateModel (which config keys / multi a type accepts). `multi` itself is
 // handled globally, so it is never listed in a type's configKeys.
 
 /** Scalar kind of a descriptor sub-field — mirrors coerceValue's cases. */
@@ -86,7 +86,7 @@ export const ATTRIBUTE_TYPES: Record<string, AttributeTypeSpec> = {
   time: { configKeys: [], multi: true },
   int: { configKeys: [], multi: true },
   decimal: { configKeys: ['decimal_places'], multi: true },
-  // ── Pre-existing types (declared here so validateConfig knows their keys) ──
+  // ── Pre-existing types (declared here so validateModel knows their keys) ──
   // `field` names the field this attribute fills, fully qualified —
   // `rt_wbs_nodes.parent_id` — and the target type is then read off that
   // field's own declaration rather than repeated here (2026-09-15, the user's

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { MemoryAdapter } from '../src/memoryAdapter';
 import { attributeFieldRef } from '../src/attributeTypes';
-import type { ClientSolutionConfig } from '../src/types';
+import type { ClientSolutionModel } from '../src/types';
 
 const config = {
   attributes: [
@@ -26,7 +26,7 @@ const config = {
     },
   ],
   workflows: [{ id: 'wf_wbs_nodes', name: 'WBS', activities: [] }],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 const adapter = new MemoryAdapter(config);
 const refOf = (key: string) =>

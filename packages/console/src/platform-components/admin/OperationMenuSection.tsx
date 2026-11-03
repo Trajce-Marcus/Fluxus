@@ -35,7 +35,7 @@ export function OperationMenuSection({ operationId }: { operationId: string; sol
     setBusy(true);
     setStatus(null);
     try {
-      await consoleClient.putOperationConfig(operationId, { menu: next });
+      await consoleClient.putOperationMenu(operationId, next);
       setStatus('Menu saved.');
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));

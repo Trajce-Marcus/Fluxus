@@ -22,7 +22,7 @@ import {
   appointSolAdmin,
   getOperation,
   getOwnerEmail,
-  getSolutionConfig,
+  getSolutionModel,
   getSolutionOrg,
   inviteUser,
   listOpAdmins,
@@ -428,7 +428,7 @@ export const userRolesRouter = t.router({
     .query(async ({ ctx, input }) => {
       try {
         const op = await getOperation(ctx.db, input.operationId);
-        const config = await getSolutionConfig(ctx.db, op.solutionId);
+        const config = await getSolutionModel(ctx.db, op.solutionId);
         return config.access?.roles ?? [];
       } catch (err) {
         rethrow(err);

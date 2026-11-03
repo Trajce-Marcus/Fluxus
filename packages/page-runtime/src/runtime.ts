@@ -7,7 +7,7 @@
 // client, exactly as before the extraction.
 
 import type { FluxusClient } from '@fluxus/client';
-import type { ActivityDef, ClientSolutionConfig, MemoryAdapter, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
+import type { ActivityDef, ClientSolutionModel, MemoryAdapter, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 import type { Diagnostic } from '@fluxus/dsl';
 import type { PageDef } from './pageDef';
 import {
@@ -40,7 +40,7 @@ export interface PageRuntime {
   readonly store: MemoryAdapter;
   /** The client's grade of the model (CLIENT_TRUST_BOUNDARY §2) — pages run on
    *  both planes, and the narrower of the two is what they may rely on. */
-  readonly config: ClientSolutionConfig;
+  readonly model: ClientSolutionModel;
   /** Resolve an activity id to its resolved def + owning record type. */
   findActivity(activityId: string): FoundActivity | null;
   /** Resolve a record type id to its def + workflow; null when the model has
@@ -103,7 +103,7 @@ export function createPageRuntime(
   },
 ): PageRuntime {
   const store = client.adapter;
-  const config = client.config;
+  const config = client.model;
 
   // The page's door to a GET activity (DATA_THROUGH_ACTIVITIES step 2): the
   // page names the activity, the model answers. Since step 3 the page's own
@@ -159,7 +159,7 @@ export function createPageRuntime(
   const runtime: PageRuntime = {
     client,
     store,
-    config,
+    model: config,
     captureHost,
     openApp,
     goBack,

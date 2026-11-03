@@ -115,7 +115,7 @@ Resolved the way `list` already resolves its options:
   a `list` guesses because it has no field declaration to consult and never
   will, while a reference has one, so guessing would draw plausible rows over a
   modelling gap. With neither source the picker says what is missing, and
-  `validateConfig` refuses such a field at save.
+  `validateModel` refuses such a field at save.
 - `columns` — optional extra fields to show as secondary text on each row, so
   `3.4` can be shown beside `Mechanized Welding`.
 

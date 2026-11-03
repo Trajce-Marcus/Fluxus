@@ -10,10 +10,10 @@ import {
   modelRows,
   withModelTypes,
   MemoryAdapter,
-  validateConfig,
+  validateModel,
 } from '../src/index';
 import { resolvedCaptureLists } from '../src/modelProjection';
-import type { SolutionConfig } from '../src/types';
+import type { SolutionModel } from '../src/types';
 
 // ── Configs ─────────────────────────────────────────────────────────────────
 
@@ -43,9 +43,9 @@ const bare = {
   ],
   functions: [{ id: 'fn_x', name: 'x', body: 'function x() { return 1 }' }],
   access: { roles: [{ id: 'role_a', name: 'A' }] },
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
-function hostFor(config: SolutionConfig, opts: { mutate?: boolean } = {}) {
+function hostFor(config: SolutionModel, opts: { mutate?: boolean } = {}) {
   const adapter = new MemoryAdapter(config, { initialRecords: [] });
   return buildEvalHost(
     adapter,
@@ -55,10 +55,10 @@ function hostFor(config: SolutionConfig, opts: { mutate?: boolean } = {}) {
   );
 }
 
-const runOn = (config: SolutionConfig, src: string) => evaluateExpression(src, hostFor(config));
+const runOn = (config: SolutionModel, src: string) => evaluateExpression(src, hostFor(config));
 const run = (src: string) => runOn(bare, src);
 
-const rowsOf = (config: SolutionConfig) => {
+const rowsOf = (config: SolutionModel) => {
   const adapter = new MemoryAdapter(config, { initialRecords: [] });
   return modelRows(config, { resolvedAttributes: resolvedCaptureLists(adapter) });
 };
@@ -194,10 +194,10 @@ describe('a hook cannot reach the model at all', () => {
   });
 
   it('a hook naming the model is refused at config-save validation', () => {
-    const withHook = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const withHook = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (withHook.activities[0] as { before_hook?: string }).before_hook =
       'if model.record_types.count > 0 { fail(\'no\') }';
-    const findings = validateConfig(withHook).filter((f) => f.diagnostic.severity === 'error');
+    const findings = validateModel(withHook).filter((f) => f.diagnostic.severity === 'error');
     expect(findings.length).toBeGreaterThan(0);
   });
 });
@@ -241,7 +241,7 @@ describe('derived columns', () => {
   });
 
   it('an activity no workflow lists is still a row, with no workflow_activities rows', () => {
-    const unused = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const unused = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (unused.activities as unknown[]).push({ id: 'act_unused', name: 'Unused', attributes: [{ attribute_ref: 'note' }] });
     expect(runOn(unused, "model.activities.where(id = 'act_unused').count")).toBe(1);
     expect(runOn(unused, "model.workflow_activities.where(activity_ref = 'act_unused').count")).toBe(0);
@@ -249,14 +249,14 @@ describe('derived columns', () => {
 
   it('an unused activity still has its capture list projected', () => {
     // §5: "One row per entry in an activity's ordered capture list."
-    const unused = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const unused = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (unused.activities as unknown[]).push({ id: 'act_unused', name: 'Unused', attributes: [{ attribute_ref: 'note' }] });
     const rows = runOn(unused, "model.activity_attributes.where(activity_ref = 'act_unused').select(key)");
     expect(rows).toEqual([{ key: 'note' }]);
   });
 
   it('an orphan workflow\'s activity still has its capture list projected', () => {
-    const orphan = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const orphan = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (orphan.activities as unknown[]).push({ id: 'act_do_orphans', name: 'Do', attributes: [{ attribute_ref: 'note' }] });
     (orphan.workflows as { id: string; name: string; activities: unknown[] }[]).push({
       id: 'wf_orphan',
@@ -268,7 +268,7 @@ describe('derived columns', () => {
   });
 
   it('a shared activity is one activities row and one workflow_activities row per workflow', () => {
-    const shared = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const shared = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (shared.workflows[1] as { activities: unknown[] }).activities.push({ activity_ref: 'act_do_widgets' });
     expect(runOn(shared, "model.activities.where(id = 'act_do_widgets').count")).toBe(1);
     expect(runOn(shared, "model.workflow_activities.where(activity_ref = 'act_do_widgets').select(workflow_ref)"))
@@ -276,7 +276,7 @@ describe('derived columns', () => {
   });
 
   it('params is null when the body does not parse, [] when it takes none', () => {
-    const fns = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const fns = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (fns as { functions: unknown[] }).functions = [
       { id: 'fn_none', name: 'none', body: 'function none() { return 1 }' },
       { id: 'fn_bad', name: 'bad', body: 'this is not a function at all' },
@@ -293,7 +293,7 @@ describe('derived columns', () => {
   });
 
   it('params survives a body the DSL itself accepts — line array, leading comment', () => {
-    const fns = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const fns = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (fns as { functions: unknown[] }).functions = [
       { id: 'fn_lines', name: 'lines', body: ['function lines(a, b) {', '  return a', '}'] },
       { id: 'fn_comment', name: 'commented', body: '// adds up\nfunction commented(a) { return a }' },
@@ -312,7 +312,7 @@ describe('label fallback matches the one the UI uses', () => {
     // does." fieldLabel is `label?.trim() || key`; the projection is
     // `label ?? key`, so a blank label projects blank while every UI surface
     // shows the key.
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.recordTypes[0] as { custom_fields: { label?: string }[] }).custom_fields[0].label = '   ';
     expect(runOn(c, "model.fields.where(key = 'code').select(label).first")).toEqual({ label: 'code' });
   });
@@ -320,7 +320,7 @@ describe('label fallback matches the one the UI uses', () => {
 
 describe('inherited resolution behaviour, pinned', () => {
   const withUsage = (usage: Record<string, unknown>, pool: Record<string, unknown>) => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c as { attributes: unknown[] }).attributes = [{ key: 'note', type: 'text', ...pool }];
     (c.activities[0] as { attributes: unknown[] }).attributes = [
       { attribute_ref: 'note', ...usage },
@@ -368,7 +368,7 @@ describe('what the chain can and cannot do over the model', () => {
 
 describe('capture lists: markers, interleaving, emptiness', () => {
   const withList = (entries: unknown[]) => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.activities[0] as { attributes: unknown[] }).attributes = entries;
     return c;
   };
@@ -410,7 +410,7 @@ describe('edge configs', () => {
   const strip = (keys: string[]) => {
     const c = JSON.parse(JSON.stringify(bare)) as Record<string, unknown>;
     for (const k of keys) delete c[k];
-    return c as unknown as SolutionConfig;
+    return c as unknown as SolutionModel;
   };
 
   it('no functions key at all', () => {
@@ -419,7 +419,7 @@ describe('edge configs', () => {
 
   it('no access key at all — indistinguishable from empty roles, as §5 says', () => {
     const absent = strip(['access']);
-    const empty = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const empty = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (empty as { access: unknown }).access = { roles: [] };
     expect(runOn(absent, 'model.roles.count')).toBe(0);
     expect(runOn(empty, 'model.roles.count')).toBe(0);
@@ -430,7 +430,7 @@ describe('edge configs', () => {
   });
 
   it('a solution with no workflows at all', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c as { workflows: unknown[] }).workflows = [];
     (c as { recordTypes: unknown[] }).recordTypes = [];
     (c as { activities: unknown[] }).activities = [];
@@ -441,7 +441,7 @@ describe('edge configs', () => {
   });
 
   it('a composite attribute projects its sub-attributes and not a null', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c as { attributes: unknown[] }).attributes = [
       { key: 'note', type: 'text' },
       {
@@ -457,7 +457,7 @@ describe('edge configs', () => {
   });
 
   it('max_size_mb never reaches a projected config', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c as { attributes: unknown[] }).attributes = [
       { key: 'note', type: 'text' },
       { key: 'photo', type: 'photo', type_config: { max_size_mb: 12, multi: true } },
@@ -468,10 +468,10 @@ describe('edge configs', () => {
   });
 
   it('a record type whose stripped name starts with sdm_ is refused at save', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.recordTypes[0] as { id: string }).id = 'rt_sdm_record_types';
     (c.workflows[0] as { id: string }).id = 'wf_widgets';
-    const findings = validateConfig(c);
+    const findings = validateModel(c);
     expect(findings.some((f) => /sdm_/.test(f.diagnostic.message))).toBe(true);
   });
 });
@@ -492,7 +492,7 @@ describe('withModelTypes leaves the ordinary records host alone', () => {
   });
 
   it('fkTarget still falls through for ordinary types', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.recordTypes[0] as { custom_fields: unknown[] }).custom_fields.push({
       key: 'owner_id',
       type: 'fk_ref',
@@ -506,7 +506,7 @@ describe('withModelTypes leaves the ordinary records host alone', () => {
   });
 
   it('reverseRef still works for ordinary types', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.recordTypes[0] as { custom_fields: unknown[] }).custom_fields.push({
       key: 'owner_id',
       type: 'fk_ref',
@@ -538,7 +538,7 @@ describe('withModelTypes leaves the ordinary records host alone', () => {
 
 describe('a config with a dangling workflow reference', () => {
   const dangling = () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.recordTypes[0] as { workflow_ref: string }).workflow_ref = 'wf_gone';
     return c;
   };
@@ -549,7 +549,7 @@ describe('a config with a dangling workflow reference', () => {
     expect(() => buildEvalHost(adapter, c, { readonlyRecords: true }, [])).not.toThrow();
   });
 
-  // The server's save gate (host.ts validateConfigGraph) calls
+  // The server's save gate (host.ts validateModelGraph) calls
   // getRecordTypeDef on every type, so this config cannot be written through
   // config.put today. It is still the difference between "the model query
   // answers nothing" and "every scripts.query call, records.* included, 500s".
@@ -630,7 +630,7 @@ describe('adding `model` to ROOTS', () => {
     validateExpression(src, schema, {}).filter((d) => d.severity === 'error');
 
   it('does not break a record type that has a field called `model`', () => {
-    const c = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const c = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     (c.recordTypes[0] as { custom_fields: unknown[] }).custom_fields.push({ key: 'model', type: 'text' });
     const s = { types: { ...buildDslSchema(c).types, ...modelSchemaTypes() } };
     const found = validateExpression("records.widgets.where(model = 'X').select(model)", s, {}).filter(

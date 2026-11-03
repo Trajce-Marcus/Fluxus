@@ -119,7 +119,7 @@ const BUILTINS: Record<string, { min: number; max: number }> = {
   // invoke(activityId, params?) — run a GET activity and take its answer
   // (DSL_SPEC §5a). Read-only, so it is legal everywhere, before hooks
   // included; that is what makes it usable as a guard. Whether the id names a
-  // real GET is checked where the model is in hand (engine validateConfig),
+  // real GET is checked where the model is in hand (engine validateModel),
   // not here — the DSL stays scope-blind.
   invoke: { min: 1, max: 2 },
 };

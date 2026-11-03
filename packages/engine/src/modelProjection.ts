@@ -1,7 +1,7 @@
 // The SDM, projected as record types (docs/QUERYING_THE_MODEL.md).
 //
 // The model's collections are ordinary record types named `sdm_*`, answered
-// from the SolutionConfig instead of the record store. That is the whole of
+// from the SolutionModel instead of the record store. That is the whole of
 // the design: no new root environment, no second type table, no new shapes —
 // `model.record_types` resolves `sdm_record_types` and everything the chain
 // already does applies unchanged.
@@ -24,7 +24,7 @@ import type {
   AttributeDef,
   ClientAttributeDef,
   CustomFieldDef,
-  SolutionConfig,
+  SolutionModel,
   WorkflowRawDef,
 } from './types';
 import type { ModelStore } from './store';
@@ -187,7 +187,7 @@ function safeConfig(def: AttributeDef | ClientAttributeDef): string | null {
   return asText(rest);
 }
 
-function fieldRows(config: SolutionConfig): DslRecord[] {
+function fieldRows(config: SolutionModel): DslRecord[] {
   const out: DslRecord[] = [];
   for (const rt of config.recordTypes) {
     for (const f of rt.custom_fields as CustomFieldDef[]) {
@@ -216,7 +216,7 @@ function fieldRows(config: SolutionConfig): DslRecord[] {
 
 /** Every pool activity, one row each, used or not. An activity no longer
  *  belongs to one workflow — `workflow_activities` says which use it. */
-function activityRows(config: SolutionConfig): DslRecord[] {
+function activityRows(config: SolutionModel): DslRecord[] {
   return (config.activities ?? []).map((act: ActivityRawDef) =>
     row(P + 'activities', act.id, {
       name: act.name,
@@ -230,7 +230,7 @@ function activityRows(config: SolutionConfig): DslRecord[] {
   );
 }
 
-function workflowActivityRows(config: SolutionConfig): DslRecord[] {
+function workflowActivityRows(config: SolutionModel): DslRecord[] {
   const out: DslRecord[] = [];
   for (const wf of config.workflows as WorkflowRawDef[]) {
     wf.activities.forEach((usage, position) => {
@@ -282,7 +282,7 @@ export function resolvedCaptureLists(store: ModelStore): Map<string, ClientAttri
     try {
       def = store.getRecordTypeDef(rt.id);
     } catch {
-      // A record type bound to a workflow that is not there. `validateConfig`
+      // A record type bound to a workflow that is not there. `validateModel`
       // refuses such a config at save, so this is an already-stored
       // inconsistency — it must cost that type its capture lists, not take the
       // whole host down and turn every query into a 500.
@@ -340,7 +340,7 @@ function activityAttributeRows(options: ModelProjectionOptions): DslRecord[] {
 
 /** Every model collection's rows, built from one solution's config. */
 export function modelRows(
-  config: SolutionConfig,
+  config: SolutionModel,
   options: ModelProjectionOptions = {},
 ): Map<string, DslRecord[]> {
   const rows = new Map<string, DslRecord[]>();
@@ -448,7 +448,7 @@ function paramsOf(body: string | string[] | undefined): string[] | null {
  */
 export function withModelTypes(
   base: RecordsHost,
-  config: SolutionConfig,
+  config: SolutionModel,
   options: ModelProjectionOptions = {},
 ): RecordsHost {
   const rows = modelRows(config, options);

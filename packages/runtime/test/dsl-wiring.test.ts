@@ -41,13 +41,13 @@ const LOCATION_FIXTURE: { typeId: string; id: string; fields: Record<string, unk
 ];
 
 async function setup() {
-  const { config } = await import('../src/config');
+  const { model: config } = await import('../src/model');
   const { MemoryAdapter } = await import('@fluxus/engine');
   const { NotificationLog } = await import('../src/store/NotificationLog');
   const { buildNotifyModule } = await import('../src/services/notify');
   const { buildGeoModule } = await import('@fluxus/engine');
   const { buildEvalHost: rawBuildEvalHost } = await import('@fluxus/engine');
-  const { validateConfig } = await import('@fluxus/engine');
+  const { validateModel } = await import('@fluxus/engine');
   const adapter = new MemoryAdapter(config);
   for (const { typeId, id, fields } of LOCATION_FIXTURE) {
     adapter.insertRecord({ ...adapter.buildRecord(typeId, fields), id });
@@ -56,13 +56,13 @@ async function setup() {
   notifications.clear(); // the localStorage shim persists across tests in this file
   const services = [buildNotifyModule(notifications), buildGeoModule(adapter)];
   const buildEvalHost: typeof rawBuildEvalHost = (a, c, script) => rawBuildEvalHost(a, c, script, services);
-  return { config, adapter, buildEvalHost, validateConfig, services, notifications };
+  return { config, adapter, buildEvalHost, validateModel, services, notifications };
 }
 
 describe('DSL ↔ SDM wiring', () => {
   it('every FluxScript expression in the shipped config validates clean against the service registry', async () => {
-    const { config, validateConfig, services } = await setup();
-    expect(validateConfig(config, services)).toEqual([]);
+    const { config, validateModel, services } = await setup();
+    expect(validateModel(config, services)).toEqual([]);
   });
 
   it('a store built from the config alone holds no records', async () => {
@@ -236,11 +236,11 @@ describe('DSL Phase 2 — hooks through the SDM wiring', () => {
   });
 
   it('activity show_condition may not reference attributes (validated at config load)', async () => {
-    const { config, validateConfig, services } = await setup();
+    const { config, validateModel, services } = await setup();
     const broken = structuredClone(config);
     broken.activities.find(a => a.id === 'act_update_work_orders')!.show_condition =
       'attributes.status is not null';
-    const findings = validateConfig(broken, services);
+    const findings = validateModel(broken, services);
     expect(findings.map(f => `${f.where}: ${f.diagnostic.message}`)).toEqual([
       "act_update_work_orders show_condition: 'attributes' is not available at this embedding point",
     ]);
@@ -323,11 +323,11 @@ describe('DSL Phase 3 — services through the SDM wiring', () => {
   });
 
   it('the validator catches unknown service functions and wrong arity in config scripts', async () => {
-    const { config, validateConfig, services } = await setup();
+    const { config, validateModel, services } = await setup();
     const broken = structuredClone(config);
     const complete = broken.activities.find(a => a.id === 'act_complete_work_orders')!;
     complete.after_hook = "queue services.notify.sms('0400', 'done')";
-    const findings = validateConfig(broken, services);
+    const findings = validateModel(broken, services);
     expect(findings.map(f => f.diagnostic.message)).toEqual([
       "Service 'notify' has no function 'sms'",
     ]);

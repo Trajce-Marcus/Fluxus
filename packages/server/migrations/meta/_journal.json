@@ -169,6 +169,13 @@
       "when": 1785201500000,
       "tag": "0023_drop_default_menu",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785201600000,
+      "tag": "0024_config_to_model",
+      "breakpoints": true
     }
   ]
 }

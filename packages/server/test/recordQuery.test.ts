@@ -9,9 +9,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { executeScriptAsync, type DslRecord } from '@fluxus/dsl';
-import { buildEvalHost, buildTimeModule, createEngine, MemoryAdapter, type RecordInstance, type SolutionConfig } from '@fluxus/engine';
+import { buildEvalHost, buildTimeModule, createEngine, MemoryAdapter, type RecordInstance, type SolutionModel } from '@fluxus/engine';
 import { createDb, type Db } from '../src/db/client';
-import { DatabaseStore, ensureOperation, ensureSolution, loadOperationHost, putConfig } from '../src/host';
+import { DatabaseStore, ensureOperation, ensureSolution, loadOperationHost, putModel } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 
@@ -57,7 +57,7 @@ const config = {
     { id: 'wf_groups', name: 'Groups', description: '', activities: [] },
     { id: 'wf_items', name: 'Items', description: '', activities: [] },
   ],
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
 /** The table under test. Ids sort in the order written, so "by id" is readable. */
 const ROWS: [string, string, Record<string, unknown>][] = [
@@ -101,7 +101,7 @@ function inMemory(expr: string): unknown {
     { id, typeRef, customFields: structuredClone(customFields), activityHistory: [] },
   ]);
   const adapter = new MemoryAdapter(config, { initialRecords });
-  return shape(createEngine({ store: adapter, config }).evaluate(expr, {}));
+  return shape(createEngine({ store: adapter, model: config }).evaluate(expr, {}));
 }
 
 function shape(value: unknown): unknown {
@@ -113,7 +113,7 @@ function shape(value: unknown): unknown {
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Record query');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Record query');
   await seed();
 });
@@ -207,7 +207,7 @@ describe('what a query means (§5.3), against PGlite', () => {
     const result = await executeScriptAsync(
       `let qty = 999
        return records.jobs.where(qty is null).count`,
-      buildEvalHost(host.store, host.config, {}),
+      buildEvalHost(host.store, host.model, {}),
     );
     expect(result.value).toBe(3);
   });
@@ -292,7 +292,7 @@ describe('the row quota (§5.5)', () => {
       answers.push(answer);
       return answer;
     });
-    const evalHost = buildEvalHost(host.store, host.config, { quotas: { maxRows: 3 } });
+    const evalHost = buildEvalHost(host.store, host.model, { quotas: { maxRows: 3 } });
     await expect(executeScriptAsync('return records.jobs.where(true)', evalHost)).rejects.toThrow(/row quota \(3\)/);
     expect((answers[0] as unknown[]).length).toBe(4);
     expect((await executeScriptAsync('return records.jobs.count', evalHost)).value).toBe(8);
@@ -319,7 +319,7 @@ describe('a filter that cannot become SQL is refused when it runs (ruling 14)', 
     const result = await executeScriptAsync(
       `let jobs = records.jobs.where(qty > 0)
        return jobs.where(services.time.hoursBetween(at, '23:59') > 0).count`,
-      buildEvalHost(host.store, host.config, {}, [buildTimeModule()]),
+      buildEvalHost(host.store, host.model, {}, [buildTimeModule()]),
     );
     expect(result.value).toBe(3);
   });

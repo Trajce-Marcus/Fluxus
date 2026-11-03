@@ -6,12 +6,12 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
 import { appFor } from './appFor';
-import type { ContextUser, SolutionConfig } from '@fluxus/engine';
+import type { ContextUser, SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/record-references';
 const OP = 'test/record-references';
@@ -20,7 +20,7 @@ const fk = (key: string, target: string) => ({ key, type: 'fk_ref', fk_record_ty
 const type = (id: string, fields: object[], read: string[]) =>
   ({ id, name: id, description: '', workflow_ref: `wf_${id}`, custom_fields: [{ key: 'name', type: 'text' }, ...fields], access: { read } });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_a', name: 'A' }, { id: 'role_boss', name: 'Boss' }] },
   attributes: [],
   activities: [],
@@ -45,7 +45,7 @@ const row = (id: string, typeRef: string, customFields: Record<string, unknown>)
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'References');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'References');
   await db.insert(records).values([
     row('R1', 'rt_regions', {}),

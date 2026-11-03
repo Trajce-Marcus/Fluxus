@@ -1,5 +1,5 @@
 // SDM editor's read/write seam over the open solution's config. Reads the
-// snapshot the design client holds (sdmClient.config); saves go **per entity**
+// snapshot the design client holds (sdmClient.model); saves go **per entity**
 // — the attribute you touched, not the graph you happen to be holding — then
 // reload the solution to rebuild the adapter/pageRuntime and bump scopeVersion
 // so every solution-scoped view re-reads the fresh snapshot.
@@ -11,20 +11,20 @@
 // a per-solution lock — only the write narrows.
 
 import { useCallback, useState } from 'react';
-import type { ActivityRawDef, AttributeDef, RecordTypeDef, RoleDef, SolutionConfig, WorkflowRawDef } from '@fluxus/engine';
+import type { ActivityRawDef, AttributeDef, RecordTypeDef, RoleDef, SolutionModel, WorkflowRawDef } from '@fluxus/engine';
 import { sdmClient, reloadSolution } from '../../sdm-runtime/engine';
 import { shellStore } from '../shell/store';
 
 /** A deep clone of the current config — safe to mutate as a draft. */
-export function readConfig(): SolutionConfig {
-  return structuredClone(sdmClient.config);
+export function readModel(): SolutionModel {
+  return structuredClone(sdmClient.model);
 }
 
 /** The config as it stood when the editor mounted: the baseline a per-entity
  *  save diffs against, to know which entities actually changed. Stable for the
  *  editor's life, and every save remounts it, so it cannot drift unnoticed. */
-export function useLoadedConfig(): SolutionConfig {
-  return useState(readConfig)[0];
+export function useLoadedModel(): SolutionModel {
+  return useState(readModel)[0];
 }
 
 /** Rebuild the model and remount every solution-scoped view. */

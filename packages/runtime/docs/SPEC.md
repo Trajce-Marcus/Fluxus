@@ -9,7 +9,7 @@ The package was `@fluxus/sdm` until the 2026-08-01 restructure. Two things left 
 
 ## Model
 
-Everything is driven by one logical config. The app reads it from the server; `packages/runtime/config/` holds a small one **for the tests only** — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — merged into one `SolutionConfig` by `src/config.ts` (typed by `@fluxus/engine`).
+Everything is driven by one logical config. The app reads it from the server; `packages/runtime/model/` holds a small one **for the tests only** — `attributes.json` and `functions.json` (shared pools) plus `entities/<name>.json` (record type + its workflow, always a pair) — merged into one `SolutionModel` by `src/model.ts` (typed by `@fluxus/engine`).
 
 Those files were cut down on 2026-08-11 to exactly what `test/dsl-wiring.test.ts` and the server's `test/headless.test.ts` reach. Before that they were a fifteen-entity model that the pre-2026-08-05 seed script had installed into real databases, which then drifted from the files as each was edited on its own — one model with two copies and no authority. Nothing installs them now, and nothing left in them resembles a solution. Collections:
 
@@ -37,11 +37,11 @@ The attribute-capture form wiring (`show_condition`, `required`, `validation`, `
 
 Acceptance (in `test/dsl-wiring.test.ts`): `act_complete_work_orders` — the availability condition hides/blocks it once Completed, the before hook warns when never started, the after hook sets `status`/`completed_date` via the staged commit. ("Already completed" moved from a before-hook `fail` to the show_condition when the availability gate landed — it is applicability, not payload validation.)
 
-Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost` / `coerceCaptured` / `joinScript`) and `validateConfig` moved to `@fluxus/engine` at Extraction — see the engine SPEC. Each host triggers the config-save-time check via `engine.reportConfigFindings()` at boot ("save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`.
+Plumbing: the DSL bridge (`buildDslSchema` / `buildRecordsHost` / `buildEvalHost` / `coerceCaptured` / `joinScript`) and `validateModel` moved to `@fluxus/engine` at Extraction — see the engine SPEC. Each host triggers the config-save-time check via `engine.reportModelFindings()` at boot ("save time" while the SDM is file-edited); diagnostics go to the console. Covered by `test/dsl-wiring.test.ts`.
 
-**Services in the demo config (DSL Phase 3).** Two modules back the shipped scripts — `notify` (effect: `user`, `email`) and `geo` (read: `suburbsOf`, implemented in `@fluxus/engine`; it backs the suburb `List` datasource, so the city → suburb dependent picker exercises a service call end to end). `validateConfig` passes the registry, so the config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification dispatches only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Since backend stage 2 that hook runs **server-side**, so the dispatch lands on the server's notify sink (process console), not this app's bell — see the dormant-bell note under Architecture. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring"). Where each host composes its own sink: this app's is `src/services/notify.ts` → `src/store/NotificationLog.ts`; the workbench keeps a separate dormant copy ([workbench SPEC](../../workbench/docs/SPEC.md)).
+**Services in the demo config (DSL Phase 3).** Two modules back the shipped scripts — `notify` (effect: `user`, `email`) and `geo` (read: `suburbsOf`, implemented in `@fluxus/engine`; it backs the suburb `List` datasource, so the city → suburb dependent picker exercises a service call end to end). `validateModel` passes the registry, so the config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors. Sample wiring: `act_complete_work_orders`' after hook ends with `queue services.notify.user('Work order ' + context.record.id + ' was completed')` — visible proof of the outbox: the notification dispatches only when the hook commits; a `fail`/soft-stop-Cancel dispatches nothing. Since backend stage 2 that hook runs **server-side**, so the dispatch lands on the server's notify sink (process console), not this app's bell — see the dormant-bell note under Architecture. Acceptance in `test/dsl-wiring.test.ts` ("DSL Phase 3 — services through the SDM wiring"). Where each host composes its own sink: this app's is `src/services/notify.ts` → `src/store/NotificationLog.ts`; the workbench keeps a separate dormant copy ([workbench SPEC](../../workbench/docs/SPEC.md)).
 
-**No seeds (2026-08-05).** Entity files used to carry a `seeds` block — sample records loaded into any store that had none of that type, cities/suburbs among them so the location picker worked out of the box. It is gone: config, `SolutionConfig.seeds`, the `MemoryAdapter` loader, and the server's `seedOperationRecords`. It was a second write path into records, straight past activities, for demo convenience only — the one thing the invariant below forbids. An operation now starts empty and every record in it arrives through an activity; a store built from config alone holds nothing. Tests that need data build it themselves (`test/dsl-wiring.test.ts` pins a location fixture; the server's headless test raises its anchors through their own activities).
+**No seeds (2026-08-05).** Entity files used to carry a `seeds` block — sample records loaded into any store that had none of that type, cities/suburbs among them so the location picker worked out of the box. It is gone: config, `SolutionModel.seeds`, the `MemoryAdapter` loader, and the server's `seedOperationRecords`. It was a second write path into records, straight past activities, for demo convenience only — the one thing the invariant below forbids. An operation now starts empty and every record in it arrives through an activity; a store built from config alone holds nothing. Tests that need data build it themselves (`test/dsl-wiring.test.ts` pins a location fixture; the server's headless test raises its anchors through their own activities).
 
 **And nothing else is prepopulated either.** The same day, the removal went the rest of the way: the seed script is deleted (with `npm run seed` / `npm run seed:server`), so nothing pushes this package's config or any page into a database, and no migration installs a demo org. [config/](../config/) is **test fixture and reference material** — the source of truth for a solution is the database, authored through the Console. Full account in the [server SPEC](../../server/docs/SPEC.md) under "Nothing is prepopulated".
 
@@ -93,7 +93,7 @@ Activity history is append-only and never edited, so **cancel can never mean del
 
 ```
 config/{attributes,functions}.json + config/entities/*.json
-  └── config.ts (merges to one typed SolutionConfig — the tests' model only,
+  └── config.ts (merges to one typed SolutionModel — the tests' model only,
         installed nowhere; the running app reads config from the server)
 
 src/host.ts (backend stage 2): FluxusClient.connect({records:'none'}) →
@@ -104,7 +104,7 @@ src/host.ts (backend stage 2): FluxusClient.connect({records:'none'}) →
         for what they show, client.fetchRecord for the record a page is
         about or a callback names;
         createPageRuntime({client}) — the @fluxus/page-runtime handle; one
-        throwaway engine for reportConfigFindings() at boot (since M15 the app
+        throwaway engine for reportModelFindings() at boot (since M15 the app
         renders pages only, so nothing else here needs one); main.tsx awaits
         initHost() before rendering (server unreachable → boot error screen,
         no fallback)

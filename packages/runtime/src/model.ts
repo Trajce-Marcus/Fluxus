@@ -1,4 +1,4 @@
-import type { ActivityRawDef, SolutionConfig, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
+import type { ActivityRawDef, SolutionModel, RecordTypeDef, WorkflowRawDef, AttributeDef } from '@fluxus/engine';
 
 // The model the tests run against, and nothing else. The running app never
 // reads it — it fetches its model from the server.
@@ -18,20 +18,20 @@ import type { ActivityRawDef, SolutionConfig, RecordTypeDef, WorkflowRawDef, Att
 // Split one file per entity — a record type, its workflow and the pool
 // activities that workflow lists, always edited together — plus the shared
 // attribute and function pools. Everything merges back
-// into one SolutionConfig here; nothing downstream knows about files.
+// into one SolutionModel here; nothing downstream knows about files.
 
-import attributes from '../config/attributes.json';
-import functions from '../config/functions.json';
+import attributes from '../model/attributes.json';
+import functions from '../model/functions.json';
 
-import assetTypes from '../config/entities/asset_types.json';
-import assets from '../config/entities/assets.json';
-import jobs from '../config/entities/jobs.json';
-import workgroups from '../config/entities/workgroups.json';
-import contracts from '../config/entities/contracts.json';
-import workOrders from '../config/entities/work_orders.json';
-import cities from '../config/entities/cities.json';
-import suburbs from '../config/entities/suburbs.json';
-import inspectionChecklists from '../config/entities/inspection_checklists.json';
+import assetTypes from '../model/entities/asset_types.json';
+import assets from '../model/entities/assets.json';
+import jobs from '../model/entities/jobs.json';
+import workgroups from '../model/entities/workgroups.json';
+import contracts from '../model/entities/contracts.json';
+import workOrders from '../model/entities/work_orders.json';
+import cities from '../model/entities/cities.json';
+import suburbs from '../model/entities/suburbs.json';
+import inspectionChecklists from '../model/entities/inspection_checklists.json';
 
 interface EntityFile {
   recordType: RecordTypeDef;
@@ -52,10 +52,10 @@ const entities = [
   inspectionChecklists,
 ] as unknown as EntityFile[];
 
-export const config: SolutionConfig = {
+export const model: SolutionModel = {
   attributes: attributes as unknown as AttributeDef[],
   activities: entities.flatMap((e) => e.activities),
   recordTypes: entities.map((e) => e.recordType),
   workflows: entities.map((e) => e.workflow),
-  functions: functions as SolutionConfig['functions'],
+  functions: functions as SolutionModel['functions'],
 };

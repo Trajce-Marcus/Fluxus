@@ -11,7 +11,7 @@
 // through the declarative wiring layer (dynamic props in, callbacks out).
 
 import { ConsoleClient, createHostAuth, FluxusClient, orgFromPath, type AuthSession } from '@fluxus/client';
-import type { SolutionConfig } from '@fluxus/engine';
+import type { SolutionModel } from '@fluxus/engine';
 import { createPageRuntime, type PageRuntime } from '@fluxus/page-runtime';
 import { signInGate } from './SignIn';
 
@@ -22,7 +22,7 @@ import { signInGate } from './SignIn';
 // The FULL model, not the runtime plane's trimmed copy: this is the design
 // plane, where hooks and access rules are the thing being authored
 // (CLIENT_TRUST_BOUNDARY §2). `connectSolution` is sol-admin gated server-side.
-export let sdmClient: FluxusClient<SolutionConfig>;
+export let sdmClient: FluxusClient<SolutionModel>;
 export let pageRuntime: PageRuntime;
 // The Console-plane client (cross-operation admin: solutions/operations CRUD,
 // publish/versions/governance). Solution-independent — created once at boot.

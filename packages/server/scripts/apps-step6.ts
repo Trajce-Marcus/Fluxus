@@ -39,7 +39,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { lex, parseScript, TokenType, type Token } from '@fluxus/dsl';
 import { MIGRATION_EDIT } from '@fluxus/engine';
 import { createDb, closeDb, type Db } from '../src/db/client';
-import { getSolutionConfig, listOperations, listPublishedPages, putPage } from '../src/host';
+import { getSolutionModel, listOperations, listPublishedPages, putPage } from '../src/host';
 import { AppValidationError, listApps, putApp, type App } from '../src/apps';
 import { pageVersions, pages, solutions } from '../src/db/schema';
 
@@ -362,7 +362,7 @@ export async function planStep6(db: Db): Promise<SolutionPlan[]> {
 export async function applySolutionPlan(db: Db, plan: SolutionPlan): Promise<string[]> {
   const written: string[] = [];
   if (plan.definitions.length > 0) {
-    const config = await getSolutionConfig(db, plan.solutionId);
+    const config = await getSolutionModel(db, plan.solutionId);
     const publishedPages = new Set((await listPublishedPages(db, plan.solutionId)).map((p) => p.path));
     for (const d of plan.definitions) {
       try {

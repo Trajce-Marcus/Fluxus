@@ -4,7 +4,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { createDb, closeDb } from '../src/db/client';
-import { getSolutionConfig, listOrgs, listSolutions } from '../src/host';
+import { getSolutionModel, listOrgs, listSolutions } from '../src/host';
 import { createEngine, MemoryAdapter, buildGeoModule, buildTimeModule, buildMathModule } from '@fluxus/engine';
 import { buildNotifyModule, consoleNotifySink } from '../src/services/notify';
 
@@ -23,14 +23,14 @@ for (const org of orgs) {
   for (const sol of await listSolutions(db, org.id)) {
     if (seen.has(sol.id)) continue;
     seen.add(sol.id);
-    const config = await getSolutionConfig(db, sol.id);
+    const config = await getSolutionModel(db, sol.id);
     const counts = `${config.recordTypes.length} record types, ${config.workflows.length} workflows, ${config.attributes.length} attributes`;
     console.log(`── ${sol.id} (${sol.name}) — ${counts}`);
     try {
       const adapter = new MemoryAdapter(config);
       for (const rt of config.recordTypes) adapter.getRecordTypeDef(rt.id);
-      const engine = createEngine({ store: adapter, config, services: [buildNotifyModule(consoleNotifySink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()] });
-      const findings = engine.validateConfig();
+      const engine = createEngine({ store: adapter, model: config, services: [buildNotifyModule(consoleNotifySink), buildGeoModule(adapter), buildTimeModule(), buildMathModule()] });
+      const findings = engine.validateModel();
       const errors = findings.filter((f) => f.diagnostic.severity === 'error');
       const warnings = findings.filter((f) => f.diagnostic.severity !== 'error');
       if (findings.length === 0) console.log('   clean\n');

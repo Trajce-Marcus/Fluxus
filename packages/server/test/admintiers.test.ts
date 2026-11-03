@@ -29,19 +29,19 @@ import {
   listOpUsers,
   listOrgAdmins,
   listSolAdmins,
-  putConfig,
+  putModel,
   setUserStatus,
 } from '../src/host';
 import { orgs } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { SolutionConfig, ContextUser } from '@fluxus/engine';
+import type { SolutionModel, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/tiers';
 const OP = 'test/tiers';
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_a', name: 'As' }] },
   attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }],
   recordTypes: [],
@@ -68,7 +68,7 @@ beforeEach(async () => {
   // here — ownership hangs off this row.
   await ensureOrg(db, 'default', 'Tiers Org');
   await ensureSolution(db, SOL, 'Tiers');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Tiers');
 
   await inviteUser(db, { email: 'owner@example.com' });
@@ -221,8 +221,8 @@ describe('op admin owns authorization', () => {
 
   it('the operation menu override is the op admin\'s, not the sol admin\'s', async () => {
     // Menus stay split: `default_menu` is design-plane, this override is not.
-    await expect(as(opBoss).operations.putConfig({ operationId: OP, config: { menu: [] } })).resolves.toEqual({ ok: true });
-    await expect(as(solBoss).operations.putConfig({ operationId: OP, config: { menu: [] } })).rejects.toThrow(forbidden);
+    await expect(as(opBoss).operations.putMenu({ operationId: OP, menu: [] })).resolves.toEqual({ ok: true });
+    await expect(as(solBoss).operations.putMenu({ operationId: OP, menu: [] })).rejects.toThrow(forbidden);
   });
 
   it('only an op admin removes from their operation', async () => {

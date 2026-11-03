@@ -5,11 +5,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureSolution, getSolutionConfig, putConfig } from '../src/host';
+import { ensureSolution, getSolutionModel, putModel } from '../src/host';
 import { appRouter } from '../src/router';
 import { pageVersions, pages } from '../src/db/schema';
 import { applyPagePlan, listIdFor, planStep3 } from '../scripts/apps-step3';
-import type { ActivityRawDef, SolutionConfig } from '@fluxus/engine';
+import type { ActivityRawDef, SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/step3';
 
@@ -19,7 +19,7 @@ const act = (id: string, record_map?: ActivityRawDef['record_map'], returns?: st
 });
 const wf = (id: string, ids: string[]) => ({ id, name: id, description: '', activities: ids.map((activity_ref) => ({ activity_ref })) });
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   attributes: [],
   recordTypes: [
     { id: 'rt_jobs', name: 'Jobs', description: '', workflow_ref: 'wf_jobs', custom_fields: [{ key: 'quote', type: 'fk_ref', fk_record_type: 'rt_quotes', fk_display_field: 'id' }] },
@@ -66,7 +66,7 @@ const open = () => appRouter.createCaller({ db });
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Step 3');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await open().pages.put({ solutionId: SOL, path: 'pages/job', def: jobPage });
   await open().pages.publish({ solutionId: SOL, path: 'pages/job', readme: 'v1' });
   // The draft runs ahead of what is published: the list comes from v1.
@@ -98,7 +98,7 @@ describe('the step 3 script — written', () => {
   });
 
   it('adds the list as a workflow no record type points to', async () => {
-    const model = await getSolutionConfig(db, SOL);
+    const model = await getSolutionModel(db, SOL);
     expect(model.workflows.find((w) => w.id === 'wf_app_pages_job')?.activities).toHaveLength(9);
     expect(model.recordTypes.some((rt) => rt.workflow_ref === 'wf_app_pages_job')).toBe(false);
   });

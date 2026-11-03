@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 import type { Store } from './store';
-import type { ActivityDef, AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionConfig, ReverseRefEntry } from './types';
+import type { ActivityDef, AttributeDef, AttributeUsageDef, RecordTypeDef, WorkflowDef, RecordInstance, ActivityHistoryEntry, ClientSolutionModel, ReverseRefEntry } from './types';
 import { activityHooks, coerceValue, joinScript } from './bridge';
 import { RecordAccessDeniedError } from './errors';
 
@@ -27,8 +27,8 @@ export class MemoryAdapter implements Store {
   // one from the full model, a browser host from the trimmed copy. Nothing here
   // needs a field the trim removes — the client never builds a record and never
   // runs a hook — so the narrow grade is the honest parameter type.
-  constructor(config: ClientSolutionConfig, options: MemoryAdapterOptions = {}) {
-    this.recordTypes = config.recordTypes;
+  constructor(model: ClientSolutionModel, options: MemoryAdapterOptions = {}) {
+    this.recordTypes = model.recordTypes;
 
     // Build an attribute lookup keyed by attribute.key, then resolve each
     // activity's attribute_ref wrappers into full AttributeDef objects.
@@ -36,7 +36,7 @@ export class MemoryAdapter implements Store {
     // only — no key to capture against). A composite def's
     // type_config.attributes (sub-usages) resolve through the same merge into
     // `sub_attributes` — a composite is a mini-form over pool attributes.
-    const attrMap = new Map(config.attributes.map(a => [a.key, a]));
+    const attrMap = new Map(model.attributes.map(a => [a.key, a]));
     const resolveUsage = (usage: AttributeUsageDef): AttributeDef => {
       const def = attrMap.get(usage.attribute_ref);
       if (!def) throw new Error(`Attribute not found: ${usage.attribute_ref}`);
@@ -58,16 +58,16 @@ export class MemoryAdapter implements Store {
     // Each pool activity is resolved once, so two workflows listing one
     // activity hand back the same object.
     let sectionSeq = 0;
-    this.activities = new Map((config.activities ?? []).map(act => {
+    this.activities = new Map((model.activities ?? []).map(act => {
       // Hooks may be written as arrays of lines in the JSON — joined here;
-      // absent altogether on a client config, where they resolve to null.
+      // absent altogether on a client model, where they resolve to null.
       const hooks = activityHooks(act);
       const resolved: ActivityDef = {
         ...act,
         before_hook: hooks.before,
         after_hook: hooks.after,
         // Same array-of-lines convenience as hooks; absent on a client
-        // config, where the query never leaves the server.
+        // model, where the query never leaves the server.
         returns: joinScript((act as { returns?: string | string[] }).returns),
         attributes: act.attributes.map(entry =>
           'attribute_ref' in entry
@@ -83,7 +83,7 @@ export class MemoryAdapter implements Store {
       return [act.id, resolved];
     }));
     // A workflow is its references, filled from the pool in its order.
-    this.workflows = new Map(config.workflows.map(wf => [
+    this.workflows = new Map(model.workflows.map(wf => [
       wf.id,
       {
         id: wf.id,

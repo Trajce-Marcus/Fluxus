@@ -6,7 +6,7 @@ import { AttributesEditor } from './AttributesEditor';
 import { ActivitiesEditor } from './ActivitiesEditor';
 import { WorkflowsEditor } from './WorkflowsEditor';
 import { RolesEditor } from './RolesEditor';
-import { ConfigPublishControl } from './ConfigPublishControl';
+import { ModelPublishControl } from './ModelPublishControl';
 import { css as publishControlCss } from '../page-builder/PublishControl';
 import { css as rolesEditorCss } from './RolesEditor';
 
@@ -16,7 +16,7 @@ export function SdmView({ tab }: { tab: string }) {
   return (
     <div className="sdm-view">
       <div className="sdm-toolbar">
-        <ConfigPublishControl />
+        <ModelPublishControl />
       </div>
       <div className="sdm-view-body">{sdmSection(tab)}</div>
     </div>

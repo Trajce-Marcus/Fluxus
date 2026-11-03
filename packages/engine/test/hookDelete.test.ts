@@ -16,7 +16,7 @@ import { MemoryAdapter } from '../src/memoryAdapter';
 import { createEngine } from '../src/engine';
 import { buildEvalHost } from '../src/bridge';
 import { executeScript } from '@fluxus/dsl';
-import type { ActivityDef, ClientSolutionConfig } from '../src/types';
+import type { ActivityDef, ClientSolutionModel } from '../src/types';
 
 const config = {
   attributes: [{ key: 'reason', type: 'text', label: 'Reason' }],
@@ -44,7 +44,7 @@ const config = {
     { id: 'wf_projects', name: 'Projects', activities: [{ activity_ref: 'act_purge_wbs_projects' }] },
     { id: 'wf_wbs_nodes', name: 'WBS', activities: [] },
   ],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 function build() {
   const adapter = new MemoryAdapter(config);
@@ -55,7 +55,7 @@ function build() {
     adapter.createRecord('rt_wbs_nodes', { code, project_id: project.id, parent_id: parent.id }));
   const nodes = [parent, ...children];
   const keep = adapter.createRecord('rt_wbs_nodes', { code: '5.0', project_id: other.id });
-  const engine = createEngine({ store: adapter, config, user: { id: 'u', name: 'u', email: null, roles: [] } });
+  const engine = createEngine({ store: adapter, model: config, user: { id: 'u', name: 'u', email: null, roles: [] } });
   const activity = adapter.getRecordTypeDef('rt_projects').workflow.activities[0] as ActivityDef;
   return { adapter, engine, activity, project, nodes, keep, parent, children };
 }
@@ -168,14 +168,14 @@ describe('the DELETE record map', () => {
       (config as unknown as { workflows: unknown[] }).workflows[0],
       { id: 'wf_wbs_nodes', name: 'WBS', activities: [{ activity_ref: 'act_delete_wbs_nodes' }] },
     ],
-  } as unknown as ClientSolutionConfig;
+  } as unknown as ClientSolutionModel;
 
   function scene() {
     const adapter = new MemoryAdapter(deleteConfig);
     const project = adapter.createRecord('rt_projects', { project_no: 'P24-042' });
     const parent = adapter.createRecord('rt_wbs_nodes', { code: 'AAA', project_id: project.id });
     const child = adapter.createRecord('rt_wbs_nodes', { code: 'AAA111', project_id: project.id, parent_id: parent.id });
-    const engine = createEngine({ store: adapter, config: deleteConfig, user: { id: 'u', name: 'u', email: null, roles: [] } });
+    const engine = createEngine({ store: adapter, model: deleteConfig, user: { id: 'u', name: 'u', email: null, roles: [] } });
     const activity = adapter.getRecordTypeDef('rt_wbs_nodes').workflow.activities[0] as ActivityDef;
     return { adapter, engine, activity, parent, child };
   }

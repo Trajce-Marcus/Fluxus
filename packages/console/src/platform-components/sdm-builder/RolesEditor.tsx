@@ -9,8 +9,8 @@
 // rename must not change it.
 
 import { useState } from 'react';
-import type { SolutionConfig, RoleDef } from '@fluxus/engine';
-import { readConfig, idProblems, refreshSolutionViews, saveRoles, useDirty, useLoadedConfig } from './useSolutionConfig';
+import type { SolutionModel, RoleDef } from '@fluxus/engine';
+import { readModel, idProblems, refreshSolutionViews, saveRoles, useDirty, useLoadedModel } from './useSolutionModel';
 import { useItemGuard } from './useItemGuard';
 
 /** `role_dispatchers` from "Dispatchers" — the §1 id convention. */
@@ -28,8 +28,8 @@ interface Draft {
 }
 
 export function RolesEditor() {
-  const loaded = useLoadedConfig();
-  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
+  const loaded = useLoadedModel();
+  const [draft, setDraft] = useState<SolutionModel>(() => readModel());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useDirty();

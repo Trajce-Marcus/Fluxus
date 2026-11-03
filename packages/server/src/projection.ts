@@ -15,12 +15,12 @@ import type {
   ClientAttributeTypeConfig,
   ClientCustomFieldDef,
   ClientRecordTypeDef,
-  ClientSolutionConfig,
+  ClientSolutionModel,
   ClientWorkflowRawDef,
   AttributeUsageDef,
   FunctionDef,
   SectionMarkerDef,
-  SolutionConfig,
+  SolutionModel,
 } from '@fluxus/engine';
 import { includedActivityIds } from '@fluxus/engine';
 
@@ -35,12 +35,12 @@ import { includedActivityIds } from '@fluxus/engine';
  * lists a role the user holds. A held role set comes from `runtimeRoles`.
  *
  * The same answer governs both halves of a snapshot — which records ship
- * (`records.partition`) and which of the model ships (`projectConfig`) — which
+ * (`records.partition`) and which of the model ships (`projectModel`) — which
  * is why it lives here rather than in either caller.
  */
 export function computeReadable(
   authConfigured: boolean | undefined,
-  config: SolutionConfig,
+  config: SolutionModel,
   roles: string[] | undefined,
 ): Set<string> | null {
   if (!authConfigured) return null; // env stub ⇒ everything open
@@ -241,8 +241,8 @@ function reachableFunctions(all: FunctionDef[], sources: string[]): FunctionDef[
  * the operation's app menu, which `apps.user` builds for each caller
  * (APPS_AND_INSTANCES §2.5).
  */
-export function projectConfig(
-  config: SolutionConfig,
+export function projectModel(
+  config: SolutionModel,
   { roles, enforced, appLists }: {
     roles: string[] | undefined;
     enforced: boolean | undefined;
@@ -254,7 +254,7 @@ export function projectConfig(
      */
     appLists?: ReadonlySet<string>;
   },
-): ClientSolutionConfig {
+): ClientSolutionModel {
   const readable = computeReadable(enforced, config, roles);
 
   // Unreadable record types go entirely, and their workflows and activities

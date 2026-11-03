@@ -5,15 +5,15 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { ContextUser, SolutionConfig } from '@fluxus/engine';
+import type { ContextUser, SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/app-defaults';
 const OP = 'test/app-defaults';
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_crew', name: 'Crew' }, { id: 'role_boss', name: 'Boss' }] },
   attributes: [],
   recordTypes: [],
@@ -34,7 +34,7 @@ async function publish(path: string, def: Record<string, unknown>): Promise<void
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'App defaults');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'App defaults');
   await inviteUser(db, { email: 'crew@example.com' });
   await addOpUser(db, { operationId: OP, email: 'crew@example.com' });

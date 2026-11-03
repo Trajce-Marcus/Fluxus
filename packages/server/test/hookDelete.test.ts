@@ -9,10 +9,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, putModel } from '../src/host';
 import { appRouter } from '../src/router';
 import { records, rptActivities } from '../src/db/schema';
-import type { SolutionConfig } from '@fluxus/engine';
+import type { SolutionModel } from '@fluxus/engine';
 
 const SOL = 'test/hook-delete';
 const OP = 'test/hook-delete';
@@ -43,7 +43,7 @@ const config = {
     { id: 'wf_bins', name: 'Bins', description: '', activities: [{ activity_ref: 'act_create_bins' }] },
     { id: 'wf_ledgers', name: 'Ledgers', description: '', activities: [{ activity_ref: 'act_create_ledgers' }, { activity_ref: 'act_purge_bins_ledgers' }] },
   ],
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
 let db: Db;
 const caller = () => appRouter.createCaller({ db });
@@ -57,7 +57,7 @@ let keptId: string;
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
   await ensureSolution(db, SOL, 'Hook delete');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Hook delete');
 
   ledgerId = (await run('act_create_ledgers', { code: 'L-1' })).recordId!;

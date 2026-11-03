@@ -1,4 +1,4 @@
-// SDM Attributes editor: the solution's attribute pool (SolutionConfig.attributes) —
+// SDM Attributes editor: the solution's attribute pool (SolutionModel.attributes) —
 // the reusable capture fields activities compose. Slice 1: key/label/
 // description/type plus the common type_config knobs (fk target, list
 // datasource, multi, multiline). Composite/section configs stay hand-edited.
@@ -10,16 +10,16 @@
 // where an existing solution still carries one.
 
 import { useMemo, useState } from 'react';
-import type { AttributeDef, SolutionConfig } from '@fluxus/engine';
-import { readConfig, idProblems, refreshSolutionViews, saveAttributes, useDirty, useLoadedConfig } from './useSolutionConfig';
+import type { AttributeDef, SolutionModel } from '@fluxus/engine';
+import { readModel, idProblems, refreshSolutionViews, saveAttributes, useDirty, useLoadedModel } from './useSolutionModel';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 import { initialSelection, useItemGuard } from './useItemGuard';
 
 const TYPES = ['text', 'int', 'decimal', 'bool', 'date', 'geopoint', 'reference', 'list', 'photo', 'file'];
 
 export function AttributesEditor() {
-  const loaded = useLoadedConfig();
-  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
+  const loaded = useLoadedModel();
+  const [draft, setDraft] = useState<SolutionModel>(() => readModel());
   const [sel, setSel] = useState(() => initialSelection('attributes', draft.attributes, (a) => a.key));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

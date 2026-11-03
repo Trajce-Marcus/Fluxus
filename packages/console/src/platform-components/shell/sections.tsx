@@ -14,7 +14,7 @@ import { OverviewSection } from './OverviewSection';
 import { SolutionOperationsSection } from './SolutionOperationsSection';
 import { SolutionSettingsSection } from './SolutionSettingsSection';
 import { SolutionUsersScreen } from '../users';
-import { sdmDirty, setSdmDirty } from '../sdm-builder/useSolutionConfig';
+import { sdmDirty, setSdmDirty } from '../sdm-builder/useSolutionModel';
 import { solutionAdmin } from '../../sdm-runtime/engine';
 
 export interface ConsoleSection {

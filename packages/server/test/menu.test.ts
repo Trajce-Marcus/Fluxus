@@ -4,17 +4,17 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureOrg, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureOrg, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { operations } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { appRouter } from '../src/router';
 import { createDbRolesResolver } from '../src/auth';
-import type { SolutionConfig, ContextUser } from '@fluxus/engine';
+import type { SolutionModel, ContextUser } from '@fluxus/engine';
 
 const SOL = 'test/menu';
 const OP = 'test/menu';
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_a', name: 'As' }, { id: 'role_b', name: 'Bs' }] },
   attributes: [{ key: 'id', label: 'ID', description: '', type: 'text' }],
   recordTypes: [], workflows: [],
@@ -30,7 +30,7 @@ const open = () => appRouter.createCaller({ db });
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Menu');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Menu');
   // Publish three pages with different open-access.
   const pub = async (path: string, openRoles?: string[]) => {
@@ -63,46 +63,46 @@ describe('the app menu, checked at save (APPS_AND_INSTANCES §2.5)', () => {
 
   it('accepts leaves pointing at the operation\'s apps, and groups of them', async () => {
     const menu = [{ id: 'm1', appId: home }, { id: 'g1', label: 'Admin', items: [{ id: 'm2', appId: admin }] }];
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu } })).resolves.toEqual({ ok: true });
+    await expect(open().operations.putMenu({ operationId: OP, menu })).resolves.toEqual({ ok: true });
     expect((await open().apps.list({ operationId: OP })).menu).toEqual(menu);
   });
 
   it('accepts a group that is still empty — one is made before it is filled', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'g1', label: 'Admin', items: [] }] } }))
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ id: 'g1', label: 'Admin', items: [] }] }))
       .resolves.toEqual({ ok: true });
   });
 
   it('rejects a leaf that points at no app of this operation', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm1', appId: 'nope' }] } }))
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ id: 'm1', appId: 'nope' }] }))
       .rejects.toThrow(/not an app of this operation/);
   });
 
   it('rejects an app on the menu twice', async () => {
-    await expect(open().operations.putConfig({
+    await expect(open().operations.putMenu({
       operationId: OP,
-      config: { menu: [{ id: 'm1', appId: home }, { id: 'g1', label: 'More', items: [{ id: 'm2', appId: home }] }] },
+      menu: [{ id: 'm1', appId: home }, { id: 'g1', label: 'More', items: [{ id: 'm2', appId: home }] }],
     })).rejects.toThrow(/on the menu more than once/);
   });
 
   it('rejects duplicate item ids, a group with no name, and the old shape', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm1', appId: home }, { id: 'm1', appId: admin }] } }))
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ id: 'm1', appId: home }, { id: 'm1', appId: admin }] }))
       .rejects.toThrow(/duplicate item id/);
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'g1', label: ' ', items: [] }] } }))
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ id: 'g1', label: ' ', items: [] }] }))
       .rejects.toThrow();
     // A page and roles on an item are the menu before apps Part 2.
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ label: 'Home', page: 'pages/p1', roles: ['role_a'] }] as never } }))
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ label: 'Home', page: 'pages/p1', roles: ['role_a'] }] as never }))
       .rejects.toThrow();
   });
 
   it('nests one level only — a group holds leaves', async () => {
-    await expect(open().operations.putConfig({
+    await expect(open().operations.putMenu({
       operationId: OP,
-      config: { menu: [{ id: 'g1', label: 'A', items: [{ id: 'g2', label: 'B', items: [] }] }] as never },
+      menu: [{ id: 'g1', label: 'A', items: [{ id: 'g2', label: 'B', items: [] }] }] as never,
     })).rejects.toThrow();
   });
 
   it('is the op admin\'s', async () => {
-    await expect(enforced(u1).operations.putConfig({ operationId: OP, config: { menu: [] } })).rejects.toThrow(/admin of operation/);
+    await expect(enforced(u1).operations.putMenu({ operationId: OP, menu: [] })).rejects.toThrow(/admin of operation/);
   });
 });
 
@@ -110,11 +110,11 @@ describe('the app menu, checked at save (APPS_AND_INSTANCES §2.5)', () => {
 // carrying one (as old exports and published versions do) has it dropped.
 describe('the default menu is gone (apps Part 2 step 3)', () => {
   it('drops an imported default_menu instead of storing or checking it', async () => {
-    await expect(open().config.put({
+    await expect(open().model.put({
       solutionId: SOL,
-      config: { ...config, default_menu: [{ label: 'X', page: 'pages/ghost', roles: ['role_zzz'] }] } as SolutionConfig,
+      model: { ...config, default_menu: [{ label: 'X', page: 'pages/ghost', roles: ['role_zzz'] }] } as SolutionModel,
     })).resolves.toEqual({ ok: true });
-    expect(await open().config.get({ solutionId: SOL })).not.toHaveProperty('default_menu');
+    expect(await open().model.get({ solutionId: SOL })).not.toHaveProperty('default_menu');
   });
 });
 

@@ -13,7 +13,7 @@ import { MemoryAdapter } from '../src/memoryAdapter';
 import { createEngine } from '../src/engine';
 import { buildEvalHost } from '../src/bridge';
 import { DEFAULT_QUOTAS, executeScript, evaluateExpression } from '@fluxus/dsl';
-import type { ClientSolutionConfig } from '../src/types';
+import type { ClientSolutionModel } from '../src/types';
 
 const config = {
   attributes: [{ key: 'reason', type: 'text', label: 'Reason' }],
@@ -64,7 +64,7 @@ const config = {
       body: "function sneaky_delete(code) {\n  records.wbs_nodes.where(code = code).delete()\n  return 'gone'\n}",
     },
   ],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 function build(nodeCount = 3) {
   const adapter = new MemoryAdapter(config);
@@ -73,7 +73,7 @@ function build(nodeCount = 3) {
     adapter.createRecord('rt_wbs_nodes', { code: `N${i}`, project_id: project.id }));
   const engine = createEngine({
     store: adapter,
-    config,
+    model: config,
     user: { id: 'u1', name: 'Designer', email: 'd@example.com', roles: [] },
   });
   return { adapter, engine, project, nodes };
@@ -309,11 +309,11 @@ describe('DSL editor: the two row shapes (§9, §12)', () => {
         },
       ],
       workflows: [{ id: 'wf_a', name: 'A', activities: [] }],
-    } as unknown as ClientSolutionConfig;
+    } as unknown as ClientSolutionModel;
     const adapter = new MemoryAdapter(descriptorConfig);
     adapter.createRecord('rt_a', { code: 'x', shot: { hash: 'h1', name: 'a.jpg' } } as never);
     adapter.createRecord('rt_a', { code: 'y', shot: null } as never);
-    const engine = createEngine({ store: adapter, config: descriptorConfig });
+    const engine = createEngine({ store: adapter, model: descriptorConfig });
     const v = engine.evaluate('records.a.values(shot)', { readonlyRecords: true }) as unknown[];
     expect(v).toEqual([{ hash: 'h1', name: 'a.jpg' }, null]);
     expect(v[0]).not.toBeNull();
@@ -324,7 +324,7 @@ describe('DSL editor: the two row shapes (§9, §12)', () => {
 
   it('a query over an empty type returns [] — rowCount 0, not a value', () => {
     const adapter = new MemoryAdapter(config);
-    const engine = createEngine({ store: adapter, config });
+    const engine = createEngine({ store: adapter, model: config });
     const v = runEditor(engine, 'records.wbs_nodes');
     expect(v).toEqual([]);
     expect(Array.isArray(v)).toBe(true);

@@ -7,7 +7,7 @@ import { evaluateExpression } from '@fluxus/dsl';
 import { MemoryAdapter } from '../src/memoryAdapter';
 import { buildEvalHost } from '../src/bridge';
 import { RecordAccessDeniedError } from '../src/errors';
-import type { ClientSolutionConfig } from '../src/types';
+import type { ClientSolutionModel } from '../src/types';
 
 const config = {
   attributes: [], activities: [],
@@ -16,7 +16,7 @@ const config = {
     { id: 'rt_quotes', name: 'Quotes', workflow_ref: 'wf_quotes', custom_fields: [{ key: 'amount', type: 'text' }] },
     { id: 'rt_jobs', name: 'Jobs', workflow_ref: 'wf_jobs', custom_fields: [{ key: 'quote', type: 'fk_ref', fk_record_type: 'rt_quotes', fk_display_field: 'amount' }] },
   ],
-} as unknown as ClientSolutionConfig;
+} as unknown as ClientSolutionModel;
 
 const QUOTE = '01a12b26-0000-7000-8000-000000000001';
 

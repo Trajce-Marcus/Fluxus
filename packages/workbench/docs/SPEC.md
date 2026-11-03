@@ -114,7 +114,7 @@ grid, record view and history card.
 
 **The workbench's notify sink is dormant, deliberately.** Hooks (and their `queue services.notify.*`) execute server-side since backend stage 2, where the sink is the process console — nothing reaches this log, and no workbench surface lists notifications. It stays wired so the manifest validates and the DSL keeps type-checking. The Runtime app has its **own** copy of `NotificationLog` + `notify` behind its shell bell, which *is* read; the two were one file while the workbench lived inside that package and split at the extraction because they are different things — a dormant stub here, a live shell feature there. The unified-log design (pipeline-as-log, see the Runtime SPEC) replaces both with a server-side log; neither is worth sharing until then. The `fluxus:sdm:notifications` storage key is unchanged from the pre-extraction file on purpose — renaming it is a storage change, not a package move.
 
-`validateConfig` passes the registry, so the shipped config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors.
+`validateModel` passes the registry, so the shipped config is checked strictly: unknown service modules/functions, wrong arity, and effect calls outside after hooks are startup errors.
 
 ## Next
 

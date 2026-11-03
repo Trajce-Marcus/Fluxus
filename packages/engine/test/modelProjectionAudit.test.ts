@@ -13,13 +13,13 @@ import {
   modelSchemaTypes,
   modelRows,
   withModelTypes,
-  validateConfig,
+  validateModel,
   MemoryAdapter,
 } from '../src/index';
 // Not re-exported from the package index — imported from source so this file
 // can build the projection the way bridge.ts does.
 import { resolvedCaptureLists } from '../src/modelProjection';
-import type { SolutionConfig } from '../src/types';
+import type { SolutionModel } from '../src/types';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Configs
@@ -66,7 +66,7 @@ const bare = {
     },
   ],
   // no functions key at all, no access key at all
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
 /** A fuller config, for the derived/synthesised columns. */
 const full = {
@@ -128,21 +128,21 @@ const full = {
     { id: 'fn_bad', name: 'broken', description: 'd', body: 'this is not a function at all' },
   ],
   access: { roles: [{ id: 'role_admins', name: 'Admins', description: 'The bosses' }, { id: 'role_crew', name: 'Crew' }] },
-} as unknown as SolutionConfig;
+} as unknown as SolutionModel;
 
-function hostFor(config: SolutionConfig, opts: Record<string, unknown> = {}) {
+function hostFor(config: SolutionModel, opts: Record<string, unknown> = {}) {
   const adapter = new MemoryAdapter(config, { initialRecords: [] });
   return buildEvalHost(adapter, config, { readonlyRecords: true, modelTypes: true, ...opts }, []);
 }
 
-const runOn = (config: SolutionConfig, src: string) => evaluateExpression(src, hostFor(config));
+const runOn = (config: SolutionModel, src: string) => evaluateExpression(src, hostFor(config));
 
-const schemaFor = (config: SolutionConfig): DslSchema => ({
+const schemaFor = (config: SolutionModel): DslSchema => ({
   ...buildDslSchema(config),
   types: { ...buildDslSchema(config).types, ...modelSchemaTypes() },
 });
 
-const errorsOn = (config: SolutionConfig, src: string) =>
+const errorsOn = (config: SolutionModel, src: string) =>
   validateExpression(src, schemaFor(config), {}).filter((d) => d.severity === 'error');
 
 const COLLECTIONS = [
@@ -216,7 +216,7 @@ describe('§4 rule 1: every declared column is materialized, on a config with no
   }
 });
 
-function resolvedFor(config: SolutionConfig) {
+function resolvedFor(config: SolutionModel) {
   return resolvedCaptureLists(new MemoryAdapter(config, { initialRecords: [] }));
 }
 
@@ -355,10 +355,10 @@ describe('exposure is opt-in, and the browser and server fail differently', () =
     expect(found[0].message).toMatch(/not available (here|at this embedding point)/);
   });
 
-  it('a hook cannot reach the model — validateConfig refuses one that names it', () => {
-    const withHook = JSON.parse(JSON.stringify(full)) as SolutionConfig;
+  it('a hook cannot reach the model — validateModel refuses one that names it', () => {
+    const withHook = JSON.parse(JSON.stringify(full)) as SolutionModel;
     (withHook.workflows[0].activities[0] as { after_hook?: unknown }).after_hook = 'let n = model.record_types.count';
-    const errs = validateConfig(withHook).filter((f) => f.diagnostic.severity === 'error');
+    const errs = validateModel(withHook).filter((f) => f.diagnostic.severity === 'error');
     expect(errs.length).toBeGreaterThan(0);
   });
 });
@@ -415,7 +415,7 @@ describe('derived and synthesised columns', () => {
   });
 
   it('params is derived from a body the DSL itself accepts, not only from one the regex likes', () => {
-    const withComment = JSON.parse(JSON.stringify(full)) as SolutionConfig;
+    const withComment = JSON.parse(JSON.stringify(full)) as SolutionModel;
     (withComment as { functions: { id: string; name: string; description: string; body: string }[] }).functions = [
       { id: 'fn_c', name: 'commented', description: 'd', body: '// what it does\nfunction commented(a) { return a }' },
     ];
@@ -443,7 +443,7 @@ describe('derived and synthesised columns', () => {
   it('the label fallback is the one `fieldLabel` uses — blank counts as absent', () => {
     // §5: "`label` falls back to the key when absent, as `fieldLabel` already
     // does". fieldLabel is `field.label?.trim() || field.key` (bridge.ts:36).
-    const blank = JSON.parse(JSON.stringify(full)) as SolutionConfig;
+    const blank = JSON.parse(JSON.stringify(full)) as SolutionModel;
     blank.recordTypes[0].custom_fields[0].label = '   ';
     expect(runOn(blank, "model.fields.where(key = 'ref').select(label)")).toEqual([{ label: 'ref' }]);
   });
@@ -495,7 +495,7 @@ describe('edge configs', () => {
   });
 
   it('no access key at all: indistinguishable from empty roles, as §5 concedes', () => {
-    const emptyRoles = { ...bare, access: { roles: [] } } as unknown as SolutionConfig;
+    const emptyRoles = { ...bare, access: { roles: [] } } as unknown as SolutionModel;
     expect(runOn(bare, 'model.roles.count')).toBe(0);
     expect(runOn(emptyRoles, 'model.roles.count')).toBe(0);
   });
@@ -505,7 +505,7 @@ describe('edge configs', () => {
   });
 
   it('a solution with no workflows at all', () => {
-    const noWf = { recordTypes: [], attributes: [], workflows: [] } as unknown as SolutionConfig;
+    const noWf = { recordTypes: [], attributes: [], workflows: [] } as unknown as SolutionModel;
     expect(runOn(noWf, 'model.activities.count')).toBe(0);
     expect(runOn(noWf, 'model.record_types.count')).toBe(0);
   });
@@ -523,10 +523,10 @@ describe('edge configs', () => {
   });
 
   it("a record type whose stripped name starts with sdm_ is refused at save (§3)", () => {
-    const clash = JSON.parse(JSON.stringify(bare)) as SolutionConfig;
+    const clash = JSON.parse(JSON.stringify(bare)) as SolutionModel;
     clash.recordTypes[0].id = 'rt_sdm_fields';
     clash.recordTypes[0].workflow_ref = 'wf_widgets';
-    const errs = validateConfig(clash).filter((f) => f.diagnostic.severity === 'error');
+    const errs = validateModel(clash).filter((f) => f.diagnostic.severity === 'error');
     expect(errs.some((f) => /sdm_/.test(f.diagnostic.message))).toBe(true);
   });
 });
@@ -585,15 +585,15 @@ describe("adding `model` to ROOTS: what it costs every other script", () => {
   };
 
   it('a bare field named `model` still filters (item scope wins)', () => {
-    const withModelField = JSON.parse(JSON.stringify(full)) as SolutionConfig;
+    const withModelField = JSON.parse(JSON.stringify(full)) as SolutionModel;
     withModelField.recordTypes[2].custom_fields.push({ key: 'model', label: 'Model', type: 'text' } as never);
     expect(errorsOn(withModelField, "records.sites.where(model = 'A').count")).toEqual([]);
   });
 
   it('a record type with a field named `model` draws no new schema warning', () => {
-    const withModelField = JSON.parse(JSON.stringify(full)) as SolutionConfig;
+    const withModelField = JSON.parse(JSON.stringify(full)) as SolutionModel;
     withModelField.recordTypes[2].custom_fields.push({ key: 'model', label: 'Model', type: 'text' } as never);
-    const warnings = validateConfig(withModelField).filter((f) => f.diagnostic.severity === 'warning');
+    const warnings = validateModel(withModelField).filter((f) => f.diagnostic.severity === 'warning');
     expect(warnings.map((w) => w.diagnostic.message)).not.toContain(
       "Field 'model' on 'sites' shadows the 'model' root inside query methods",
     );

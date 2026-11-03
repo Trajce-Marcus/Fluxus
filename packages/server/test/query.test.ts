@@ -7,10 +7,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { ensureOperation, ensureSolution, putConfig } from '../src/host';
+import { ensureOperation, ensureSolution, putModel } from '../src/host';
 import { appRouter, DEFAULT_OPERATION, DEFAULT_SOLUTION } from '../src/router';
 import type { NotificationEvent, NotifySink } from '../src/services/notify';
-import { config } from '../../runtime/src/config';
+import { model as config } from '../../runtime/src/model';
 
 let db: Db;
 const notifications: NotificationEvent[] = [];
@@ -29,7 +29,7 @@ let woQ2: string; // Site B
 beforeAll(async () => {
   db = await createDb(); // in-memory PGlite
   await ensureSolution(db, DEFAULT_SOLUTION, 'Demo');
-  await putConfig(db, DEFAULT_SOLUTION, config, sink);
+  await putModel(db, DEFAULT_SOLUTION, config, sink);
   await ensureOperation(db, DEFAULT_OPERATION, DEFAULT_SOLUTION, 'Demo');
 
   // Everything the queries read is built through the write pipeline — an
@@ -170,12 +170,12 @@ describe('a GET is logged light', () => {
     const OP = 'demo/get-failing-op';
     const broken = structuredClone(config);
     // A `returns` that is legal at save time and throws at run time: the
-    // activity id is computed, so validateConfig leaves it to runtime — and at
+    // activity id is computed, so validateModel leaves it to runtime — and at
     // runtime there is no such activity.
     broken.activities
       .find((a) => a.id === 'act_get_work_orders')!.returns = "invoke('act_get_' + 'nothing', {})";
     await ensureSolution(db, SOL, 'Failing');
-    await putConfig(db, SOL, broken, sink);
+    await putModel(db, SOL, broken, sink);
     await ensureOperation(db, OP, SOL, 'Failing');
     const c = () => appRouter.createCaller({ db, sink });
     const jobF = (await c().activities.run({ operationId: OP, activityId: 'act_raise_inspection_jobs', attributes: { job_no: 'J-902', job_type: 'Inspection', contract_id: '', location: 'Depot', due_date: '2026-08-01' } })).recordId!;
@@ -198,7 +198,7 @@ describe('a GET is logged light', () => {
       .find((a) => a.id === 'act_complete_work_orders')!.before_hook =
         "if len(invoke('act_get_work_orders', { status: 'Nothing' })) > 0 { fail('x') }";
     await ensureSolution(db, SOL, 'Nested');
-    await putConfig(db, SOL, withGuard, sink);
+    await putModel(db, SOL, withGuard, sink);
     await ensureOperation(db, OP, SOL, 'Nested');
     const c = () => appRouter.createCaller({ db, sink });
     const run = (activityId: string, attributes: Record<string, unknown>, recordId?: string) =>
@@ -221,7 +221,7 @@ describe('config validation of GET activities', () => {
     mutate(broken);
     const id = `demo/get-broken-${++solutionCount.n}`;
     await ensureSolution(db, id, 'Broken');
-    return caller().config.put({ solutionId: id, config: broken });
+    return caller().model.put({ solutionId: id, model: broken });
   };
   const workOrderActivities = (c: typeof config) => c.activities;
   const getActivity = (c: typeof config) =>
@@ -281,7 +281,7 @@ describe('invoke() from a hook', () => {
       '}',
     ].join('\n');
     await ensureSolution(db, SOL, 'Invoke');
-    await putConfig(db, SOL, withGuard, sink);
+    await putModel(db, SOL, withGuard, sink);
     await ensureOperation(db, OP, SOL, 'Invoke');
 
     const run = (activityId: string, attributes: Record<string, unknown>, recordId?: string) =>

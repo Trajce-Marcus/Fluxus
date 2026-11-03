@@ -9,7 +9,7 @@ record.
 One class, `FluxusClient`, owning the movements every remote host makes:
 
 1. **`connect({url, operationId, records?})`** — resolve the operation to its
-   solution (`operations.get`), then fetch `config.getForOperation` +
+   solution (`operations.get`), then fetch `model.getForOperation` +
    **`apps.user`** and (unless `records: 'none'`) `records.partition` in parallel
    and build a
    `MemoryAdapter` snapshot plus the `pages` map (path → def) and the caller's
@@ -34,13 +34,13 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    passes `''` for `orgName`: display names are Runtime chrome, and Console has
    its own solution banner.
    Since 2026-08-09 the model arrives **trimmed to the caller's roles**
-   (`config.getForOperation`, CLIENT_TRUST_BOUNDARY §2): no hooks, no access
+   (`model.getForOperation`, CLIENT_TRUST_BOUNDARY §2): no hooks, no access
    rules, no record type they cannot read. Hence the door is keyed on the
    operation, not the solution — the trim is decided by roles *in that
    operation*. The data was always filtered this way; now the model is too.
 1a. **`connectSolution({url, solutionId, operationId?})`** (CONSOLE_RUNTIME_SPEC
    §3, design plane) — bind to a solution to author its model + draft pages:
-   fetch `config.get` (the whole model, hooks included — authoring them is the
+   fetch `model.get` (the whole model, hooks included — authoring them is the
    job; **sol-admin gated** since 2026-08-09 — and since 2026-10-18 open to
    the admins of the solution's operations too — and a refusal is surfaced
    rather than opened as a blank editor) + draft `pages.list` by `solutionId`
@@ -58,9 +58,9 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    `putRole`/`deleteRole` each round-trip the matching
    `config.*` mutation, which validates the whole graph under a per-solution
    lock — so two people editing two different entities no longer overwrite each
-   other. `saveConfig` still round-trips `config.put`, but as the **import**
+   other. `saveModel` still round-trips `model.put`, but as the **import**
    path (installing or rolling back a whole config), not the editing path.
-   `publishConfig`/`configVersions`/`rollbackConfig` are the model's version
+   `publishModel`/`modelVersions`/`rollbackModel` are the model's version
    history (the surface pages have had since M3). `operationsForSolution`
    (static) lists a solution's operations for the Console data picker.
 1b. **`records: 'partition' | 'none'`** (2026-08-16) — how much data the
@@ -153,7 +153,7 @@ transport) exposes plain typed calls: `listSolutions` / `createSolution` /
 `updateSolution` (name only — the id is permanent) / `deleteSolution` (the
 server side is a TODO: it answers `NOT_IMPLEMENTED` and destroys nothing),
 `listOperations` /
-`getOperation` / `createOperation` / `putOperationConfig`, and the publish set (`publishPage`,
+`getOperation` / `createOperation` / `putOperationMenu`, and the publish set (`publishPage`,
 `listPageVersions`, `getPageVersion`, `rollbackPage`). No snapshot, no engine —
 just the tRPC door for admin screens.
 
@@ -183,12 +183,12 @@ it a new app's starting values; and
 `ConsoleClient.getOrg` / `putOrgProfile` (M14) drive Console's Organisation
 settings surface — profile reads and edits over the `orgs` row (`OrgProfile`).
 No create and no plan/status writes; the server owns both rules.
-`ConsoleClient.getSolutionConfig` (M10) reads the whole model (sol admins and,
+`ConsoleClient.getSolutionModel` (M10) reads the whole model (sol admins and,
 since 2026-10-18, the admins of the solution's operations).
 
 **An operation's apps list** (2026-10-18, APPS_AND_INSTANCES §2.6):
 `listApps(operationId)` → `{ apps: App[], menu: MenuItem[] }` (the menu is
-saved with `putOperationConfig`), `getApp(operationId, appId)` →
+saved with `putOperationMenu`), `getApp(operationId, appId)` →
 the app with its `activityHistory`, `putApp(operationId, AppInput)` → `{ id }`
 (no `id` adds one), `expireApp(operationId, appId)` (2026-11-03, §3.2 —
 final; nothing is deleted). `App` is `{ id, pageId, label, roleIds,
@@ -198,14 +198,14 @@ definition, status }`, `definition` being JSON as text and `status`
 ## Contracts and postures
 
 - **Two grades of model** (CLIENT_TRUST_BOUNDARY §2, 2026-08-09):
-  `FluxusClient<C extends ClientSolutionConfig>` is generic in the grade it
+  `FluxusClient<C extends ClientSolutionModel>` is generic in the grade it
   holds. `connect` yields the narrow one (hooks, access rules and the storage
   gate never left the server); `connectSolution` yields the full
-  `SolutionConfig`, because the design plane authors hooks. **Hosts that only
+  `SolutionModel`, because the design plane authors hooks. **Hosts that only
   render and run take `FluxusClient` unparameterised** and get the narrow
   grade — which is what makes a stray `before_hook` read a compile error there
   rather than a runtime `undefined`. Console types its design singleton
-  `FluxusClient<SolutionConfig>`.
+  `FluxusClient<SolutionModel>`.
 - **Snapshot model** (stage 2 ruling): bootstrap fetch + refetch-after-run.
   The Store contract stays synchronous; the browser mirrors the server's own
   per-request partition-snapshot model. No per-read laziness until partition

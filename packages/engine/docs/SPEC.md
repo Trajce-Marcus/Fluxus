@@ -21,9 +21,9 @@ against.
 ## What the engine owns
 
 ```
-src/types.ts       — SDM config + runtime types (SolutionConfig, RecordTypeDef,
+src/types.ts       — SDM config + runtime types (SolutionModel, RecordTypeDef,
                      ActivityDef, RecordInstance, ActivityHistoryEntry, …)
-                     `SolutionConfig` was `ConfigRaw` until 2026-08-07: one of
+                     `SolutionModel` was `ConfigRaw` until 2026-08-07: one of
                      these IS one solution's model (`sdm_configs.config`, keyed
                      by solution id), and the `Raw` suffix paired with nothing
                      — there is no cooked top-level config. The inner
@@ -53,9 +53,9 @@ src/errors.ts        — RecordAccessDeniedError: a record exists but this
 src/attributeTypes.ts — the attribute type registry (files, photos, scalars,
                      geopoint): per-type descriptor field schemas + accepted
                      type_config keys, read by the client uploader,
-                     validateSubmission, and validateConfig
+                     validateSubmission, and validateModel
 src/bridge.ts      — SDM ↔ DSL translation (schema, hosts, coercion, four roots)
-src/validateConfig.ts — config-save-time validation of every FluxScript script
+src/validateModel.ts — config-save-time validation of every FluxScript script
 src/formGets.ts    — a form's GETs: the literal `invoke` ids on each
                      datasource's path, and those a set of activities' forms
                      call (an app's list counts them)
@@ -69,7 +69,7 @@ src/services/geo.ts — shared geo module (Store-backed, host-agnostic)
 src/services/time.ts — duration arithmetic over 'HH:MM' clock times; pure,
                      no store, no host state
 src/services/logger.ts — the engine-owned logger manifest (one builder:
-                     createEngine binds the live sink; validateConfig
+                     createEngine binds the live sink; validateModel
                      registers it with a no-op so configs using
                      services.logger validate identically everywhere)
 src/engine.ts      — createEngine: the runActivity (write) and runQuery (read)
@@ -143,7 +143,7 @@ the store (`Engine<S>`), so `engine.store` keeps its type — a browser host's
   `ActivityOption[]` (`{ id, name }`). Tests: `test/offeredActivities.test.ts`.
 - `engine.evaluate(source, scriptContext)` — expression evaluation (datasources,
   show conditions) against the live store with the four roots injected.
-- `engine.validateConfig()` / `engine.reportConfigFindings()` — every
+- `engine.validateModel()` / `engine.reportModelFindings()` — every
   FluxScript surface in the config checked against the schema + service
   registry; report goes to the console.
 - `engine.store` — the Store the engine was built with (host convenience).
@@ -239,7 +239,7 @@ unqueued service effects — so a read cannot write, and no new rule was needed
 to say so. At runtime the eval host is built with `readonlyRecords`, so
 anything that slipped past config-save throws rather than writing.
 
-`validateConfig` also enforces the shape: a GET **needs** a `returns`, may
+`validateModel` also enforces the shape: a GET **needs** a `returns`, may
 **not** have an after hook (nothing persisted, so there is nothing to react
 to), and `returns` on a non-GET is rejected.
 
@@ -247,7 +247,7 @@ to), and `returns` on a non-GET is rejected.
 deliberately absent from the client's copy of the config — the query never
 reaches the browser — so demanding it of a trimmed config reported every GET in
 the model as an error at boot, in a console the author is meant to trust.
-`validateConfig` runs on either grade, and any rule about something the trim
+`validateModel` runs on either grade, and any rule about something the trim
 *removes* has to know which one it is looking at. The grade is legible without
 a new parameter: the trim **omits** the server-only keys rather than nulling
 them, so a `before_hook` that is explicitly `null` still says "this is the full
@@ -263,7 +263,7 @@ hooks, which is what makes it usable as a guard (DATA_THROUGH_ACTIVITIES §3
 tier 2). The DSL declares the built-in and stays scope-blind; the engine
 supplies the implementation through `ScriptContext.invoke`, resolves the id,
 refuses a non-GET, and blocks re-entry so a GET whose gate invokes itself
-fails instead of hanging. `validateConfig` resolves **literal** ids at
+fails instead of hanging. `validateModel` resolves **literal** ids at
 config-save time (unknown id, or not a GET, is a finding); a computed id is
 left to runtime — except on a datasource's path, where it is refused (below,
 "A form's GETs").
@@ -386,7 +386,7 @@ Every config type has a `Client*` grade — what a browser on the **runtime**
 plane is given — and a full grade that **extends** it:
 
 ```
-ClientSolutionConfig      ← SolutionConfig      (adds access.roles)
+ClientSolutionModel      ← SolutionModel      (adds access.roles)
 ClientRecordTypeDef       ← RecordTypeDef       (adds access.read + storage constraints)
 ClientActivityRawDef      ← ActivityRawDef      (adds before_hook / after_hook / returns / show_condition)
 ClientAttributeTypeConfig ← AttributeTypeConfig (adds max_count / max_size_mb)
@@ -397,13 +397,13 @@ a workflow is references only, the same on both planes)
 **The narrow one is declared first, deliberately.** Code typed against it
 cannot compile a reference to `before_hook` — the trim is structurally
 unreachable rather than merely filtered at runtime. The engine defines the
-shapes; `projectConfig` (server) is the only thing that performs the trim.
+shapes; `projectModel` (server) is the only thing that performs the trim.
 
 Everything here that takes a config takes the **narrow** grade —
-`MemoryAdapter`, `EngineOptions.config`, the bridge, `validateConfig` — because
+`MemoryAdapter`, `EngineOptions.config`, the bridge, `validateModel` — because
 the full grade is assignable to it and nothing in the engine needs a stripped
 field. Two places do read hooks off a raw config (`MemoryAdapter`'s pool
-resolution, `validateConfig`'s hook pass) and both go through
+resolution, `validateModel`'s hook pass) and both go through
 **`activityHooks(activity)`** (`src/bridge.ts`): the one place that widens back
 to the full def, so "hooks may simply not be here" is stated once. On a client
 config they resolve to `null`, which is already a legal state.
@@ -414,7 +414,7 @@ server-side by ruling, and a browser evaluates expressions only
 
 ### RBAC config surface (RBAC_COMPACT; enforced outside the engine)
 
-`SolutionConfig.access.roles` (`RoleDef[]`, solution-scoped role definitions) and
+`SolutionModel.access.roles` (`RoleDef[]`, solution-scoped role definitions) and
 `RecordTypeDef.access.read` (role ids that may read a type) are carried on the
 config for the **server** to enforce (record-type read filter, RBAC stage 1) —
 the engine defines the shape but does not gate reads on it. Activity gating
@@ -482,7 +482,7 @@ are exported, and each store checks uniqueness against its own records.
 ran before backend stage 2) was deleted at backend stage 3 — the hard cutover
 left it without a host.
 
-**No config seeding (2026-08-05).** `SolutionConfig.seeds`, the `SeedGroup` type and
+**No config seeding (2026-08-05).** `SolutionModel.seeds`, the `SeedGroup` type and
 the adapter's `{ seed: true }` option are gone. Config carried sample records
 that loaded into any store holding none of that type — a write path into
 records that went around activities, which the pipeline invariant forbids. A
@@ -542,7 +542,7 @@ It renders as a heading, captures nothing, and headless callers ignore it —
 supplying a value for one is rejected.
 
 One value per cell, addressed by the dotted path `attr.sub` — `'.'` is
-reserved in every key namespace for this (enforced by validateConfig). The
+reserved in every key namespace for this (enforced by validateModel). The
 translation contract (owned by `bridge.ts`):
 
 - **Payloads** carry cells flat under dotted keys or nested (attr → sub);
@@ -571,7 +571,7 @@ columns. Each entry declares its **descriptor** sub-fields (photo/file only),
 the **type_config keys** it accepts, and whether **multi** is legal. Three
 consumers read it: the client upload core (what descriptor fields to write),
 `validateSubmission` (server-authoritative descriptor shape check), and
-`validateConfig` (config-key / multi rules). It is *not* wired into the DSL
+`validateModel` (config-key / multi rules). It is *not* wired into the DSL
 validator — descriptor dot-access (`attrs.before_photo.taken_at`,
 `value.size`) stays permissive/untyped, as all attribute-value access already
 is; typed dot-paths in hooks/validations are a later, additive step.
@@ -616,7 +616,7 @@ is; typed dot-paths in hooks/validations are a later, additive step.
   `coerceCaptured` keep descriptor objects and multi arrays by-value instead of
   stringifying them; `isBlank` is the shared emptiness test (empty string /
   empty array blank; a descriptor bag present).
-- **validateConfig** rejects `multi` on `composite` and any `type_config` key
+- **validateModel** rejects `multi` on `composite` and any `type_config` key
   not in a type's registry entry. Types absent from the registry
   (custom/experimental) are left unchecked.
 - **validateSubmission** re-checks, server-authoritatively: descriptor shape
@@ -665,7 +665,7 @@ Store → `RecordsHost` (queries, FK targets, reverse refs, declared fields,
 record queries passed to a store that answers them, the `mutate` staging
 surface), captured strings → typed script values (`coerceCaptured`),
 and `buildEvalHost` assembling the four roots + named functions.
-`validateConfig.ts` is the config-save-time check (DSL_SPEC §9) over every
+`validateModel.ts` is the config-save-time check (DSL_SPEC §9) over every
 datasource, show condition, validation rule, hook, and named function.
 Both moved verbatim from sdm.
 
@@ -763,15 +763,15 @@ delete.
 
 ## An attribute names the field it fills (2026-09-15)
 
-**The attribute key is an identity for a captured value, not a pointer to a field** (the user's ruling). A `reference` attribute may say which field it lands in, fully qualified — `type_config.field: 'rt_wbs_nodes.parent_id'` — and the **target type is then read off that field**, never repeated, so the two cannot disagree. `attributeFieldRef` parses it; `Store.resolveAttributeTarget(typeId, fieldKey)` is the lookup; `validateConfig` refuses a field that does not exist or is not a reference; the write path maps the captured key to the declared field (`landingFields` in engine.ts). An attribute naming no field keeps the old rule exactly — key is the field key, target from its own `fk_record_type` — so nothing written before this changed.
+**The attribute key is an identity for a captured value, not a pointer to a field** (the user's ruling). A `reference` attribute may say which field it lands in, fully qualified — `type_config.field: 'rt_wbs_nodes.parent_id'` — and the **target type is then read off that field**, never repeated, so the two cannot disagree. `attributeFieldRef` parses it; `Store.resolveAttributeTarget(typeId, fieldKey)` is the lookup; `validateModel` refuses a field that does not exist or is not a reference; the write path maps the captured key to the declared field (`landingFields` in engine.ts). An attribute naming no field keeps the old rule exactly — key is the field key, target from its own `fk_record_type` — so nothing written before this changed.
 
 Why: attributes are a shared pool, so with the key doing both jobs one `parent_id` had to serve every record type that has a parent and could name only one target between them. Adding a child to a WBS node was refused with *"Parent: no cbs_nodes record 'WBS 1'"*, because the attribute had been created for the CBS. A second attribute was no escape either — an unmatched key is dropped by design, so `wbs_parent_id` would simply not have been written. Tests: `test/referenceTarget.test.ts`.
 
 **A first cut that was rejected:** making the acting record type's field silently win over the pooled target. It fixed the symptom and left two sources for one fact with an unwritten precedence rule; the user's call was that the model should *say* it.
 
-**A `reference` may also name where its candidates come from** (2026-09-23). `datasource`, `display_field` and `columns` join its `configKeys` — **the same three settings a `list` already spells**, read by a second kind of attribute rather than spelled a second way. They name the GET that supplies candidates to the record picker; the *target* is still the declared field's, unchanged. An attribute declaring none keeps today's behaviour exactly. Validation only ever widens here, and the place that checks a datasource does so without caring which attribute type it came from — so this was free. The one change it did need: `validateConfig` passes **`term`** as an extra root wherever a datasource is checked, because the picker's search box reaches the expression that way (it must not ride in the form's values, which are unknown-shaped and would read as blank at runtime). Harmless on a `list`, which simply never names it. The picker itself is specified in [page-runtime's SPEC](../../page-runtime/docs/SPEC.md).
+**A `reference` may also name where its candidates come from** (2026-09-23). `datasource`, `display_field` and `columns` join its `configKeys` — **the same three settings a `list` already spells**, read by a second kind of attribute rather than spelled a second way. They name the GET that supplies candidates to the record picker; the *target* is still the declared field's, unchanged. An attribute declaring none keeps today's behaviour exactly. Validation only ever widens here, and the place that checks a datasource does so without caring which attribute type it came from — so this was free. The one change it did need: `validateModel` passes **`term`** as an extra root wherever a datasource is checked, because the picker's search box reaches the expression that way (it must not ride in the form's values, which are unknown-shaped and would read as blank at runtime). Harmless on a `list`, which simply never names it. The picker itself is specified in [page-runtime's SPEC](../../page-runtime/docs/SPEC.md).
 
-**And a reference field must declare what to show** (2026-09-23). `fk_display_field` has been documented as required on an `fk_ref` since the field type was written and was enforced nowhere; `validateConfig` now refuses a reference field that declares none. It was harmless while a reference was drawn as its raw id — the record picker is what made it matter, because with no display field there is nothing readable to put in the list. **The alternative was a silent fallback** — guessing `name`, the way a `list` attribute must because it has no field declaration to consult, or drawing blanks — and either hides a modelling gap from the one person who can fix it (the user's call, 2026-09-23). Measured before adding, across every solution in the database: 20 reference fields, all 20 already declaring one, so nothing existing fails. `fk_record_type` is still checked only on the attribute path, not blanket — left alone as a separate question.
+**And a reference field must declare what to show** (2026-09-23). `fk_display_field` has been documented as required on an `fk_ref` since the field type was written and was enforced nowhere; `validateModel` now refuses a reference field that declares none. It was harmless while a reference was drawn as its raw id — the record picker is what made it matter, because with no display field there is nothing readable to put in the list. **The alternative was a silent fallback** — guessing `name`, the way a `list` attribute must because it has no field declaration to consult, or drawing blanks — and either hides a modelling gap from the one person who can fix it (the user's call, 2026-09-23). Measured before adding, across every solution in the database: 20 reference fields, all 20 already declaring one, so nothing existing fails. `fk_record_type` is still checked only on the attribute path, not blanket — left alone as a separate question.
 
 ## An attribute may be sourced rather than asked for (2026-09-15)
 
@@ -834,7 +834,7 @@ pool-level defaults and could not describe them truthfully.
 ## The activity pool (BUILT 2026-10-10)
 
 docs/APPS_AND_INSTANCES.md Part 1. Activities are stored **once per solution**
-(`SolutionConfig.activities`); a workflow is an ordered list of
+(`SolutionModel.activities`); a workflow is an ordered list of
 `ActivityUsage` — `{ activity_ref }` — so one activity serves several record
 types. `sort_order` is gone from both activity types: order is the workflow's
 list. The **resolved** shape is unchanged apart from that: `WorkflowDef.activities`
@@ -857,7 +857,7 @@ passes through.
 - **Field filling is per record type**, as before: an UPDATE fills the fields
   of the record it runs on by exact key, so a shared UPDATE fills each type's
   own fields.
-- **`validateConfig`** adds: pool ids unique; every `activity_ref` resolves;
+- **`validateModel`** adds: pool ids unique; every `activity_ref` resolves;
   no workflow lists one twice; the one-type CREATE rule; scripts checked **once
   per record type** reaching the activity (`anchorType` per type), a problem
   every type has reported once and the rest with `(on <type>)` appended to
@@ -872,13 +872,13 @@ solution defines (§2.4). `platformApps.ts` holds the platform's ids for it:
 history entries a Console change and the step 2 migration leave on an app,
 `CONSOLE_EDIT` (`sys_console_edit` / "Changed in the Console") and
 `MIGRATION_EDIT` (`sys_migration` / "Created by the migration"). The server
-reads and writes its rows directly. **`validateConfig` refuses a record type,
+reads and writes its rows directly. **`validateModel` refuses a record type,
 workflow or activity using any of the four** (`RESERVED_IDS`).
 
 **The type's definition** (step 5): `APPS_RECORD_TYPE_DEF` — the fields
 `page_id`, `label` and `definition`, not the stored `role_ids` (scripts never
 see an app's roles) — and `APPS_WORKFLOW_DEF`, empty. Defined once, never
-stored, never sent to a browser. **`validateConfig` adds the type to the model
+stored, never sent to a browser. **`validateModel` adds the type to the model
 it checks**, marked `readOnly` in the DSL schema: an **app's own activity** (on
 a workflow in `appLists`, in no record type's workflow) has its scripts checked
 with `context.record` typed as `sys_apps`, and an item's condition on one is
@@ -912,7 +912,7 @@ names. **The availability gate takes it**: `activityAvailabilityAsync(activity,
 record, condition?)`, `offeredActivities(activities, record, conditions?)` and
 `runActivity(…, { condition })` evaluate the activity's own condition and then
 the app's, each strictly `true` and failing closed, with the same `context`.
-**`validateConfig(config, services, { appLists })`** applies the rules for an
+**`validateModel(config, services, { appLists })`** applies the rules for an
 app's list to the workflows the caller names (the server passes the ones pages
 name): an activity on one that no record type's workflow lists is the app's
 own and may only log or read; an item's condition is checked as the activity's
@@ -931,7 +931,7 @@ attribute's datasource and the named functions it reaches, answering each
 `invoke` and where it is, its id literal or computed; **`formGetIds(config,
 activityIds)`** answers the literal GET ids the forms of those activities call,
 composite cells included — what the server adds to an app's list.
-**`validateConfig` checks every datasource's path**, not only those of
+**`validateModel` checks every datasource's path**, not only those of
 activities on a list today (any activity can be put on one later): each id
 must be literal (a computed one is refused, "a form's GET must be named
 literally"), must name an activity some workflow lists (on the full model only — a
@@ -950,7 +950,7 @@ without read rules omits it.
 
 ## The model projected as record types (BUILT 2026-09-22)
 
-`modelProjection.ts` turns a `SolutionConfig` into the `sdm_*` collections
+`modelProjection.ts` turns a `SolutionModel` into the `sdm_*` collections
 behind the DSL's `model` root — see `docs/QUERYING_THE_MODEL.md` for the design
 and `modelProjection.test.ts` for what is pinned.
 

@@ -5,17 +5,17 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createDb, type Db } from '../src/db/client';
-import { addOpUser, ensureOperation, ensureSolution, inviteUser, putConfig, putUserRoles } from '../src/host';
+import { addOpUser, ensureOperation, ensureSolution, inviteUser, putModel, putUserRoles } from '../src/host';
 import { appRouter } from '../src/router';
 import { records } from '../src/db/schema';
 import { createDbRolesResolver } from '../src/auth';
-import type { ContextUser, SolutionConfig } from '@fluxus/engine';
+import type { ContextUser, SolutionModel } from '@fluxus/engine';
 import { pageWithList } from './appFor';
 
 const SOL = 'test/apps-expire';
 const OP = 'test/apps-expire';
 
-const config: SolutionConfig = {
+const config: SolutionModel = {
   access: { roles: [{ id: 'role_crew', name: 'Crew' }] },
   attributes: [],
   recordTypes: [{ id: 'rt_jobs', name: 'Jobs', description: '', workflow_ref: 'wf_jobs', custom_fields: [{ key: 'note', type: 'text' }], access: { read: ['role_crew'] } }],
@@ -33,7 +33,7 @@ const as = (user: ContextUser) => appRouter.createCaller({ db, user, roles: crea
 beforeAll(async () => {
   db = await createDb();
   await ensureSolution(db, SOL, 'Apps expire');
-  await putConfig(db, SOL, config);
+  await putModel(db, SOL, config);
   await ensureOperation(db, OP, SOL, 'Apps expire');
   await pageWithList(db, SOL, 'pages/board');
   await inviteUser(db, { email: 'crew@example.com' });
@@ -41,7 +41,7 @@ beforeAll(async () => {
   await putUserRoles(db, { operationId: OP, email: 'crew@example.com', roleIds: ['role_crew'] });
   ({ id: gone } = await open().apps.put({ operationId: OP, pageId: 'pages/board', label: 'Old board', roleIds: ['role_crew'], definition: '{}' }));
   ({ id: kept } = await open().apps.put({ operationId: OP, pageId: 'pages/board', label: 'Board', roleIds: ['role_crew'], definition: '{}' }));
-  await open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm1', appId: gone }, { id: 'm2', appId: kept }] } });
+  await open().operations.putMenu({ operationId: OP, menu: [{ id: 'm1', appId: gone }, { id: 'm2', appId: kept }] });
   await db.insert(records).values({ operationId: OP, id: 'J1', typeRef: 'rt_jobs', customFields: { note: '' }, activityHistory: [] });
   await open().apps.expire({ operationId: OP, appId: gone });
 });
@@ -86,7 +86,7 @@ describe('an expired app in the Runtime (§3.2)', () => {
 
 describe('the menu and an expired app (§3.2)', () => {
   it('saving a menu that points at it is refused, naming it', async () => {
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm1', appId: gone }] } })).rejects.toThrow(/"Old board" has expired/);
-    await expect(open().operations.putConfig({ operationId: OP, config: { menu: [{ id: 'm2', appId: kept }] } })).resolves.toBeTruthy();
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ id: 'm1', appId: gone }] })).rejects.toThrow(/"Old board" has expired/);
+    await expect(open().operations.putMenu({ operationId: OP, menu: [{ id: 'm2', appId: kept }] })).resolves.toBeTruthy();
   });
 });

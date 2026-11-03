@@ -12,10 +12,10 @@ import { describe, expect, it } from 'vitest';
 import { createEngine } from '../src/engine';
 import { MemoryAdapter } from '../src/MemoryAdapter';
 import { validateSubmission } from '../src/validateSubmission';
-import type { ActivityDef, SolutionConfig } from '../src/types';
+import type { ActivityDef, SolutionModel } from '../src/types';
 
 /** A model whose dispatch activity takes its crew list from a GET. */
-function buildConfig(overrides: { returns?: string; gate?: string | null } = {}): SolutionConfig {
+function buildConfig(overrides: { returns?: string; gate?: string | null } = {}): SolutionModel {
   return {
     attributes: [
       { key: 'region', label: 'Region', description: '', type: 'text' },
@@ -79,7 +79,7 @@ function buildConfig(overrides: { returns?: string; gate?: string | null } = {})
         activities: [{ activity_ref: 'act_create_jobs' }, { activity_ref: 'act_get_crews' }, { activity_ref: 'act_dispatch_jobs' }],
       },
     ],
-  } as unknown as SolutionConfig;
+  } as unknown as SolutionModel;
 }
 
 /** The adapter is what resolves `attribute_ref` into a real attribute, so the
@@ -90,7 +90,7 @@ function setup(overrides?: { returns?: string; gate?: string | null; datasource?
     (config.attributes[1] as { type_config: { datasource: string } }).type_config.datasource = overrides.datasource;
   }
   const adapter = new MemoryAdapter(config);
-  const engine = createEngine({ store: adapter, config, services: [] });
+  const engine = createEngine({ store: adapter, model: config, services: [] });
   const dispatch = adapter
     .getRecordTypeDef('rt_jobs')
     .workflow.activities.find((a) => a.id === 'act_dispatch_jobs') as ActivityDef;

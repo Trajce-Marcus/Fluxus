@@ -11,7 +11,7 @@ import { shellStore } from '../shell/store';
 
 type Version = { version: number; readme: string; publishedBy: string; publishedAt: string };
 
-export function ConfigPublishControl() {
+export function ModelPublishControl() {
   const [dialog, setDialog] = useState<null | 'publish' | 'versions'>(null);
   const [readme, setReadme] = useState('');
   const [versions, setVersions] = useState<Version[]>([]);
@@ -22,7 +22,7 @@ export function ConfigPublishControl() {
     setStatus(null);
     setDialog('versions');
     try {
-      setVersions(await sdmClient.configVersions());
+      setVersions(await sdmClient.modelVersions());
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
     }
@@ -33,7 +33,7 @@ export function ConfigPublishControl() {
     setBusy(true);
     setStatus(null);
     try {
-      const { version } = await sdmClient.publishConfig(readme.trim());
+      const { version } = await sdmClient.publishModel(readme.trim());
       setStatus(`Published model v${version}.`);
       setReadme('');
       setDialog(null);
@@ -48,12 +48,12 @@ export function ConfigPublishControl() {
     setBusy(true);
     setStatus(null);
     try {
-      const res = await sdmClient.rollbackConfig(version);
+      const res = await sdmClient.rollbackModel(version);
       // The draft changed under every open editor — rebuild and remount.
       await reloadSolution();
       shellStore.set((prev) => ({ ...prev, scopeVersion: prev.scopeVersion + 1 }));
       setStatus(`Rolled back to v${version} (published as v${res.version}).`);
-      setVersions(await sdmClient.configVersions());
+      setVersions(await sdmClient.modelVersions());
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
     } finally {

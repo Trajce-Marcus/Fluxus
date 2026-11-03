@@ -1,4 +1,4 @@
-// SDM Activities editor: the solution's activity pool (SolutionConfig.activities,
+// SDM Activities editor: the solution's activity pool (SolutionModel.activities,
 // APPS_AND_INSTANCES §1.6). Every activity is defined here once; workflows pick
 // and order them (Workflows tab). An edit here changes every workflow that
 // uses the activity, so each one says which those are.
@@ -17,10 +17,10 @@ import { useMemo, useState } from 'react';
 import type {
   ActivityRawDef,
   AttributeUsageDef,
-  SolutionConfig,
+  SolutionModel,
   SectionMarkerDef,
 } from '@fluxus/engine';
-import { readConfig, idProblems, refreshSolutionViews, saveActivities, useDirty, useLoadedConfig } from './useSolutionConfig';
+import { readModel, idProblems, refreshSolutionViews, saveActivities, useDirty, useLoadedModel } from './useSolutionModel';
 import { InnerPanel, PanelItem } from '../shell/InnerPanel';
 import { initialSelection, useItemGuard } from './useItemGuard';
 
@@ -37,7 +37,7 @@ function hookText(h: string | string[] | null | undefined): string {
 }
 
 /** Activity id → the workflows that list it, in config order. */
-export function workflowsUsing(config: SolutionConfig): Map<string, string[]> {
+export function workflowsUsing(config: SolutionModel): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const wf of config.workflows) {
     for (const usage of wf.activities) {
@@ -48,8 +48,8 @@ export function workflowsUsing(config: SolutionConfig): Map<string, string[]> {
 }
 
 export function ActivitiesEditor() {
-  const loaded = useLoadedConfig();
-  const [draft, setDraft] = useState<SolutionConfig>(() => readConfig());
+  const loaded = useLoadedModel();
+  const [draft, setDraft] = useState<SolutionModel>(() => readModel());
   const [sel, setSel] = useState(() => initialSelection('activities', draft.activities, (a) => a.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export function ActivitiesEditor() {
   }
   /**
    * Changing the record map moves the fields that are legal with it, so the
-   * draft doesn't carry a combination `validateConfig` will reject on save: a
+   * draft doesn't carry a combination `validateModel` will reject on save: a
    * GET needs `returns` and cannot have an after hook, and `returns` belongs to
    * nothing else.
    */

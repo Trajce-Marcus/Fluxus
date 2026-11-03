@@ -2,7 +2,7 @@
 // list is records of `rt_sys_apps`, a record type no solution defines. The
 // server reads and writes the rows directly, and keeps them out of every
 // general read. Since step 5 the record type and its empty workflow are
-// defined here, once: `validateConfig` adds them to the model it checks, so an
+// defined here, once: `validateModel` adds them to the model it checks, so an
 // app's own activities are typed against them, and the engine runs those
 // activities on an app's record and keeps scripts from changing it. Never
 // stored, never sent to a browser.

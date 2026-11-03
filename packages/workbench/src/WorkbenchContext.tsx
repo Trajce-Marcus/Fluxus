@@ -113,7 +113,7 @@ export function WorkbenchProvider({ client, user, operationId = null, operations
     () =>
       createEngine({
         store: adapter,
-        config: client.config,
+        model: client.model,
         services: [buildNotifyModule(new NotificationLog()), buildGeoModule(adapter), buildTimeModule(), buildMathModule()],
         user,
       }),

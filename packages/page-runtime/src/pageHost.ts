@@ -21,7 +21,7 @@ import {
   type ServiceModuleDef,
 } from '@fluxus/dsl';
 import { buildDslSchema, buildEvalHost, evaluateWithGets, functionSignatures, toComponentValue } from '@fluxus/engine';
-import type { ClientSolutionConfig, GetQueryFn, MemoryAdapter, RecordInstance } from '@fluxus/engine';
+import type { ClientSolutionModel, GetQueryFn, MemoryAdapter, RecordInstance } from '@fluxus/engine';
 import type { CaptureScript } from './capture/host';
 
 // ── The callbackData root ─────────────────────────────────────────────────────
@@ -285,7 +285,7 @@ export type PageQueryFn = GetQueryFn;
  */
 export async function evaluatePageExpression(
   store: MemoryAdapter,
-  config: ClientSolutionConfig,
+  config: ClientSolutionModel,
   source: string,
   pageCtx: PageContext,
   query?: PageQueryFn,
@@ -313,7 +313,7 @@ export async function evaluatePageExpression(
  */
 export function evaluateCapture(
   store: MemoryAdapter,
-  config: ClientSolutionConfig,
+  config: ClientSolutionModel,
   source: string,
   script: CaptureScript,
 ): unknown {
@@ -347,7 +347,7 @@ export { toComponentValue };
  */
 export function runPageCallback(
   store: MemoryAdapter,
-  config: ClientSolutionConfig,
+  config: ClientSolutionModel,
   source: string,
   callbackData: CallbackPayload,
   pageCtx: PageContext,
@@ -369,12 +369,12 @@ export function runPageCallback(
 
 // ── Validation (shared by the editor dialog and validatePage) ─────────────────
 
-const pageSchema = (config: ClientSolutionConfig) => buildDslSchema(config, pageServicesStub());
+const pageSchema = (config: ClientSolutionModel) => buildDslSchema(config, pageServicesStub());
 
-const pageFunctions = (config: ClientSolutionConfig) => functionSignatures(config);
+const pageFunctions = (config: ClientSolutionModel) => functionSignatures(config);
 
 /** Validate a dynamic-prop expression. `attributes` is not a page root. */
-export function validatePageExpression(config: ClientSolutionConfig, source: string): Diagnostic[] {
+export function validatePageExpression(config: ClientSolutionModel, source: string): Diagnostic[] {
   return validateExpression(source, pageSchema(config), {
     bannedRoots: ['attributes'],
     functions: pageFunctions(config),
@@ -388,7 +388,7 @@ export function validatePageExpression(config: ClientSolutionConfig, source: str
  * or behind a named function is judged correctly, which a text search over the
  * expression would not manage.
  */
-export function validatePageExpressionWithoutRecords(config: ClientSolutionConfig, source: string): Diagnostic[] {
+export function validatePageExpressionWithoutRecords(config: ClientSolutionModel, source: string): Diagnostic[] {
   return validateExpression(source, pageSchema(config), {
     bannedRoots: ['attributes', 'records'],
     functions: pageFunctions(config),
@@ -396,7 +396,7 @@ export function validatePageExpressionWithoutRecords(config: ClientSolutionConfi
 }
 
 /** Validate a callback script: effects allowed, record mutations rejected. */
-export function validatePageCallback(config: ClientSolutionConfig, source: string): Diagnostic[] {
+export function validatePageCallback(config: ClientSolutionModel, source: string): Diagnostic[] {
   return validateScript(source, pageSchema(config), {
     mode: 'callback',
     bannedRoots: ['attributes'],
