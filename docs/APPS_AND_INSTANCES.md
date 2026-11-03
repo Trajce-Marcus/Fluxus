@@ -1165,7 +1165,9 @@ Each step works on its own and is cold-tested before the next.
 ## Part 3 — follow-ups (2026-11-03)
 
 Items §2.9 left for later that the user asked to do now, each specced here
-before it is built. Not yet cold-reviewed.
+before it is built. Cold-reviewed 2026-11-03; its findings are folded in
+below, the four that needed a ruling settled on Claude's recommendation (the
+user's OK).
 
 ### 3.1 The page's example definition
 
@@ -1185,7 +1187,12 @@ new app starts with a copy — and the user agreed.
   page whose list is not a list (§2.2).
 - **Preview.** The page runs with the example as `context.app.definition`;
   blank or not JSON gives `{}` (as today). `pageId` and `label` stay the
-  page's path, and `services.app.open` is still refused in the preview.
+  page's path, and `services.app.open` is still refused in the preview. The
+  parsed example is kept until the text changes, not parsed on every render.
+  It reaches only what runs in the browser — the page's expressions; an
+  activity the preview runs on the server sees no app, as today.
+- **Rollback** (`pages.rollback`) does not carry the example forward: the
+  version rolled back to comes back with its own example, or none.
 - **New-app dialog** (Console, §2.6). When an app is being added, its
   definition box is filled with the chosen page's example, or `{}` when the
   page has none, and filled again whenever another page is chosen. Editing an
@@ -1208,22 +1215,34 @@ the user agreed); the field is `status` (the user's OK).
 
 - **`status`** on the app's record — `active` or `expired`. An app with no
   `status` (every app before this) is `active`; nothing is migrated. Scripts
-  do not see it: `rt_sys_apps` as scripts read it (§2.4) is unchanged.
-- **Expiring is final**, as for users. Nothing un-expires an app.
+  do not see it: `rt_sys_apps` as scripts read it (§2.4) is unchanged. The
+  server's `App` (`appFromRow`) and the client's `App` gain `status`.
+- **Expiring is final**, as for users. Nothing un-expires an app. Expiring an
+  app already expired is refused, saying so.
 - **Console** (§2.6): the apps list keeps showing an expired app, marked
   Expired. Its dialog still opens with its name, roles, definition and
   history, read-only. An active app's dialog has an **Expire** button, asking
   for confirmation first. Operation admins only, like the rest of the list.
 - **`apps.expire`** `{ operationId, appId }` sets `status: expired` and writes
   the history entry every Console change writes (`sys_console_edit`, §2.4),
-  with `status: expired` captured. `apps.put` refuses an expired app.
-- **Runtime:** an expired app is not set up for the operation. Every call
-  naming it — opening it, running or reading through it, a link to it — is
-  refused (check 1, §2.3), saying the app has expired. `apps.user` leaves it
-  out, so it drops off the menu.
+  with `status: expired` captured. `apps.put` refuses an expired app. Client:
+  `expireApp(operationId, appId)`.
+- **Runtime:** an expired app is not set up for the operation. `apps.user`
+  leaves it out, so it drops off the menu, and the Runtime refuses opening it
+  — from the menu, a link or the URL — as for any app not set up ("not set up
+  for this operation"); it never asks the server. A call that does reach the
+  server naming it — running or reading through it — is refused (check 1,
+  §2.3), saying the app has expired; `page.activities` answers empty for it,
+  as for any app check 1 refuses. `model.getForOperation` (today
+  `config.getForOperation`) leaves its list out of the browser's model.
 - **The menu** (§2.5): saving one that points at an expired app is refused,
   naming it. Items already pointing at one stop showing (above), and stay in
-  the stored menu until an admin saves it without them.
+  the stored menu until an admin saves it without them. The Console's menu
+  editor (`MenuItemsEditor`, `OperationMenuSection`) offers only active apps,
+  and marks an item pointing at an expired one Expired so the admin can
+  remove it.
+- **The step 6 script** (`apps-step6`) skips expired apps, both as an app
+  whose definition it fills and as a link's target.
 - **Nothing is deleted:** the app's record and full history stay.
 
 ### 3.3 The page's default roles
@@ -1237,21 +1256,34 @@ decide who may run anything.
 - **`PageDef.roleIds`** — optional list of the solution's role ids, the page's
   default roles (the name the user's, over Claude's `defaultRoleIds`).
 - **Page editor.** A section in the configuration column, beside the example
-  definition (§3.1): one checkbox per role the solution declares.
+  definition (§3.1): one checkbox per role the solution declares. Saving drops
+  any id the solution no longer declares (it has no checkbox to untick).
 - **New-app dialog.** Like the example definition: when an app is being added,
   its roles start as the chosen page's default roles (none when it has none),
   set again whenever another page is chosen; the admin changes them freely.
   Editing an existing app never changes its roles, and changing a page's
   default roles never touches existing apps. Read from the page's latest
   published version.
-- **Publishing** drops nothing and refuses nothing over default roles: a role
-  id the solution no longer declares is simply not offered as a checkbox in
-  the new-app dialog.
+- **Publishing** refuses nothing over default roles.
 - **One call for both starting values** — `pages.appDefaults`
   `{ solutionId, path }` → `{ definition, roleIds }` from the latest published
-  version (`definition` the example, or `null`; `roleIds` the default roles, or
-  `[]`), gated like `pages.publishedPaths`. It replaces `pages.exampleDefinition`
-  in §3.1.
+  version (`definition` the example, or `null`; `roleIds` the default roles
+  the solution still declares, or `[]` — so a stale id never reaches
+  `apps.put`, which refuses unknown roles), gated like `pages.publishedPaths`.
+  A path never published is refused (not found). Client:
+  `pageAppDefaults(solutionId, path)`.
+- **Rollback** does not carry the default roles forward, as for the example.
+
+### 3.1–3.3 together
+
+- **Neither field reaches the Runtime.** `apps.user` sends whole published
+  pages to every user's browser; it strips `exampleDefinition` and `roleIds`
+  first. Only the page editor (drafts) and `pages.appDefaults` read them.
+- **Docs, in the same commits:** server SPEC (`apps.*` calls, `pages.*` calls,
+  check 1), page-runtime SPEC (`PageDef`, the preview's `context.app`),
+  console SPEC (page editor sections, apps list, menu editor), client SPEC
+  (`expireApp`, `pageAppDefaults`, `App.status`), and a BLUEPRINT note on
+  expiry under § Access.
 
 ### 3.4 "config" becomes "model"
 
@@ -1261,10 +1293,21 @@ it out for apps and asked for this tidy-up. A rename only — nothing behaves
 differently — done in its own commits, after §3.1–§3.3.
 
 - **Server calls:** `config.*` → `model.*`, the names after the dot unchanged
-  (`get`, `getForOperation`, `put`, the `delete…` calls, `publish`,
-  `versions`, `rollback`).
+  (`get`, `getForOperation`, `put`, the `put…` and `delete…` per-entity calls,
+  `publish`, `versions`, `rollback`). Two things are now called `model.*`:
+  these server calls and the DSL's `model.*` root (querying the model in a
+  script) — unrelated; docs say which they mean each time.
 - **Table:** `sdm_config_versions` → `sdm_model_versions`, its `config` column
-  → `model` — a hand-written migration (0024).
+  → `model`, its primary key `sdm_config_versions_solution_id_version_pk` →
+  `sdm_model_versions_solution_id_version_pk`; the Drizzle export
+  `sdmConfigVersions` → `sdmModelVersions`.
+- **Migration 0024**, hand-written, with its `_journal.json` entry (idx 24):
+  the renames above; then `operations.menu` jsonb NOT NULL DEFAULT `'[]'`,
+  filled from `COALESCE(config->'menu', '[]')`, then `operations.config`
+  dropped.
+- **Deploy order.** Migrations apply on connect, so the first new server to
+  connect changes the database under any old one still running: migrate, then
+  deploy the server, Console and Runtime together.
 - **Types:** `SolutionConfig` → `SolutionModel`, `ClientSolutionConfig` →
   `ClientSolutionModel`, `ConfigCollection` → `ModelCollection`,
   `ConfigValidationError` → `ModelValidationError`, `ValidateConfigOptions` →
@@ -1278,12 +1321,28 @@ differently — done in its own commits, after §3.1–§3.3.
   `listConfigVersions`, `getConfigVersion`, `appendConfigVersion`,
   `reportConfigFindings`; `configCollections` → `modelCollections`,
   `configVersions` → `modelVersions`.
-- **Variables:** `client.config` → `client.model`, and every variable holding
-  a model named `model`.
+- **Variables and options:** `client.config` → `client.model`,
+  `EngineOptions.config`, `PageRuntime.config`, `OperationHost.config` and the
+  `MemoryAdapter`'s model argument → `model`, and every variable holding a
+  model named `model`.
+- **Files:** `validateConfig.ts`, `ConfigPublishControl.tsx`,
+  `useSolutionConfig.ts`, runtime `src/config.ts` and `config/`,
+  `configentities.test.ts`, `configGrade.test.ts` — `config` → `model` in the
+  name.
+- **Messages users see:** "SDM config" → "model" in host.ts's three errors
+  (no model stored, model rejected, no model to publish) and the Console's
+  solutions page ("Design artifacts — SDM config, pages and role defs").
 - **The operation's menu:** `operations.config` holds only `{ menu }`, so it
-  becomes an `operations.menu` column holding the menu itself (same
-  migration); `OperationConfig` goes, `operations.putConfig` →
-  `operations.putMenu`, `putOperationConfig` → `putOperationMenu`.
+  becomes an `operations.menu` column holding the menu itself (migration
+  0024). `OperationConfig` and `operationConfigSchema` go;
+  `operations.putConfig` → `operations.putMenu`, its input
+  `{ operationId, menu }`; `putOperationConfig` → `putOperationMenu`, on the
+  server and the client; `OperationRow.config` and the client's
+  `Operation.config` → `menu`; `withoutMenu` goes with them.
+- **Scripts:** the seven kept (`bootstrap`, `migrate`, the three `check-*`,
+  `apps-step3`, `apps-step6`) are renamed with the rest. The 40 one-off data
+  scripts were deleted first (0f118cb, the user's call), so nothing is left
+  using the old names unchecked.
 - **Unchanged — they mean something else:** `slotConfigs` / `SlotConfig` (a
   layout's slots), `staticConfig` (a component's set values), `type_config` /
   `AttributeTypeConfig` (an attribute type's settings), `authConfigured` /
