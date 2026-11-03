@@ -133,9 +133,9 @@ async function operationContext(ctx: AppContext, operationId: string): Promise<{
  * whatever their roles — and nothing in operations they are not admins of. It
  * governs exactly the calls on the closed list: `activities.run`,
  * `activities.query`, `page.activities`, `records.get`, `records.list`,
- * `records.partition`, `scripts.query`, published `pages.list` and `files.*` —
- * the Console's workbench, DSL Editor and page preview. With sign-in off,
- * open, as every gate is.
+ * `records.partition`, `scripts.query` and `files.*` — the Console's
+ * workbench, DSL Editor and page preview. With sign-in off, open, as every
+ * gate is.
  */
 async function requireNoAppCaller(ctx: AppContext, op: { id: string; orgId: string }): Promise<void> {
   if (!ctx.authConfigured) return;
@@ -853,30 +853,16 @@ export const appRouter = t.router({
   // validatePage live in the page builder), list returns the solution's full
   // set (a host snapshots pages at connect exactly like the record partition).
   pages: t.router({
-    // Two read modes (CONSOLE_RUNTIME_SPEC §3): draft (Console — the editable
-    // `pages` rows) vs published (Runtime — the latest `page_versions` per path).
+    // The editable drafts (the `pages` rows) — the design plane (APPS_AND_INSTANCES
+    // §2.3), called by the Console's connect with no operation: solution admins
+    // only. A refusal is how the Console learns the caller cannot design here.
+    // Published definitions reach the Runtime through `apps.user`.
     list: t.procedure
-      .input(z.object({ solutionId: solutionInput, operationId: operationInput.optional(), published: z.boolean().default(false) }).default({}))
+      .input(z.object({ solutionId: solutionInput }).default({}))
       .query(async ({ ctx, input }) => {
         try {
-          // Draft mode is the design plane (APPS_AND_INSTANCES §2.3), called by
-          // the Console's connect with no operation: solution admins only. A
-          // refusal is how the Console learns the caller cannot design here.
-          if (!input.published) {
-            await requireSolAdmin(ctx, input.solutionId);
-            return await listPages(ctx.db, input.solutionId);
-          }
-          // Published mode: every published page, for an operation's admin — a
-          // call with no app (§2.3). Who may open a page is no longer the page's
-          // to say (`access.open` went, §2.2): it is the app's, in the
-          // operation's apps list, and the Runtime receives its apps' pages
-          // through `apps.user`.
-          if (ctx.authConfigured) {
-            const operationId = input.operationId ?? input.solutionId;
-            await resolveUser(ctx, operationId);
-            await requireNoAppCaller(ctx, await getOperation(ctx.db, operationId));
-          }
-          return await listPublishedPages(ctx.db, input.solutionId);
+          await requireSolAdmin(ctx, input.solutionId);
+          return await listPages(ctx.db, input.solutionId);
         } catch (err) {
           rethrow(err);
         }

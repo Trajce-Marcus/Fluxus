@@ -1,4 +1,4 @@
-// Published pages, and the operation's app menu checked at save
+// Draft pages, and the operation's app menu checked at save
 // (APPS_AND_INSTANCES §2.5 — it replaced page access control, the role-gated
 // menu override and the solution's default menu).
 
@@ -45,17 +45,8 @@ beforeAll(async () => {
   await addOpUser(db, { operationId: OP, email: 'u1@example.com' });
 });
 
-describe('published pages (APPS_AND_INSTANCES §2.2)', () => {
-  it('lists every published page — who may open one is the app\'s to say, not the page\'s', async () => {
-    const pages = await open().pages.list({ solutionId: SOL, operationId: OP, published: true });
-    expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1', 'pages/p2', 'pages/p3']);
-  });
-
-  it('is a call with no app, so an operation admin\'s (§2.3)', async () => {
-    await expect(enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true })).rejects.toThrow(/names no app/);
-  });
-
-  it('draft mode is the design plane: solution admins only (APPS_AND_INSTANCES §2.3)', async () => {
+describe('pages.list (APPS_AND_INSTANCES §2.3)', () => {
+  it('lists the drafts, for solution admins only — the design plane', async () => {
     await expect(enforced(u1).pages.list({ solutionId: SOL })).rejects.toThrow(/admin of this solution/i);
     const pages = await open().pages.list({ solutionId: SOL });
     expect(pages.map((p) => p.path).sort()).toEqual(['pages/p1', 'pages/p2', 'pages/p3']);

@@ -131,7 +131,6 @@ describe('calls with no app — operation admins only', () => {
     await expect(enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_alpha', typeId: 'rt_alpha', recordId: 'A1', attributes: { note: 'x' } })).rejects.toThrow(noApp);
     await expect(enforced(u1).page.activities({ operationId: OP, items: [{ recordId: 'A1' }] })).rejects.toThrow(noApp);
     await expect(enforced(u1).scripts.query({ operationId: OP, source: 'records.alpha' })).rejects.toThrow(noApp);
-    await expect(enforced(u1).pages.list({ solutionId: SOL, operationId: OP, published: true })).rejects.toThrow(noApp);
     await expect(enforced(u1).files.presignGet({ solutionId: SOL, operationId: OP, key: 'k' })).rejects.toThrow(noApp);
   });
 

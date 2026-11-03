@@ -554,12 +554,14 @@ takes `operationId?` (both default `demo/sdm`):
   there is no save-time validation here. `put` is an unconditional upsert, and
   the only caller is the Console: pages are authored artifacts, and no repo file
   installs one (the "deploying pages = deploying files" posture and the demo
-  page file both went on 2026-08-05). `list` `{ solutionId?, published? }`
-  has **two modes** (M3): draft (Console — the `pages` rows) vs published
-  (Runtime — latest `page_versions` per path). `@fluxus/client` snapshots one
-  set at connect per its `pages` mode. **Draft mode is sol admin only**
-  (2026-10-18): it is the design plane, and the Console reads a refusal as
-  "this caller cannot design here" and hides the design tools.
+  page file both went on 2026-08-05). `list` `{ solutionId? }` returns the
+  drafts (the `pages` rows) and is **sol admin only** (2026-10-18): it is the
+  design plane, and the Console reads a refusal as "this caller cannot design
+  here" and hides the design tools. **Its published mode went 2026-11-01**
+  (M3 added it for the Runtime): nothing called it once the Runtime took its
+  pages from `apps.user`, and its operation check never tied the operation to
+  the solution named — any operation's admin could read any solution's
+  published pages.
 - **`pages.publish`** `{ solutionId?, path, readme }` → `{ version }` /
   **`pages.versions`** `{ solutionId?, path }` / **`pages.getVersion`**
   `{ solutionId?, path, version }` → `{ def }` / **`pages.rollback`**
@@ -573,9 +575,8 @@ takes `operationId?` (both default `demo/sdm`):
   the solution's operations** may call it (2026-10-18).
   **Page access (M4) — reversed 2026-10-18**: published `pages.list` used to
   filter to versions the caller could open (`def.access.open`, `pageOpenable`).
-  Who may run an app is now set on it in the operation's apps list (§2.2), so
-  published `pages.list` lists every published page, and the Runtime receives
-  only its apps' pages through `apps.user`.
+  Who may run an app is now set on it in the operation's apps list (§2.2), and
+  the Runtime receives only its apps' pages through `apps.user`.
 
 **Partition keys** (CONSOLE_RUNTIME_SPEC §1–2): the opaque `scope` split into
 a **solution** (design artifact: SDM config + pages + role defs) and an
@@ -729,7 +730,7 @@ no app, so it is for admins of operation '<id>' only"), who then reads every
 record in it, whatever their roles — and nothing in operations they are not
 admins of. A closed list: `activities.run`, `activities.query`,
 `page.activities`, `records.get`, `records.list`, `records.partition`,
-`scripts.query`, published `pages.list` and `files.*` — the Console's
+`scripts.query` and `files.*` — the Console's
 workbench, DSL Editor and page preview. They follow the record type's workflow
 and the activity's own condition only. A solution admin who wants to work on an
 operation's records must also be its admin. Open to the operation's users,

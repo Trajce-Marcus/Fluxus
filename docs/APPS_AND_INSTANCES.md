@@ -655,7 +655,8 @@ draft called an app in the list a "config"; the user ruled the word out.)
   exactly these calls: `activities.run`, `activities.query`, `page.activities`,
   `records.get`, `records.list`, `records.partition`, `scripts.query` (today
   gated only by being in the operation, while reading every record type,
-  `router.ts:1131-1146`), the published mode of `pages.list`, and `files.*`.
+  `router.ts:1131-1146`), the published mode of `pages.list` (removed
+  2026-11-01 — nothing called it), and `files.*`.
   They cover the Console's workbench, DSL Editor and page preview, and follow
   the record type's workflow and the activity's own condition only. A
   solution admin who wants to work on an operation's records must also be its
@@ -778,7 +779,8 @@ draft called an app in the list a "config"; the user ruled the word out.)
 
 - **What it receives** (`apps.user`): `apps`, those the caller may run, each
   with its `id`, `label`, `pageId` and `definition`; `pages`, their pages'
-  published definitions (`pages.list` becomes a no-app call, §2.3); `menu`,
+  published definitions (`pages.list` becomes a no-app call, §2.3 — its
+  published mode removed 2026-11-01); `menu`,
   built from them (§2.5). Until step 6 it also answered `appIdByPageId` — for
   each page the operation had exactly one app made from, that app's id — for the
   old way of opening (below).

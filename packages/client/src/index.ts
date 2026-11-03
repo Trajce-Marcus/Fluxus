@@ -765,7 +765,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
     // Console hides the design tools from them.
     let solutionAdmin = true;
     const [pageRows, config, partition] = await Promise.all([
-      trpc.pages.list.query({ solutionId, published: false }).catch((err) => {
+      trpc.pages.list.query({ solutionId }).catch((err) => {
         if (!(err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN')) throw err;
         solutionAdmin = false;
         return [] as { path: string; def: unknown }[];
@@ -905,7 +905,7 @@ export class FluxusClient<C extends ClientSolutionConfig = ClientSolutionConfig>
       // The apps the caller may run, their published pages, and the menu built
       // from them (APPS_AND_INSTANCES §2.7) — what the Runtime renders.
       trpc.apps.user.query({ operationId }),
-      published ? Promise.resolve(null) : trpc.pages.list.query({ solutionId, published: false }),
+      published ? Promise.resolve(null) : trpc.pages.list.query({ solutionId }),
       trpc.me.query({ operationId }),
       // Rides the same HTTP batch. A server that predates the switches (or a
       // failure) leaves browser logging off — never an error at connect.

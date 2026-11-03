@@ -192,7 +192,7 @@ Whole-menu replacement is the MVP and stays as the escape hatch, but it **forks 
 - `solutions.list / create / update / delete` (M17 — `update` is name-only, the id is permanent; `delete` is **wired but not implemented**, see §9 M17)
 - `operations.list / operations.create / operations.putConfig`
 - `pages.publish({ path, readme })`, `pages.versions({ path })`
-- `pages.list`: published mode (Runtime) vs draft mode (Console)
+- `pages.list`: published mode (Runtime) vs draft mode (Console). *Published mode went 2026-11-01 — unused since the Runtime takes its pages from `apps.user`; `pages.list` is drafts only.*
 - Governance: `userRoles.list/put`, `solAdmins.list/appoint` (admin-gated)
 - `@fluxus/client`: `connect(operationId)` snapshot adds operation config (menu) + published page set; Console client keeps the draft set. *Since 2026-10-18 the menu and the published pages come from `apps.user` (APPS_AND_INSTANCES §2.7); `operations.get` no longer carries the menu.*
 

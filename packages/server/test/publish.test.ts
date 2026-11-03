@@ -5,7 +5,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db } from '../src/db/client';
 import { appRouter } from '../src/router';
-import { ensureSolution } from '../src/host';
+import { ensureSolution, listPublishedPages } from '../src/host';
 
 const SOL = 'test/publish';
 let db: Db;
@@ -40,7 +40,7 @@ describe('page publishing', () => {
   it('published list returns the latest version per path; draft list returns the draft', async () => {
     // Draft is currently v2; publish then edit the draft ahead without publishing.
     await caller().pages.put({ solutionId: SOL, path: 'pages/home', def: { title: 'v3-unpublished' } });
-    const published = await caller().pages.list({ solutionId: SOL, published: true });
+    const published = await listPublishedPages(db, SOL);
     expect(published.find((p) => p.path === 'pages/home')?.def).toEqual({ title: 'v2' }); // latest PUBLISHED
     const draft = await caller().pages.list({ solutionId: SOL });
     expect(draft.find((p) => p.path === 'pages/home')?.def).toEqual({ title: 'v3-unpublished' });
