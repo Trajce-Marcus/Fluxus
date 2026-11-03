@@ -41,6 +41,33 @@ one language. Apps come and go; the model accumulates.
 | | **Reporting store** | Relational tables projected from the activity stream — querying, BI, cross-operation views. | Postgres schemas (same Neon in v1) |
 
 ## The operating model
+**Reporting is parked (the user, 2026-11-03).** No reporting is built, and
+nothing reads the reporting tables. What exists, written on every activity run
+since 2026-07-12 (`databaseStore.ts`, `projectionAttributeRows`), in the same
+Neon database as `records` and the same statement as the history entry:
+
+- `rpt_activities` — one row per history entry: operation, record id, record
+  type, activity id and name, author, timestamp.
+- `rpt_attributes` — one row per value captured in that entry, pointing at its
+  `rpt_activities` row: `key`, `value` as text, and `waive_desc` for a waived
+  value. Lists and objects flatten to dotted keys (`tags.0`,
+  `before_photo.hash`); empty lists leave no row.
+
+So each entry is held twice: in the record's own `activity_history` (what the
+apps read) and here. The shape looks right; whether to keep writing them,
+where reporting lives, and the `rpt_` names (never endorsed by the user) are
+decided when reporting is taken up — not before. They keep being written as
+today until then.
+
+Discussed the same day, not ruled: **one database for now**, holding the
+transactional tables (the application's alone) and reporting (a schema per org,
+read only by that org's reporting logins). Later, a **reporting database per
+org** is far simpler than a transactional one per org — it is written only by
+the copy from the history, never read by the apps, and rebuildable — its one
+cost being that the copy then runs just after the history entry, through a
+queue, so reports lag. A transactional database per org waits for a real
+reason (a customer's isolation or data-residency need, or size).
+
 
 **Built:** A solution — one bundle of SDM + pages + roles — is
 authored in the Console. An **operation** links to exactly one solution and
@@ -119,6 +146,11 @@ operation's apps list, the page carrying no roles "for now", and a menu item is
 "just a pointer". The step 2 script gives each app its page's old access list as
 its roles.
 
+*Refined 2026-11-03:* a page may carry **default roles** — the roles a new app
+made from it starts with, which the operation admin changes freely. They never
+decide who may run anything, so the two layers stay one
+([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) §3.3; a limit was considered and
+rejected for that reason).
 **Actions follow the page and the record type.** Whoever can open a page sees
 its actions; an action is restricted further only where it matters, by its
 availability condition (e.g. a payment only for admins). On the server, an

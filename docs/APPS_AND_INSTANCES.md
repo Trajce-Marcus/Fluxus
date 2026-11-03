@@ -900,8 +900,8 @@ USERS.md `:228-231` (how Console access is derived); CLIENT_TRUST_BOUNDARY
   `.server.network`, the same path everywhere, `server` never sent) and ruled
   not to split yet (2026-10-18); that is the shape when something genuinely
   secret turns up, and adding it changes nothing existing.
-- Roles on the app itself ("for now").
-- Removing an app from an apps list.
+- Roles on the app itself ("for now"). *Taken up 2026-11-03 as a default only: the page's default roles, §3.3.*
+- Removing an app from an apps list. *Taken up 2026-11-03: expiring an app, §3.2.*
 - A shared list of named conditions ticked against activities.
 - A condition on opening an app, for ad hoc rules (parked: RECORD_READ_CONDITIONS,
   BLUEPRINT § Access).
@@ -913,6 +913,7 @@ USERS.md `:228-231` (how Console access is derived); CLIENT_TRUST_BOUNDARY
   `services.app.open` says the preview cannot open apps. **Parked (the user,
   2026-10-18):** a definition for the preview — a dummy one, or one of the
   operation's apps — so a page that reads its definition can be developed.
+  *Taken up 2026-11-03: the page's example definition, §3.1.*
 - **Removing the Console's whole-operation fetch** (`records.partition`) — a
   deferred to-do for a later session (the user's; SERVER_DATA_LOADING §6).
 
@@ -1158,6 +1159,143 @@ Each step works on its own and is cold-tested before the next.
   ACTIONS_OFFERED_BY_SERVER; RECORD_READ_CONDITIONS; DATA_THROUGH_ACTIVITIES;
   SERVER_DATA_LOADING; RBAC_COMPACT; USERS.md; GLOSSARY; ARCHITECTURE;
   BLUEPRINT.
+
+---
+
+## Part 3 — follow-ups (2026-11-03)
+
+Items §2.9 left for later that the user asked to do now, each specced here
+before it is built. Not yet cold-reviewed.
+
+### 3.1 The page's example definition
+
+**Ruled 2026-11-03.** The user wanted the preview's definition saved with the
+page, so another author finds it "prepackaged with an example" (the user's);
+Claude proposed that one example do two jobs — the preview runs with it, and a
+new app starts with a copy — and the user agreed.
+
+- **`PageDef.exampleDefinition`** — optional JSON text, like an app's
+  definition (§2.4). Absent or blank means none. It is an example: nothing
+  outside the page editor's preview and the new-app dialog reads it, and no app
+  ever reads it at run time.
+- **Page editor.** A section in the configuration column, under the page's
+  list: a text box for the example. It saves with the page's other settings,
+  to the draft. Text that is not JSON shows an error under the box.
+- **Publishing** refuses a page whose example is not JSON, as it refuses a
+  page whose list is not a list (§2.2).
+- **Preview.** The page runs with the example as `context.app.definition`;
+  blank or not JSON gives `{}` (as today). `pageId` and `label` stay the
+  page's path, and `services.app.open` is still refused in the preview.
+- **New-app dialog** (Console, §2.6). When an app is being added, its
+  definition box is filled with the chosen page's example, or `{}` when the
+  page has none, and filled again whenever another page is chosen. Editing an
+  existing app never changes its definition. The example comes from the page's
+  **latest published version** — an operation admin cannot read drafts (§2.3),
+  and an app is made from a published page.
+- **The dialog reads it through `pages.appDefaults`** (§3.3), with the page's
+  default roles.
+- **Later, not now:** if hand-typed JSON causes mistakes, the example may grow
+  into a list of the settings a page needs, each with a type (a setting holding
+  an app's id offered as a dropdown of the operation's apps).
+
+### 3.2 Expiring an app
+
+**Ruled 2026-11-03.** "Let's not delete anything … we need a way to expire it
+and for it to be unavailable"; an expired app "can still be seen as an app,
+just expired. The data should be kept" (the user's). The word and its meaning
+follow users' `expired` — the end of the relationship, the row kept (Claude's,
+the user agreed); the field is `status` (the user's OK).
+
+- **`status`** on the app's record — `active` or `expired`. An app with no
+  `status` (every app before this) is `active`; nothing is migrated. Scripts
+  do not see it: `rt_sys_apps` as scripts read it (§2.4) is unchanged.
+- **Expiring is final**, as for users. Nothing un-expires an app.
+- **Console** (§2.6): the apps list keeps showing an expired app, marked
+  Expired. Its dialog still opens with its name, roles, definition and
+  history, read-only. An active app's dialog has an **Expire** button, asking
+  for confirmation first. Operation admins only, like the rest of the list.
+- **`apps.expire`** `{ operationId, appId }` sets `status: expired` and writes
+  the history entry every Console change writes (`sys_console_edit`, §2.4),
+  with `status: expired` captured. `apps.put` refuses an expired app.
+- **Runtime:** an expired app is not set up for the operation. Every call
+  naming it — opening it, running or reading through it, a link to it — is
+  refused (check 1, §2.3), saying the app has expired. `apps.user` leaves it
+  out, so it drops off the menu.
+- **The menu** (§2.5): saving one that points at an expired app is refused,
+  naming it. Items already pointing at one stop showing (above), and stay in
+  the stored menu until an admin saves it without them.
+- **Nothing is deleted:** the app's record and full history stay.
+
+### 3.3 The page's default roles
+
+**Ruled 2026-11-03:** roles on the built app are a **default**, not a limit
+(the user's, on Claude's recommendation). A limit would bring back the two
+layers that could disagree, dropped 2026-10-18 (BLUEPRINT § Access). Who may
+run an app is still set only on it in the apps list; the page's roles never
+decide who may run anything.
+
+- **`PageDef.roleIds`** — optional list of the solution's role ids, the page's
+  default roles (the name the user's, over Claude's `defaultRoleIds`).
+- **Page editor.** A section in the configuration column, beside the example
+  definition (§3.1): one checkbox per role the solution declares.
+- **New-app dialog.** Like the example definition: when an app is being added,
+  its roles start as the chosen page's default roles (none when it has none),
+  set again whenever another page is chosen; the admin changes them freely.
+  Editing an existing app never changes its roles, and changing a page's
+  default roles never touches existing apps. Read from the page's latest
+  published version.
+- **Publishing** drops nothing and refuses nothing over default roles: a role
+  id the solution no longer declares is simply not offered as a checkbox in
+  the new-app dialog.
+- **One call for both starting values** — `pages.appDefaults`
+  `{ solutionId, path }` → `{ definition, roleIds }` from the latest published
+  version (`definition` the example, or `null`; `roleIds` the default roles, or
+  `[]`), gated like `pages.publishedPaths`. It replaces `pages.exampleDefinition`
+  in §3.1.
+
+### 3.4 "config" becomes "model"
+
+**Agreed 2026-10-18, the list approved 2026-11-03** (the user's OK on Claude's
+list). "config" is the code's old name for a solution's model; the user ruled
+it out for apps and asked for this tidy-up. A rename only — nothing behaves
+differently — done in its own commits, after §3.1–§3.3.
+
+- **Server calls:** `config.*` → `model.*`, the names after the dot unchanged
+  (`get`, `getForOperation`, `put`, the `delete…` calls, `publish`,
+  `versions`, `rollback`).
+- **Table:** `sdm_config_versions` → `sdm_model_versions`, its `config` column
+  → `model` — a hand-written migration (0024).
+- **Types:** `SolutionConfig` → `SolutionModel`, `ClientSolutionConfig` →
+  `ClientSolutionModel`, `ConfigCollection` → `ModelCollection`,
+  `ConfigValidationError` → `ModelValidationError`, `ValidateConfigOptions` →
+  `ValidateModelOptions`, `ConfigDraftNotFoundError` →
+  `ModelDraftNotFoundError`, `StoredConfigBeforePool` →
+  `StoredModelBeforePool`, `ConfigPublishControl` → `ModelPublishControl`.
+- **Functions:** `Config` → `Model` in `validateConfig`, `validateConfigGraph`,
+  `getSolutionConfig`, `putConfig`, `putConfigEntity`, `deleteConfigEntity`,
+  `readConfig`, `saveConfig`, `projectConfig`, `useSolutionConfig`,
+  `useLoadedConfig`, `publishConfig`, `rollbackConfig`, `editConfig`,
+  `listConfigVersions`, `getConfigVersion`, `appendConfigVersion`,
+  `reportConfigFindings`; `configCollections` → `modelCollections`,
+  `configVersions` → `modelVersions`.
+- **Variables:** `client.config` → `client.model`, and every variable holding
+  a model named `model`.
+- **The operation's menu:** `operations.config` holds only `{ menu }`, so it
+  becomes an `operations.menu` column holding the menu itself (same
+  migration); `OperationConfig` goes, `operations.putConfig` →
+  `operations.putMenu`, `putOperationConfig` → `putOperationMenu`.
+- **Unchanged — they mean something else:** `slotConfigs` / `SlotConfig` (a
+  layout's slots), `staticConfig` (a component's set values), `type_config` /
+  `AttributeTypeConfig` (an attribute type's settings), `authConfigured` /
+  `configured` (sign-in set up), `ConfigColumn` (the page editor's settings
+  column). Dropped tables (`sdm_configs`) keep their names in old migrations
+  and history notes; phase summaries are never edited.
+- **Docs:** every SPEC and root doc naming the old names, in the same commits.
+
+**Names approved 2026-11-03** (the user's OK): `status` (`active` /
+`expired`), `apps.expire`, `PageDef.roleIds`, `pages.appDefaults`;
+`PageDef.exampleDefinition` was in the proposal the user agreed to, not
+confirmed on its own.
 
 ---
 
