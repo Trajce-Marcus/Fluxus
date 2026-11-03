@@ -468,6 +468,11 @@ export class ConsoleClient {
   listPublishedPaths(solutionId: string): Promise<string[]> {
     return this.trpc.pages.publishedPaths.query({ solutionId });
   }
+  /** A new app's starting values from its page's latest published version:
+   *  the example definition (or null) and the default roles. */
+  pageAppDefaults(solutionId: string, path: string): Promise<{ definition: string | null; roleIds: string[] }> {
+    return this.trpc.pages.appDefaults.query({ solutionId, path });
+  }
   listPageVersions(solutionId: string, path: string): Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]> {
     return this.trpc.pages.versions.query({ solutionId, path }) as Promise<{ version: number; readme: string; publishedBy: string; publishedAt: string }[]>;
   }

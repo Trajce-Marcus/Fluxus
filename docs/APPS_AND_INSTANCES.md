@@ -1175,6 +1175,8 @@ user's OK).
 page, so another author finds it "prepackaged with an example" (the user's);
 Claude proposed that one example do two jobs — the preview runs with it, and a
 new app starts with a copy — and the user agreed.
+**Built 2026-11-03**, with `pages.appDefaults` (both its halves — §3.3 adds
+the field its roles come from).
 
 - **`PageDef.exampleDefinition`** — optional JSON text, like an app's
   definition (§2.4). Absent or blank means none. It is an example: nothing

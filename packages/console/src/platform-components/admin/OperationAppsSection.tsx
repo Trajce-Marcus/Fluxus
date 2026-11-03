@@ -74,6 +74,7 @@ export function OperationAppsSection({ operationId, solutionId }: { operationId:
       {editing !== undefined && (
         <AppDialog
           operationId={operationId}
+          solutionId={solutionId}
           app={editing}
           roles={roles}
           paths={paths}
@@ -85,8 +86,9 @@ export function OperationAppsSection({ operationId, solutionId }: { operationId:
   );
 }
 
-function AppDialog({ operationId, app, roles, paths, onClose, onDone }: {
+function AppDialog({ operationId, solutionId, app, roles, paths, onClose, onDone }: {
   operationId: string;
+  solutionId: string;
   /** null: a new app. */
   app: App | null;
   roles: { id: string; name: string }[];
@@ -110,6 +112,18 @@ function AppDialog({ operationId, app, roles, paths, onClose, onDone }: {
       .then((a) => setHistory(a.activityHistory))
       .catch((e) => setFailed(message(e)));
   }, [operationId, app]);
+
+  // A new app starts with its page's example definition, filled again
+  // whenever another page is chosen (APPS_AND_INSTANCES §3.1). An existing
+  // app's definition is never touched.
+  useEffect(() => {
+    if (app || !pageId) return;
+    let current = true;
+    consoleClient.pageAppDefaults(solutionId, pageId)
+      .then((d) => { if (current) setDefinition(d.definition ?? '{}'); })
+      .catch((e) => { if (current) setFailed(message(e)); });
+    return () => { current = false; };
+  }, [solutionId, app, pageId]);
 
   function toggle(roleId: string) {
     setPicked((prev) => {

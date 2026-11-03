@@ -113,6 +113,20 @@ export function savePageWorkflow(path: string, workflowId: string | null): void 
   savePage(path, { ...existing, workflowId: workflowId ?? undefined });
 }
 
+/**
+ * The page's example definition (APPS_AND_INSTANCES §3.1): JSON text the
+ * preview runs with as `context.app.definition`, and a new app starts with.
+ * Blank is stored absent.
+ */
+export function loadPageExample(path: string): string {
+  return loadPage(path)?.exampleDefinition ?? '';
+}
+
+export function savePageExample(path: string, example: string): void {
+  const existing = loadPage(path) ?? {};
+  savePage(path, { ...existing, exampleDefinition: example.trim() === '' ? undefined : example });
+}
+
 /** The workflows a page's list may be — those no record type points to. */
 export function pageListCandidates(): { id: string; name: string }[] {
   const config = sdmClient.config as { workflows?: { id: string; name: string }[]; recordTypes?: { workflow_ref: string }[] };

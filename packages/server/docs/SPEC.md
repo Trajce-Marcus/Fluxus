@@ -578,6 +578,13 @@ takes `operationId?` (both default `demo/sdm`):
   `{ solutionId? }` lists every published path unfiltered — what an app in an
   operation's apps list can be made from, so sol admins **and the admins of
   the solution's operations** may call it (2026-10-18).
+  **`pages.appDefaults`** `{ solutionId?, path }` → `{ definition, roleIds }`
+  (2026-11-03, APPS_AND_INSTANCES §3.1, §3.3), gated the same: a new app's
+  starting values from the page's latest published version — its example
+  definition (`PageDef.exampleDefinition`, or `null`) and its default roles
+  the solution still declares (or `[]`); a path never published is not found.
+  **Publish refuses an example that is not JSON** (`PageExampleError`); blank
+  is none. Rollback carries neither forward — only the list.
   **Page access (M4) — reversed 2026-10-18**: published `pages.list` used to
   filter to versions the caller could open (`def.access.open`, `pageOpenable`).
   Who may run an app is now set on it in the operation's apps list (§2.2), and
@@ -647,7 +654,8 @@ roles. A menu written in the old shape (labels, pages, roles) reads as empty
 **`apps.user`** `{ operationId }` → `{ apps, pages, menu }` —
 what the Runtime receives at sign-in (§2.7), open to the operation's users:
 `apps`, those the caller may run (checks 1–2), each `{ id, label, pageId,
-definition }`; `pages`, their pages' latest published definitions; `menu`, the
+definition }`; `pages`, their pages' latest published definitions, without the example
+definition (§3.1 — authoring only); `menu`, the
 leaves whose app they may run and the groups that keep one, in the stored order
 (`menuFor`). Until step 6 it also answered `appIdByPageId` — each page's only
 app in the operation, for the old way of opening a page by its path; removed

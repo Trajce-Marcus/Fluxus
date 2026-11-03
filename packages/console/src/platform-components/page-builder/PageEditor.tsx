@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { SESSION_COMPONENTS } from './sessionComponents';
 import { loadPageLayout, pageListCandidates, solutionRecordTypes } from './persistence';
 import type { Panel } from './layout-editor/types';
@@ -16,6 +16,7 @@ import {
   removeContextKey,
   setPageRecord,
   setPageWorkflow,
+  setPageExample,
   setStaticConfig,
   setDynamicProp,
   setCallback,
@@ -412,6 +413,52 @@ function PageListSection({ pageWorkflow, pagePath }: { pageWorkflow: string | nu
   );
 }
 
+// ── The page's example definition ────────────────────────────────────────────
+// An example of what an app made from this page sets (APPS_AND_INSTANCES
+// §3.1): the preview runs with it as `context.app.definition`, and a new app
+// starts with a copy. Publishing refuses one that is not JSON.
+
+/** The example as the preview's `context.app.definition`: blank or not JSON is `{}`. */
+function parseExample(example: string): unknown {
+  if (example.trim() === '') return {};
+  try {
+    return JSON.parse(example);
+  } catch {
+    return {};
+  }
+}
+
+function exampleError(example: string): string | null {
+  if (example.trim() === '') return null;
+  try {
+    JSON.parse(example);
+    return null;
+  } catch (err) {
+    return `Not JSON — publishing will be refused. ${err instanceof Error ? err.message : ''}`;
+  }
+}
+
+function PageExampleSection({ pageExample, pagePath }: { pageExample: string; pagePath: string }) {
+  const error = exampleError(pageExample);
+  return (
+    <div className="pe-config-section pe-config-divider">
+      <p className="pe-config-label">Example Definition</p>
+      <textarea
+        className="pe-binding-input pe-example-input"
+        rows={4}
+        spellCheck={false}
+        placeholder='{ "region": "north" }'
+        value={pageExample}
+        onChange={(e) => setPageExample(pagePath, e.target.value)}
+      />
+      <p className="pe-config-hint">
+        What an app made from this page sets, as JSON. The preview runs with it as context.app.definition, and a new app starts with a copy.
+      </p>
+      {error && <p className="pe-ctx-error">{error}</p>}
+    </div>
+  );
+}
+
 // ── FluxScript bindings (dynamic props + callbacks) ──────────────────────────
 // One expression per dynamic prop, one script per callback — the stored
 // artifact is the source text; this UI merely writes it (decision 2/6). The
@@ -530,10 +577,11 @@ interface Col3Props {
   contextSchema: ContextKeyDef[];
   pageRecord: PageRecordDef | null;
   pageWorkflow: string | null;
+  pageExample: string;
   pagePath: string;
 }
 
-function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pageWorkflow, pagePath }: Col3Props) {
+function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, pageWorkflow, pageExample, pagePath }: Col3Props) {
   const config = selectedSlotId ? (slotConfigs[selectedSlotId] ?? null) : null;
 
   return (
@@ -543,6 +591,7 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, 
         <PageContextSection contextSchema={contextSchema} pagePath={pagePath} />
         <PageRecordSection pageRecord={pageRecord} pagePath={pagePath} />
         <PageListSection pageWorkflow={pageWorkflow} pagePath={pagePath} />
+        <PageExampleSection pageExample={pageExample} pagePath={pagePath} />
 
         {selectedSlotId && config && (
           <>
@@ -578,11 +627,15 @@ function ConfigColumn({ selectedSlotId, slotConfigs, contextSchema, pageRecord, 
 
 // ── Column 4: Preview ────────────────────────────────────────────────────────
 
-function PreviewColumn({ pagePath, slotConfigs, contextSchema }: { pagePath: string; slotConfigs: Record<string, SlotConfig | null>; contextSchema: ContextKeyDef[] }) {
+function PreviewColumn({ pagePath, slotConfigs, contextSchema, pageExample }: { pagePath: string; slotConfigs: Record<string, SlotConfig | null>; contextSchema: ContextKeyDef[]; pageExample: string }) {
   // The preview renders against the same operation the workbench shows, and
   // nothing is auto-picked (ruled 2026-07-31) — so an empty preview says which
   // it is, rather than reading as a broken page.
   const { dataOperationId } = useShellState(['dataOperationId']);
+  // The page runs as an app set up with the example (§3.1), parsed only when
+  // the text changes. It reaches the page's expressions; an activity run on
+  // the server sees no app, as before.
+  const app = useMemo(() => ({ pageId: pagePath, label: pagePath, definition: parseExample(pageExample) }), [pagePath, pageExample]);
   return (
     <div className="pe-col pe-col-preview">
       <div className="pe-col-header">Preview</div>
@@ -597,6 +650,7 @@ function PreviewColumn({ pagePath, slotConfigs, contextSchema }: { pagePath: str
           pagePath={pagePath}
           slotConfigs={slotConfigs}
           contextSchema={contextSchema}
+          app={app}
           debug={import.meta.env.DEV}
         />
       </div>
@@ -619,7 +673,7 @@ function PageEditorComponent({ pagePath }: Props) {
 
   const layout = loadPageLayout(pagePath);
   const slots = layout ? collectLeafPanels(layout.root) : [];
-  const { mode, pageComponents, contextSchema, pageRecord, pageWorkflow, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
+  const { mode, pageComponents, contextSchema, pageRecord, pageWorkflow, pageExample, selectedComponentName, selectedSlotId, col1Collapsed, slotConfigs } = state;
 
   if (mode === 'layout') {
     return (
@@ -647,8 +701,8 @@ function PageEditorComponent({ pagePath }: Props) {
           <ComponentsColumn pageComponents={pageComponents} selectedComponentName={selectedComponentName} pagePath={pagePath} />
         )}
         <SlotsColumn slots={slots} selectedSlotId={selectedSlotId} selectedComponentName={selectedComponentName} slotConfigs={slotConfigs} pagePath={pagePath} />
-        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pageWorkflow={pageWorkflow} pagePath={pagePath} />
-        <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} />
+        <ConfigColumn selectedSlotId={selectedSlotId} slotConfigs={slotConfigs} contextSchema={contextSchema} pageRecord={pageRecord} pageWorkflow={pageWorkflow} pageExample={pageExample} pagePath={pagePath} />
+        <PreviewColumn pagePath={pagePath} slotConfigs={slotConfigs} contextSchema={contextSchema} pageExample={pageExample} />
       </div>
     </div>
   );
@@ -736,6 +790,7 @@ export const css = `
   .pe-ctx-input { flex: 1; min-width: 80px; background: var(--color-bg); border: 1px solid var(--color-accent); border-radius: 3px; color: var(--color-text); font-size: 0.775rem; padding: 2px 5px; outline: none; }
   .pe-ctx-select { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 3px; color: var(--color-text); font-size: 0.72rem; padding: 2px 4px; }
   .pe-ctx-confirm { background: var(--color-accent); border: none; border-radius: 3px; color: #fff; cursor: pointer; font-size: 0.72rem; padding: 2px 8px; }
+  .pe-example-input { width: 100%; box-sizing: border-box; resize: vertical; font-family: monospace; }
   .pe-ctx-error { width: 100%; margin: 2px 0 0; font-size: 0.7rem; color: #f48771; }
 
   .pe-bindings-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

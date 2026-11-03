@@ -268,10 +268,29 @@ async function checkPageList(db: Db, solutionId: string, path: string, def: unkn
   if (owner) throw new PageListError(`'${path}' names '${workflowId}' as its list, but it is the workflow of ${owner.id} — a page's list is its own`);
 }
 
+/**
+ * A page's example definition (APPS_AND_INSTANCES §3.1), checked when it is
+ * published: absent or blank, or JSON text.
+ */
+export class PageExampleError extends Error {}
+
+function checkPageExample(path: string, def: unknown): void {
+  const example = (def as { exampleDefinition?: unknown } | null)?.exampleDefinition;
+  if (example === undefined || example === null) return;
+  if (typeof example !== 'string') throw new PageExampleError(`'${path}' has an example definition that is not text`);
+  if (example.trim() === '') return;
+  try {
+    JSON.parse(example);
+  } catch {
+    throw new PageExampleError(`'${path}' has an example definition that is not JSON`);
+  }
+}
+
 /** Snapshot the current draft def into a new immutable version. */
 export async function publishPage(db: Db, solutionId: string, path: string, readme: string, publishedBy: string): Promise<{ version: number }> {
   const draft = await db.select().from(pages).where(and(eq(pages.solutionId, solutionId), eq(pages.path, path)));
   if (draft.length === 0) throw new PageDraftNotFoundError(path);
+  checkPageExample(path, draft[0].def);
   await checkPageList(db, solutionId, path, draft[0].def);
   return appendVersion(db, solutionId, path, draft[0].def, readme, publishedBy);
 }

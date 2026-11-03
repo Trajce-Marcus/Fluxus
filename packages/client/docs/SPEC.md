@@ -178,6 +178,8 @@ per path); the Console passes `'draft'` (its editable preview). Connect also
 fetches `me` → the caller's `userRoles` + `enforced` flag. (`visibleMenu()`
 went 2026-10-18: the server builds each caller's menu.)
 `ConsoleClient.listPublishedPaths` feeds the apps dialog, and
+`pageAppDefaults(solutionId, path)` (2026-11-03, `pages.appDefaults`) gives
+it a new app's starting values; and
 `ConsoleClient.getOrg` / `putOrgProfile` (M14) drive Console's Organisation
 settings surface — profile reads and edits over the `orgs` row (`OrgProfile`).
 No create and no plan/status writes; the server owns both rules.

@@ -65,7 +65,7 @@ import {
   usersRouter,
 } from './routers/users';
 import { computeReadable, projectConfig } from './projection';
-import { appFromRow, appListOf, appsForUser, getAppRecord, isAppRecord, listApps, listWorkflowOf, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
+import { appDefaults, appFromRow, appListOf, appsForUser, PageNotPublishedError, getAppRecord, isAppRecord, listApps, listWorkflowOf, loadAppForCall, mayRunApp, menuSchema, putApp, readMenu, validateAppMenu, type App } from './apps';
 import { perfRouter } from './routers/perf';
 import { setScope, withSpan } from './perf';
 import {
@@ -904,6 +904,20 @@ export const appRouter = t.router({
           await requireSolOrOpAdmin(ctx, input.solutionId);
           return (await listPublishedPages(ctx.db, input.solutionId)).map((p) => p.path).sort();
         } catch (err) {
+          rethrow(err);
+        }
+      }),
+    // A new app's starting values from its page's latest published version —
+    // the example definition and the default roles (APPS_AND_INSTANCES §3.1,
+    // §3.3). Gated like publishedPaths: the new-app dialog reads it.
+    appDefaults: t.procedure
+      .input(z.object({ solutionId: solutionInput, path: z.string().min(1) }))
+      .query(async ({ ctx, input }) => {
+        try {
+          await requireSolOrOpAdmin(ctx, input.solutionId);
+          return await appDefaults(ctx.db, input.solutionId, input.path, await getSolutionConfig(ctx.db, input.solutionId));
+        } catch (err) {
+          if (err instanceof PageNotPublishedError) throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
           rethrow(err);
         }
       }),

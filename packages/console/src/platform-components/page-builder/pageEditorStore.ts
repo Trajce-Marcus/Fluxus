@@ -8,6 +8,8 @@ import {
   savePageRecord,
   loadPageWorkflow,
   savePageWorkflow,
+  loadPageExample,
+  savePageExample,
   loadSlotConfigs,
   saveSlotConfigs,
   type PageComponentEntry,
@@ -27,6 +29,8 @@ export interface PageEditorState {
   pageRecord: PageRecordDef | null;
   /** The page's list (`PageDef.workflowId`). */
   pageWorkflow: string | null;
+  /** The page's example definition, as typed (`PageDef.exampleDefinition`). */
+  pageExample: string;
   selectedComponentName: string | null;
   selectedSlotId: string | null;
   col1Collapsed: boolean;
@@ -43,6 +47,7 @@ function getStore(pagePath: string) {
       contextSchema: loadContextSchema(pagePath),
       pageRecord: loadPageRecord(pagePath),
       pageWorkflow: loadPageWorkflow(pagePath),
+      pageExample: loadPageExample(pagePath),
       selectedComponentName: null,
       selectedSlotId: null,
       col1Collapsed: false,
@@ -120,6 +125,14 @@ export function setPageWorkflow(pagePath: string, workflowId: string | null): vo
   getStore(pagePath).set((prev) => {
     savePageWorkflow(pagePath, workflowId);
     return { ...prev, pageWorkflow: workflowId };
+  });
+}
+
+/** Set the page's example definition; blank for none. */
+export function setPageExample(pagePath: string, example: string): void {
+  getStore(pagePath).set((prev) => {
+    savePageExample(pagePath, example);
+    return { ...prev, pageExample: example };
   });
 }
 

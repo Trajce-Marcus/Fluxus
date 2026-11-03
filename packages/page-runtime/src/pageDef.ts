@@ -76,6 +76,13 @@ export interface PageDef {
    * published (it exists, and no record type points to it).
    */
   workflowId?: string;
+  /**
+   * An example of an app's definition, as JSON text (APPS_AND_INSTANCES §3.1):
+   * the page editor's preview runs with it as `context.app.definition`, and a
+   * new app made from the page starts with a copy. No app reads it at run time,
+   * and it never reaches the Runtime. Checked to be JSON when published.
+   */
+  exampleDefinition?: string;
   layout?: LayoutDefinition;
   componentDependencies?: PageComponentEntry[];
   contextSchema?: ContextKeyDef[];

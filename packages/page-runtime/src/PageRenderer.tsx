@@ -143,8 +143,9 @@ interface Props {
   recordId?: string;
   /**
    * The app this page is open as — `context.app` (APPS_AND_INSTANCES §2.2).
-   * A host with no app (the Console's preview) omits it, and the page sees its
-   * own path as both `pageId` and `label`, and an empty definition.
+   * A host with no app omits it, and the page sees its own path as both
+   * `pageId` and `label`, and an empty definition. The Console's preview
+   * passes its path the same way, with the page's example definition (§3.1).
    */
   app?: PageAppContext;
   /** Show the collapsible context.page debug strip (the editor preview turns this on). */

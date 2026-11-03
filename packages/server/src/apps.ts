@@ -303,6 +303,33 @@ export interface UserApps {
   menu: MenuItem[];
 }
 
+/** No published page at that path — `pages.appDefaults` (§3.3). */
+export class PageNotPublishedError extends Error {}
+
+/**
+ * A new app's starting values, from its page's latest published version
+ * (APPS_AND_INSTANCES §3.1, §3.3): the page's example definition, or null; its
+ * default roles the solution still declares, so a stale id never reaches
+ * `putApp`'s unknown-role refusal.
+ */
+export async function appDefaults(db: DbOrTx, solutionId: string, path: string, config: SolutionConfig): Promise<{ definition: string | null; roleIds: string[] }> {
+  const page = (await listPublishedPages(db, solutionId)).find((p) => p.path === path);
+  if (!page) throw new PageNotPublishedError(`no published page '${path}'`);
+  const def = (page.def ?? {}) as { exampleDefinition?: unknown; roleIds?: unknown };
+  const definition = typeof def.exampleDefinition === 'string' && def.exampleDefinition.trim() !== '' ? def.exampleDefinition : null;
+  const known = new Set((config.access?.roles ?? []).map((r) => r.id));
+  const roleIds = Array.isArray(def.roleIds) ? def.roleIds.filter((r): r is string => typeof r === 'string' && known.has(r)) : [];
+  return { definition, roleIds };
+}
+
+/** A published page as the Runtime gets it: without what only authoring reads
+ *  — its example definition (§3.1). */
+function withoutAuthoring(def: unknown): unknown {
+  if (!def || typeof def !== 'object') return def;
+  const { exampleDefinition: _example, ...rest } = def as Record<string, unknown>;
+  return rest;
+}
+
 export async function appsForUser(
   db: DbOrTx,
   op: { id: string; solutionId: string; config: OperationConfig },
@@ -315,7 +342,7 @@ export async function appsForUser(
   const runnableIds = new Set(runnable.map((a) => a.id));
   return {
     apps: runnable.map(({ id, label, pageId, definition }) => ({ id, label, pageId, definition })),
-    pages: [...new Set(runnable.map((a) => a.pageId))].map((path) => ({ path, def: defs.get(path) })),
+    pages: [...new Set(runnable.map((a) => a.pageId))].map((path) => ({ path, def: withoutAuthoring(defs.get(path)) })),
     menu: menuFor(readMenu(op.config), (appId) => runnableIds.has(appId)),
   };
 }
