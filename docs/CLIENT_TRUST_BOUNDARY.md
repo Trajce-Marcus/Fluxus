@@ -14,6 +14,14 @@
 
 The rest of this document is design, not code.
 
+**Dropped 2026-11-08 (the user):** the signed handles (§4 — operation handle,
+confirmation token, page handles) and the runner (§6), as out of date or
+premature now that every run names its app and the server checks it. They are
+replaced by a review of app security, at some point, against the code as it
+then stands. **Kept, deferred and low priority:** the stamp and hook history
+(§5) — not built; a hook writing another record still leaves nothing on it
+saying who or which activity.
+
 **§3 gap 1 is superseded** by
 [DATA_THROUGH_ACTIVITIES.md](DATA_THROUGH_ACTIVITIES.md) (2026-08-09), which
 also carries the read path — GET activities — and the guarding rule that

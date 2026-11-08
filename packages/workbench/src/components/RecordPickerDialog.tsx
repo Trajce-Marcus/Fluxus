@@ -3,9 +3,9 @@ import { RecordsGrid } from './RecordsGrid';
 import type { RecordPickerProps } from '@fluxus/page-runtime';
 
 /**
- * Picking a record by browsing the whole snapshot — the workbench's own way in,
- * and the only one it has: this needs the records the browser holds here and a
- * page does not.
+ * Picking a record by browsing its type's list — the workbench's own way in,
+ * and the only one it has: the list is `records.list`, which serves operation
+ * admins with no app, as the workbench is, and no page.
  *
  * **It supplies the label now** (RECORD_PICKER §6). The form used to resolve it
  * afterwards, off the snapshot, which returns the raw id wherever there is no

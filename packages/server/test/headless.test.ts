@@ -186,8 +186,8 @@ describe('headless activity invocation', () => {
   });
 
   it('rejects a datasource miss (suburb not in the selected city)', async () => {
-    const cities = await caller().records.list({ typeId: 'rt_cities' });
-    const suburbs = await caller().records.list({ typeId: 'rt_suburbs' });
+    const cities = (await caller().records.list({ typeId: 'rt_cities' })).rows;
+    const suburbs = (await caller().records.list({ typeId: 'rt_suburbs' })).rows;
     const city = cities[0];
     const foreignSuburb = suburbs.find((s) => s.customFields.city_id !== city.id);
     expect(foreignSuburb).toBeDefined();
@@ -201,9 +201,9 @@ describe('headless activity invocation', () => {
   });
 
   it('accepts a datasource hit and writes both fields', async () => {
-    const cities = await caller().records.list({ typeId: 'rt_cities' });
+    const cities = (await caller().records.list({ typeId: 'rt_cities' })).rows;
     const city = cities[0];
-    const suburbs = await caller().records.list({ typeId: 'rt_suburbs' });
+    const suburbs = (await caller().records.list({ typeId: 'rt_suburbs' })).rows;
     const suburb = suburbs.find((s) => s.customFields.city_id === city.id);
     expect(suburb).toBeDefined();
     const result = await caller().activities.run({

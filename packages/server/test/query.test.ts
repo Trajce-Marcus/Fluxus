@@ -98,9 +98,10 @@ describe('GET activities', () => {
   });
 
   it('changes no record data, and leaves no trace with nowhere to land', async () => {
-    const before = await caller().records.partition({});
+    const read = () => Promise.all([woQ1, woQ2].map((recordId) => caller().records.get({ recordId })));
+    const before = await read();
     await caller().activities.query({ activityId: 'act_get_work_orders', attributes: { status: 'Raised' } });
-    const after = await caller().records.partition({});
+    const after = await read();
     expect(after).toEqual(before);
   });
 });

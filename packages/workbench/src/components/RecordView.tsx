@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useWorkbench } from '../WorkbenchContext';
+import { useHeldRecord, useWorkbench } from '../WorkbenchContext';
 import { RecordDetails } from './RecordDetails';
 import { RelatedRecords } from './RelatedRecords';
 import { ActivityHistoryList } from './ActivityHistoryList';
 import { AvailableActivities } from './AvailableActivities';
 import { SchemaNavigator } from './SchemaNavigator';
 import { NoOperationNotice } from './OperationPicker';
-import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
 type NavEntry = { typeId: string; recordId: string };
 
@@ -34,7 +33,7 @@ const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
 });
 
 export function RecordView() {
-  const { operationId, selectedRecord, selectedRecordType, getRecordAndType } = useWorkbench();
+  const { operationId, selectedRecord, selectedRecordType, getRecordAndType, isRecordFetched } = useWorkbench();
 
   const [viewedTypeId, setViewedTypeId] = useState<string | null>(null);
   const [viewedRecordId, setViewedRecordId] = useState<string | null>(null);
@@ -54,6 +53,11 @@ export function RecordView() {
     setBackStack([]);
     setForwardStack([]);
   }, [selectedRecord?.id]);
+
+  // Whichever record is on screen is held by id, in full — selected from the
+  // list, after a create, followed by reference, a related row, back or
+  // forward — and let go when the view moves on (CONSOLE_RECORD_FETCHING §4).
+  const viewStatus = useHeldRecord(viewedRecordId);
 
   const navigateTo = useCallback((typeId: string, recordId: string) => {
     const curType = viewedTypeIdRef.current;
@@ -125,28 +129,46 @@ export function RecordView() {
     );
   }
 
-  const viewedData = viewedTypeId && viewedRecordId
-    ? getRecordAndType(viewedTypeId, viewedRecordId)
-    : null;
-
-  // Fall back to selected record if FK target not found
-  const viewedRecord: RecordInstance = viewedData?.record ?? selectedRecord;
-  const viewedTypeDef: RecordTypeDef & { workflow: WorkflowDef } =
-    viewedData?.typeDef ?? selectedRecordType!;
+  // Nothing shows — and no form opens — until the record is held by id: a
+  // list row brings labels, not the records its references point at, and a
+  // form's expressions may follow them.
+  const ready = viewedRecordId !== null && viewStatus === 'loaded' && isRecordFetched(viewedRecordId);
+  const viewedData = ready && viewedTypeId ? getRecordAndType(viewedTypeId, viewedRecordId!) : null;
 
   const canGoBack = backStack.length > 0;
   const canGoForward = forwardStack.length > 0;
 
+  const navRow = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+      <button onClick={navigateBack} disabled={!canGoBack} style={navBtnStyle(canGoBack)} title="Back">←</button>
+      <button onClick={navigateForward} disabled={!canGoForward} style={navBtnStyle(canGoForward)} title="Forward">→</button>
+      <button onClick={() => setShowSchemaNav(true)} style={{ ...schemaBtnStyle, marginLeft: 'auto' }} title="Schema Navigator">
+        Schema
+      </button>
+    </div>
+  );
+
+  if (!viewedData) {
+    return (
+      <>
+        <div className="panel-header">{navRow}</div>
+        <div className="panel-body" style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
+          {viewStatus === 'loading' && !ready ? 'Loading record…' : 'Could not load this record.'}
+          {showSchemaNav && selectedRecordType && (
+            <SchemaNavigator initialTypeId={viewedTypeId ?? selectedRecordType.id} onClose={() => setShowSchemaNav(false)} />
+          )}
+        </div>
+      </>
+    );
+  }
+
+  const viewedRecord = viewedData.record;
+  const viewedTypeDef = viewedData.typeDef;
+
   return (
     <>
       <div className="panel-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <button onClick={navigateBack} disabled={!canGoBack} style={navBtnStyle(canGoBack)} title="Back">←</button>
-          <button onClick={navigateForward} disabled={!canGoForward} style={navBtnStyle(canGoForward)} title="Forward">→</button>
-          <button onClick={() => setShowSchemaNav(true)} style={{ ...schemaBtnStyle, marginLeft: 'auto' }} title="Schema Navigator">
-            Schema
-          </button>
-        </div>
+        {navRow}
         <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
           {viewedTypeDef.name.endsWith('s') ? viewedTypeDef.name.slice(0, -1) : viewedTypeDef.name}
         </h2>

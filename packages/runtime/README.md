@@ -20,7 +20,7 @@ npm run dev          # from repo root: server + Runtime app + Console together
 # → http://localhost:5173 (server at :8787)
 ```
 
-Since backend stage 2 (2026-07-12) records live in `@fluxus/server` (Postgres): the app boots by fetching the scope's stored config + partition via `@fluxus/client` and runs every activity server-side — there is no localStorage fallback, so if the server is down, boot fails loudly. A fresh database holds nothing: author a solution in the Console, and create records by running activities. Editing [config/](config/) changes the test fixture, not any database.
+Since backend stage 2 (2026-07-12) records live in `@fluxus/server` (Postgres): the app boots by fetching the scope's stored config via `@fluxus/client` (no records — each page fetches the record it is about) and runs every activity server-side — there is no localStorage fallback, so if the server is down, boot fails loudly. A fresh database holds nothing: author a solution in the Console, and create records by running activities. Editing [config/](config/) changes the test fixture, not any database.
 
 ## Docs
 

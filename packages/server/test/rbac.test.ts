@@ -54,6 +54,10 @@ const open = () => appRouter.createCaller({ db });
 // Reads by role go through an app both roles may run (APPS_AND_INSTANCES §2.3).
 let appId: string;
 const admin: ContextUser = { id: 'u-admin', name: 'Admin', email: 'admin@example.com', roles: [] }; // op admin, no roles
+/** Every record id in OP, one type at a time — there is no whole-operation read (CONSOLE_RECORD_FETCHING). */
+const allIds = async (caller: ReturnType<typeof open>) =>
+  (await Promise.all(['rt_alpha', 'rt_beta', 'rt_gamma'].map((typeId) => caller.records.list({ operationId: OP, typeId }))))
+    .flatMap((list) => list.rows.map((r) => r.id)).sort();
 
 beforeAll(async () => {
   db = await createDb();
@@ -105,8 +109,7 @@ describe('record-type read filter (default deny, enforced when configured)', () 
   });
 
   it('the env stub (auth unconfigured) leaves everything open', async () => {
-    const rows = await open().records.partition({ operationId: OP });
-    expect(rows.map((r) => r.id).sort()).toEqual(['A1', 'B1', 'G1']);
+    expect(await allIds(open())).toEqual(['A1', 'B1', 'G1']);
   });
 });
 
@@ -115,9 +118,7 @@ describe('record-type read filter (default deny, enforced when configured)', () 
 // for anyone else.
 describe('calls with no app — operation admins only', () => {
   it('lets an operation admin with no roles read every record type', async () => {
-    const rows = await enforced(admin).records.partition({ operationId: OP });
-    expect(rows.map((r) => r.id).sort()).toEqual(['A1', 'B1', 'G1']);
-    expect((await enforced(admin).records.list({ operationId: OP, typeId: 'rt_beta' })).map((r) => r.id)).toEqual(['B1']);
+    expect(await allIds(enforced(admin))).toEqual(['A1', 'B1', 'G1']);
     await expect(enforced(admin).records.get({ operationId: OP, recordId: 'G1' })).resolves.toMatchObject({ id: 'G1' });
     await expect(enforced(admin).activities.run({ operationId: OP, activityId: 'act_touch_beta', typeId: 'rt_beta', recordId: 'B1', attributes: { note: 'x' } }))
       .resolves.toMatchObject({ status: 'done' });
@@ -125,7 +126,6 @@ describe('calls with no app — operation admins only', () => {
 
   it('refuses anyone else, whatever their roles', async () => {
     const noApp = /names no app, so it is for admins of operation/;
-    await expect(enforced(u1).records.partition({ operationId: OP })).rejects.toThrow(noApp);
     await expect(enforced(u1).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(noApp);
     await expect(enforced(u1).records.get({ operationId: OP, recordId: 'A1' })).rejects.toThrow(noApp);
     await expect(enforced(u1).activities.run({ operationId: OP, activityId: 'act_touch_alpha', typeId: 'rt_alpha', recordId: 'A1', attributes: { note: 'x' } })).rejects.toThrow(noApp);
@@ -138,7 +138,7 @@ describe('calls with no app — operation admins only', () => {
     const OTHER = 'test/rbac-other';
     await ensureOperation(db, OTHER, SOL, 'RBAC other');
     await addOpUser(db, { operationId: OTHER, email: 'admin@example.com' });
-    await expect(enforced(admin).records.partition({ operationId: OTHER })).rejects.toThrow(/names no app/);
+    await expect(enforced(admin).records.list({ operationId: OTHER, typeId: 'rt_alpha' })).rejects.toThrow(/names no app/);
   });
 });
 

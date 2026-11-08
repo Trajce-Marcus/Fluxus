@@ -98,7 +98,7 @@ describe('the pool is the only way in', () => {
     expect(await listOrgAdmins(db)).toEqual([]);
     expect(await listOpUsers(db, OP)).toEqual([]);
     expect(await listOpAdmins(db, OP)).toEqual([]);
-    await expect(enforced(opUser).records.partition({ operationId: OP })).rejects.toThrow(/not a user of operation/i);
+    await expect(enforced(opUser).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(/not a user of operation/i);
   });
 
   it('a re-invite updates the name and disturbs no grant', async () => {
@@ -112,13 +112,13 @@ describe('the pool is the only way in', () => {
 
 describe('the entry gate', () => {
   it('an operation with no users admits nobody', async () => {
-    await expect(enforced(stranger).records.partition({ operationId: OP })).rejects.toThrow(/not a user of operation/i);
+    await expect(enforced(stranger).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(/not a user of operation/i);
   });
 
   it('refuses a non-user once any user is declared', async () => {
     await inviteUser(db, { email: 'user@example.com' });
     await addOpUser(db, { operationId: OP, email: 'user@example.com' });
-    await expect(enforced(stranger).records.partition({ operationId: OP })).rejects.toThrow(/not a user of operation/i);
+    await expect(enforced(stranger).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(/not a user of operation/i);
   });
 
   it('admits a declared user, who then holds no roles', async () => {
@@ -127,7 +127,7 @@ describe('the entry gate', () => {
     // Entered, but no roles: nothing to read through any app — and a call
     // naming no app is an operation admin's (APPS_AND_INSTANCES §2.3).
     expect((await enforced(opUser).me({ operationId: OP })).roles).toEqual([]);
-    await expect(enforced(opUser).records.partition({ operationId: OP })).rejects.toThrow(/names no app/);
+    await expect(enforced(opUser).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(/names no app/);
   });
 
   it('roles can be granted before the person has ever signed in', async () => {
@@ -146,19 +146,19 @@ describe('the entry gate', () => {
     await addOpUser(db, { operationId: OP, email: 'user@example.com' });
     // The stranger holds a role in this operation but was never added to it.
     await putUserRoles(db, { operationId: OP, email: 'stranger@example.com', roleIds: ['role_a'] });
-    await expect(enforced(stranger).records.partition({ operationId: OP })).rejects.toThrow(/not a user of operation/i);
+    await expect(enforced(stranger).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(/not a user of operation/i);
   });
 
   it('a sol admin gets no bypass — they are added like anyone else', async () => {
     await inviteUser(db, { email: 'stranger@example.com' });
     await appointSolAdmin(db, { solutionId: SOL, email: 'stranger@example.com' });
-    await expect(enforced(stranger).records.partition({ operationId: OP })).rejects.toThrow(/not a user of operation/i);
+    await expect(enforced(stranger).records.list({ operationId: OP, typeId: 'rt_alpha' })).rejects.toThrow(/not a user of operation/i);
   });
 
   it('does not apply in the demo posture (auth unconfigured)', async () => {
     await inviteUser(db, { email: 'user@example.com' });
     await addOpUser(db, { operationId: OP, email: 'user@example.com' });
-    await expect(open(stranger).records.partition({ operationId: OP })).resolves.toBeDefined();
+    await expect(open(stranger).records.list({ operationId: OP, typeId: 'rt_alpha' })).resolves.toBeDefined();
   });
 });
 

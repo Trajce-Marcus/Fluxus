@@ -162,11 +162,10 @@ describe('apps are kept out of every general read (§2.4)', () => {
     ({ id: appId } = await open().apps.put({ operationId: OP, ...water, label: 'Hidden' }));
   });
 
-  it('never in the partition or a list by type, even with sign-in off', async () => {
-    const partition = await open().records.partition({ operationId: OP });
-    expect(partition.some((r) => r.typeRef === 'rt_sys_apps')).toBe(false);
-    expect(partition.map((r) => r.id)).toContain('J1');
-    await expect(open().records.list({ operationId: OP, typeId: 'rt_sys_apps' })).resolves.toEqual([]);
+  it('never in a list by type, even with sign-in off', async () => {
+    const { rows } = await open().records.list({ operationId: OP, typeId: 'rt_jobs' });
+    expect(rows.map((r) => r.id)).toContain('J1');
+    await expect(open().records.list({ operationId: OP, typeId: 'rt_sys_apps' })).resolves.toEqual({ rows: [], labels: [] });
   });
 
   it('refuses a call that sends an app\'s id as its record', async () => {

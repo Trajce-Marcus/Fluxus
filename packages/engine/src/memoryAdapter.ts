@@ -15,6 +15,13 @@ export interface MemoryAdapterOptions {
   initialRecords?: Iterable<readonly [string, RecordInstance]>;
 }
 
+/**
+ * A reference's label without the record behind it (CONSOLE_RECORD_FETCHING
+ * §4): what a list row's reference column shows — `label` is the display
+ * field `field` of record `id`, of type `typeRef`. Sent beside a list's rows.
+ */
+export interface ReferenceLabel { id: string; typeRef: string; field: string; label: string }
+
 export class MemoryAdapter implements Store {
   protected recordTypes: RecordTypeDef[];
   protected workflows: Map<string, WorkflowDef>;
@@ -120,6 +127,9 @@ export class MemoryAdapter implements Store {
    */
   private withheld = new Set<string>();
 
+  /** Labels held without their records, keyed by id and display field. */
+  private labels = new Map<string, ReferenceLabel>();
+
   /** Persistence hook, called after every mutation — no-op in memory. */
   protected persist(): void {}
 
@@ -128,12 +138,18 @@ export class MemoryAdapter implements Store {
   }
 
   // Swap the whole snapshot and notify subscribers — how a client host
-  // refreshes after a server-side activity run without changing the adapter
-  // (or engine) identity its UI is wired to. `withheld` replaces the set of
-  // records the server would not send (see `withheld` below).
-  replaceRecords(records: Iterable<readonly [string, RecordInstance]>, withheld: Iterable<string> = []): void {
+  // rebuilds it from what it holds without changing the adapter (or engine)
+  // identity its UI is wired to. `withheld` replaces the set of records the
+  // server would not send (see `withheld` above), `labels` the labels held
+  // without their records.
+  replaceRecords(
+    records: Iterable<readonly [string, RecordInstance]>,
+    withheld: Iterable<string> = [],
+    labels: Iterable<ReferenceLabel> = [],
+  ): void {
     this.records = new Map(records);
     this.withheld = new Set([...withheld].filter((id) => !this.records.has(id)));
+    this.labels = new Map([...labels].map((l) => [`${l.id}\u0000${l.field}`, l]));
     this.persist();
     this.notify();
   }
@@ -280,12 +296,15 @@ export class MemoryAdapter implements Store {
     this.notify();
   }
 
+  // A held record answers first; then a label held without its record, only
+  // for the type and display field it was resolved with; else the raw id.
   resolveDisplayLabel(fkRecordType: string, fkDisplayField: string | undefined, rawId: string): string {
     if (!rawId) return '';
-    const record = this.records.get(rawId);
-    if (!record || record.typeRef !== fkRecordType) return rawId;
     if (!fkDisplayField) return rawId;
-    return String(record.customFields[fkDisplayField] ?? rawId);
+    const record = this.records.get(rawId);
+    if (record) return record.typeRef === fkRecordType ? String(record.customFields[fkDisplayField] ?? rawId) : rawId;
+    const held = this.labels.get(`${rawId}\u0000${fkDisplayField}`);
+    return held && held.typeRef === fkRecordType ? held.label : rawId;
   }
 
   getReverseRefs(targetTypeId: string): ReverseRefEntry[] {

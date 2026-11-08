@@ -7,9 +7,9 @@
 
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { eq, and, inArray, ne } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { FkPointer } from '@fluxus/dsl';
-import { AfterHookFailedError, APPS_RECORD_TYPE, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionModel, type QueryActivityResult, type RunActivityResult } from '@fluxus/engine';
+import { AfterHookFailedError, APPS_RECORD_TYPE, DEMO_USER, isUploadType, validateSubmission, type ActivityDef, type ActivityOption, type SolutionModel, type QueryActivityResult, type ReferenceLabel, type RunActivityResult } from '@fluxus/engine';
 import type { Db } from './db/client';
 import { records } from './db/schema';
 import {
@@ -132,7 +132,7 @@ async function operationContext(ctx: AppContext, operationId: string): Promise<{
  * whatever their roles — and nothing in operations they are not admins of. It
  * governs exactly the calls on the closed list: `activities.run`,
  * `activities.query`, `page.activities`, `records.get`, `records.list`,
- * `records.partition`, `scripts.query` and `files.*` — the Console's
+ * `scripts.query` and `files.*` — the Console's
  * workbench, DSL Editor and page preview. With sign-in off, open, as every
  * gate is.
  */
@@ -233,6 +233,48 @@ async function referencedRecords(
     withheld.push(...rows.filter((r) => !level.includes(r)).map((r) => r.id));
   }
   return { found, withheld };
+}
+
+/**
+ * What a list's reference columns show, without the records behind them
+ * (CONSOLE_RECORD_FETCHING §2, labels only): for each `fk_ref` field of the
+ * listed type that names a target type and a display field, the referenced
+ * record's display value. One query over every id the rows hold. No label for
+ * a missing record, one of another type than the field names, or an
+ * operation's app, which is never handed out as a record (APPS_AND_INSTANCES
+ * §2.3) — the browser then shows the id, as it always has.
+ */
+async function referenceLabels(
+  db: AppContext['db'],
+  operationId: string,
+  config: SolutionModel,
+  typeId: string,
+  rows: RecordRow[],
+): Promise<ReferenceLabel[]> {
+  const fields = (config.recordTypes.find((rt) => rt.id === typeId)?.custom_fields ?? [])
+    .filter((cf) => cf.type === 'fk_ref' && cf.fk_record_type && cf.fk_display_field);
+  const ids = new Set<string>();
+  for (const row of rows) {
+    for (const cf of fields) {
+      const value = row.customFields[cf.key];
+      if (typeof value === 'string' && value !== '') ids.add(value);
+    }
+  }
+  if (ids.size === 0) return [];
+  const targets = await db.select().from(records)
+    .where(and(eq(records.operationId, operationId), inArray(records.id, [...ids])));
+  const byId = new Map(targets.filter((r) => !isAppRecord(r)).map((r) => [r.id, r]));
+  const labels = new Map<string, ReferenceLabel>();
+  for (const cf of fields) {
+    for (const row of rows) {
+      const target = byId.get(row.customFields[cf.key] as string);
+      if (!target || target.typeRef !== cf.fk_record_type) continue;
+      const field = cf.fk_display_field!;
+      const raw = target.customFields[field];
+      labels.set(`${target.id}\u0000${field}`, { id: target.id, typeRef: target.typeRef, field, label: String(raw ?? target.id) });
+    }
+  }
+  return [...labels.values()];
 }
 
 /** A record that exists but may not be read (2026-10-12, the user's ruling,
@@ -868,7 +910,7 @@ export const appRouter = t.router({
 
   // Page definitions on the config pipeline: defs are opaque jsonb (PageDef +
   // validatePage live in the page builder), list returns the solution's full
-  // set (a host snapshots pages at connect exactly like the record partition).
+  // set (a host snapshots pages at connect).
   pages: t.router({
     // The editable drafts (the `pages` rows) — the design plane (APPS_AND_INSTANCES
     // §2.3), called by the Console's connect with no operation: solution admins
@@ -1088,47 +1130,45 @@ export const appRouter = t.router({
   }),
 
   records: t.router({
-    // The whole scope partition in one round trip — what a browser host loads
-    // into its MemoryAdapter snapshot at bootstrap (and re-fetches after runs).
-    partition: t.procedure
-      .input(z.object({ operationId: operationInput }).default({}))
-      .query(async ({ ctx, input }) => {
-        try {
-          // A call with no app (§2.3): an operation admin, who reads every
-          // record type — but never the operation's apps (§2.4).
-          await resolveUser(ctx, input.operationId);
-          await requireNoAppCaller(ctx, await getOperation(ctx.db, input.operationId));
-          const rows = await ctx.db.select().from(records)
-            .where(and(eq(records.operationId, input.operationId), ne(records.typeRef, APPS_RECORD_TYPE)));
-          return rows
-            .map((r) => ({
-              id: r.id,
-              typeRef: r.typeRef,
-              customFields: r.customFields,
-              activityHistory: r.activityHistory,
-            }));
-        } catch (err) {
-          rethrow(err);
-        }
-      }),
+    // One type's records, for the Console's workbench (CONSOLE_RECORD_FETCHING
+    // §2) — there is no whole-operation fetch any more. Rows carry no history
+    // (the record view fetches by id for that) and come with the labels their
+    // references show. `fieldKey`/`value` narrow to the rows whose reference
+    // field holds one record's id: the related records panel.
     list: t.procedure
-      .input(z.object({ operationId: operationInput, typeId: z.string().min(1) }))
+      .input(z.object({
+        operationId: operationInput,
+        typeId: z.string().min(1),
+        fieldKey: z.string().min(1).optional(),
+        value: z.string().optional(),
+      }))
       .query(async ({ ctx, input }) => {
         try {
           // A call with no app (§2.3): an operation admin, who reads every type.
           await resolveUser(ctx, input.operationId);
-          await requireNoAppCaller(ctx, await getOperation(ctx.db, input.operationId));
-          if (input.typeId === APPS_RECORD_TYPE) return [];
+          const op = await getOperation(ctx.db, input.operationId);
+          await requireNoAppCaller(ctx, op);
+          if (input.typeId === APPS_RECORD_TYPE) return { rows: [], labels: [] };
+          const config = await getSolutionModel(ctx.db, op.solutionId);
+          if (input.fieldKey !== undefined) {
+            const field = config.recordTypes.find((rt) => rt.id === input.typeId)?.custom_fields
+              .find((cf) => cf.key === input.fieldKey);
+            if (field?.type !== 'fk_ref') {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: `'${input.fieldKey}' is not a reference field of '${input.typeId}'` });
+            }
+          }
           const rows = await ctx.db
             .select()
             .from(records)
-            .where(and(eq(records.operationId, input.operationId), eq(records.typeRef, input.typeId)));
-          return rows.map((r) => ({
-            id: r.id,
-            typeRef: r.typeRef,
-            customFields: r.customFields,
-            activityHistory: r.activityHistory,
-          }));
+            .where(and(
+              eq(records.operationId, input.operationId),
+              eq(records.typeRef, input.typeId),
+              input.fieldKey !== undefined ? sql`${records.customFields}->>${input.fieldKey} = ${input.value ?? ''}` : undefined,
+            ));
+          return {
+            rows: rows.map((r) => ({ id: r.id, typeRef: r.typeRef, customFields: r.customFields, activityHistory: [] })),
+            labels: await referenceLabels(ctx.db, input.operationId, config, input.typeId, rows),
+          };
         } catch (err) {
           rethrow(err);
         }
@@ -1417,10 +1457,8 @@ export const appRouter = t.router({
    * Why this is not a hole in the read rule: DATA_THROUGH_ACTIVITIES governs
    * the APPLICATION read path, where a query belongs in the model as a GET so
    * it can be authorised and logged. This is workbench-class admin inspection,
-   * and the workbench is already outside that — the Console takes the whole
-   * partition at connect to evaluate locally against it. Running the query
-   * here is NARROWER: the browser gets the filtered subset instead of every
-   * record. It is not logged (an ad-hoc query has no record to anchor an entry
+   * as the workbench's own record lists are (`records.list`, operation admins
+   * with no app), and the browser gets only the query's answer. It is not logged (an ad-hoc query has no record to anchor an entry
    * to); that is accepted and recorded as debt against the unified log.
    *
    * Read-only is structural, not a validation pass: `readonlyRecords` removes

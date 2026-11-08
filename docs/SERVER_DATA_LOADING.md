@@ -454,7 +454,9 @@ needed before an operation grows that big, not before the build.
   `records.partition` to everyone but the operation's admins
   ([APPS_AND_INSTANCES](APPS_AND_INSTANCES.md) cold review 2026-10-17, decision 3;
   built 2026-10-18 — the Console connects with records only for an operation
-  the caller administers).
+  the caller administers). **Done 2026-11-09**
+  ([CONSOLE_RECORD_FETCHING](CONSOLE_RECORD_FETCHING.md)): the Console fetches
+  what each screen shows, and `records.partition` is gone.
 - **Queries across several record types** beyond references — the user's new
   requirement; waiting on an example.
 - **The growth of an anchor record's history** from GET log entries (§11).

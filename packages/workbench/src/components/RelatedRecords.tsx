@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useWorkbench } from '../WorkbenchContext';
+import { useHeldLists, useWorkbench } from '../WorkbenchContext';
 import { fieldLabel } from '@fluxus/engine';
 import type { RecordInstance, RecordTypeDef, WorkflowDef } from '@fluxus/engine';
 
@@ -13,7 +13,17 @@ export function RelatedRecords({ typeId, recordId, navigateTo }: Props) {
   const { getReverseRefs, getRecordsByField, getRecordTypeDef } = useWorkbench();
   const [activeTab, setActiveTab] = useState(0);
 
-  const groups = getReverseRefs(typeId)
+  // For each type that points here, the records whose reference holds this
+  // one — held while this record is on screen (CONSOLE_RECORD_FETCHING §4).
+  const refs = getReverseRefs(typeId);
+  const status = useHeldLists(refs.map(({ sourceTypeId, fieldKey }) => ({ typeId: sourceTypeId, filter: { fieldKey, value: recordId } })));
+
+  if (status === 'failed') {
+    return <div style={{ fontSize: 12, color: '#94a3b8' }}>Could not load related records.</div>;
+  }
+  if (status === 'loading') return null;
+
+  const groups = refs
     .map(({ sourceTypeId, fieldKey }) => {
       const sourceDef = getRecordTypeDef(sourceTypeId);
       if (!sourceDef) return null;

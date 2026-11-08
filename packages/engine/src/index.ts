@@ -13,7 +13,7 @@ export { MemoryAdapter, coerceFieldValues, newRecordId, shapeNewRecord, uniqueVa
 export { APPS_RECORD_TYPE, APPS_RECORD_TYPE_DEF, APPS_WORKFLOW, APPS_WORKFLOW_DEF, CONSOLE_EDIT, MIGRATION_EDIT, RESERVED_IDS } from './platformApps';
 export type { AppScope } from './platformApps';
 export { RecordAccessDeniedError } from './errors';
-export type { MemoryAdapterOptions } from './memoryAdapter';
+export type { MemoryAdapterOptions, ReferenceLabel } from './memoryAdapter';
 
 export { buildGeoModule } from './services/geo';
 export { buildTimeModule } from './services/time';

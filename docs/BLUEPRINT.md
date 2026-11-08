@@ -242,7 +242,8 @@ wherever it hands records out directly, and a record not let through answers
 up the per-record read access that RBAC left out of its first cut "until a real
 modelling need appears"; the inspections solution is that need. A condition on
 opening a page, for ad hoc page rules, was considered in the same discussion and
-parked for apps Part 2.
+parked for apps Part 2. *Dropped 2026-11-08 (the user):* not needed; who may
+open an app stays its roles alone.
 
 ## Deleting — *Built and Direction* (ruled 2026-09-21)
 
@@ -392,8 +393,10 @@ operation. Spec: [SERVER_DATA_LOADING.md](SERVER_DATA_LOADING.md).
 *Built 2026-09-25: all three steps — no history read; the server's database
 store reads on demand and writes through, one transaction per run; record
 queries run as one SQL statement each, and a filter that cannot become SQL is
-refused at save and when it runs. Not built: the Console workbench still takes
-the whole operation at connect (the spec's §6).*
+refused at save and when it runs. The Console workbench took the whole
+operation at connect until 2026-11-09; it now fetches what each screen shows
+([CONSOLE_RECORD_FETCHING.md](CONSOLE_RECORD_FETCHING.md)), and nothing fetches
+a whole operation.*
 
 **Reversed: partition-fetch + filter, and the synchronous Store** (Phase 4,
 2026-07-12). The server loaded an operation's every record, with full

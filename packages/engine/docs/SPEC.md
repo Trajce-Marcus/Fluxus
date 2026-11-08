@@ -37,11 +37,17 @@ src/memoryAdapter.ts — the in-memory Store: all reference behaviour, no storag
                      LocalStorageAdapter itself was deleted at backend
                      stage 3 — no live host after the hard cutover).
                      replaceRecords() swaps the whole snapshot in place
-                     (identity stable, subscribers notified) — how client
-                     hosts refresh after a server-side run (backend stage 2);
+                     (identity stable, subscribers notified) — how the client
+                     rebuilds it from what it holds, after a fetch, a release
+                     or an activity run (CONSOLE_RECORD_FETCHING, 2026-11-09);
+                     it also takes **labels** — a reference's display value
+                     held without its record (`ReferenceLabel`), which
+                     resolveDisplayLabel answers from when the record itself
+                     is not held, only for the type and display field it was
+                     resolved with (test/referenceLabels.test.ts).
                      mergeRecords() adds or replaces some without touching the
-                     rest (2026-08-16) — how a host that was never handed the
-                     partition fills its snapshot as it goes. Both take the
+                     rest (2026-08-16); no host calls it since the client
+                     rebuilds. Both take the
                      ids the server **withheld** (2026-10-12): getRecord on one
                      throws RecordAccessDeniedError ("Record access denied"),
                      and the records host's getById passes it on instead of

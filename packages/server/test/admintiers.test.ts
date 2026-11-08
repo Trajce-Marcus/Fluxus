@@ -216,7 +216,7 @@ describe('op admin owns authorization', () => {
     // An administrator who cannot open the thing they administer would be
     // nonsense, so the entry gate reads both tables.
     expect(emails(await listOpUsers(db, OP))).not.toContain('opboss@example.com');
-    await expect(as(opBoss).records.partition({ operationId: OP })).resolves.toBeDefined();
+    await expect(as(opBoss).records.list({ operationId: OP, typeId: 'rt_any' })).resolves.toBeDefined();
   });
 
   it('the operation menu override is the op admin\'s, not the sol admin\'s', async () => {

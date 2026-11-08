@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useWorkbench } from '../WorkbenchContext';
+import { useHeldLists, useWorkbench } from '../WorkbenchContext';
 import { AttributesForm } from '@fluxus/page-runtime';
 import { Modal } from './Modal';
 import { FkDisplay } from './FkDisplay';
@@ -73,6 +73,10 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
   const pickerMode = !!onRecordSelected;
   const typeDef = typeId ? getRecordTypeDef(typeId) : selectedRecordType;
 
+  // The list holds its type's records while it shows them — from selecting a
+  // type, or the picker's `typeId` (CONSOLE_RECORD_FETCHING §4).
+  const listStatus = useHeldLists(typeDef ? [{ typeId: typeDef.id }] : []);
+
   // Whether the type's create is offered — the server decides, with no record
   // (`page.activities`), and asks again whenever the snapshot refreshes. Held
   // with the type it was for, so a newly selected type shows no New button
@@ -106,6 +110,14 @@ export function RecordsGrid({ typeId, onRecordSelected }: Props = {}) {
     return (
       <div className={pickerMode ? undefined : 'panel-body'} style={{ color: '#94a3b8', padding: 8 }}>
         Select a record type from the panel to view records.
+      </div>
+    );
+  }
+
+  if (listStatus !== 'loaded') {
+    return (
+      <div className={pickerMode ? undefined : 'panel-body'} style={{ color: '#94a3b8', padding: 8, fontSize: 13 }}>
+        {listStatus === 'loading' ? `Loading ${typeDef.name}…` : `Could not load ${typeDef.name}.`}
       </div>
     );
   }

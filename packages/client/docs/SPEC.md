@@ -8,11 +8,10 @@ record.
 
 One class, `FluxusClient`, owning the movements every remote host makes:
 
-1. **`connect({url, operationId, records?})`** — resolve the operation to its
+1. **`connect({url, operationId})`** — resolve the operation to its
    solution (`operations.get`), then fetch `model.getForOperation` +
-   **`apps.user`** and (unless `records: 'none'`) `records.partition` in parallel
-   and build a
-   `MemoryAdapter` snapshot plus the `pages` map (path → def) and the caller's
+   **`apps.user`** in parallel and build a
+   `MemoryAdapter` snapshot, **empty of records** (§1b) plus the `pages` map (path → def) and the caller's
    **app menu** (APPS_AND_INSTANCES §2.5, §2.7, since 2026-10-18): `apps.user`
    answers the apps the caller may run (`apps`, each `{ id, label, pageId,
    definition }`), their published pages, the menu built from them on the
@@ -46,8 +45,9 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    rather than opened as a blank editor) + draft `pages.list` by `solutionId`
    (sol admin only since 2026-10-18: a refusal connects with no pages and sets
    **`solutionAdmin`** false, which the Console reads to hide its design
-   tools), plus **that operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
-   the data you build against is one operation's). No menu/roles (`enforced`
+   tools), bound to **one operation's records** (M9, ruled 2026-07-26 — the model is solution-scoped,
+   the data you build against is one operation's), fetched as the workbench's
+   screens show them (§1b), none at connect. No menu/roles (`enforced`
    false: Console is the design plane). With an operation bound,
    `refresh`/`runActivity` work exactly as in the Runtime host — running an
    activity is how a solution builder tests a workflow. Omitting `operationId`
@@ -63,39 +63,44 @@ One class, `FluxusClient`, owning the movements every remote host makes:
    `publishModel`/`modelVersions`/`rollbackModel` are the model's version
    history (the surface pages have had since M3). `operationsForSolution`
    (static) lists a solution's operations for the Console data picker.
-1b. **`records: 'partition' | 'none'`** (2026-08-16) — how much data the
-   client holds. `partition` (the default, and what every host did before the
-   option existed) is every readable record in the operation *with its full
-   activity history*, in one round trip at sign-in. `none` is nothing: the host
-   fills the snapshot as it goes and asks the model for the rest through GET
-   activities. The Runtime app passes `none` — it renders pages, and a page
-   runs on what it asks for plus the one record it is about. The Console keeps
-   the partition, because the workbench evaluates the model locally against it
-   (DATA_THROUGH_ACTIVITIES step 5; the workbench's own on-demand loading is
-   the step after).
-1c. **`fetchRecord(recordId)` / `fetchRecords(typeId)`** (2026-08-16) — one
-   record, or one type, **merged** into the snapshot through the new
-   `MemoryAdapter.mergeRecords` rather than replacing it. `records.get` and
-   `records.list` already existed server-side and are RBAC-filtered, so a
-   record the caller may not read is refused ("Record access denied" since
-   2026-10-12, not-found before) — the fetch is the
-   authorisation check as well as the load. These are what a host with no
-   partition reaches for: a page's anchor record, the record a component's
-   callback named, and (later) the type a grid is showing.
-   **`fetchRecord` merges the records it points at too** (2026-10-12) —
-   `records.get`'s `references`, two levels, readable ones only — so a page's
-   expressions and a form's reference labels can follow a reference from the
-   record they hold. The references it may not read (`withheld`) are passed to
-   `mergeRecords`, so following one throws `RecordAccessDeniedError`; `refresh`
-   replaces them with the re-read's.
-2. **`refresh()`** — with the partition, re-fetch the lot into the *same*
-   adapter via `MemoryAdapter.replaceRecords` (identity stable, subscribers
-   notified). With `records: 'none'` there is no partition to re-fetch, so it
-   re-reads the records the host **fetched** — typically the one the page is
-   about — with the records they point at, and drops any that no longer read
-   back (deleted, or no longer readable). Only what was fetched directly is
-   re-read (2026-10-12): the records that came along as references are not
-   re-read on their own, so following references never grows what is held.
+1b. **No records at connect; what is fetched is held** (CONSOLE_RECORD_FETCHING,
+   2026-11-09). Neither connect fetches a record — the Runtime has not since
+   2026-08-16, and the Console's whole-operation fetch (`records.partition`,
+   and the `records: 'partition' | 'none'` option with it) is gone. The client
+   keeps what it fetched, entry by entry, each counting its holders: each
+   record fetched by id with what came with it, each list with its rows and
+   labels. The `MemoryAdapter` copy is **rebuilt from those entries**
+   (`replaceRecords`) whenever one changes — a fetch, a release, a refresh —
+   so a fetch landing while a refresh runs is never wiped by it. A read by id
+   wins over a list row of the same record (it carries the history).
+1c. **`fetchRecord(recordId)` / `releaseRecord(recordId)`** — one record by id
+   (`records.get`), held until released. A record the caller may not read is
+   refused ("Record access denied" since 2026-10-12, not-found before) — the
+   fetch is the authorisation check as well as the load. What a page's anchor,
+   a component's callback and the workbench's record view reach for. It brings
+   the records it points at — `records.get`'s `references`, two levels,
+   readable ones only (2026-10-12) — so a page's expressions and a form's
+   reference labels can follow a reference; the references it may not read
+   (`withheld`) make following one throw `RecordAccessDeniedError`. The
+   Runtime never releases: its pages hold their records for the session.
+   **`isRecordFetched(recordId)`** says whether a record is held by id, in
+   full, as opposed to only as a list row or a reference — what the workbench
+   waits on before it opens a form.
+1d. **`fetchRecords(typeId, filter?)` / `releaseRecords(typeId, filter?)`** —
+   one type's rows (`records.list`), held until released; **the Console's**:
+   `records.list` serves operation admins with no app, so no Runtime user.
+   `filter` (`{ fieldKey, value }`) narrows to the rows whose reference field
+   holds a value — the related records panel. Rows come without history, with
+   **labels** for their references (`{ id, typeRef, field, label }`), which
+   the adapter keeps and `resolveDisplayLabel` answers from when the record
+   itself is not held.
+2. **`refresh()`** — after an activity run, fetch every held entry again, in
+   parallel: one `records.get` per record held by id, one `records.list` per
+   list, then rebuild the *same* adapter (identity stable, subscribers
+   notified). A record that no longer reads back by id (deleted, or no longer
+   readable) is dropped; a list that fails keeps its last rows. The records
+   that came along as references are not re-read on their own, so following
+   references never grows what is held.
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`
    on the server (availability gate, hooks, persistence, reporting projection
    all server-side), then `refresh()`. Refresh runs even when the call throws,
@@ -206,10 +211,10 @@ definition, status }`, `definition` being JSON as text and `status`
   grade — which is what makes a stray `before_hook` read a compile error there
   rather than a runtime `undefined`. Console types its design singleton
   `FluxusClient<SolutionModel>`.
-- **Snapshot model** (stage 2 ruling): bootstrap fetch + refetch-after-run.
-  The Store contract stays synchronous; the browser mirrors the server's own
-  per-request partition-snapshot model. No per-read laziness until partition
-  size demands it.
+- **Snapshot model** (stage 2 ruling): fetch + refetch-after-run. The Store
+  contract stays synchronous. *Narrowed 2026-08-16 (Runtime) and 2026-11-09
+  (Console):* the snapshot is only what the host's screens hold, never the
+  whole operation.
 - **Hard cutover** (stage 2 ruling): no localStorage fallback. Connect
   failures propagate to the host's boot error surface.
 - **Attributes are arbitrary JSON** — scalars are strings as the capture form

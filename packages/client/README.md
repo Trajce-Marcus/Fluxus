@@ -1,10 +1,11 @@
 # @fluxus/client
 
 The browser hosts' door to `@fluxus/server` (backend stage 2). `connect()`
-fetches a scope's stored SDM config and full record partition into the
-engine's `MemoryAdapter`; hosts keep evaluating everything synchronously
-against that snapshot, and every mutation is an `activities.run` round trip
-followed by a partition re-fetch through the same adapter.
+fetches a scope's stored SDM config, and no records: hosts fetch the records
+their screens show (`fetchRecord`, `fetchRecords`) into the engine's
+`MemoryAdapter` and keep evaluating synchronously against what is held. Every
+mutation is an `activities.run` round trip followed by a re-fetch of what is
+held, through the same adapter.
 
 **Status:** built with backend stage 2 (July 2026). Used by the sdm workbench
 and the page builder; a future host (CLI, mobile) starts here.

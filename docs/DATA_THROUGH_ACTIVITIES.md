@@ -5,10 +5,9 @@
 end — the spine (§4's removal, GET-in-the-engine, a page that names a GET) is
 complete, step 3 has closed the log promise for reads and given a page a record
 to anchor on, and step 4 has an input naming its producer, re-run at
-submission. Step 5 is half built: the connect-time snapshot shipped every
-record in the operation to every host, and the Runtime app now takes none. The
-Console still takes the partition, because the workbench evaluates the model
-locally against it.
+submission. Step 5 is built: the connect-time snapshot shipped every record in
+the operation to every host; the Runtime app took none from 2026-08-16, and the
+Console none from 2026-11-09 ([CONSOLE_RECORD_FETCHING](CONSOLE_RECORD_FETCHING.md)).
 
 It spans engine, dsl, server, client and page-runtime, which is why it sits in
 root `docs/`. It follows on from
@@ -459,20 +458,21 @@ Ordered so each step stands on its own and nothing needs unpicking later.
 | 2 | ✅ **BUILT 2026-08-10** — a page names a GET for a dynamic prop instead of writing an inline expression: `invoke` supplied to the page host, evaluated in rounds, checked by `validatePage` | **the goal**: data requirements move out of the page and into the model |
 | 3 | ✅ **BUILT 2026-08-11** — GETs logged light on the anchor; a page declares its record, found or created at page open | observability, and the pipeline-is-the-log promise held for reads |
 | 4 | ✅ **BUILT 2026-08-16** — a `datasource` may name a GET: `validateSubmission` re-runs it at submission (server half), and the capture form fills its dropdown from it through the engine's rounds (browser half, which also made the form one shared form) | the guarding payoff — tier 1 absorbs tier 2 |
-| 5 | 🔨 **half BUILT 2026-08-16** — `connect({ records: 'none' })`, and the **Runtime app takes it**: no partition at sign-in, the snapshot fills through `fetchRecord`/`fetchRecords`, refresh re-reads only what is held. The Console still takes the partition, because the workbench evaluates the model locally against it — that half is the next build | production shape; decide on evidence |
+| 5 | ✅ **BUILT** — 2026-08-16 `connect({ records: 'none' })`, and the **Runtime app takes it**: no partition at sign-in, the snapshot fills through `fetchRecord`, refresh re-reads only what is held. **2026-11-09 the Console too** ([CONSOLE_RECORD_FETCHING](CONSOLE_RECORD_FETCHING.md)): each workbench screen holds what it shows, `records.partition` and the `records` option are gone | production shape; decide on evidence |
 
 Steps 0–2 are the spine, complete as of 2026-08-10; step 3 followed on
 2026-08-11 and step 4 on 2026-08-16. Step 5 is what remains to make it
 production-shaped, and it is now split by host: the Runtime app takes no
 records at connect, the Console still does.
 
-**What step 5 has left, precisely.** The workbench evaluates the model in the
-browser against the snapshot — inline datasources, show conditions, FK display
-labels, reverse-FK lookups. "The browser holds no records" and "the browser
-evaluates the model locally" cannot both be true, so either those evaluations
-become round trips or some records stay local. That decision is the workbench's
-alone now, and it is not blocking anything else: the Runtime app is already
-free of the partition.
+**What step 5 had left, and how it closed.** The workbench evaluated the model
+in the browser against the snapshot — inline datasources, show conditions, FK
+display labels, reverse-FK lookups. "The browser holds no records" and "the
+browser evaluates the model locally" cannot both be true. Closed 2026-11-09
+(CONSOLE_RECORD_FETCHING): labels and the related records come from the server
+(`records.list` labels and filter), and a browser expression that reads
+`records.*` sees only what the open screens hold — six field show conditions in
+the projects solution are wrong because of it, deferred by the user.
 
 ---
 
@@ -520,8 +520,9 @@ free of the partition.
   the Console's DSL Editor). The rule above governs the **application** read
   path — a page serving an end user, where the query belongs in the model as a
   GET so it can be authorised and logged. The workbench has always sat outside
-  it: the Console takes the whole operation partition at connect precisely so
-  the workbench can evaluate locally against it. The DSL Editor's
+  it: the Console took the whole operation partition at connect precisely so
+  the workbench could evaluate locally against it (until 2026-11-09; now its
+  lists are `records.list`, operation admins with no app). The DSL Editor's
   `scripts.query` joins it there, and is **narrower** than what already
   happens — the browser gets the filtered subset instead of every record.
   What it does not have is a log: an ad-hoc query has no record to anchor an

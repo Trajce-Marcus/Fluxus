@@ -11,7 +11,7 @@ the user's confirmation (*Decisions to confirm*, at the end).
 Today a role reads every record of a type or none: the record type's read list.
 A **read condition** narrows one role's read of one record type to the records
 for which an expression is true. The server checks it on every record it hands
-out directly: a page opening its record, a list or partition fetch, and the
+out directly: a page opening its record, a list fetch, and the
 record an action runs on. A record that fails answers "Record access denied"
 (not found when this was written; reversed 2026-10-12, BLUEPRINT *Access*). GETs and hooks
 are unchanged: they read every record, as today, and a GET's author filters what
@@ -21,7 +21,8 @@ it returns.
 
 - **A condition on the record type, not on the page.** A condition on opening a
   page (the user's idea, for ad hoc page rules) is parked for apps Part 2, when
-  the server learns which page a call comes from.
+  the server learns which page a call comes from. *Dropped 2026-11-08 (the
+  user): not needed.*
 - **Hidden reads as not found**, exactly like a record that does not exist —
   what `records.get` already answers for an unreadable type. *Reversed
   2026-10-12:* a record not let through answers "Record access denied", as an
@@ -103,7 +104,6 @@ Every place the server hands records to a caller directly:
 | --- | --- | --- |
 | `records.get` — a page opening its record, a page following a reference; since 2026-10-12 also the records it points at (`references`, two levels) | access denied if the type is unreadable; an unreadable referenced record is named as withheld | also access denied if no held role lets the record through; a referenced record not let through is named as withheld |
 | `records.list` — one type's records | empty if the type is unreadable | only the records let through |
-| `records.partition` — the Console workbench | readable types only | and, within them, only the records let through |
 | `activities.run` with a record | access denied if unreadable, checked before the availability gate | also access denied if the record is not let through |
 | `activities.query` (a GET) with a record | the same | the same |
 | `page.activities` with a record (added 2026-10-11, [ACTIONS_OFFERED_BY_SERVER](ACTIONS_OFFERED_BY_SERVER.md)) | an empty list if the type is unreadable | also an empty list if the record is not let through |
@@ -166,12 +166,14 @@ needs a small addition.
 - A role that reads a type without a condition costs nothing new: no expression
   runs.
 - Otherwise the condition runs once per record handed out: once for `get`, once
-  per record for `list` and `partition`. A referenced record is read once per
+  per record for `list` (and per label `list` sends, since 2026-11-09). A referenced record is read once per
   request and then held (`DatabaseStore`), so fifty jobs shared by three
   inspectors read three inspector records.
-- The Runtime does not fetch partitions (`records: 'none'`), and its lists come
-  from GETs, which run no condition. The per-record cost falls mainly on the
-  Console workbench and on direct fetches.
+- No host fetches a whole operation (`records.partition` was removed
+  2026-11-09), and the Runtime's lists come from GETs, which run no condition.
+  The per-record cost falls mainly on the Console workbench's lists and on
+  direct fetches. Since `records.list` is for operation admins only, who read
+  every record, it may run none at all — to settle when this is built.
 
 ## 9. Build list
 
@@ -191,7 +193,7 @@ needs a small addition.
 ## 10. Tests
 
 - A role without a condition reads every record; with one, only the matching
-  records — for `get`, `list` and `partition`.
+  records — for `get` and `list`.
 - Two held roles, one with a condition and one without: every record.
 - A record not let through: `get`, `activities.run` and `activities.query`
   with it answer "Record access denied", before the availability gate; a

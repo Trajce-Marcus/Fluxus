@@ -1,8 +1,9 @@
 // @fluxus/client — how a browser host talks to @fluxus/server (backend
-// stage 2). One connect call fetches the scope's config + record partition
-// (+ page definitions) into the engine's MemoryAdapter, so every UI read and FluxScript expression
-// keeps evaluating synchronously against a local snapshot; every mutation is
-// an `activities.run` round trip followed by a partition re-fetch. The
+// stage 2). One connect call fetches the scope's config (+ page definitions)
+// and no records; the host fetches the records it shows into the engine's
+// MemoryAdapter, so every UI read and FluxScript expression keeps evaluating
+// synchronously against a local snapshot of what is held. Every mutation is an
+// `activities.run` round trip followed by a re-fetch of what is held. The
 // adapter identity never changes — hosts wire their engine and subscriptions
 // to it once and refresh flows through Store.subscribe.
 
@@ -17,6 +18,7 @@ import type {
   FunctionDef,
   QueryActivityResult,
   RecordInstance,
+  ReferenceLabel,
   RecordTypeDef,
   RoleDef,
   RunActivityResult,
@@ -78,6 +80,15 @@ function createTrpc(url: string, getToken?: () => Promise<string | null>) {
 }
 type Trpc = ReturnType<typeof createTrpc>;
 
+/** A record read by id: the record, what it points at, and what it points at that may not be read. */
+type RecordRead = RecordInstance & { references: RecordInstance[]; withheld: string[] };
+
+/** Narrows a list to the rows whose reference field `fieldKey` holds `value` (`records.list`). */
+export interface ListFilter { fieldKey: string; value: string }
+
+const listKey = (typeId: string, filter?: ListFilter) =>
+  `${typeId}\u0000${filter?.fieldKey ?? ''}\u0000${filter?.value ?? ''}`;
+
 /** Ask the server what is switched on for this operation (PERFORMANCE_LOGGING.md
  *  §6) and tell the client's collector. Never throws. */
 async function learnPerfSwitches(trpc: Trpc, operationId: string): Promise<void> {
@@ -94,7 +105,7 @@ export interface ConnectOptions {
   url?: string;
   /**
    * The operation to run. connect() resolves it to its linked solution: config
-   * + pages load by solutionId, the record partition by operationId.
+   * + pages load by solutionId, records (fetched as needed) by operationId.
    */
   operationId?: string;
   /**
@@ -103,21 +114,6 @@ export interface ConnectOptions {
    * `draft` (the page builder's preview posture).
    */
   pages?: 'draft' | 'published';
-  /**
-   * How much of the operation's data to hold locally (2026-08-16):
-   *
-   * - `partition` — every record the caller may read, with its full activity
-   *   history, in one round trip at connect. What the workbench needs, because
-   *   it evaluates the model locally against the snapshot.
-   * - `none` — nothing. The host fills the snapshot as it goes, through
-   *   `fetchRecord`/`fetchRecords`, and asks the model for the rest through GET
-   *   activities. What a pages-only host (the Runtime app) runs on.
-   *
-   * Default `partition`, which is what every host did before the option
-   * existed. Sending an entire operation to a browser at sign-in is what this
-   * exists to stop (DATA_THROUGH_ACTIVITIES step 5).
-   */
-  records?: 'partition' | 'none';
   /**
    * Session-token supplier — typically HostAuth.getToken. Called per request
    * (tokens expire in minutes); omit when auth is unconfigured.
@@ -661,15 +657,14 @@ export interface QueryInput {
 export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   private constructor(
     private readonly trpc: Trpc,
-    /** The operation this client runs; its record partition key. */
+    /** The operation this client runs; the key its records are fetched by. */
     readonly operationId: string,
     /** The operation's linked solution; the config + pages key. */
     readonly solutionId: string,
     readonly model: C,
     readonly adapter: MemoryAdapter,
     /**
-     * Page definitions (path → def), snapshotted at connect like the record
-     * partition. Defs are opaque here — PageDef and its validation belong to
+     * Page definitions (path → def), snapshotted at connect. Defs are opaque here — PageDef and its validation belong to
      * the page builder. savePage/deletePage mutate this map optimistically
      * before the server round trip, so hosts keep synchronous reads.
      */
@@ -704,13 +699,6 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   ) {}
 
   /**
-   * How much data this client holds (`ConnectOptions.records`, 2026-08-16).
-   * Set by `connect` right after construction rather than threaded through a
-   * fifteenth positional parameter. It decides one thing: whether `refresh`
-   * re-fetches the whole partition or only the records already in hand.
-   */
-  private recordsMode: 'partition' | 'none' = 'partition';
-  /**
    * Whether the caller is an admin of this solution, who alone may design it
    * (APPS_AND_INSTANCES §2.6). Learnt by `connectSolution` from whether the
    * draft pages were refused; the Console hides the model and page builders
@@ -730,12 +718,15 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
    */
   appId: string | null = null;
   /**
-   * The records fetched directly — by id or by type — which `refresh` re-reads
-   * when there is no partition. The records they point at arrive with each read
-   * (`records.get`'s `references`) and are not roots themselves, so following
-   * references never grows what is held.
+   * What this client holds (CONSOLE_RECORD_FETCHING §3): each record fetched
+   * by id, with what came with it, and each list fetched, with its rows and
+   * labels — each counting its holders. The local copy is rebuilt from these
+   * whenever one changes, and `refresh` fetches each again. The records a
+   * read points at are not entries themselves, so following references never
+   * grows what is held.
    */
-  private readonly roots = new Set<string>();
+  private readonly heldRecords = new Map<string, { holders: number; read: RecordRead | null }>();
+  private readonly heldLists = new Map<string, { typeId: string; filter?: ListFilter; holders: number; rows: RecordInstance[]; labels: ReferenceLabel[] }>();
 
   /**
    * Design-plane connect (CONSOLE_RUNTIME_SPEC §3): bind to a solution to author
@@ -772,7 +763,7 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
     // §2.3); an operation admin who is not one connects with none, and the
     // Console hides the design tools from them.
     let solutionAdmin = true;
-    const [pageRows, config, partition] = await Promise.all([
+    const [pageRows, config] = await Promise.all([
       trpc.pages.list.query({ solutionId }).catch((err) => {
         if (!(err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN')) throw err;
         solutionAdmin = false;
@@ -782,14 +773,11 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
         if (err instanceof TRPCClientError && err.data?.code === 'FORBIDDEN') throw err;
         return { attributes: [], activities: [], recordTypes: [], workflows: [] } as SolutionModel;
       }),
-      operationId
-        ? (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>)
-        : Promise.resolve([] as RecordInstance[]),
       operationId ? learnPerfSwitches(trpc, operationId) : Promise.resolve(),
     ]);
-    const adapter = new MemoryAdapter(config, {
-      initialRecords: partition.map((r) => [r.id, r] as const),
-    });
+    // No records at connect (CONSOLE_RECORD_FETCHING): each workbench screen
+    // fetches what it shows, as the Runtime's pages do.
+    const adapter = new MemoryAdapter(config);
     const pages = new Map(pageRows.map((p) => [p.path, p.def]));
     // enforced=false: Console is the design plane, menus/roles are not
     // filtered here. With an operation bound, runActivity/refresh work exactly
@@ -887,8 +875,8 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   }
 
   /**
-   * Resolve the operation to its solution, then fetch config + page set and the
-   * record partition (both by operation) and build the local snapshot. Throws
+   * Resolve the operation to its solution, then fetch config + page set (both
+   * by operation) and build the local snapshot, empty of records. Throws
    * (with the server's message) when the server is unreachable or the
    * operation/solution is missing — hosts surface that as their boot error;
    * there is no localStorage fallback by ruling.
@@ -904,12 +892,8 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
     const op = await trpc.operations.get.query({ operationId });
     const solutionId = op.solutionId;
     const published = options.pages === 'published';
-    const recordsMode = options.records ?? 'partition';
-    const [config, partition, userApps, draftPages, me] = await Promise.all([
+    const [config, userApps, draftPages, me] = await Promise.all([
       trpc.model.getForOperation.query({ operationId }) as Promise<ClientSolutionModel>,
-      recordsMode === 'none'
-        ? Promise.resolve([] as RecordInstance[])
-        : (trpc.records.partition.query({ operationId }) as Promise<RecordInstance[]>),
       // The apps the caller may run, their published pages, and the menu built
       // from them (APPS_AND_INSTANCES §2.7) — what the Runtime renders.
       trpc.apps.user.query({ operationId }),
@@ -919,15 +903,12 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
       // failure) leaves browser logging off — never an error at connect.
       learnPerfSwitches(trpc, operationId),
     ]);
-    const adapter = new MemoryAdapter(config, {
-      initialRecords: partition.map((r) => [r.id, r] as const),
-    });
+    const adapter = new MemoryAdapter(config);
     const pages = new Map((draftPages ?? userApps.pages).map((p) => [p.path, p.def]));
     const menu = userApps.menu as MenuItem[];
     const solutionName = (op as { solutionName?: string }).solutionName ?? solutionId;
     const orgName = (op as { orgName?: string }).orgName ?? op.orgId;
     const client = new FluxusClient(trpc, operationId, solutionId, config, adapter, pages, menu, orgName, solutionName, op.name, op.orgId, me.roles, me.authConfigured);
-    client.recordsMode = recordsMode;
     client.apps = userApps.apps;
     return client;
   }
@@ -980,73 +961,161 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   }
 
   /**
-   * One record into the snapshot, by id — how a host that was not handed the
-   * partition reaches the record it is about (a page's anchor, the record a
-   * component's callback named). Merges rather than replaces, so a host may
-   * hold several at once. A record the caller may not read comes back as
-   * not-found, deliberately indistinguishable from a missing one.
+   * One record into the snapshot, by id, held until `releaseRecord` — how a
+   * host reaches the record it is about (a page's anchor, the record a
+   * component's callback named, the record the workbench shows). A host may
+   * hold several at once, and the same one more than once. A record the caller
+   * may not read is refused.
    *
    * The records it points at come with it, two levels deep and readable ones
-   * only (2026-10-12), and are merged too: a page holding only its own record
-   * could not otherwise show `context.record.area.name`, nor a form name what
-   * a reference holds. Those it points at but may not read are marked
-   * withheld, so following one says "Record access denied" instead of reading
-   * as blank. A record the caller may not read at all is refused the same way.
+   * only (2026-10-12): a page holding only its own record could not otherwise
+   * show `context.record.area.name`, nor a form name what a reference holds.
+   * Those it points at but may not read are marked withheld, so following one
+   * says "Record access denied" instead of reading as blank.
    */
   async fetchRecord(recordId: string): Promise<RecordInstance> {
-    const { references, withheld, ...record } = await this.readRecord(recordId);
-    this.roots.add(record.id);
-    this.adapter.mergeRecords([record, ...references].map((r) => [r.id, r] as const), withheld);
+    const entry = this.heldRecords.get(recordId) ?? { holders: 0, read: null };
+    entry.holders++;
+    this.heldRecords.set(recordId, entry);
+    let read: RecordRead;
+    try {
+      read = await this.readRecord(recordId);
+    } catch (err) {
+      this.releaseRecord(recordId);
+      throw err;
+    }
+    // Released while the read was in flight: nothing to hold.
+    if (this.heldRecords.get(recordId) === entry) {
+      entry.read = read;
+      this.rebuild();
+    }
+    const { references: _references, withheld: _withheld, ...record } = read;
     return record;
   }
 
-  private async readRecord(recordId: string): Promise<RecordInstance & { references: RecordInstance[]; withheld: string[] }> {
+  /** Let go of a record `fetchRecord` holds; it leaves the snapshot when its last holder does. */
+  releaseRecord(recordId: string): void {
+    const entry = this.heldRecords.get(recordId);
+    if (!entry) return;
+    if (--entry.holders > 0) return;
+    this.heldRecords.delete(recordId);
+    this.rebuild();
+  }
+
+  /**
+   * Whether a record is held by id, in full — with its history and the
+   * records it points at — as opposed to only as a list row or as a
+   * reference. What a screen waits on before it opens a form on the record,
+   * whose expressions may follow those references.
+   */
+  isRecordFetched(recordId: string): boolean {
+    return this.heldRecords.get(recordId)?.read != null;
+  }
+
+  private async readRecord(recordId: string): Promise<RecordRead> {
     const read = (await this.trpc.records.get.query({ operationId: this.operationId, ...this.viaApp, recordId })) as
       RecordInstance & { references?: RecordInstance[]; withheld?: string[] };
     return { ...read, references: read.references ?? [], withheld: read.withheld ?? [] };
   }
 
   /**
-   * One record type into the snapshot. The seam a grid loads through, and how
-   * a one-instance page finds whether its record exists yet. Still every row of
-   * that type — narrowing further is a query, which is what a GET activity is
-   * for.
+   * One record type into the snapshot, held until `releaseRecords` — the
+   * Console's workbench lists (`records.list` is for operation admins with no
+   * app, so it serves no Runtime user). Every row of the type, or with
+   * `filter` only those whose reference field holds a value (the related
+   * records panel). Rows come without their history, and with the labels
+   * their references show in place of the records behind them.
    */
-  async fetchRecords(typeId: string): Promise<RecordInstance[]> {
-    const rows = (await this.trpc.records.list.query({ operationId: this.operationId, typeId })) as RecordInstance[];
-    for (const r of rows) this.roots.add(r.id);
-    this.adapter.mergeRecords(rows.map((r) => [r.id, r] as const));
-    return rows;
+  async fetchRecords(typeId: string, filter?: ListFilter): Promise<RecordInstance[]> {
+    const key = listKey(typeId, filter);
+    const entry = this.heldLists.get(key) ?? { typeId, filter, holders: 0, rows: [], labels: [] };
+    entry.holders++;
+    this.heldLists.set(key, entry);
+    let list: { rows: RecordInstance[]; labels: ReferenceLabel[] };
+    try {
+      list = await this.readList(typeId, filter);
+    } catch (err) {
+      this.releaseRecords(typeId, filter);
+      throw err;
+    }
+    if (this.heldLists.get(key) === entry) {
+      entry.rows = list.rows;
+      entry.labels = list.labels;
+      this.rebuild();
+    }
+    return list.rows;
+  }
+
+  /** Let go of a list `fetchRecords` holds; its rows leave the snapshot when its last holder does. */
+  releaseRecords(typeId: string, filter?: ListFilter): void {
+    const key = listKey(typeId, filter);
+    const entry = this.heldLists.get(key);
+    if (!entry) return;
+    if (--entry.holders > 0) return;
+    this.heldLists.delete(key);
+    this.rebuild();
+  }
+
+  private async readList(typeId: string, filter?: ListFilter): Promise<{ rows: RecordInstance[]; labels: ReferenceLabel[] }> {
+    return (await this.trpc.records.list.query({ operationId: this.operationId, typeId, ...filter })) as
+      { rows: RecordInstance[]; labels: ReferenceLabel[] };
   }
 
   /**
-   * Bring the snapshot back in line with the server after a run; subscribers
-   * re-render.
-   *
-   * With the partition, that is one re-fetch of the lot. With `records: 'none'`
-   * there is no partition to re-fetch, so it re-reads exactly the records the
-   * host fetched — typically the one record the page is about — with the
-   * records they point at, and drops any that no longer read back (deleted, or
-   * no longer readable).
+   * The local copy is what is held, and nothing else: every list's rows and
+   * labels, then every record read by id with what came with it — a read by
+   * id carries history a list row does not, so it wins. Rebuilt whole on every
+   * change, so a fetch landing during a refresh is never wiped by it.
+   */
+  private rebuild(): void {
+    const records = new Map<string, RecordInstance>();
+    const withheld: string[] = [];
+    const labels: ReferenceLabel[] = [];
+    for (const list of this.heldLists.values()) {
+      for (const r of list.rows) records.set(r.id, r);
+      labels.push(...list.labels);
+    }
+    for (const { read } of this.heldRecords.values()) {
+      if (!read) continue;
+      for (const r of read.references) records.set(r.id, r);
+      withheld.push(...read.withheld);
+    }
+    for (const { read } of this.heldRecords.values()) {
+      if (!read) continue;
+      const { references: _references, withheld: _withheld, ...record } = read;
+      records.set(record.id, record);
+    }
+    this.adapter.replaceRecords(records, withheld, labels);
+  }
+
+  /**
+   * Bring the snapshot back in line with the server after an activity run;
+   * subscribers re-render. Fetches everything held again, in parallel — one
+   * `records.get` per record held by id, one `records.list` per list — and
+   * drops a record that no longer reads back (deleted, or no longer readable).
+   * A list that fails keeps its last rows.
    */
   async refresh(): Promise<void> {
-    if (this.recordsMode === 'partition') {
-      const partition = (await this.trpc.records.partition.query({ operationId: this.operationId })) as RecordInstance[];
-      this.adapter.replaceRecords(partition.map((r) => [r.id, r] as const));
-      return;
-    }
-    if (this.roots.size === 0) return;
-    const ids = [...this.roots];
-    const reads = await Promise.all(ids.map((recordId) => this.readRecord(recordId).catch(() => null)));
-    const held: RecordInstance[] = [];
-    const withheld: string[] = [];
-    reads.forEach((read, i) => {
-      if (read === null) { this.roots.delete(ids[i]); return; }
-      const { references, withheld: denied, ...record } = read;
-      held.push(...references, record);
-      withheld.push(...denied);
-    });
-    this.adapter.replaceRecords(held.map((r) => [r.id, r] as const), withheld);
+    if (this.heldRecords.size === 0 && this.heldLists.size === 0) return;
+    await Promise.all([
+      ...[...this.heldRecords.entries()].map(async ([recordId, entry]) => {
+        try {
+          entry.read = await this.readRecord(recordId);
+        } catch {
+          if (this.heldRecords.get(recordId) === entry) this.heldRecords.delete(recordId);
+        }
+      }),
+      ...[...this.heldLists.values()].map(async (entry) => {
+        try {
+          const list = await this.readList(entry.typeId, entry.filter);
+          entry.rows = list.rows;
+          entry.labels = list.labels;
+        } catch {
+          // keeps its last rows
+        }
+      }),
+    ]);
+    this.rebuild();
   }
 
   /**

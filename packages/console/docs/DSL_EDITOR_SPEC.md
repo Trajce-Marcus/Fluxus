@@ -29,7 +29,12 @@ about the **application** data path — a page serving an end user.
 This tool is not on that path. It is workbench-class admin inspection, and the
 workbench is already outside it: the Console takes the whole operation partition
 at connect precisely because the workbench evaluates locally against it
-(DATA_THROUGH_ACTIVITIES, header note).
+(DATA_THROUGH_ACTIVITIES, header note). *Since 2026-11-09 it does not — the
+workbench fetches what each screen shows (CONSOLE_RECORD_FETCHING) — but it
+is still admin inspection, outside the application path: its lists are
+`records.list`, operation admins with no app. The test record (anchor id) is
+fetched by id once the author stops typing, held while it is entered, and a
+record not found says so beside the field.*
 
 Running the query server-side is **narrower** than what exists today: the
 browser gets the filtered subset instead of every record in the operation.
@@ -427,7 +432,9 @@ directly and read every record type in the operation — including types
 `computeReadable` hides from them through `records.partition`.
 
 Deliberate departure: `records.partition` also filters rows by role-readable
-types (`router.ts:747`). This endpoint does **not** — a script reads every type
+types (`router.ts:747`). *(`records.partition` was removed 2026-11-09; since
+2026-10-18 a call with no app is an operation admin's and reads every type,
+so the departure no longer departs from anything.)* This endpoint does **not** — a script reads every type
 in the operation. Accepted, given who reaches the Console.
 
 Note `requireOpUser` returns early when auth is unconfigured

@@ -42,8 +42,8 @@ How the parts connect. Package-level detail lives in each package's `docs/SPEC.m
        ┌──────▼─────────────┐                        │
        │  @fluxus/client    │────────────────────────┘
        │  config + pages    │  model.getForOperation (runtime)
-       │  snapshot; records │  model.get (design) · records.partition
-       │  all, or on demand │  /list/get · pages.* · activities.run
+       │  snapshot; records │  model.get (design) · records.list
+       │  on demand         │  /get · pages.* · activities.run
        └────────────────────┘
 ```
 

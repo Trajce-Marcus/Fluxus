@@ -280,12 +280,39 @@ function DslEditorViewComponent() {
     return out.sort((a, b) => a.activity.name.localeCompare(b.activity.name));
   }, [dataOperationId]);
 
+  // The test record is fetched by id once the author stops typing, one held at
+  // a time and let go when the id changes — the client holds no records until
+  // asked (CONSOLE_RECORD_FETCHING §4). A model save builds a new client, so
+  // the client is a dependency too.
+  const client = sdmClient;
+  const [anchorState, setAnchorState] = useState<{ id: string; status: 'loading' | 'loaded' | 'failed' } | null>(null);
+  useEffect(() => {
+    const id = anchorId.trim();
+    if (!id || !dataOperationId) return;
+    let cancelled = false;
+    let taken = false;
+    const timer = setTimeout(() => {
+      setAnchorState({ id, status: 'loading' });
+      client.fetchRecord(id).then(
+        () => { taken = true; if (cancelled) client.releaseRecord(id); else setAnchorState({ id, status: 'loaded' }); },
+        () => { if (!cancelled) setAnchorState({ id, status: 'failed' }); },
+      );
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (taken) client.releaseRecord(id);
+    };
+  }, [anchorId, dataOperationId, client]);
+  const anchorMissing = anchorState !== null && anchorState.id === anchorId.trim() && anchorState.status === 'failed';
+
   const anchorRecord: RecordInstance | null = useMemo(() => {
-    if (!anchorId.trim()) return null;
-    try { return sdmClient.adapter.getRecord(anchorId.trim()); } catch { return null; }
-    // sdmClient.adapter is the live snapshot; `result` is in the deps because a
-    // run is the moment the anchor could have started resolving.
-  }, [anchorId, result]);
+    const id = anchorId.trim();
+    if (!id || anchorState?.id !== id || anchorState.status !== 'loaded') return null;
+    try { return client.adapter.getRecord(id); } catch { return null; }
+    // client.adapter is the live snapshot; `result` is in the deps because a
+    // run is when the held record changes.
+  }, [anchorId, anchorState, client, result]);
 
   if (!dataOperationId) {
     return (
@@ -321,6 +348,7 @@ function DslEditorViewComponent() {
           onChange={(e) => setAnchorId(e.target.value)}
           title="Sets context.record. Leave empty and context.record is null."
         />
+        {anchorMissing && <span className="dsl-error-text">Record not found</span>}
         <div className="dsl-bar-spacer" />
         <button className="dsl-btn dsl-btn--ghost" onClick={() => setActivityPick(true)}>
           Run activity…

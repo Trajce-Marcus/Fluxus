@@ -34,9 +34,9 @@ import { includedActivityIds } from '@fluxus/engine';
  * Otherwise **default deny**: a type is readable only if its `access.read`
  * lists a role the user holds. A held role set comes from `runtimeRoles`.
  *
- * The same answer governs both halves of a snapshot — which records ship
- * (`records.partition`) and which of the model ships (`projectModel`) — which
- * is why it lives here rather than in either caller.
+ * The same answer governs which records ship (`records.get` and its
+ * references) and which of the model ships (`projectModel`) — which is why it
+ * lives here rather than in either caller.
  */
 export function computeReadable(
   authConfigured: boolean | undefined,

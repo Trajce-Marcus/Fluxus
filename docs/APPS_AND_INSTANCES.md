@@ -159,8 +159,9 @@ the app.
   the activity's own and both must pass; with none, the activity's own decides
   (the user's). It is one more expression per activity, beside the existing
   one — not a shared list of named conditions ticked against activities (the
-  user's choice, for now; each condition converts later to one named row with
-  one tick).
+  user's choice). *Dropped 2026-11-08: the user ruled the shared list not
+  needed — a shared function the conditions call does the same; it is no
+  longer deferred.*
 - So **an activity added later to a registered type's workflow appears on every
   app that registers the type**, unless a condition hides it (Claude raised it;
   the user agreed).
@@ -902,9 +903,6 @@ USERS.md `:228-231` (how Console access is derived); CLIENT_TRUST_BOUNDARY
   secret turns up, and adding it changes nothing existing.
 - Roles on the app itself ("for now"). *Taken up 2026-11-03 as a default only: the page's default roles, §3.3.*
 - Removing an app from an apps list. *Taken up 2026-11-03: expiring an app, §3.2.*
-- A shared list of named conditions ticked against activities.
-- A condition on opening an app, for ad hoc rules (parked: RECORD_READ_CONDITIONS,
-  BLUEPRINT § Access).
 - Search and pinning as ways to find apps.
 - Review before publish for apps and apps lists.
 - The page editor's preview applying the app's list and conditions: it runs
@@ -916,6 +914,7 @@ USERS.md `:228-231` (how Console access is derived); CLIENT_TRUST_BOUNDARY
   *Taken up 2026-11-03: the page's example definition, §3.1.*
 - **Removing the Console's whole-operation fetch** (`records.partition`) — a
   deferred to-do for a later session (the user's; SERVER_DATA_LOADING §6).
+  *Done 2026-11-09: CONSOLE_RECORD_FETCHING.*
 
 ### 2.10 Build steps (the backlog)
 
@@ -1423,7 +1422,8 @@ name the same day) means an app in the operation's apps list.
    in practice (Runtime connects with `records: 'none'`, `runtime/src/host.ts:118-124`)
    but open to any operation user. *Recommendation:* `records.get` carries
    `appId` and passes checks 1–2, in step 2; `records.list` and
-   `records.partition` fall under the no-app rule.
+   `records.partition` fall under the no-app rule. *`records.partition` was
+   removed 2026-11-09 (CONSOLE_RECORD_FETCHING).*
 4. **Who may call with no app** (§2.12 #3). **Ruled 2026-10-17, changed from
    the recommendation: admins of that operation** (the user's; Claude agreed —
    the operation is the data boundary, and a solution admin may be a designer

@@ -41,7 +41,7 @@
 ```
 
 ## Enforcement
-- `records.partition`/`list`: filter to readable types → visible-subset snapshot.
+- `records.list`: filter to readable types. *(`records.partition` too, until it was removed 2026-11-09.)*
 - `records.get`: deny ⇒ **"Record access denied"** (FORBIDDEN) since 2026-10-12; a missing record is still not-found. *Reversed: deny ⇒ not-found (never forbidden), the first cut — see BLUEPRINT* Access. It also sends the records the one asked for points at, two levels, readable ones only, naming the rest as `withheld`.
 - `activities.run` / `activities.query`: gate is the run check; unreadable anchor ⇒ "Record access denied", checked before gate (not-found until 2026-10-12). CREATE: `context.record` null.
 - `page.activities`: an unreadable record answers an empty list — it shows what you can do, not the record.

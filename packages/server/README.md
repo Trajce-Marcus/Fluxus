@@ -8,8 +8,8 @@ transactional JSONB partitions plus the normalized reporting projection,
 written synchronously in-transaction.
 
 **Status:** backend stage 3 — headless invocation live with tests, both
-browser hosts repointed here via `@fluxus/client` (partition snapshot in,
-`activities.run` out; hooks + persistence server-side only), and page
+browser hosts repointed here via `@fluxus/client` (records fetched as screens
+show them, `activities.run` out; hooks + persistence server-side only), and page
 definitions stored here too (`pages` table on the config pipeline; authored in
 the Console — nothing installs pages). Neon is live
 (schema via drizzle-kit migrations; local dev reads `.env` for

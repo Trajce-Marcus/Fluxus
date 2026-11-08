@@ -125,13 +125,13 @@ export async function initHost(auth?: HostAuth): Promise<void> {
   // activity history, to a browser that renders pages. This app is pages-only
   // — the workbench is the Console's — so it runs on what its pages ask the
   // model for (GET activities) plus the one record each page is about, fetched
-  // by id. The snapshot fills as it goes; nothing arrives unasked.
+  // by id. The snapshot fills as it goes; nothing arrives unasked. Since
+  // 2026-11-09 this is the only way a client connects (CONSOLE_RECORD_FETCHING).
   client = await FluxusClient.connect({
     url: import.meta.env.VITE_FLUXUS_API_URL,
     operationId,
     getToken: auth?.configured ? auth.getToken : undefined,
     pages: 'published',
-    records: 'none',
   });
   // The org may also be named in the path — `/o/<orgId>/?operation=<id>`
   // (ruled 2026-08-03), so a Runtime link reads the same as a Console one. It

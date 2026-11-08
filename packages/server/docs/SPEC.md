@@ -3,8 +3,8 @@
 The backend host (DSL Phase 4, built 2026-07-12): the third front door on
 the one activity pipeline — and since backend stage 2 (same day) the *only*
 door to persistence: the workbench and the page builder run their reads off
-a fetched partition snapshot (`@fluxus/client`) and their mutations through
-`activities.run`. Headless invocation over HTTP, records in Postgres, the
+the records they fetched (`@fluxus/client`; never a whole operation since
+2026-11-09) and their mutations through `activities.run`. Headless invocation over HTTP, records in Postgres, the
 reporting projection. Root ARCHITECTURE.md owns the cross-package data
 architecture; this SPEC covers what the server package owns.
 
@@ -477,15 +477,25 @@ takes `operationId?` (both default `demo/sdm`):
   presigned PUT for the thumbnail. `max_count` is enforced at submit
   (`validateSubmission`). Both procedures answer a clean error when
   FLUXUS_R2_* is unset.
-- **`records.partition`** `{ operationId? }` / **`records.list`** `{ operationId?,
-  typeId }` / **`records.get`** `{ operationId?, appId?, recordId }` (`appId`
-  runs checks 1 and 2 first, 2026-10-18) — the platform data
-  channel (RecordInstance shape, history embedded). `partition` returns the
-  whole operation partition in one round trip — what `@fluxus/client` loads into the
-  browser hosts' `MemoryAdapter` snapshot at bootstrap and re-fetches after
-  every run (backend stage 2; client-side expression evaluation stays local,
-  scripts and persistence are server-side). App-level reads become GET
-  activities when §5a lands — records.* is infrastructure, not the app API.
+- **`records.list`** `{ operationId?, typeId, fieldKey?, value? }` /
+  **`records.get`** `{ operationId?, appId?, recordId }` (`appId` runs checks
+  1 and 2 first, 2026-10-18) — the platform data channel (RecordInstance
+  shape). records.* is infrastructure, not the app API: app-level reads are
+  GET activities. *`records.partition` — the whole operation in one round
+  trip, what the Console loaded at connect and after every activity run — was
+  removed 2026-11-09 (CONSOLE_RECORD_FETCHING): nothing fetches a whole
+  operation.*
+  **`records.list`** (CONSOLE_RECORD_FETCHING §2) is the Console workbench's:
+  one type's rows **without their history** (`activityHistory: []` — the record
+  view fetches by id for that), answered as **`{ rows, labels }`**. Each label
+  (`{ id, typeRef, field, label }`) is what a row's reference column shows:
+  for each `fk_ref` field naming a target type and a `fk_display_field`, the
+  referenced record's display value, from one query over every referenced id
+  — none for a missing target, one of another type than the field names, or an
+  operation's app. `fieldKey` + `value` narrow to the rows whose custom field
+  `fieldKey` equals `value` as text (the related records panel); `fieldKey`
+  must be an `fk_ref` field of the type, else BAD_REQUEST. Tests:
+  `test/recordsList.test.ts`.
   **`records.get` also sends `references`** (2026-10-12): the records the one
   asked for points at, following its reference fields two levels deep
   (`REFERENCE_DEPTH`), readable ones only, a reference to a missing record
@@ -498,13 +508,12 @@ takes `operationId?` (both default `demo/sdm`):
   **RBAC stage 1**: all three apply the record-type read filter (below) — a
   deny answers "Record access denied" on `get` (FORBIDDEN, since 2026-10-12;
   not-found before, reversed by the user — BLUEPRINT *Access*), a missing record
-  not-found, and unreadable types drop out of `partition`/`list`. *Since
-  2026-10-18 the read filter applies to a call through an app; a call with no
-  app — `partition` and `list` are always one — is an operation admin's, who
-  reads every type (the no-app rule, below).* **An
+  not-found. *Since 2026-10-18 the read filter applies to a call through an
+  app; a call with no app — `list` is always one — is an operation admin's,
+  who reads every type (the no-app rule, below).* **An
   operation's apps never appear** (2026-10-18), whatever the read filter says
   (with sign-in off it lets everything through): `get` of an app's id answers
-  "Record access denied", and `partition`/`list` leave them out — see "An
+  "Record access denied", and `list` leaves them out — see "An
   operation's apps" below.
 - **`model.get` / `model.put`** `{ solutionId?, config }` — the **design
   plane's** door: the whole model, hooks and access rules included, because
@@ -620,8 +629,8 @@ added more than once — a water scheduler and a sewer scheduler.
   `definition` (text holding JSON). No solution defines the type; the
   engine's definition of it (`page_id`, `label`, `definition`) is added only to
   the model checked at save (step 5), and it is never sent to the browser.
-- **Kept out of every general read, by type id** — `records.partition` and
-  `records.list` leave them out and `records.get` refuses one; a run, a GET or
+- **Kept out of every general read, by type id** — `records.list` leaves
+  them out (and labels none) and `records.get` refuses one; a run, a GET or
   `scripts.query` whose record is an app is refused ("Record access denied");
   `page.activities` answers an app with nothing; `records.get`'s references
   withhold one; the stray-record-type check at model save
@@ -759,7 +768,7 @@ refused unless the caller is an **admin of that operation** ("This call names
 no app, so it is for admins of operation '<id>' only"), who then reads every
 record in it, whatever their roles — and nothing in operations they are not
 admins of. A closed list: `activities.run`, `activities.query`,
-`page.activities`, `records.get`, `records.list`, `records.partition`,
+`page.activities`, `records.get`, `records.list`,
 `scripts.query` and `files.*` — the Console's
 workbench, DSL Editor and page preview. They follow the record type's workflow
 and the activity's own condition only. A solution admin who wants to work on an
@@ -1448,10 +1457,10 @@ The Console's DSL Editor is its only caller
 **Why this is not a hole in the read rule.**
 `docs/DATA_THROUGH_ACTIVITIES.md` governs the *application* read path, where a
 query belongs in the model as a GET so it can be authorised and logged. This is
-workbench-class admin inspection, and the workbench is already outside that —
-the Console takes the whole operation partition at connect to evaluate locally
-against it. Running the query on the server is **narrower**: the browser gets
-the filtered subset instead of every record.
+workbench-class admin inspection, as the workbench's own lists are
+(`records.list`, operation admins with no app); the browser gets only the
+query's answer. *Until 2026-11-09 the argument was that it was narrower than
+the whole operation the Console then fetched at connect.*
 
 **It is not logged.** A history entry lives on a record and an ad-hoc query has
 no anchor. Accepted, and recorded as debt against the unified-log design.

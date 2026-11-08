@@ -426,10 +426,9 @@ export interface ScriptContext {
   invoke?: (activityId: string, params: Record<string, unknown>) => unknown;
   /**
    * Per-call interpreter limits, merged over DEFAULT_QUOTAS. Absent → the
-   * defaults, which is what hooks and page evaluation use. The DSL editor
-   * raises them: its host has already loaded the whole partition into memory,
-   * so the row cap is not protecting anything there, and a 1s budget is too
-   * short to be interactive.
+   * defaults, which is what hooks and page evaluation use. The DSL editor's
+   * server call (`scripts.query`) raises them: it is an operation admin's
+   * inspection, and a 1s budget is too short to be interactive.
    */
   quotas?: Partial<Quotas>;
   /**
