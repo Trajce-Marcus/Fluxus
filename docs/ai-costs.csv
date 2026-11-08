@@ -25,13 +25,21 @@ e7b7cb51-a286-4acb-b90c-5454b1a7ac94,fluxus,2026-09-25 17:55,2026-09-26 01:24,SE
 cffb31e4-6222-4518-8177-b437f2100d57,fluxus,2026-09-26 01:46,2026-09-26 02:11,Outstanding commits,platform,claude-opus-5-5,2318463,1.57,0.00,
 ba29d359-316a-4453-b91c-ebd97af2a866,fluxus,2026-09-28 00:39,2026-09-28 02:12,Shift report amendments activity visibility,platform,claude-opus-5-5,4053271,1.98,0.00,
 d3304633-0a19-4f18-9a86-b6c1c08ba79d,fluxus,2026-09-28 02:13,2026-09-30 01:31,BLUEPRINT § Apps implementation spec,platform,claude-opus-5-5,6625981,3.78,0.00,
-d2ba8300-244e-4540-be04-1f2d96f4322b,specialised-app,2026-10-04 00:33,2026-10-04 01:48,New landing page,platform,claude-opus-5-5; claude-sonnet-5-5 (unpriced),9115819,0.22,0.00,0.05
-cd5382dd-e925-4cc8-be49-5c84af7b7730,fluxus,2026-10-04 13:34,2026-10-06 01:22,Apps and instances doc discussion,platform,claude-opus-5-5,24440312,11.58,5.61,2.82
-aa97a166-13b5-414f-88e1-34cf716d5791,fluxus,2026-10-04 14:08,2026-10-04 16:31,New solution spec,platform,claude-opus-5-5,13550241,5.84,0.00,1.42
-447d4905-7ecd-4ee7-83c6-0738dc001dd6,fluxus,2026-10-10 17:09,2026-10-10 20:25,"App and instances, part 1",platform,claude-opus-5-5; claude-sonnet-5,59796409,21.46,2.19,5.23
-dfd26543-a480-48bb-a4ec-44721400ea20,fluxus,2026-10-10 20:30,2026-10-11 11:26,Inspection solution architecture,platform,claude-opus-5-5; claude-sonnet-5,119197588,42.51,6.06,10.36
-7cbbaa12-1875-4b72-b1e5-f077473e0d48,fluxus,2026-10-10 20:32,2026-10-10 20:43,APPS_AND_INSTANCES Part 2 workflows,platform,claude-opus-5-5,716010,0.49,0.00,0.12
-833493de-daf1-4b4e-807f-4329bdf66ec4,fluxus,2026-10-11 11:32,2026-10-11 18:33,Inspections restrictions attribute design,platform,claude-opus-5-5,43019525,14.67,0.00,3.58
-76aeca19-aed5-44e5-b72d-80d0dea6b745,fluxus,2026-10-11 18:34,2026-10-12 01:45,Inspections cold review and build,platform,claude-opus-5-5; claude-sonnet-5,126421063,38.73,7.42,9.44
-9bd17d0d-7a74-4e51-844b-1b34a3b230c3,fluxus,2026-10-13 00:20,2026-10-13 01:06,Grok and AI for inspection inquiry processing,platform,claude-opus-5-5,5711388,3.72,0.00,0.91
-27c0f45f-ce09-453c-b35e-f6d600cd2e46,fluxus,2026-10-13 01:13,2026-10-13 01:13,sol:costing test,sol:costing,claude-opus-5-5,269124,0.27,0.00,0.07
+d2ba8300-244e-4540-be04-1f2d96f4322b,specialised-app,2026-10-04 00:33,2026-10-04 01:48,New landing page,platform,claude-opus-5-5; claude-sonnet-5-5 (unpriced),9115819,0.22,0.00,0.03
+cd5382dd-e925-4cc8-be49-5c84af7b7730,fluxus,2026-10-04 13:34,2026-10-06 01:22,Apps and instances doc discussion,platform,claude-opus-5-5,24440312,11.58,5.61,1.38
+aa97a166-13b5-414f-88e1-34cf716d5791,fluxus,2026-10-04 14:08,2026-10-04 16:31,New solution spec,platform,claude-opus-5-5,13550241,5.84,0.00,0.70
+447d4905-7ecd-4ee7-83c6-0738dc001dd6,fluxus,2026-10-10 17:09,2026-10-10 20:25,"App and instances, part 1",platform,claude-opus-5-5; claude-sonnet-5,59796409,21.46,2.19,2.56
+dfd26543-a480-48bb-a4ec-44721400ea20,fluxus,2026-10-10 20:30,2026-10-11 11:26,Inspection solution architecture,platform,claude-opus-5-5; claude-sonnet-5,119197588,42.51,6.06,5.07
+7cbbaa12-1875-4b72-b1e5-f077473e0d48,fluxus,2026-10-10 20:32,2026-10-10 20:43,APPS_AND_INSTANCES Part 2 workflows,platform,claude-opus-5-5,716010,0.49,0.00,0.06
+833493de-daf1-4b4e-807f-4329bdf66ec4,fluxus,2026-10-11 11:32,2026-10-11 18:33,Inspections restrictions attribute design,platform,claude-opus-5-5,43019525,14.67,0.00,1.75
+76aeca19-aed5-44e5-b72d-80d0dea6b745,fluxus,2026-10-11 18:34,2026-10-12 01:45,Inspections cold review and build,platform,claude-opus-5-5; claude-sonnet-5,126421063,38.73,7.42,4.62
+9bd17d0d-7a74-4e51-844b-1b34a3b230c3,fluxus,2026-10-13 00:20,2026-10-13 01:23,Grok and AI for inspection inquiry processing,platform,claude-opus-5-5,6902457,4.02,0.00,0.48
+27c0f45f-ce09-453c-b35e-f6d600cd2e46,fluxus,2026-10-13 01:13,2026-10-13 01:13,sol:costing test,sol:costing,claude-opus-5-5,269124,0.27,0.00,0.03
+12da33a7-c1bd-4efa-a049-02d5ea895660,fluxus,2026-10-15 21:26,2026-10-17 11:11,Apps and instances part 2,platform,claude-opus-5-5,23442143,10.59,4.17,1.26
+73efb6a4-d4a8-4ce1-a1ef-736fdafff333,fluxus,2026-10-17 12:06,2026-10-18 00:54,Apps and instances architecture redesign,platform,claude-opus-5-5,61073102,26.56,9.85,3.17
+177a54d3-99ef-4571-acc0-947ab2abc943,fluxus,2026-10-18 00:55,2026-10-18 16:31,Fluxus apps part 2 step 2,platform,claude-opus-5-5; claude-sonnet-5,172748428,56.59,2.93,6.74
+4d220519-ce78-4b52-bf2f-0cdfa865e6bd,fluxus,2026-10-18 16:32,2026-10-18 19:12,Fluxus apps part 2 step 4,platform,claude-opus-5-5; claude-sonnet-5,57223915,17.95,3.90,2.14
+f66e03bd-bd60-4bd6-ab18-f6540aea50c1,fluxus,2026-10-18 19:14,2026-10-18 20:05,Fluxus apps Part 2 step 6,platform,claude-opus-5-5; claude-sonnet-5,26901782,9.77,1.85,1.16
+29aea352-2013-41a6-9a4f-0a4d3a6ec900,fluxus,2026-10-30 20:45,2026-11-08 16:45,Apps part 2 recap,platform,claude-opus-5-5; claude-sonnet-5-5 (unpriced),64975417,24.02,2.78,2.86
+f628b383-ce01-4b8d-8037-eb36abc3b2a0,fluxus,2026-11-03 15:17,2026-11-03 15:44,Fluxus AI workflow automation,platform,claude-opus-5-5,945685,0.79,0.00,18.15
+9f863eba-9213-43e0-b13a-31ad25f68a1b,fluxus,2026-11-03 16:41,2026-11-03 16:42,System element diagram,platform,claude-opus-5-5,473594,0.69,0.00,15.85
