@@ -102,8 +102,11 @@ not cover them.
   opposed to only as a list row or a reference. The record view waits on it.
 - **`refresh`** after an activity run fetches every entry again, in parallel:
   one `records.get` per record held by id, one `records.list` per list held.
-  A record that no longer comes back by id (deleted, or no longer readable) is
-  dropped, as today.
+  A record the server answers is gone or not readable leaves the local copy
+  but keeps its holders; any other failure keeps the last copy; a record still
+  on its first fetch is left to it. *Cold test 2026-11-09: the first build
+  dropped the entry on any failure, a lost connection included, and could drop
+  a fetch still in flight; a release now lets go of its own entry only.*
 - **`fetchRecords` is the Console's.** `records.list` is for operation admins
   with no app, so it cannot serve Runtime users; the client SPEC and
   `index.ts:113` stop saying the Runtime fills through it.

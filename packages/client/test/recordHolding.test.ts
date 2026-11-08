@@ -4,6 +4,7 @@
 // fetches each again — without wiping a fetch that lands while it runs.
 
 import { describe, expect, it } from 'vitest';
+import { TRPCClientError } from '@trpc/client';
 import { MemoryAdapter, type ClientSolutionModel, type RecordInstance } from '@fluxus/engine';
 import { FluxusClient } from '../src/index';
 
@@ -28,14 +29,19 @@ function harness() {
   ]);
   const calls = { get: 0, list: 0 };
   let gate: Promise<void> | null = null;
+  // records.get fails as a dropped connection would: while offline, and for
+  // the next `failNext` calls.
+  let offline = false;
+  let failNext = 0;
   const trpc = {
     records: {
       get: {
         query: async ({ recordId }: { recordId: string }) => {
           calls.get++;
           if (gate) await gate;
+          if (offline || (failNext > 0 && failNext-- > 0)) throw new TypeError('Failed to fetch');
           const r = server.get(recordId);
-          if (!r) throw new Error(`Record not found: ${recordId}`);
+          if (!r) throw new TRPCClientError(`Record not found: ${recordId}`, { result: { error: { message: 'not found', code: -32004, data: { code: 'NOT_FOUND' } } } } as never);
           const area = r.customFields.area ? server.get(r.customFields.area as string) : undefined;
           return { ...r, references: area ? [area] : [], withheld: [] };
         },
@@ -56,7 +62,9 @@ function harness() {
   const Ctor = FluxusClient as unknown as new (...args: unknown[]) => FluxusClient;
   const client = new Ctor(trpc, 'op', 'sol', model, adapter, new Map(), [], '', 'sol', 'op', '', [], false);
   const hold = () => { let open!: () => void; gate = new Promise((r) => { open = r; }); return () => { gate = null; open(); }; };
-  return { server, client, adapter, calls, hold };
+  const goOffline = (on: boolean) => { offline = on; };
+  const failNextGets = (n: number) => { failNext = n; };
+  return { server, client, adapter, calls, hold, goOffline, failNextGets };
 }
 
 describe('what the client holds', () => {
@@ -96,7 +104,7 @@ describe('what the client holds', () => {
     expect(adapter.allRecords()).toEqual([]);
   });
 
-  it('refresh fetches each held entry once, and drops a record that no longer reads back', async () => {
+  it('refresh fetches each held entry once, and stops showing a record the server says is gone', async () => {
     const { client, adapter, calls, server } = harness();
     await client.fetchRecords('rt_findings');
     await client.fetchRecord('F1');
@@ -107,6 +115,51 @@ describe('what the client holds', () => {
     expect(calls).toEqual({ get: 2, list: 1 });
     expect(client.isRecordFetched('F2')).toBe(false);
     expect(adapter.allRecords().map((r) => r.id).sort()).toEqual(['F1', 'K1']);
+  });
+
+  it('a gone record keeps its holders, so their releases still pair', async () => {
+    const { client, server } = harness();
+    await client.fetchRecord('F2');
+    server.delete('F2');
+    await client.refresh();
+    server.set('F2', rec('F2', 'rt_findings', { area: 'K1' }, 1));
+    await client.fetchRecord('F2'); // a second holder, of the same entry
+    client.releaseRecord('F2'); // the first holder lets go
+    expect(client.isRecordFetched('F2')).toBe(true);
+  });
+
+  it('refresh keeps the last copy when the server cannot be reached', async () => {
+    const { client, adapter, goOffline } = harness();
+    await client.fetchRecord('F1');
+    goOffline(true);
+    await client.refresh();
+    expect(client.isRecordFetched('F1')).toBe(true);
+    expect(adapter.allRecords().map((r) => r.id)).toContain('F1');
+  });
+
+  it('refresh leaves a record still on its first fetch to that fetch', async () => {
+    const { client, hold, goOffline, calls } = harness();
+    const release = hold();
+    const fetching = client.fetchRecord('F1');
+    calls.get = 0;
+    await client.refresh();
+    expect(calls.get).toBe(0);
+    release();
+    await fetching;
+    goOffline(false);
+    expect(client.isRecordFetched('F1')).toBe(true);
+  });
+
+  it('a fetch that fails after its holder let go takes no hold from a newer one', async () => {
+    const { client, hold, failNextGets } = harness();
+    const release = hold();
+    failNextGets(1);
+    const first = client.fetchRecord('F1').catch(() => null);
+    client.releaseRecord('F1'); // the first holder moves on while its fetch is out
+    const second = client.fetchRecord('F1'); // a newer holder, its fetch out too
+    release();
+    await Promise.all([first, second]); // the first fails — and must not release the second's hold
+    expect(client.isRecordFetched('F1')).toBe(true);
   });
 
   it('a fetch that lands while a refresh runs survives it', async () => {

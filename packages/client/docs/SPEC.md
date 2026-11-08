@@ -97,8 +97,13 @@ One class, `FluxusClient`, owning the movements every remote host makes:
 2. **`refresh()`** — after an activity run, fetch every held entry again, in
    parallel: one `records.get` per record held by id, one `records.list` per
    list, then rebuild the *same* adapter (identity stable, subscribers
-   notified). A record that no longer reads back by id (deleted, or no longer
-   readable) is dropped; a list that fails keeps its last rows. The records
+   notified). A record the server answers is gone or not readable
+   (NOT_FOUND, FORBIDDEN) leaves the copy but keeps its holders, so their
+   releases still pair; any other failure (a lost connection) keeps the last
+   copy, as a failed list keeps its last rows; a record still on its first
+   fetch is left to it (cold test 2026-11-09). A release — including the one a
+   failed fetch makes for itself — lets go of its own entry only, never one
+   made in its place. The records
    that came along as references are not re-read on their own, so following
    references never grows what is held.
 3. **`runActivity(input)`** — the only record mutation path: `activities.run`

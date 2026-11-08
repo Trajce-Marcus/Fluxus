@@ -86,6 +86,10 @@ type RecordRead = RecordInstance & { references: RecordInstance[]; withheld: str
 /** Narrows a list to the rows whose reference field `fieldKey` holds `value` (`records.list`). */
 export interface ListFilter { fieldKey: string; value: string }
 
+/** The server answered that a record does not exist, or that this caller may not read it. */
+const isGoneOrDenied = (err: unknown) =>
+  err instanceof TRPCClientError && (err.data?.code === 'NOT_FOUND' || err.data?.code === 'FORBIDDEN');
+
 const listKey = (typeId: string, filter?: ListFilter) =>
   `${typeId}\u0000${filter?.fieldKey ?? ''}\u0000${filter?.value ?? ''}`;
 
@@ -981,7 +985,7 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
     try {
       read = await this.readRecord(recordId);
     } catch (err) {
-      this.releaseRecord(recordId);
+      this.releaseEntry(this.heldRecords, recordId, entry);
       throw err;
     }
     // Released while the read was in flight: nothing to hold.
@@ -996,9 +1000,18 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   /** Let go of a record `fetchRecord` holds; it leaves the snapshot when its last holder does. */
   releaseRecord(recordId: string): void {
     const entry = this.heldRecords.get(recordId);
-    if (!entry) return;
+    if (entry) this.releaseEntry(this.heldRecords, recordId, entry);
+  }
+
+  /**
+   * One holder of this entry lets go — of this entry only: a fetch that
+   * failed after its entry was released and another made in its place must
+   * not take a hold away from the new one.
+   */
+  private releaseEntry<E extends { holders: number }>(held: Map<string, E>, key: string, entry: E): void {
+    if (held.get(key) !== entry) return;
     if (--entry.holders > 0) return;
-    this.heldRecords.delete(recordId);
+    held.delete(key);
     this.rebuild();
   }
 
@@ -1035,7 +1048,7 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
     try {
       list = await this.readList(typeId, filter);
     } catch (err) {
-      this.releaseRecords(typeId, filter);
+      this.releaseEntry(this.heldLists, key, entry);
       throw err;
     }
     if (this.heldLists.get(key) === entry) {
@@ -1050,10 +1063,7 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   releaseRecords(typeId: string, filter?: ListFilter): void {
     const key = listKey(typeId, filter);
     const entry = this.heldLists.get(key);
-    if (!entry) return;
-    if (--entry.holders > 0) return;
-    this.heldLists.delete(key);
-    this.rebuild();
+    if (entry) this.releaseEntry(this.heldLists, key, entry);
   }
 
   private async readList(typeId: string, filter?: ListFilter): Promise<{ rows: RecordInstance[]; labels: ReferenceLabel[] }> {
@@ -1091,18 +1101,23 @@ export class FluxusClient<C extends ClientSolutionModel = ClientSolutionModel> {
   /**
    * Bring the snapshot back in line with the server after an activity run;
    * subscribers re-render. Fetches everything held again, in parallel — one
-   * `records.get` per record held by id, one `records.list` per list — and
-   * drops a record that no longer reads back (deleted, or no longer readable).
-   * A list that fails keeps its last rows.
+   * `records.get` per record held by id, one `records.list` per list.
+   *
+   * A record the server answers is gone or not readable stops being in the
+   * snapshot, but its holders keep their hold (so their releases still pair,
+   * and a later fetch of it re-reads it). Any other failure — a lost
+   * connection — keeps the last copy, as a failed list keeps its last rows. A
+   * record whose first fetch is still out is left to that fetch.
    */
   async refresh(): Promise<void> {
     if (this.heldRecords.size === 0 && this.heldLists.size === 0) return;
     await Promise.all([
       ...[...this.heldRecords.entries()].map(async ([recordId, entry]) => {
+        if (!entry.read) return;
         try {
           entry.read = await this.readRecord(recordId);
-        } catch {
-          if (this.heldRecords.get(recordId) === entry) this.heldRecords.delete(recordId);
+        } catch (err) {
+          if (isGoneOrDenied(err)) entry.read = null;
         }
       }),
       ...[...this.heldLists.values()].map(async (entry) => {
