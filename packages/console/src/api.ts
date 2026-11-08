@@ -5,7 +5,7 @@ import { registry } from './components';
 import { initSdmRuntime } from './sdm-runtime/engine';
 
 // THE entry point (index.html loads this module and mounts Shell) — so the
-// SDM runtime bootstraps here: fetch the scope's config + partition + pages
+// SDM runtime bootstraps here: fetch the scope's config + pages (no records)
 // from @fluxus/server before anything renders. Kicked off at module load;
 // every mount awaits it. Hard cutover by ruling: server unreachable → error
 // text in the mount element, no localStorage fallback. Nothing is installed

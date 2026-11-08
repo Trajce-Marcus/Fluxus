@@ -15,7 +15,7 @@ import { RecordView } from './components/RecordView';
 // hands over a connected client and knows nothing else.
 
 export interface WorkbenchProps {
-  /** A connected client: the model, the record partition and the run door. */
+  /** A connected client: the model, the records the screens fetch, and the run door. */
   client: FluxusClient;
   /** Signed-in identity, for `ctx.user` parity in expression evaluation.
    *  Omitted in the demo (auth unconfigured) posture. */

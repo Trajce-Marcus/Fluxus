@@ -1,6 +1,6 @@
 // The page builder's SDM bootstrap (backend stage 2; slimmed at the
 // page-runtime extraction): records and activity runs live on @fluxus/server;
-// connect() fetches the scope's config + partition + pages, and the whole
+// connect() fetches the scope's config + pages (no records), and the whole
 // runtime cluster now reaches the SDM through the PageRuntime handle rather
 // than singletons of its own. Both hosts point at the same scope — one model,
 // many apps, literally.

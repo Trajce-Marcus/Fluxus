@@ -154,10 +154,9 @@ export class MemoryAdapter implements Store {
     this.notify();
   }
 
-  // Add or replace some records without touching the rest — how a host that
-  // was NOT handed the whole partition fills its snapshot as it goes: a page's
-  // anchor record, the one type a grid is showing. `replaceRecords` is the
-  // other half of the pair and stays the whole-snapshot swap.
+  // Add or replace some records without touching the rest. No host calls it
+  // since 2026-11-09 — the client rebuilds the snapshot from what it holds
+  // through `replaceRecords` (CONSOLE_RECORD_FETCHING §3).
   mergeRecords(records: Iterable<readonly [string, RecordInstance]>, withheld: Iterable<string> = []): void {
     for (const [id, record] of records) {
       this.records.set(id, record);

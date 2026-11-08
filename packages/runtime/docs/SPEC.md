@@ -96,7 +96,7 @@ config/{attributes,functions}.json + config/entities/*.json
   └── config.ts (merges to one typed SolutionModel — the tests' model only,
         installed nowhere; the running app reads config from the server)
 
-src/host.ts (backend stage 2): FluxusClient.connect({records:'none'}) →
+src/host.ts (backend stage 2): FluxusClient.connect() →
         the operation's model + published pages, and NO records: since
         2026-08-16 signing in no longer ships the operation's data to a
         browser that renders pages (DATA_THROUGH_ACTIVITIES step 5). The
@@ -116,7 +116,7 @@ src/host.ts (backend stage 2): FluxusClient.connect({records:'none'}) →
 
 The package has **no library face** since the 2026-08-01 restructure: `src/index.ts` and `"main"` are gone with the workbench, and no package imports this one. Apps never import apps.
 
-- The Store-contract seam paid off at backend stage 2 (2026-07-12): hosts swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a refresh. **Since 2026-08-16 this app holds no partition at all** — it connects with `records: 'none'`, so the refresh re-reads only the records in hand, and what a page shows comes from GET activities. *The partition remained what the Console's workbench ran on until 2026-11-09, when it moved to fetching what each screen shows (CONSOLE_RECORD_FETCHING) and `records.partition` and the `records` connect option were removed.* This package keeps the demo config (as test fixture), the Runtime shell, and its own `NotificationLog` + notify sink (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
+- The Store-contract seam paid off at backend stage 2 (2026-07-12): hosts swapped `LocalStorageAdapter` for a fetched `MemoryAdapter` snapshot (`@fluxus/client`) with the UI untouched — reads and FluxScript evaluation stay local and synchronous; every mutation is a server-side `activities.run` (hooks + persistence live there only) followed by a refresh. **Since 2026-08-16 this app holds no partition at all** — it connected with `records: 'none'` (the only behaviour since 2026-11-09, when the option went), so the refresh re-reads only the records in hand, and what a page shows comes from GET activities. *The partition remained what the Console's workbench ran on until 2026-11-09, when it moved to fetching what each screen shows (CONSOLE_RECORD_FETCHING) and `records.partition` and the `records` connect option were removed.* This package keeps the demo config (as test fixture), the Runtime shell, and its own `NotificationLog` + notify sink (`src/services/notify.ts`; geo moved to the engine at DSL Phase 4).
 - **Notification bell is dormant since stage 2**: hooks (and their `queue services.notify.*`) execute server-side, where the sink is the process console. The bell + `NotificationLog` stay wired (manifest still validates) and come back to life with the unified-log design.
 
 ## UI
