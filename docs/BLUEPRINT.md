@@ -4,7 +4,8 @@ The authoritative short version of what the platform is and will do, in plain
 language. Deeper detail: [VISION.md](VISION.md) (why), [ARCHITECTURE.md](ARCHITECTURE.md)
 (how the parts connect), [GLOSSARY.md](GLOSSARY.md) (canonical terms — it wins on
 definitions), [ROADMAP.md](ROADMAP.md) (build phases). Each section is marked
-**Built** or **Direction** (agreed, not built).
+**Built**, **Direction** (agreed, not built) or **Idea** (noted for later
+discussion, not agreed — not a basis for building).
 
 ## The idea
 
@@ -40,7 +41,6 @@ one language. Apps come and go; the model accumulates.
 | **Data** | **Transactional store** | Live records as flexible JSON, partitioned per operation — fast writes, serves the running apps. | Postgres (Neon) |
 | | **Reporting store** | Relational tables projected from the activity stream — querying, BI, cross-operation views. | Postgres schemas (same Neon in v1) |
 
-## The operating model
 **Reporting is parked (the user, 2026-11-03).** No reporting is built, and
 nothing reads the reporting tables. What exists, written on every activity run
 since 2026-07-12 (`databaseStore.ts`, `projectionAttributeRows`), in the same
@@ -68,6 +68,7 @@ cost being that the copy then runs just after the history entry, through a
 queue, so reports lag. A transactional database per org waits for a real
 reason (a customer's isolation or data-residency need, or size).
 
+## The operating model
 
 **Built:** A solution — one bundle of SDM + pages + roles — is
 authored in the Console. An **operation** links to exactly one solution and
@@ -145,7 +146,6 @@ user's 2026-10-17 rulings: who may run an app is set only on it in the
 operation's apps list, the page carrying no roles "for now", and a menu item is
 "just a pointer". The step 2 script gives each app its page's old access list as
 its roles.
-
 *Refined 2026-11-03:* a page may carry **default roles** — the roles a new app
 made from it starts with, which the operation admin changes freely. They never
 decide who may run anything, so the two layers stay one
@@ -958,6 +958,27 @@ and should be done with that in mind:
 
 Open, not settled: what the spec artifact is called and where it is stored, the
 weighting behind the score, and how sample data is generated.
+
+## AI before humans — *Idea* (noted 2026-11-03)
+
+The section above is AI *building* a solution. This one is AI *doing the work*
+inside a running solution, so that a person is involved only as a last resort.
+Philosophy only; how to build it comes later.
+
+- Fixed rules do as much of the work as they can.
+- AI does the steps planned as AI steps (for example, fitting incoming data to a
+  schema) and any case the fixed rules can't finish.
+- A person gets only what the AI can't finish.
+- Measurement decides each handover, not the AI's own view of how sure it is:
+  checks with weightings, giving a score. The checks are unknown until real
+  cases show what comes up.
+- Every decision and its outcome is recorded and monitored, so the checks and
+  weightings can be improved, possibly one day by AI.
+- Cost is measured too, a person's against the AI's for the same work, to show
+  which is more effective. The analysis is generic, built on principles, and
+  each solution's setup is monitored against it.
+
+Open: what the measurements are, and where each one applies.
 
 ## The commercial layer — *Direction*
 
